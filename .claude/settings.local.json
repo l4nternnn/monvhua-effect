@@ -24,7 +24,8 @@
       "Bash(git rm *)",
       "Bash(git commit *)",
       "Bash(git push *)",
-      "Bash(git -c user.email=\"claude@local\" -c user.name=\"kuilunfuzhe\" commit -m \"docs: 替换 README 为项目实际文档，许可证改为 Apache-2.0\")"
+      "Bash(git -c user.email=\"claude@local\" -c user.name=\"kuilunfuzhe\" commit -m \"docs: 替换 README 为项目实际文档，许可证改为 Apache-2.0\")",
+      "Bash(git -c user.email=\"claude@local\" -c user.name=\"kuilunfuzhe\" commit -m \"docs: 添加 AGENTS.md 与 CLAUDE.md\")"
     ]
   }
 }
