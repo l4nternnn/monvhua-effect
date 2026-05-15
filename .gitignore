@@ -40,3 +40,6 @@ replay_*.log
 *.jfr
 .github/
 .claude/
+AGENTS.md
+CLAUDE.md
+开发要求.md
