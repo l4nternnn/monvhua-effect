@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh auth *)",
+      "Bash(git --version)",
+      "Bash(mkdir -p \"H:/Projects/monvhua-effect-template-1.21.8/src/main/resources/assets/monvhua/textures/mob_effect\")",
+      "Bash(python -c ' *)",
+      "Bash(./gradlew compileJava --no-daemon)",
+      "Bash(unzip -l minecraft-merged.jar)",
+      "Bash(unzip -l \"/c/Users/Administrator/.gradle/caches/fabric-loom/1.21.8/minecraft-merged.jar\")",
+      "Bash(xargs -I{} basename {})",
+      "Bash(grep -E \"MobEffect$|MobEffectCategory$|MobEffectInstance$|ServerPlayer$|Component$|ResourceLocation$|BuiltInRegistries$|Holder$|Registry$|Scoreboard$|LivingEntity$|MinecraftServer$|ServerLevel$|ChatFormatting$|Objective$\" \"/c/Users/Administrator/.gradle/caches/fabric-loom/1.21.8/loom.mappings.1_21_8.layered+hash.2198-v2/mappings.tiny\")",
+      "Bash(grep -E \"Scoreboard$|Objective$|ReadOnlyScoreInfo|ScoreAccess|MobEffects$|StatusEffectInstance|HumanoidArmor|Formatting$\" \"/c/Users/Administrator/.gradle/caches/fabric-loom/1.21.8/loom.mappings.1_21_8.layered+hash.2198-v2/mappings.tiny\")",
+      "Bash(xargs -I{} bash -c 'unzip -l \"{}\" 2>/dev/null | grep -lE \"ServerTickEvents|ServerLivingEntityEvents|ServerPlayConnectionEvents\" >/dev/null && echo \"{}\"')",
+      "Bash(xargs -I{} ls -la {})",
+      "Bash(sort -k6,7)",
+      "Bash(unzip -l /c/Users/Administrator/.gradle/caches/modules-2/files-2.1/net.fabricmc.fabric-api/fabric-lifecycle-events-v1/2.6.4+db4dfd852c/5cce000900f3b650c8f907f207db45c760bab56/fabric-lifecycle-events-v1-2.6.4+db4dfd852c.jar)",
+      "Bash(xargs -I{} bash -c 'unzip -p \"{}\" \"META-INF/MANIFEST.MF\" 2>/dev/null | grep -q \"ServerPlayConnectionEvents\" && echo {}')",
+      "Bash(./gradlew build *)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git -c user.email=claude@local -c user.name=kuilunfuzhe commit -m 'feat: 实现魔女化阶段状态效果 mod 初版 *)"
+    ]
+  }
+}

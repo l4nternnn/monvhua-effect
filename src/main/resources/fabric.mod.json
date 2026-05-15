@@ -1,0 +1,25 @@
+{
+	"schemaVersion": 1,
+	"id": "monvhua",
+	"version": "${version}",
+	"name": "魔女化状态效果",
+	"description": "纯显示用途的魔女化阶段状态效果系统，由 monvhua 计分板驱动。",
+	"authors": [
+		"kuilunfuzhe"
+	],
+	"contact": {},
+	"license": "CC0-1.0",
+	"icon": "assets/monvhua/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.kuilunfuzhe.monvhua.MonvhuaMod"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.16.0",
+		"minecraft": "~1.21.8",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}
