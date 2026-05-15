@@ -1,8 +1,15 @@
 # 魔女化状态效果 (Monvhua Effect)
 
+[![Release](https://img.shields.io/github/v/release/l4nternnn/monvhua-effect?include_prereleases&label=Release)](https://github.com/l4nternnn/monvhua-effect/releases/latest)
+[![Minecraft](https://img.shields.io/badge/Minecraft-1.21.8-62B47A?logo=minecraft&logoColor=white)](https://www.minecraft.net/)
+[![Loader](https://img.shields.io/badge/Loader-Fabric-DBB69B)](https://fabricmc.net/)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+
 一个用于 **Minecraft 1.21.8 Fabric** 的服务端驱动 Mod。它把外部数据包维护的「魔女化进度」计分板，映射成 8 个**纯显示用途**的自定义状态效果，让玩家在背包效果栏中能看到自己当前所处的阶段，同时在跨阶段时通过聊天栏推送描述。
 
 > 状态效果**不附带任何 buff/debuff**，不修改玩家任何属性，只是一个由计分板驱动的可视化标记。
+
+📦 **下载**：前往 [Releases 页面](https://github.com/l4nternnn/monvhua-effect/releases) 获取最新 jar。
 
 ---
 
@@ -39,7 +46,7 @@
 
 ## 安装
 
-1. 从 [Releases](https://github.com/l4nternnn/monvhua-effect/releases) 下载或自行构建 jar
+1. 从 [Releases](https://github.com/l4nternnn/monvhua-effect/releases) 下载 `monvhua-<版本>.jar`，或自行构建
 2. 放入服务端 / 客户端的 `mods/` 目录
 3. 该 Mod 同时需要装在服务端和客户端（图标贴图由客户端渲染）
 
