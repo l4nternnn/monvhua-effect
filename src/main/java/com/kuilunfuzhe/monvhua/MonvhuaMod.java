@@ -125,8 +125,9 @@ public class MonvhuaMod implements ModInitializer {
                     }
                 } else {
                     String description = role.getDialogue(stage);
+                    ChatFormatting descColor = stage.threshold >= 60 ? ChatFormatting.DARK_RED : ChatFormatting.GRAY;
                     player.sendSystemMessage(
-                            Component.literal(description).withStyle(ChatFormatting.GRAY)
+                            Component.literal(description).withStyle(descColor)
                     );
                 }
             }
