@@ -16,14 +16,16 @@
 ## 特性
 
 - **14 个角色 × 8 个阶段 = 112 个独立 `MobEffect`**，每个角色一套独立图标和翻译键
+- **12 个角色已实装专属文案**（ema / cero 暂时共用通用文案，待补齐）
 - 阶段判定基于名为 `monvhua` 的 `dummy` 计分板数值（取不超过当前数值的最大阈值）
-- 角色识别基于玩家 scoreboard tag，14 个角色 id 之一：`ema` / `cero` / `nnk` / `margo` / `leiya` / `milya` / `sherry` / `yalisa` / `noa` / `anan` / `yuki` / `mll` / `coco` / `hanna`
+- 角色识别基于玩家 scoreboard tag：`ema` `cero` `nnk` `margo` `leiya` `milya` `sherry` `yalisa` `noa` `anan` `yuki` `mll` `coco` `hanna`
 - 服务端每秒（20 tick）轮询一次：
   - 玩家身上无角色 tag → 清掉效果，跳过
   - 跨阶段 / 换角色 → 移除旧效果 → 添加新效果（`INFINITE_DURATION`，无图标抖动）
-  - 在聊天栏推送 `◆ 魔女化阶段——<阶段名>` + 完整描述（首次进入游戏不显示「阶段变化」字样）
-- 同一效果内反复设分 / 反复打同一 tag **不刷屏、不闪烁**
-- 玩家断开 / 死亡时清理服务端缓存，重生后能正确重新触发
+  - 聊天栏推送 `◆ 魔女化阶段——<阶段名>` + 角色专属描述
+- **tainted 阶段（≥10 分）**：三段文案随机排列，首段随阶段切换发出，后两段各延迟 90-150 秒依次推送（三次共 3-5 分钟），营造渐进式沉浸感
+- 同一效果内反复设分 / 反复打同一 tag **不刷屏、不闪烁**；阶段/角色切换自动取消未发完的 tainted 队列
+- 玩家断开 / 死亡时清理缓存与队列，重生后重新触发完整流程（含 tainted 三段）
 - 阶段类别按倾向分别使用 `BENEFICIAL` / `NEUTRAL` / `HARMFUL`，背包列表边框颜色随之变化
 
 ## 阶段表
@@ -64,7 +66,7 @@
 /scoreboard players set @s monvhua 45      # 中度魔女化
 ```
 
-按 `E` 打开背包，右侧效果栏即可看到当前角色 + 阶段的图标，持续时间显示为 `**:**`（无限）。跨越阈值或换角色时聊天栏会推送描述。
+按 `E` 打开背包，右侧效果栏即可看到当前角色 + 阶段的图标，持续时间显示为 `**:**`（无限）。跨越阈值或换角色时聊天栏会推送角色专属描述。进入略染污浊（≥10）时，还会有三段随机文案在 3-5 分钟内陆续浮现。
 
 切换角色：
 
@@ -112,8 +114,8 @@ src/main/resources/assets/monvhua/textures/mob_effect/<role>_<stage>.png
 
 ```
 src/main/java/com/kuilunfuzhe/monvhua/
- ├── MonvhuaMod.java              主入口：注册 112 个效果、tick 轮询、聊天推送
- ├── WitchRole.java               14 个角色枚举（id + fromPlayer(ServerPlayer)）
+ ├── MonvhuaMod.java              主入口：注册 112 个效果、tick 轮询、聊天推送、tainted 三段调度
+ ├── WitchRole.java               14 个角色枚举（id/tag、taintedVariants、stageDialogues）
  ├── WitchStage.java              8 阶段枚举（阈值、id、名称、描述、颜色、类别）
  └── effect/
       └── DisplayOnlyEffect.java  空逻辑 MobEffect
