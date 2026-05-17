@@ -32,16 +32,16 @@
 
 | 阈值 | 内部 ID | 显示名称 | 类别 | 颜色 |
 |------|---------|----------|------|------|
-| 0  | `sane`        | 神智清醒   | BENEFICIAL | `#55FF55` |
-| 10 | `tainted`     | 略染污浊   | BENEFICIAL | `#00AA00` |
-| 25 | `light`       | 轻度魔女化 | NEUTRAL    | `#FFFF55` |
-| 45 | `medium`      | 中度魔女化 | NEUTRAL    | `#FFAA00` |
-| 60 | `high`        | 高度魔女化 | HARMFUL    | `#FF5555` |
-| 70 | `severe`      | 重度魔女化 | HARMFUL    | `#AA0000` |
-| 80 | `proto_witch` | 准魔女     | HARMFUL    | `#FF55FF` |
-| 90 | `witch`       | 魔女       | HARMFUL    | `#AA00AA` |
+| 0  | `1` | 神智清醒   | BENEFICIAL | `#55FF55` |
+| 10 | `2` | 略染污浊   | BENEFICIAL | `#00AA00` |
+| 25 | `3` | 轻度魔女化 | NEUTRAL    | `#FFFF55` |
+| 45 | `4` | 中度魔女化 | NEUTRAL    | `#FFAA00` |
+| 60 | `5` | 高度魔女化 | HARMFUL    | `#FF5555` |
+| 70 | `6` | 重度魔女化 | HARMFUL    | `#AA0000` |
+| 80 | `7` | 准魔女     | HARMFUL    | `#FF55FF` |
+| 90 | `8` | 魔女       | HARMFUL    | `#AA00AA` |
 
-每个效果的最终注册 id 为 `monvhua:<role>_<stage>`，例如 `monvhua:ema_high`。
+每个效果的最终注册 id 为 `monvhua:<role>_<stage>`，例如 `monvhua:ema_5`。
 
 ## 环境要求
 
@@ -107,7 +107,7 @@ src/main/resources/assets/monvhua/textures/mob_effect/<role>_<stage>.png
 翻译文件位于 `src/main/resources/assets/monvhua/lang/{zh_cn,en_us}.json`，每个效果一条键，形如：
 
 ```json
-"effect.monvhua.ema_high": "高度魔女化"
+"effect.monvhua.ema_5": "高度魔女化"
 ```
 
 ## 项目结构
