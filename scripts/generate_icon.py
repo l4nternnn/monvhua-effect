@@ -268,7 +268,7 @@ def classify(r, g, b, a):
 
 # === Main ===
 WITCH_ROLES = [
-    'ema', 'cero', 'nnk', 'margo', 'leiya', 'milya', 'sherry',
+    'ema', 'cero', 'nnk', 'mago', 'leiya', 'milya', 'sherry',
     'yalisa', 'noa', 'anan', 'yuki', 'mll', 'coco', 'hanna',
 ]
 STAGE_NAMES = ['sane', 'tainted', 'light', 'medium', 'high', 'severe', 'proto_witch', 'witch']

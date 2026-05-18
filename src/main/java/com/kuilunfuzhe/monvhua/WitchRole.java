@@ -141,7 +141,7 @@ public enum WitchRole {
 …………死掉吧…
 这是…代价...是，死局…"""
             )),
-    MARGO("margo",
+    MARGO("mago",
             List.of(
             "有点恍惚呢…",
             "我的能力有所增强……这就是魔女化吗？…有点好奇呢...",

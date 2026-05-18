@@ -18,7 +18,7 @@
 - **14 个角色 × 8 个阶段 = 112 个独立 `MobEffect`**，每个角色一套独立图标和翻译键
 - **12 个角色已实装专属文案**（ema / cero 暂时共用通用文案，待补齐）
 - 阶段判定基于名为 `monvhua` 的 `dummy` 计分板数值（取不超过当前数值的最大阈值）
-- 角色识别基于玩家 scoreboard tag：`ema` `cero` `nnk` `margo` `leiya` `milya` `sherry` `yalisa` `noa` `anan` `yuki` `mll` `coco` `hanna`
+- 角色识别基于玩家 scoreboard tag：`ema` `cero` `nnk` `mago` `leiya` `milya` `sherry` `yalisa` `noa` `anan` `yuki` `mll` `coco` `hanna`
 - 服务端每秒（20 tick）轮询一次：
   - 玩家身上无角色 tag → 清掉效果，跳过
   - 跨阶段 / 换角色 → 移除旧效果 → 添加新效果（`INFINITE_DURATION`，无图标抖动）
