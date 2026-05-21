@@ -10,6 +10,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffect;
@@ -78,15 +79,16 @@ public class MonvhuaMod implements ModInitializer {
                         && player.getTags().contains("MonvhuaFull");
                 if (canFloat && !floatingPlayers.contains(uuid)) {
                     player.getAbilities().mayfly = true;
+                    player.connection.send(new ClientboundPlayerAbilitiesPacket(player.getAbilities()));
                     floatingPlayers.add(uuid);
-                    player.displayClientMessage(
+                    player.sendSystemMessage(
                             Component.literal("您已获得飞行能力，尽情杀戮吧！")
-                                    .withStyle(ChatFormatting.DARK_RED),
-                            true
+                                    .withStyle(ChatFormatting.DARK_RED)
                     );
                 } else if (!canFloat && floatingPlayers.remove(uuid)) {
                     player.getAbilities().mayfly = false;
                     player.getAbilities().flying = false;
+                    player.connection.send(new ClientboundPlayerAbilitiesPacket(player.getAbilities()));
                     player.fallDistance = 0;
                 }
 
