@@ -83,6 +83,10 @@ public class MonvhuaMod implements ModInitializer {
                 ReadOnlyScoreInfo info = scoreboard.getPlayerScoreInfo(player, objective);
                 int value = info == null ? 0 : info.value();
                 WitchStage stage = WitchStage.fromScore(value);
+                if (stage == WitchStage.PROTO_WITCH
+                        && player.getTags().contains("MonvhuaFull")) {
+                    stage = WitchStage.WITCH;
+                }
                 Holder<MobEffect> desired = EFFECTS.get(role).get(stage);
 
                 Holder<MobEffect> previous = lastEffect.get(uuid);

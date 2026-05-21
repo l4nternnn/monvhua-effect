@@ -25,7 +25,7 @@ public enum WitchStage {
     PROTO_WITCH(80, "7", "准魔女",
             "理性所剩无几，杀人欲望强烈无比，是一座即将爆发的火山。杀人后会暂时冷静下来，但欲望终将再次降临。此阶段仍须遵守杀人限制，凶杀会大幅减少魔女化进度。",
             0xFF55FF, MobEffectCategory.HARMFUL, ChatFormatting.LIGHT_PURPLE),
-    WITCH(90, "8", "魔女",
+    WITCH(Integer.MAX_VALUE, "8", "魔女",
             "最后的理智也即将丢失。没有救赎，没有希望，强烈的杀人欲望充斥脑海。并非完全失去意识，而是在极强杀人欲望驱使之下保留最后一点意志——需要进行RP演绎，而非无脑清图行为。杀完一个人后也会暂时冷静。被看守抓捕，也许是你不再伤害他人最后的方式。作为怪物，你已经没有回头路了。",
             0xAA00AA, MobEffectCategory.HARMFUL, ChatFormatting.DARK_PURPLE);
 
