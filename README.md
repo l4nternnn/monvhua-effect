@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/l4nternnn/monvhua-effect?include_prereleases&label=Release)](https://github.com/l4nternnn/monvhua-effect/releases/latest)
 [![Minecraft](https://img.shields.io/badge/Minecraft-1.21.8-62B47A?logo=minecraft&logoColor=white)](https://www.minecraft.net/)
 [![Loader](https://img.shields.io/badge/Loader-Fabric-DBB69B)](https://fabricmc.net/)
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 一个用于 **Minecraft 1.21.8 Fabric** 的服务端驱动 Mod。它把外部数据包维护的「魔女化进度」计分板，按玩家身上的 **角色 tag** 映射成 14 × 8 = 112 个**纯显示用途**的自定义状态效果，让每个角色在背包效果栏中能看到自己专属的当前阶段图标，跨阶段或换角色时在聊天栏推送描述。
 
@@ -123,4 +123,4 @@ src/main/java/com/kuilunfuzhe/monvhua/
 
 ## License
 
-Apache License 2.0，详见 [`LICENSE`](LICENSE)。
+GNU General Public License v3.0，详见 [`LICENSE`](LICENSE)。
