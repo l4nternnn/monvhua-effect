@@ -14,6 +14,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.scores.Objective;
 import net.minecraft.world.scores.ReadOnlyScoreInfo;
 import net.minecraft.world.scores.Scoreboard;
@@ -35,6 +36,9 @@ public class MonvhuaMod implements ModInitializer {
     private static final Random RANDOM = new Random();
     private static final Map<UUID, List<String>> pendingTainted = new HashMap<>();
     private static final Map<UUID, Integer> pendingTaintedDelay = new HashMap<>();
+
+    // Floating flight ability tracking
+    private static final Set<UUID> floatingPlayers = new HashSet<>();
 
     private int tickCounter = 0;
 
@@ -68,6 +72,23 @@ public class MonvhuaMod implements ModInitializer {
 
                 // Process pending tainted messages first
                 processPendingTainted(player, uuid);
+
+                // Floating flight ability
+                boolean canFloat = player.getTags().contains("Floating")
+                        && player.getTags().contains("MonvhuaFull");
+                if (canFloat && !floatingPlayers.contains(uuid)) {
+                    player.getAbilities().mayfly = true;
+                    floatingPlayers.add(uuid);
+                    player.displayClientMessage(
+                            Component.literal("您已获得飞行能力，尽情杀戮吧！")
+                                    .withStyle(ChatFormatting.DARK_RED),
+                            true
+                    );
+                } else if (!canFloat && floatingPlayers.remove(uuid)) {
+                    player.getAbilities().mayfly = false;
+                    player.getAbilities().flying = false;
+                    player.fallDistance = 0;
+                }
 
                 if (role == null) {
                     Holder<MobEffect> prev = lastEffect.remove(uuid);
@@ -141,6 +162,7 @@ public class MonvhuaMod implements ModInitializer {
             UUID uuid = handler.getPlayer().getUUID();
             lastEffect.remove(uuid);
             cancelPendingTainted(uuid);
+            floatingPlayers.remove(uuid);
         });
 
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
@@ -148,7 +170,18 @@ public class MonvhuaMod implements ModInitializer {
                 UUID uuid = player.getUUID();
                 lastEffect.remove(uuid);
                 cancelPendingTainted(uuid);
+                floatingPlayers.remove(uuid);
             }
+        });
+
+        ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> {
+            if (entity instanceof ServerPlayer player
+                    && floatingPlayers.contains(player.getUUID())
+                    && source.typeHolder().is(DamageTypes.FALL)) {
+                player.fallDistance = 0;
+                return false;
+            }
+            return true;
         });
     }
 
