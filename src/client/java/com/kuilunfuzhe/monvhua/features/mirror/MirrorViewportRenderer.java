@@ -31,16 +31,22 @@ public class MirrorViewportRenderer {
 		if (renderingMirror.getAndSet(true)) return;
 
 		try {
-			float camYaw = mainCamera.getYaw();
-			float camPitch = mainCamera.getPitch();
-			Vec3d originOffset = MirrorClientManager.getOriginOffset();
+			Vec3d playerPos = client.player.getPos();
 
 			for (int slot = 0; slot < 2; slot++) {
 				MirrorClientManager.CameraData data = MirrorClientManager.getSlot(slot);
 				if (!data.active()) continue;
 
-				// Use mirror position directly, with small eye-height offset
-				Vec3d slotPos = data.pos().add(originOffset).add(0, 1.6, 0);
+				// Mirror camera at stored position (absolute world coords) + eye height
+				Vec3d slotPos = data.pos().add(0, 1.6, 0);
+
+				// Camera looks from mirror position toward the player
+				float dx = (float)(playerPos.x - slotPos.x);
+				float dy = (float)(playerPos.y - slotPos.y);
+				float dz = (float)(playerPos.z - slotPos.z);
+				float distXZ = (float)Math.sqrt(dx * dx + dz * dz);
+				float lookYaw = (float)Math.toDegrees(Math.atan2(-dx, -dz));
+				float lookPitch = (float)Math.toDegrees(Math.atan2(dy, distXZ));
 
 				SimpleFramebuffer fbo = getOrCreateFbo(slot);
 				FramebufferOverride.setOverride(fbo);
@@ -49,7 +55,7 @@ public class MirrorViewportRenderer {
 					Camera mirrorCamera = new Camera();
 					CameraAccessor acc = (CameraAccessor) mirrorCamera;
 					acc.invokeSetPos(slotPos.x, slotPos.y, slotPos.z);
-					acc.invokeSetRotation(camYaw, camPitch);
+					acc.invokeSetRotation(lookYaw, lookPitch);
 
 					float fovDeg = client.options.getFov().getValue().floatValue();
 					float fovRad = fovDeg * (float) (Math.PI / 180.0);
@@ -60,8 +66,8 @@ public class MirrorViewportRenderer {
 						client.gameRenderer.getFarPlaneDistance()
 					);
 
-					float yawRad = camYaw * (float)(Math.PI / 180.0);
-					float pitchRad = camPitch * (float)(Math.PI / 180.0);
+					float yawRad = lookYaw * (float)(Math.PI / 180.0);
+					float pitchRad = lookPitch * (float)(Math.PI / 180.0);
 					Matrix4f viewMatrix = new Matrix4f().lookAt(
 						(float)slotPos.x, (float)slotPos.y, (float)slotPos.z,
 						(float)(slotPos.x - Math.sin(yawRad) * Math.cos(pitchRad)),
@@ -87,6 +93,9 @@ public class MirrorViewportRenderer {
 			}
 
 			hasRenderedMirrors = true;
+
+			// Rebuild chunk visibility for main camera after mirror rendering
+			client.worldRenderer.scheduleTerrainUpdate();
 		} finally {
 			renderingMirror.set(false);
 		}
