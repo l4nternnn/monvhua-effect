@@ -14,7 +14,7 @@ public final class mirror_of_then_and_now {
     public static Item MIRROR_ITEM;
 
     public static void initialize() {
-        Identifier id = Identifier.of("monvhua", ITEM_ID);
+        Identifier id = Identifier.of("clairvoyance", ITEM_ID);
         RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM, id);
         Item.Settings settings = new Item.Settings()
                 .registryKey(key)
