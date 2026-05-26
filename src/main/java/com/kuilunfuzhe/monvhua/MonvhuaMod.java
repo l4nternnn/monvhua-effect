@@ -5,19 +5,19 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.minecraft.ChatFormatting;
-import net.minecraft.core.Holder;
-import net.minecraft.core.Registry;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.effect.MobEffect;
-import net.minecraft.world.effect.MobEffectInstance;
-import net.minecraft.world.damagesource.DamageTypes;
-import net.minecraft.world.scores.Objective;
-import net.minecraft.world.scores.ReadOnlyScoreInfo;
-import net.minecraft.world.scores.Scoreboard;
+import net.minecraft.entity.damage.DamageTypes;
+import net.minecraft.entity.effect.StatusEffect;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.registry.Registries;
+import net.minecraft.registry.Registry;
+import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.scoreboard.Scoreboard;
+import net.minecraft.scoreboard.ScoreboardObjective;
+import net.minecraft.scoreboard.ScoreboardScore;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,9 +28,9 @@ public class MonvhuaMod implements ModInitializer {
     public static final String OBJECTIVE_NAME = "monvhua";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-    public static final EnumMap<WitchRole, EnumMap<WitchStage, Holder<MobEffect>>> EFFECTS =
+    public static final EnumMap<WitchRole, EnumMap<WitchStage, RegistryEntry<StatusEffect>>> EFFECTS =
             new EnumMap<>(WitchRole.class);
-    private static final Map<UUID, Holder<MobEffect>> lastEffect = new HashMap<>();
+    private static final Map<UUID, RegistryEntry<StatusEffect>> lastEffect = new HashMap<>();
 
     // Tainted stage random scheduling
     private static final Random RANDOM = new Random();
@@ -46,12 +46,12 @@ public class MonvhuaMod implements ModInitializer {
     public void onInitialize() {
         int count = 0;
         for (WitchRole role : WitchRole.values()) {
-            EnumMap<WitchStage, Holder<MobEffect>> roleMap = new EnumMap<>(WitchStage.class);
+            EnumMap<WitchStage, RegistryEntry<StatusEffect>> roleMap = new EnumMap<>(WitchStage.class);
             for (WitchStage stage : WitchStage.values()) {
                 String effectId = role.id + "_" + stage.id;
-                Holder<MobEffect> holder = Registry.registerForHolder(
-                        BuiltInRegistries.MOB_EFFECT,
-                        ResourceLocation.fromNamespaceAndPath(MOD_ID, effectId),
+                RegistryEntry<StatusEffect> holder = Registry.registerReference(
+                        Registries.STATUS_EFFECT,
+                        Identifier.of(MOD_ID, effectId),
                         new DisplayOnlyEffect(stage.category, stage.color)
                 );
                 roleMap.put(stage, holder);
@@ -66,8 +66,8 @@ public class MonvhuaMod implements ModInitializer {
             if (tickCounter < 20) return;
             tickCounter = 0;
 
-            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                UUID uuid = player.getUUID();
+            for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+                UUID uuid = player.getUuid();
                 WitchRole role = WitchRole.fromPlayer(player);
 
                 // Process pending tainted messages first
@@ -80,9 +80,9 @@ public class MonvhuaMod implements ModInitializer {
                     player.getAbilities().mayfly = true;
                     player.onUpdateAbilities();
                     floatingPlayers.add(uuid);
-                    player.sendSystemMessage(
-                            Component.literal("您已获得飞行能力，尽情杀戮吧！")
-                                    .withStyle(ChatFormatting.DARK_RED)
+                    player.sendMessage(
+                            Text.literal("您已获得飞行能力，尽情杀戮吧！")
+                                    .formatted(Formatting.DARK_RED)
                     );
                 } else if (!canFloat && floatingPlayers.remove(uuid)) {
                     player.getAbilities().mayfly = false;
@@ -92,48 +92,48 @@ public class MonvhuaMod implements ModInitializer {
                 }
 
                 if (role == null) {
-                    Holder<MobEffect> prev = lastEffect.remove(uuid);
-                    if (prev != null) player.removeEffect(prev);
+                    RegistryEntry<StatusEffect> prev = lastEffect.remove(uuid);
+                    if (prev != null) player.removeStatusEffect(prev);
                     cancelPendingTainted(uuid);
                     continue;
                 }
 
-                Scoreboard scoreboard = player.level().getScoreboard();
-                Objective objective = scoreboard.getObjective(OBJECTIVE_NAME);
+                Scoreboard scoreboard = player.getServerWorld().getScoreboard();
+                ScoreboardObjective objective = scoreboard.getObjective(OBJECTIVE_NAME);
                 if (objective == null) continue;
 
-                ReadOnlyScoreInfo info = scoreboard.getPlayerScoreInfo(player, objective);
-                int value = info == null ? 0 : info.value();
+                ScoreboardScore info = scoreboard.getScore(player, objective);
+                int value = info == null ? 0 : info.getScore();
                 WitchStage stage = WitchStage.fromScore(value);
                 if (stage == WitchStage.PROTO_WITCH
                         && player.getTags().contains("MonvhuaFull")) {
                     stage = WitchStage.WITCH;
                 }
-                Holder<MobEffect> desired = EFFECTS.get(role).get(stage);
+                RegistryEntry<StatusEffect> desired = EFFECTS.get(role).get(stage);
 
-                Holder<MobEffect> previous = lastEffect.get(uuid);
+                RegistryEntry<StatusEffect> previous = lastEffect.get(uuid);
                 if (previous == desired) continue;
 
                 // Stage/role changed: cancel any pending tainted messages
                 cancelPendingTainted(uuid);
                 lastEffect.put(uuid, desired);
-                if (previous != null) player.removeEffect(previous);
-                player.addEffect(new MobEffectInstance(
+                if (previous != null) player.removeStatusEffect(previous);
+                player.addStatusEffect(new StatusEffectInstance(
                         desired,
-                        MobEffectInstance.INFINITE_DURATION,
+                        StatusEffectInstance.INFINITE_DURATION,
                         0, false, false, true
                 ));
 
                 // Chat messages
                 String fullName = "魔女化阶段——" + stage.displayName;
                 if (previous != null) {
-                    player.sendSystemMessage(
-                            Component.literal("【阶段变化】").withStyle(ChatFormatting.GRAY)
-                                    .append(Component.literal(fullName).withStyle(stage.chatColor))
+                    player.sendMessage(
+                            Text.literal("【阶段变化】").formatted(Formatting.GRAY)
+                                    .append(Text.literal(fullName).formatted(stage.chatColor))
                     );
                 }
-                player.sendSystemMessage(
-                        Component.literal("◆ " + fullName).withStyle(stage.chatColor, ChatFormatting.BOLD)
+                player.sendMessage(
+                        Text.literal("◆ " + fullName).formatted(stage.chatColor, Formatting.BOLD)
                 );
 
                 // Stage description
@@ -142,8 +142,8 @@ public class MonvhuaMod implements ModInitializer {
                     List<String> variants = new ArrayList<>(role.taintedVariants);
                     Collections.shuffle(variants, RANDOM);
                     String description = variants.get(0);
-                    player.sendSystemMessage(
-                            Component.literal(description).withStyle(ChatFormatting.GRAY)
+                    player.sendMessage(
+                            Text.literal(description).formatted(Formatting.GRAY)
                     );
                     if (variants.size() >= 3) {
                         pendingTainted.put(uuid, new ArrayList<>(variants.subList(1, 3)));
@@ -151,24 +151,24 @@ public class MonvhuaMod implements ModInitializer {
                     }
                 } else {
                     String description = role.getDialogue(stage);
-                    ChatFormatting descColor = stage.threshold >= 60 ? ChatFormatting.DARK_RED : ChatFormatting.GRAY;
-                    player.sendSystemMessage(
-                            Component.literal(description).withStyle(descColor)
+                    Formatting descColor = stage.threshold >= 60 ? Formatting.DARK_RED : Formatting.GRAY;
+                    player.sendMessage(
+                            Text.literal(description).formatted(descColor)
                     );
                 }
             }
         });
 
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
-            UUID uuid = handler.getPlayer().getUUID();
+            UUID uuid = handler.getPlayer().getUuid();
             lastEffect.remove(uuid);
             cancelPendingTainted(uuid);
             floatingPlayers.remove(uuid);
         });
 
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
-            if (entity instanceof ServerPlayer player) {
-                UUID uuid = player.getUUID();
+            if (entity instanceof ServerPlayerEntity player) {
+                UUID uuid = player.getUuid();
                 lastEffect.remove(uuid);
                 cancelPendingTainted(uuid);
                 floatingPlayers.remove(uuid);
@@ -176,8 +176,8 @@ public class MonvhuaMod implements ModInitializer {
         });
 
         ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> {
-            if (entity instanceof ServerPlayer player
-                    && floatingPlayers.contains(player.getUUID())
+            if (entity instanceof ServerPlayerEntity player
+                    && floatingPlayers.contains(player.getUuid())
                     && source.typeHolder().is(DamageTypes.FALL)) {
                 player.fallDistance = 0;
                 return false;
@@ -186,7 +186,7 @@ public class MonvhuaMod implements ModInitializer {
         });
     }
 
-    private static void processPendingTainted(ServerPlayer player, UUID uuid) {
+    private static void processPendingTainted(ServerPlayerEntity player, UUID uuid) {
         Integer delay = pendingTaintedDelay.get(uuid);
         if (delay == null) return;
 
@@ -198,8 +198,8 @@ public class MonvhuaMod implements ModInitializer {
         List<String> queue = pendingTainted.get(uuid);
         if (queue != null && !queue.isEmpty()) {
             String msg = queue.remove(0);
-            player.sendSystemMessage(
-                    Component.literal(msg).withStyle(ChatFormatting.GRAY)
+            player.sendMessage(
+                    Text.literal(msg).formatted(Formatting.GRAY)
             );
         }
 

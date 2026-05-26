@@ -1,6 +1,6 @@
 package com.kuilunfuzhe.monvhua;
 
-import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.network.ServerPlayerEntity;
 
 import java.util.List;
 import java.util.Map;
@@ -616,7 +616,7 @@ public enum WitchRole {
         this.stageDialogues = stageDialogues;
     }
 
-    public static WitchRole fromPlayer(ServerPlayer player) {
+    public static WitchRole fromPlayer(ServerPlayerEntity player) {
         var tags = player.getTags();
         for (WitchRole role : values()) {
             if (tags.contains(role.id)) return role;
