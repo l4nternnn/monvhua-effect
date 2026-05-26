@@ -13,15 +13,15 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class CarryManager {
-	// Carrier -> carried entity data
+	// 搬运者 -> 被搬运实体数据
 	public static final Map<ServerPlayerEntity, CarriedEntityData> CARRIED_ENTITIES = new ConcurrentHashMap<>();
-	// Carried entity -> carrier (for quick struggle lookup)
+	// 被搬运实体 -> 搬运者（用于快速挣扎查找）
 	public static final Map<Entity, ServerPlayerEntity> CARRIED_BY = new ConcurrentHashMap<>();
-	// Carry cooldown: entity -> cooldown end timestamp
+	// 搬运冷却：实体 -> 冷却结束时间戳
 	public static final Map<Entity, Long> CARRIED_COOLDOWN = new ConcurrentHashMap<>();
-	// Struggle counter: carried entity -> current sneak count
+	// 挣扎计数器：被搬运实体 -> 当前潜行次数
 	public static final Map<Entity, Integer> STRUGGLE_COUNTER = new ConcurrentHashMap<>();
-	// XP drain: carrier -> accumulated ticks
+	// 经验消耗：搬运者 -> 累积刻数
 	public static final Map<ServerPlayerEntity, Integer> CARRY_XP_TICK_COUNTER = new ConcurrentHashMap<>();
 	public static int CARRY_XP_DRAIN_RATE = 1;
 
@@ -160,7 +160,7 @@ public class CarryManager {
 			}
 		}
 
-		// XP drain every 20 ticks
+		// 每 20 刻消耗一次经验
 		if (carried instanceof LivingEntity && !carrier.isCreative() && !carrier.getCommandTags().contains("kebao")) {
 			int tickCount = CARRY_XP_TICK_COUNTER.merge(carrier, 1, (oldVal, v) -> oldVal + 1);
 			if (tickCount >= 20) {

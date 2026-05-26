@@ -1,4 +1,4 @@
-// AnchorParticleS2CPacket.java
+// 锚点粒子 S2C 数据包
 package com.kuilunfuzhe.monvhua.network.clairvoyance;
 
 import net.minecraft.network.RegistryByteBuf;

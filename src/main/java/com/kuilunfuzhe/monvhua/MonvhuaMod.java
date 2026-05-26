@@ -65,20 +65,20 @@ public class MonvhuaMod implements ModInitializer {
     public static final String OBJECTIVE_NAME = "monvhua";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-    // ===== monvhua effect system =====
+    // ===== 魔女化效果系统 =====
     public static final EnumMap<WitchRole, EnumMap<WitchStage, RegistryEntry<StatusEffect>>> EFFECTS =
             new EnumMap<>(WitchRole.class);
     private static final Map<UUID, RegistryEntry<StatusEffect>> lastEffect = new HashMap<>();
 
-    // Tainted stage random scheduling
+    // 腐化阶段随机调度
     private static final Random RANDOM = new Random();
     private static final Map<UUID, List<String>> pendingTainted = new HashMap<>();
     private static final Map<UUID, Integer> pendingTaintedDelay = new HashMap<>();
 
-    // Floating flight ability tracking
+    // 飘浮飞行能力追踪
     private static final Set<UUID> floatingPlayers = new HashSet<>();
 
-    // ===== clairvoyance shared state =====
+    // ===== 千里眼共享状态 =====
     public static ScreenHandlerType<OtherPlayerInventoryScreenHandler> OTHER_INVENTORY_HANDLER =
             new ScreenHandlerType<>(OtherPlayerInventoryScreenHandler::new, FeatureSet.empty());
     public static final Map<ServerPlayerEntity, ServerPlayerEntity> VIEWING_MAP = new ConcurrentHashMap<>();
@@ -88,7 +88,7 @@ public class MonvhuaMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        // ===== 1. Register 112 DisplayOnlyEffect instances =====
+        // ===== 1. 注册 112 个 DisplayOnlyEffect 实例 =====
         int count = 0;
         for (WitchRole role : WitchRole.values()) {
             EnumMap<WitchStage, RegistryEntry<StatusEffect>> roleMap = new EnumMap<>(WitchStage.class);
@@ -106,7 +106,7 @@ public class MonvhuaMod implements ModInitializer {
         }
         LOGGER.info("[{}] Registered {} role x stage effects.", MOD_ID, count);
 
-        // ===== 2. Network packets =====
+        // ===== 2. 网络包注册 =====
         ModNetworking.registerS2CPackets();
         GlobalConfigS2CPacket.register();
         OpenUIPacket.register();
@@ -151,7 +151,7 @@ public class MonvhuaMod implements ModInitializer {
             MirrorCommand.toggleViewport(context.player());
         });
 
-        // ===== 3. Commands =====
+        // ===== 3. 命令注册 =====
         CommandRegistrationCallback.EVENT.register(GiveBodyPartCommand::register);
         CommandRegistrationCallback.EVENT.register(ReplaceBodyPartCommand::register);
         CommandRegistrationCallback.EVENT.register(WatchCommand::register);
@@ -169,7 +169,7 @@ public class MonvhuaMod implements ModInitializer {
             );
         });
 
-        // ===== 4. Config =====
+        // ===== 4. 配置系统 =====
         GlobalConfigManager configManager = new GlobalConfigManager();
 
         ServerPlayNetworking.registerGlobalReceiver(RequestGlobalConfigC2SPacket.ID, (packet, context) -> {
@@ -203,7 +203,7 @@ public class MonvhuaMod implements ModInitializer {
             ServerPlayNetworking.send(player, new PlayerStageS2CPacket(stage));
         });
 
-        // ===== 5. Camera Watch =====
+        // ===== 5. 摄像机追踪 =====
         ServerTickEvents.END_SERVER_TICK.register(CameraWatchManager::tick);
 
         ServerPlayNetworking.registerGlobalReceiver(CameraWatchStartC2SPacket.ID, (packet, context) -> {
@@ -218,7 +218,7 @@ public class MonvhuaMod implements ModInitializer {
             Evil_Eyes.forceStopWatching(player, server);
         });
 
-        // ===== 6. Module Init =====
+        // ===== 6. 模块初始化 =====
         Evil_Eyes.initialize(configManager);
         Gazeguidance.initialize();
         ModItems.initialize();
@@ -228,12 +228,12 @@ public class MonvhuaMod implements ModInitializer {
         ModBlockEntities.initialize();
         ModScreenHandlers.initialize();
 
-        // ===== 7. Feature Event Registrations =====
+        // ===== 7. 功能事件注册 =====
         CarryEvents.register();
         ViewingModeBlocker.register();
         BodyPartManager.registerEvents();
 
-        // ===== 8. Open Other Inventory =====
+        // ===== 8. 打开他人背包 =====
         ServerPlayNetworking.registerGlobalReceiver(OpenOtherInventoryPayload.ID, (payload, context) -> {
             ServerPlayerEntity requester = context.player();
             if (!requester.isCreative()) {
@@ -262,7 +262,7 @@ public class MonvhuaMod implements ModInitializer {
 
         Registry.register(Registries.SCREEN_HANDLER, Identifier.of(MOD_ID, "other_inventory"), OTHER_INVENTORY_HANDLER);
 
-        // ===== 9. Anchor Destroy =====
+        // ===== 9. 锚点破坏 =====
         ServerPlayNetworking.registerGlobalReceiver(AnchorDestroyC2SPacket.ID, (packet, context) -> {
             ServerPlayerEntity player = context.player();
             UUID standId = packet.standId();
@@ -283,7 +283,7 @@ public class MonvhuaMod implements ModInitializer {
             }
         });
 
-        // ===== 10. Monvhua effect tick loop =====
+        // ===== 10. 魔女化效果 tick 循环 =====
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             tickCounter++;
             if (tickCounter < 20) return;
@@ -293,10 +293,10 @@ public class MonvhuaMod implements ModInitializer {
                 UUID uuid = player.getUuid();
                 WitchRole role = WitchRole.fromPlayer(player);
 
-                // Process pending tainted messages first
+                // 先处理待发送的腐化消息
                 processPendingTainted(player, uuid);
 
-                // Floating flight ability
+                // 飘浮飞行能力
                 boolean canFloat = player.getCommandTags().contains("Floating")
                         && player.getCommandTags().contains("MonvhuaFull");
                 if (canFloat && !floatingPlayers.contains(uuid)) {
@@ -337,17 +337,17 @@ public class MonvhuaMod implements ModInitializer {
                 RegistryEntry<StatusEffect> previous = lastEffect.get(uuid);
                 if (previous == desired) continue;
 
-                // Stage/role changed: cancel any pending tainted messages
+                // 阶段/角色变化：取消所有待发送的腐化消息
                 cancelPendingTainted(uuid);
                 lastEffect.put(uuid, desired);
                 if (previous != null) player.removeStatusEffect(previous);
                 player.addStatusEffect(new StatusEffectInstance(
                         desired,
-                        -1, // infinite duration
+                        -1, // 无限持续时间
                         0, false, false, true
                 ));
 
-                // Chat messages
+                // 聊天消息
                 String fullName = "魔女化阶段——" + stage.displayName;
                 if (previous != null) {
                     player.sendMessage(
@@ -359,7 +359,7 @@ public class MonvhuaMod implements ModInitializer {
                         Text.literal("◆ " + fullName).formatted(stage.chatColor, Formatting.BOLD)
                 );
 
-                // Stage description
+                // 阶段描述
                 if (stage == WitchStage.TAINTED) {
                     List<String> variants = new ArrayList<>(role.taintedVariants);
                     Collections.shuffle(variants, RANDOM);
@@ -381,7 +381,7 @@ public class MonvhuaMod implements ModInitializer {
             }
         });
 
-        // ===== 11. Disconnect Cleanup =====
+        // ===== 11. 断线清理 =====
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
             UUID uuid = player.getUuid();
@@ -396,7 +396,7 @@ public class MonvhuaMod implements ModInitializer {
             VIEW_MODE_PREFERENCE.remove(uuid);
         });
 
-        // ===== 12. Death Cleanup =====
+        // ===== 12. 死亡清理 =====
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
             if (entity instanceof ServerPlayerEntity player) {
                 UUID uuid = player.getUuid();
@@ -406,7 +406,7 @@ public class MonvhuaMod implements ModInitializer {
             }
         });
 
-        // ===== 13. Fall damage prevention for floating players =====
+        // ===== 13. 飘浮玩家免疫摔落伤害 =====
         ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> {
             if (entity instanceof ServerPlayerEntity player
                     && floatingPlayers.contains(player.getUuid())

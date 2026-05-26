@@ -9,7 +9,7 @@ import net.minecraft.util.ActionResult;
 
 public class ViewingModeBlocker {
 	public static void register() {
-		// Block entity attacks
+		// 阻止实体攻击
 		AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
 			if (player instanceof ServerPlayerEntity serverPlayer && isViewing(serverPlayer)) {
 				serverPlayer.sendMessage(Text.literal("§c观看模式下无法攻击"), true);
@@ -18,7 +18,7 @@ public class ViewingModeBlocker {
 			return ActionResult.PASS;
 		});
 
-		// Block block breaking (left-click)
+		// 阻止破坏方块（左键）
 		AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
 			if (player instanceof ServerPlayerEntity serverPlayer && isViewing(serverPlayer)) {
 				serverPlayer.sendMessage(Text.literal("§c观看模式下无法破坏方块"), true);
@@ -27,7 +27,7 @@ public class ViewingModeBlocker {
 			return ActionResult.PASS;
 		});
 
-		// Block block use (right-click)
+		// 阻止使用方块（右键）
 		UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
 			if (player instanceof ServerPlayerEntity serverPlayer && isViewing(serverPlayer)) {
 				serverPlayer.sendMessage(Text.literal("§c观看模式下无法使用方块"), true);
@@ -36,7 +36,7 @@ public class ViewingModeBlocker {
 			return ActionResult.PASS;
 		});
 
-		// Block entity interaction (right-click entity)
+		// 阻止实体交互（右键实体）
 		UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
 			if (player instanceof ServerPlayerEntity serverPlayer && isViewing(serverPlayer)) {
 				serverPlayer.sendMessage(Text.literal("§c观看模式下无法与实体交互"), true);
@@ -45,7 +45,7 @@ public class ViewingModeBlocker {
 			return ActionResult.PASS;
 		});
 
-		// Block item use (right-click air)
+		// 阻止使用物品（右键空气）
 		UseItemCallback.EVENT.register((player, world, hand) -> {
 			if (player instanceof ServerPlayerEntity serverPlayer && isViewing(serverPlayer)) {
 				serverPlayer.sendMessage(Text.literal("§c观看模式下无法使用物品"), true);

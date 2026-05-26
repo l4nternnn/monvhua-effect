@@ -51,7 +51,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public class BodyPartManager {
-	// Per-limb quaternion rotations for death-dropped body parts
+	// 死亡掉落肢体时每个肢体的四元数旋转
 	private static final Quaternionf[] PART_ROTATIONS = {
 		new Quaternionf(0.6087613f, 0.0f, 0.0f, 0.79335344f),
 		new Quaternionf(0.6f, 0.0f, 0.0f, 0.79f),
@@ -83,7 +83,7 @@ public class BodyPartManager {
 	public static final Map<UUID, UUID> DISPLAY_TO_INTERACTION = new ConcurrentHashMap<>();
 
 	public static void registerEvents() {
-		// Player death drops body parts / combined body as interactive display entities
+		// 玩家死亡掉落肢体/合并身体作为可交互展示实体
 		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
 			if (entity instanceof ServerPlayerEntity player) {
 				if (!player.getCommandTags().contains("dead_body") && !player.getCommandTags().contains("dead_part")) return;
@@ -179,7 +179,7 @@ public class BodyPartManager {
 			}
 		});
 
-		// Right-click InteractionEntity: pickup or open inventory
+		// 右键交互实体：拾取或打开背包
 		UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
 			if (world.isClient) return ActionResult.PASS;
 			if (!(entity instanceof InteractionEntity interaction)) return ActionResult.PASS;
@@ -246,7 +246,7 @@ public class BodyPartManager {
 			return ActionResult.SUCCESS;
 		});
 
-		// Place body part item as display entity (right-click air)
+		// 放置肢体物品作为展示实体（右键空气）
 		UseItemCallback.EVENT.register((player, world, hand) -> {
 			if (world.isClient) return ActionResult.PASS;
 			if (!(player instanceof ServerPlayerEntity)) return ActionResult.PASS;
@@ -301,7 +301,7 @@ public class BodyPartManager {
 			return ActionResult.SUCCESS;
 		});
 
-		// Place body part item as display entity (right-click on block)
+		// 放置肢体物品作为展示实体（右键方块）
 		UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
 			if (world.isClient) return ActionResult.PASS;
 			if (!(player instanceof ServerPlayerEntity)) return ActionResult.PASS;
@@ -356,7 +356,7 @@ public class BodyPartManager {
 
 	}
 
-	// ========== Core methods ==========
+	// ========== 核心方法 ==========
 
 	public static String getPartType(ItemStack stack) {
 		Item item = stack.getItem();

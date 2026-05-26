@@ -13,9 +13,9 @@ public class MirrorOfThenAndNowItem extends Item {
 
 	@Override
 	public ActionResult use(World world, PlayerEntity user, Hand hand) {
-		// The toggle logic is handled by:
-		// Client: UseItemCallback in ClairvoyanceClient sends MirrorToggleC2SPacket
-		// Server: C2S global receiver in Clairvoyance.java -> MirrorCommand.toggleViewport()
+		// 切换逻辑由以下两部分处理：
+		// 客户端：ClairvoyanceClient 中的 UseItemCallback 发送 MirrorToggleC2SPacket
+		// 服务端：Clairvoyance.java 中的 C2S 接收器 -> MirrorCommand.toggleViewport()
 		return ActionResult.SUCCESS;
 	}
 }

@@ -714,7 +714,7 @@ public class MonvhuaModClient implements ClientModInitializer {
 			VertexConsumer vertex = consumers.getBuffer(layer);
 			Matrix4f posMat = matrices.peek().getPositionMatrix();
 
-			// Four vertical beams forming a pillar
+			// 四根垂直光束组成光柱
 			float[][] offsets = {{-halfWidth, -halfWidth}, {halfWidth, -halfWidth}, {halfWidth, halfWidth}, {-halfWidth, halfWidth}};
 			for (float[] off : offsets) {
 				float ox = off[0];

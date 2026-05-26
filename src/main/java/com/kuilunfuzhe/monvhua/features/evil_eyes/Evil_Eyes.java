@@ -245,10 +245,10 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
         Evil_Eyes.configManager = configManager;
 
 
-//        SelectViewPayload.register();      // C2S
-//        MarkEntityPayload.register();      // C2S
-//        ExitViewPayload.register();        // C2S
-//        ForceExitViewPayload.register();   // C2S
+//        SelectViewPayload.register();      // 客户端到服务端
+//        MarkEntityPayload.register();      // 客户端到服务端
+//        ExitViewPayload.register();        // 客户端到服务端
+//        ForceExitViewPayload.register();   // 客户端到服务端
 
         Identifier id = Identifier.of("monvhua", "clairvoyance_item");
         RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM, id);

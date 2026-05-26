@@ -29,7 +29,7 @@ import java.util.Map;
 
 public class CarryEvents {
 	public static void register() {
-		// Fall damage sharing between carrier and carried
+		// 搬运者和被搬运者之间的摔落伤害共享
 		ServerLivingEntityEvents.AFTER_DAMAGE.register((entity, source, baseDamageTaken, damageTaken, blocked) -> {
 			if (source.isOf(DamageTypes.FALL) && entity instanceof ServerPlayerEntity carrier) {
 				CarryManager.CarriedEntityData data = CarryManager.CARRIED_ENTITIES.get(carrier);
@@ -39,14 +39,14 @@ public class CarryEvents {
 			}
 		});
 
-		// Server tick: carry position updates, struggle, XP drain
+		// 服务端刻：搬运位置更新、挣扎、经验消耗
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
 			for (Map.Entry<ServerPlayerEntity, CarryManager.CarriedEntityData> entry : CarryManager.CARRIED_ENTITIES.entrySet()) {
 				CarryManager.tickCarried(entry.getKey(), entry.getValue());
 			}
 			CarryManager.cleanupCooldowns();
 
-			// Heaviness: kebao players holding body part items get Slowness
+			// 沉重感：持有肢体物品的 kebao 玩家获得缓慢效果
 			for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
 				if (p.getCommandTags().contains("kebao") && !p.isCreative()) {
 					ItemStack held = p.getMainHandStack();
@@ -64,13 +64,13 @@ public class CarryEvents {
 			}
 		});
 
-		// Disconnect cleanup
+		// 断开连接清理
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
 			ServerPlayerEntity player = handler.getPlayer();
 			CarryManager.cleanupForDisconnect(player);
 		});
 
-		// Carry entity request
+		// 搬运实体请求
 		ServerPlayNetworking.registerGlobalReceiver(CarryEntityPayload.ID, (payload, context) -> {
 			ServerPlayerEntity carrier = context.player();
 			if (!carrier.isSneaking()) return;
@@ -83,7 +83,7 @@ public class CarryEvents {
 			Entity target = world.getEntityById(payload.entityId());
 			if (target == null) return;
 
-			// Check cooldown
+			// 检查冷却
 			Long cooldownEnd = CarryManager.CARRIED_COOLDOWN.get(target);
 			if (cooldownEnd != null && cooldownEnd > System.currentTimeMillis()) {
 				carrier.sendMessage(Text.literal("§c哈..哈~...待会再抱吧，剩余" + ((cooldownEnd - System.currentTimeMillis()) / 1000 + 1) + "秒"), false);
@@ -141,7 +141,7 @@ public class CarryEvents {
 			carrier.sendMessage(Text.literal("§a你抱起了 " + target.getName().getString()), false);
 		});
 
-		// Place carried entity request
+		// 放下被搬运实体请求
 		ServerPlayNetworking.registerGlobalReceiver(PlaceCarriedEntityPayload.ID, (payload, context) -> {
 			ServerPlayerEntity carrier = context.player();
 			CarryManager.CarriedEntityData data = CarryManager.CARRIED_ENTITIES.remove(carrier);
