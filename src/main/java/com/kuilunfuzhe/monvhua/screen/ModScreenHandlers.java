@@ -12,7 +12,7 @@ public class ModScreenHandlers {
 
     public static void initialize() {
         Registry.register(Registries.SCREEN_HANDLER,
-                Identifier.of("clairvoyance", "body_part"),
+                Identifier.of("monvhua", "body_part"),
                 BODY_PART_SCREEN_HANDLER);
     }
 }

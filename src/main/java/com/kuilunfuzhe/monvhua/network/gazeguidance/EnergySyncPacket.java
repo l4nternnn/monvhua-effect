@@ -7,7 +7,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record EnergySyncPacket(double currentEnergy, double maxEnergy) implements CustomPayload {
-    public static final Id<EnergySyncPacket> ID = new Id<>(Identifier.of("clairvoyance", "energy_sync"));
+    public static final Id<EnergySyncPacket> ID = new Id<>(Identifier.of("monvhua", "energy_sync"));
     public static final PacketCodec<RegistryByteBuf, EnergySyncPacket> CODEC = PacketCodec.of(EnergySyncPacket::write, EnergySyncPacket::new);
 
     private EnergySyncPacket(RegistryByteBuf buf) {

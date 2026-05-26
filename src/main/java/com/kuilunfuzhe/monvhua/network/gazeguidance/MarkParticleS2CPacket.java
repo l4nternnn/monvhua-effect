@@ -7,7 +7,7 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
 
 public record MarkParticleS2CPacket(Vec3d pos) implements CustomPayload {
-    public static final Id<MarkParticleS2CPacket> ID = new Id<>(Identifier.of("clairvoyance", "mark_particle"));
+    public static final Id<MarkParticleS2CPacket> ID = new Id<>(Identifier.of("monvhua", "mark_particle"));
     public static final PacketCodec<RegistryByteBuf, MarkParticleS2CPacket> CODEC = PacketCodec.of(MarkParticleS2CPacket::write, MarkParticleS2CPacket::new);
 
     private MarkParticleS2CPacket(RegistryByteBuf buf) {

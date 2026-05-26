@@ -1,0 +1,9 @@
+{
+  "model": {
+    "type": "minecraft:special",
+    "base": "monvhua:item/left_arm",
+    "model": {
+      "type": "monvhua:left_arm"
+    }
+  }
+}

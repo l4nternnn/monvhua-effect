@@ -10,7 +10,7 @@ import net.minecraft.util.Identifier;
 import java.util.UUID;
 
 public record SetCameraEntityS2CPacket(UUID cameraEntityUuid) implements CustomPayload {
-    public static final Id<SetCameraEntityS2CPacket> ID = new Id<>(Identifier.of("clairvoyance", "set_camera"));
+    public static final Id<SetCameraEntityS2CPacket> ID = new Id<>(Identifier.of("monvhua", "set_camera"));
     public static final PacketCodec<RegistryByteBuf, SetCameraEntityS2CPacket> CODEC = PacketCodec.tuple(
             PacketCodecs.STRING.xmap(UUID::fromString, UUID::toString), SetCameraEntityS2CPacket::cameraEntityUuid,
             SetCameraEntityS2CPacket::new

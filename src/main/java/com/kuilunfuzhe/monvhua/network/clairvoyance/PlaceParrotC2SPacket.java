@@ -8,7 +8,7 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
 
 public record PlaceParrotC2SPacket(Vec3d pos) implements CustomPayload {
-    public static final Id<PlaceParrotC2SPacket> ID = new Id<>(Identifier.of("clairvoyance", "place_parrot"));
+    public static final Id<PlaceParrotC2SPacket> ID = new Id<>(Identifier.of("monvhua", "place_parrot"));
     public static final PacketCodec<RegistryByteBuf, PlaceParrotC2SPacket> CODEC = PacketCodec.of(
             (packet, buf) -> {
                 buf.writeDouble(packet.pos.x);

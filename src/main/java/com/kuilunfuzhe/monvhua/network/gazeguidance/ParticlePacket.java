@@ -8,7 +8,7 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
 
 public record ParticlePacket(double x, double y, double z) implements CustomPayload {
-    public static final Id<ParticlePacket> ID = new Id<>(Identifier.of("clairvoyance", "particle"));
+    public static final Id<ParticlePacket> ID = new Id<>(Identifier.of("monvhua", "particle"));
     public static final PacketCodec<RegistryByteBuf, ParticlePacket> CODEC = PacketCodec.tuple(
             PacketCodecs.DOUBLE, ParticlePacket::x,
             PacketCodecs.DOUBLE, ParticlePacket::y,

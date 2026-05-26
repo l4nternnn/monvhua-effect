@@ -80,7 +80,7 @@ public class Evil_Eyes {
     public static GlobalConfigManager configManager;
 
 //    static {
-//        Identifier id = Identifier.of("clairvoyance", "clairvoyance_item");
+//        Identifier id = Identifier.of("monvhua", "clairvoyance_item");
 //        RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM, id);
 //        Item.Settings settings = new Item.Settings()
 //                .registryKey(key)
@@ -250,7 +250,7 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
 //        ExitViewPayload.register();        // C2S
 //        ForceExitViewPayload.register();   // C2S
 
-        Identifier id = Identifier.of("clairvoyance", "clairvoyance_item");
+        Identifier id = Identifier.of("monvhua", "clairvoyance_item");
         RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM, id);
         Item.Settings settings = new Item.Settings()
                 .registryKey(key)

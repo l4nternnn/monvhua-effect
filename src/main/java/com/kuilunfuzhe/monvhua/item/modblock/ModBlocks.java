@@ -47,7 +47,7 @@ public class ModBlocks {
 
     // 通用注册方法（模仿原版 Blocks 中的 register）
     private static Block register(String path, Function<AbstractBlock.Settings, Block> factory, AbstractBlock.Settings settings) {
-        RegistryKey<Block> key = RegistryKey.of(RegistryKeys.BLOCK, Identifier.of("clairvoyance", path)); // 使用你的模组 ID
+        RegistryKey<Block> key = RegistryKey.of(RegistryKeys.BLOCK, Identifier.of("monvhua", path)); // 使用你的模组 ID
         Block block = factory.apply(settings.registryKey(key));
         return Registry.register(Registries.BLOCK, key, block);
     }

@@ -10,7 +10,7 @@ import net.minecraft.util.math.Vec3d;
 import java.util.UUID;
 
 public record AnchorParticleS2CPacket(UUID standId, Vec3d pos, int type) implements CustomPayload {
-    public static final Id<AnchorParticleS2CPacket> ID = new Id<>(Identifier.of("clairvoyance", "anchor_particle"));
+    public static final Id<AnchorParticleS2CPacket> ID = new Id<>(Identifier.of("monvhua", "anchor_particle"));
     public static final PacketCodec<RegistryByteBuf, AnchorParticleS2CPacket> CODEC = PacketCodec.of(
             (packet, buf) -> {
                 buf.writeUuid(packet.standId);

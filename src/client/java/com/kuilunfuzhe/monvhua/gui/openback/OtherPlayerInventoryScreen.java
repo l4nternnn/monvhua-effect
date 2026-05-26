@@ -9,7 +9,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
 public class OtherPlayerInventoryScreen extends HandledScreen<OtherPlayerInventoryScreenHandler> {
-    private static final Identifier TEXTURE = Identifier.of("clairvoyance", "textures/gui/img_1.png");
+    private static final Identifier TEXTURE = Identifier.of("monvhua", "textures/gui/img_1.png");
     private static final int TEXTURE_WIDTH = 256;   // 根据你的纹理实际尺寸修改
     private static final int TEXTURE_HEIGHT = 276;
 

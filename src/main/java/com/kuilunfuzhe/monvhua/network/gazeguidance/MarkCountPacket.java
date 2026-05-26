@@ -7,7 +7,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record MarkCountPacket(int count) implements CustomPayload {
-    public static final Id<MarkCountPacket> ID = new Id<>(Identifier.of("clairvoyance", "mark_count"));
+    public static final Id<MarkCountPacket> ID = new Id<>(Identifier.of("monvhua", "mark_count"));
     public static final PacketCodec<RegistryByteBuf, MarkCountPacket> CODEC = PacketCodec.tuple(
             PacketCodecs.INTEGER, MarkCountPacket::count,
             MarkCountPacket::new

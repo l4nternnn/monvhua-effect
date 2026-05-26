@@ -7,7 +7,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record StrengthPacket(int stage, double drain, double regen, double range, int maxMarks) implements CustomPayload {
-    public static final Id<StrengthPacket> ID = new Id<>(Identifier.of("clairvoyance", "strength"));
+    public static final Id<StrengthPacket> ID = new Id<>(Identifier.of("monvhua", "strength"));
     public static final PacketCodec<RegistryByteBuf, StrengthPacket> CODEC = PacketCodec.of(StrengthPacket::write, StrengthPacket::new);
 
     private StrengthPacket(RegistryByteBuf buf) {

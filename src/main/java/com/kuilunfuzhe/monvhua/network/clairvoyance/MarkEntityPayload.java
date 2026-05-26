@@ -8,7 +8,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record MarkEntityPayload(int entityId) implements CustomPayload {
-    public static final Id<MarkEntityPayload> ID = new Id<>(Identifier.of("clairvoyance", "mark_entity"));
+    public static final Id<MarkEntityPayload> ID = new Id<>(Identifier.of("monvhua", "mark_entity"));
     public static final PacketCodec<RegistryByteBuf, MarkEntityPayload> CODEC = PacketCodec.tuple(
             PacketCodecs.INTEGER, MarkEntityPayload::entityId,
             MarkEntityPayload::new

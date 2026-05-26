@@ -9,7 +9,7 @@ import net.minecraft.util.Identifier;
 import java.util.UUID;
 
 public record AnchorDestroyC2SPacket(UUID standId) implements CustomPayload {
-    public static final Id<AnchorDestroyC2SPacket> ID = new Id<>(Identifier.of("clairvoyance", "anchor_destroy"));
+    public static final Id<AnchorDestroyC2SPacket> ID = new Id<>(Identifier.of("monvhua", "anchor_destroy"));
     public static final PacketCodec<RegistryByteBuf, AnchorDestroyC2SPacket> CODEC = PacketCodec.of(
             (packet, buf) -> buf.writeUuid(packet.standId),
             buf -> new AnchorDestroyC2SPacket(buf.readUuid())

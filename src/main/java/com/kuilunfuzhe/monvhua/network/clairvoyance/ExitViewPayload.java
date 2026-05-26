@@ -7,7 +7,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record ExitViewPayload() implements CustomPayload {
-    public static final Id<ExitViewPayload> ID = new Id<>(Identifier.of("clairvoyance", "exit_view"));
+    public static final Id<ExitViewPayload> ID = new Id<>(Identifier.of("monvhua", "exit_view"));
     public static final PacketCodec<RegistryByteBuf, ExitViewPayload> CODEC = PacketCodec.unit(new ExitViewPayload());
 
 

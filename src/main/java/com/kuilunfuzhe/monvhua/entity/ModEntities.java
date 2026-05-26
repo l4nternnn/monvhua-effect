@@ -15,12 +15,12 @@ public class ModEntities {
     public static final EntityType<TestMannequinEntity> TEST_MANNEQUIN =
             EntityType.Builder.create(TestMannequinEntity::new, SpawnGroup.MISC)
                     .dimensions(0.6f,1.8f)   // 设置为玩家大小的碰撞箱
-                    .build(RegistryKey.of(RegistryKeys.ENTITY_TYPE, Identifier.of("clairvoyance", "test_mannequin"))) ; // 不需要传 Identifier，build() 会生成一个临时 ID，后面再注册
+                    .build(RegistryKey.of(RegistryKeys.ENTITY_TYPE, Identifier.of("monvhua", "test_mannequin"))) ; // 不需要传 Identifier，build() 会生成一个临时 ID，后面再注册
 
     // 2. 显式注册到注册表（这是标准做法）
     public static void register() {
         Registry.register(Registries.ENTITY_TYPE,
-                Identifier.of("clairvoyance", "test_mannequin"),
+                Identifier.of("monvhua", "test_mannequin"),
                 TEST_MANNEQUIN
         );
 

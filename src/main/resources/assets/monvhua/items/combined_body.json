@@ -1,0 +1,9 @@
+{
+  "model": {
+    "type": "minecraft:special",
+    "base": "monvhua:item/combined_body",
+    "model": {
+      "type": "monvhua:combined_body"
+    }
+  }
+}

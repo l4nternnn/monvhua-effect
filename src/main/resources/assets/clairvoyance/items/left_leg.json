@@ -1,9 +1,0 @@
-{
-  "model": {
-    "type": "minecraft:special",
-    "base": "clairvoyance:item/left_leg",
-    "model": {
-      "type": "clairvoyance:left_leg"
-    }
-  }
-}

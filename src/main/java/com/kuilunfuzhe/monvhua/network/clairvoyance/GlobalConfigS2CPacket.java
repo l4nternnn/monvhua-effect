@@ -7,7 +7,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record GlobalConfigS2CPacket(String json) implements CustomPayload {
-    public static final Id<GlobalConfigS2CPacket> ID = new Id<>(Identifier.of("clairvoyance", "global_config"));
+    public static final Id<GlobalConfigS2CPacket> ID = new Id<>(Identifier.of("monvhua", "global_config"));
     public static final PacketCodec<PacketByteBuf, GlobalConfigS2CPacket> CODEC =
             PacketCodec.tuple(PacketCodecs.STRING, GlobalConfigS2CPacket::json, GlobalConfigS2CPacket::new);
 

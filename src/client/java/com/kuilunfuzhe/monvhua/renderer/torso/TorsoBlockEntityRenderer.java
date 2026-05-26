@@ -45,7 +45,7 @@ public class TorsoBlockEntityRenderer implements BlockEntityRenderer<TorsoBlockE
         String localSkin = entity.getLocalSkin();
         Identifier texture;
         if (localSkin != null) {
-            texture = Identifier.of("clairvoyance", "textures/local_skin/" + localSkin + ".png");
+            texture = Identifier.of("monvhua", "textures/local_skin/" + localSkin + ".png");
         } else {
             texture = getSkinTexture(entity.getOwner(), entity.getPlayerUuid());
         }
@@ -73,7 +73,7 @@ public class TorsoBlockEntityRenderer implements BlockEntityRenderer<TorsoBlockE
                     .getSkinTextures(fallbackProfile)
                     .texture();
         }
-        return Identifier.of("clairvoyance", "textures/block/torso.png");
+        return Identifier.of("monvhua", "textures/block/torso.png");
     }
 
     private float getYawFromDirection(Direction direction) {

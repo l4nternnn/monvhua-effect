@@ -7,7 +7,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record RightClickActionPacket(boolean start) implements CustomPayload {
-    public static final Id<RightClickActionPacket> ID = new Id<>(Identifier.of("clairvoyance", "rightclick"));
+    public static final Id<RightClickActionPacket> ID = new Id<>(Identifier.of("monvhua", "rightclick"));
     public static final PacketCodec<RegistryByteBuf, RightClickActionPacket> CODEC = PacketCodec.tuple(
             PacketCodecs.BOOLEAN, RightClickActionPacket::start,
             RightClickActionPacket::new

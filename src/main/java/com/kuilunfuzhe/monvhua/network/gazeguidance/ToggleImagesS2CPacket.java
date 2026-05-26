@@ -7,7 +7,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record ToggleImagesS2CPacket(boolean enabled) implements CustomPayload {
-    public static final Id<ToggleImagesS2CPacket> ID = new Id<>(Identifier.of("clairvoyance", "toggle_images"));
+    public static final Id<ToggleImagesS2CPacket> ID = new Id<>(Identifier.of("monvhua", "toggle_images"));
     public static final PacketCodec<RegistryByteBuf, ToggleImagesS2CPacket> CODEC = PacketCodec.of(
             (packet, buf) -> buf.writeBoolean(packet.enabled),
             buf -> new ToggleImagesS2CPacket(buf.readBoolean())

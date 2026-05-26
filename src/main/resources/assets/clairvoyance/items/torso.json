@@ -1,9 +1,0 @@
-{
-  "model": {
-    "type": "minecraft:special",
-    "base": "clairvoyance:item/torso",
-    "model": {
-      "type": "clairvoyance:torso"
-    }
-  }
-}

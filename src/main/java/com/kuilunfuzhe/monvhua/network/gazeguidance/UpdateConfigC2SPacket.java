@@ -7,7 +7,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record UpdateConfigC2SPacket(String json) implements CustomPayload {
-    public static final Id<UpdateConfigC2SPacket> ID = new Id<>(Identifier.of("clairvoyance", "update_config"));
+    public static final Id<UpdateConfigC2SPacket> ID = new Id<>(Identifier.of("monvhua", "update_config"));
     public static final PacketCodec<RegistryByteBuf, UpdateConfigC2SPacket> CODEC = PacketCodec.of(UpdateConfigC2SPacket::write, UpdateConfigC2SPacket::new);
 
     private UpdateConfigC2SPacket(RegistryByteBuf buf) {

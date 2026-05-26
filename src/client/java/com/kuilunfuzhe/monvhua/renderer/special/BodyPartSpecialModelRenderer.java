@@ -71,7 +71,7 @@ public abstract class BodyPartSpecialModelRenderer implements SpecialModelRender
             Optional<String> localSkin = nbt.getString("local_skin");
             if (localSkin.isPresent()) {
                 armModel = nbt.getString("arm_model").orElse("default");
-                Identifier localTexture = Identifier.of("clairvoyance", "textures/local_skin/" + localSkin.get() + ".png");
+                Identifier localTexture = Identifier.of("monvhua", "textures/local_skin/" + localSkin.get() + ".png");
                 return new Data(RenderLayer.getEntityTranslucent(localTexture), armModel);
             }
         }

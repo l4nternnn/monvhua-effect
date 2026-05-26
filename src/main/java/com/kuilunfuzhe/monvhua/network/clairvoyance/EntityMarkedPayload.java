@@ -9,7 +9,7 @@ import net.minecraft.util.Identifier;
 import java.util.UUID;
 
 public record EntityMarkedPayload(UUID entityUuid, String entityName) implements CustomPayload {
-    public static final Id<EntityMarkedPayload> ID = new Id<>(Identifier.of("clairvoyance", "entity_marked"));
+    public static final Id<EntityMarkedPayload> ID = new Id<>(Identifier.of("monvhua", "entity_marked"));
     public static final PacketCodec<RegistryByteBuf, EntityMarkedPayload> CODEC = PacketCodec.tuple(
             PacketCodecs.STRING.xmap(UUID::fromString, UUID::toString), EntityMarkedPayload::entityUuid,
             PacketCodecs.STRING, EntityMarkedPayload::entityName,

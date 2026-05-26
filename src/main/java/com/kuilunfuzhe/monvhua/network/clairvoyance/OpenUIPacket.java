@@ -6,7 +6,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record OpenUIPacket() implements CustomPayload {
-    public static final Id<OpenUIPacket> ID = new Id<>(Identifier.of("clairvoyance", "open_ui"));
+    public static final Id<OpenUIPacket> ID = new Id<>(Identifier.of("monvhua", "open_ui"));
     public static final PacketCodec<RegistryByteBuf, OpenUIPacket> CODEC = PacketCodec.unit(new OpenUIPacket());
 
 

@@ -7,7 +7,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record FocusStatusPacket(boolean active) implements CustomPayload {
-    public static final Id<FocusStatusPacket> ID = new Id<>(Identifier.of("clairvoyance", "focus_status"));
+    public static final Id<FocusStatusPacket> ID = new Id<>(Identifier.of("monvhua", "focus_status"));
     public static final PacketCodec<RegistryByteBuf, FocusStatusPacket> CODEC = PacketCodec.tuple(
             PacketCodecs.BOOLEAN, FocusStatusPacket::active,
             FocusStatusPacket::new

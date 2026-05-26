@@ -6,7 +6,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record ForceExitViewPayload() implements CustomPayload {
-    public static final Id<ForceExitViewPayload> ID = new Id<>(Identifier.of("clairvoyance", "force_exit_view"));
+    public static final Id<ForceExitViewPayload> ID = new Id<>(Identifier.of("monvhua", "force_exit_view"));
     public static final PacketCodec<RegistryByteBuf, ForceExitViewPayload> CODEC = PacketCodec.unit(new ForceExitViewPayload());
 
 

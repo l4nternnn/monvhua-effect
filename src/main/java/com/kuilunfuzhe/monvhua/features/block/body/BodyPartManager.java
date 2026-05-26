@@ -371,7 +371,7 @@ public class BodyPartManager {
 
 	public static boolean isCombinedBodyItem(ItemStack stack) {
 		Identifier model = stack.get(DataComponentTypes.ITEM_MODEL);
-		return model != null && model.equals(Identifier.of("clairvoyance", "combined_body"));
+		return model != null && model.equals(Identifier.of("monvhua", "combined_body"));
 	}
 
 	public static void placeCombinedBody(World world, BlockPos pos, ItemStack stack, ServerPlayerEntity player) {
@@ -472,7 +472,7 @@ public class BodyPartManager {
 		for (ItemDisplayEntity display : world.getEntitiesByClass(ItemDisplayEntity.class, box, e -> {
 			ItemStack s = e.getItemStack();
 			Identifier model = s.get(DataComponentTypes.ITEM_MODEL);
-			return model != null && model.equals(Identifier.of("clairvoyance", "combined_body"));
+			return model != null && model.equals(Identifier.of("monvhua", "combined_body"));
 		})) {
 			Vec3d pos = display.getPos();
 			ItemStack combinedStack = display.getItemStack();
@@ -560,7 +560,7 @@ public class BodyPartManager {
 
 	public static void createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile) {
 		ItemStack combinedStack = new ItemStack(Items.NETHERITE_SCRAP);
-		combinedStack.set(DataComponentTypes.ITEM_MODEL, Identifier.of("clairvoyance", "combined_body"));
+		combinedStack.set(DataComponentTypes.ITEM_MODEL, Identifier.of("monvhua", "combined_body"));
 		if (profile != null) {
 			combinedStack.set(DataComponentTypes.PROFILE, profile);
 		} else {

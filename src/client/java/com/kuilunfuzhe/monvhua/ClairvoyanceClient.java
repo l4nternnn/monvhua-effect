@@ -550,13 +550,13 @@ public class ClairvoyanceClient implements ClientModInitializer {
 				HeadBlockEntityRenderer::new
 		);
 		// 注册 SpecialModelRenderer 类型（物品栏/手持 3D 渲染）
-		SpecialModelTypes.ID_MAPPER.put(Identifier.of("clairvoyance", "torso"), TorsoSpecialModelRenderer.Unbaked.CODEC);
-		SpecialModelTypes.ID_MAPPER.put(Identifier.of("clairvoyance", "left_arm"), LeftArmSpecialModelRenderer.Unbaked.CODEC);
-		SpecialModelTypes.ID_MAPPER.put(Identifier.of("clairvoyance", "right_arm"), RightArmSpecialModelRenderer.Unbaked.CODEC);
-		SpecialModelTypes.ID_MAPPER.put(Identifier.of("clairvoyance", "left_leg"), LeftLegSpecialModelRenderer.Unbaked.CODEC);
-		SpecialModelTypes.ID_MAPPER.put(Identifier.of("clairvoyance", "right_leg"), RightLegSpecialModelRenderer.Unbaked.CODEC);
-		SpecialModelTypes.ID_MAPPER.put(Identifier.of("clairvoyance", "head"), HeadSpecialModelRenderer.Unbaked.CODEC);
-		SpecialModelTypes.ID_MAPPER.put(Identifier.of("clairvoyance", "combined_body"), CombinedBodySpecialModelRenderer.Unbaked.CODEC);
+		SpecialModelTypes.ID_MAPPER.put(Identifier.of("monvhua", "torso"), TorsoSpecialModelRenderer.Unbaked.CODEC);
+		SpecialModelTypes.ID_MAPPER.put(Identifier.of("monvhua", "left_arm"), LeftArmSpecialModelRenderer.Unbaked.CODEC);
+		SpecialModelTypes.ID_MAPPER.put(Identifier.of("monvhua", "right_arm"), RightArmSpecialModelRenderer.Unbaked.CODEC);
+		SpecialModelTypes.ID_MAPPER.put(Identifier.of("monvhua", "left_leg"), LeftLegSpecialModelRenderer.Unbaked.CODEC);
+		SpecialModelTypes.ID_MAPPER.put(Identifier.of("monvhua", "right_leg"), RightLegSpecialModelRenderer.Unbaked.CODEC);
+		SpecialModelTypes.ID_MAPPER.put(Identifier.of("monvhua", "head"), HeadSpecialModelRenderer.Unbaked.CODEC);
+		SpecialModelTypes.ID_MAPPER.put(Identifier.of("monvhua", "combined_body"), CombinedBodySpecialModelRenderer.Unbaked.CODEC);
 
 
 		HandledScreens.register(ModScreenHandlers.BODY_PART_SCREEN_HANDLER, BodyPartScreen::new);
@@ -565,10 +565,10 @@ public class ClairvoyanceClient implements ClientModInitializer {
 	// ==================== 渲染方法（保持不变）====================
 	private static final double SPHERE_RADIUS = 0.2;
 	static {
-		BACK_IMAGES.add(new BackImage(Identifier.of("clairvoyance", "textures/gui/6.png"), 0.0f, 1.0f, 3.0f, 3.5f, 3.5f, 1.0f));
-		BACK_IMAGES.add(new BackImage(Identifier.of("clairvoyance", "textures/gui/3.png"), -2f, 0.8f, 3.0f, 2.0f, 2.0f, -1.5f));
-		BACK_IMAGES.add(new BackImage(Identifier.of("clairvoyance", "textures/gui/3.png"), 2f, 0.8f, 3.0f, 2.0f, 2.0f, -1.5f));
-		BACK_IMAGES.add(new BackImage(Identifier.of("clairvoyance", "textures/gui/11.png"), 0.0f, 3f, 4.0f, 2.0f, 2.0f, 3.0f));
+		BACK_IMAGES.add(new BackImage(Identifier.of("monvhua", "textures/gui/6.png"), 0.0f, 1.0f, 3.0f, 3.5f, 3.5f, 1.0f));
+		BACK_IMAGES.add(new BackImage(Identifier.of("monvhua", "textures/gui/3.png"), -2f, 0.8f, 3.0f, 2.0f, 2.0f, -1.5f));
+		BACK_IMAGES.add(new BackImage(Identifier.of("monvhua", "textures/gui/3.png"), 2f, 0.8f, 3.0f, 2.0f, 2.0f, -1.5f));
+		BACK_IMAGES.add(new BackImage(Identifier.of("monvhua", "textures/gui/11.png"), 0.0f, 3f, 4.0f, 2.0f, 2.0f, 3.0f));
 	}
 
 	private static void renderAnchorButtons(MatrixStack matrices, VertexConsumerProvider consumers) {
@@ -577,7 +577,7 @@ public class ClairvoyanceClient implements ClientModInitializer {
 		if (client.world == null || client.player == null) return;
 		Camera camera = client.gameRenderer.getCamera();
 		Vec3d targetPos = camera.getPos();
-		Identifier buttonTexture = Identifier.of("clairvoyance", "textures/gui/yj5.png");
+		Identifier buttonTexture = Identifier.of("monvhua", "textures/gui/yj5.png");
 		float size = 1.0f;
 		float half = size / 2;
 		int overlay = OverlayTexture.DEFAULT_UV;
@@ -679,14 +679,14 @@ public class ClairvoyanceClient implements ClientModInitializer {
 	private record OrbitImage(Identifier texture, double radius, double speed, double yOffset, float selfRotateSpeed, double startAngle) {}
 	private static final List<OrbitImage> ORBIT_IMAGES = new ArrayList<>();
 	static {
-		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("clairvoyance", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,0.0));
-		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("clairvoyance", "textures/gui/8.png"), 0.5, 5.0, -0.7 ,10.0f,45.0));
-		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("clairvoyance", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,90.0));
-		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("clairvoyance", "textures/gui/8.png"), 0.5, 5.0, -0.7, 10.0f,135.0));
-		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("clairvoyance", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,180.0));
-		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("clairvoyance", "textures/gui/8.png"), 0.5, 5.0, -0.7 ,10.0f,225.0));
-		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("clairvoyance", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,270.0));
-		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("clairvoyance", "textures/gui/8.png"), 0.5, 5.0, -0.7, 10.0f,315.0));
+		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,0.0));
+		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/8.png"), 0.5, 5.0, -0.7 ,10.0f,45.0));
+		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,90.0));
+		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/8.png"), 0.5, 5.0, -0.7, 10.0f,135.0));
+		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,180.0));
+		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/8.png"), 0.5, 5.0, -0.7 ,10.0f,225.0));
+		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,270.0));
+		ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/8.png"), 0.5, 5.0, -0.7, 10.0f,315.0));
 	}
 
 	private static void renderMirrorMarkers(MatrixStack matrices, VertexConsumerProvider consumers) {

@@ -9,7 +9,7 @@ import net.minecraft.util.Identifier;
 
 public record OpenOtherInventoryPayload(int targetEntityId) implements CustomPayload {
     public static final CustomPayload.Id<OpenOtherInventoryPayload> ID =
-            new CustomPayload.Id<>(Identifier.of("clairvoyance", "open_other_inv"));
+            new CustomPayload.Id<>(Identifier.of("monvhua", "open_other_inv"));
     public static final PacketCodec<RegistryByteBuf, OpenOtherInventoryPayload> CODEC =
             PacketCodec.tuple(
                     PacketCodecs.INTEGER, OpenOtherInventoryPayload::targetEntityId,

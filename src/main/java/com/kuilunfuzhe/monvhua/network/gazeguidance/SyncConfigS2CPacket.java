@@ -6,7 +6,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record SyncConfigS2CPacket(String json) implements CustomPayload {
-    public static final Id<SyncConfigS2CPacket> ID = new Id<>(Identifier.of("clairvoyance", "sync_config"));
+    public static final Id<SyncConfigS2CPacket> ID = new Id<>(Identifier.of("monvhua", "sync_config"));
     public static final PacketCodec<RegistryByteBuf, SyncConfigS2CPacket> CODEC = PacketCodec.of(SyncConfigS2CPacket::write, SyncConfigS2CPacket::new);
 
     private SyncConfigS2CPacket(RegistryByteBuf buf) {

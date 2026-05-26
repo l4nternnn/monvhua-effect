@@ -8,7 +8,7 @@ import net.minecraft.util.Identifier;
 
 public record CameraWatchUnbindS2CPacket() implements CustomPayload {
     public static final Id<CameraWatchUnbindS2CPacket> ID =
-            new Id<>(Identifier.of("clairvoyance", "camera_watch_unbind"));
+            new Id<>(Identifier.of("monvhua", "camera_watch_unbind"));
     public static final PacketCodec<PacketByteBuf, CameraWatchUnbindS2CPacket> CODEC =
             PacketCodec.unit(new CameraWatchUnbindS2CPacket());
 

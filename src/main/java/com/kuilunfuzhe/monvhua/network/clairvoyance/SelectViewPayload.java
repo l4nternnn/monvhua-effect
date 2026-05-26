@@ -10,7 +10,7 @@ import net.minecraft.util.Identifier;
 import java.util.UUID;
 
 public record SelectViewPayload(UUID entityUuid) implements CustomPayload {
-    public static final Id<SelectViewPayload> ID = new Id<>(Identifier.of("clairvoyance", "select_view"));
+    public static final Id<SelectViewPayload> ID = new Id<>(Identifier.of("monvhua", "select_view"));
     public static final PacketCodec<PacketByteBuf, SelectViewPayload> CODEC = PacketCodec.tuple(
             PacketCodecs.STRING.xmap(UUID::fromString, UUID::toString), SelectViewPayload::entityUuid,
             SelectViewPayload::new

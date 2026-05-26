@@ -8,7 +8,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record MagicPacket(int entityId) implements CustomPayload {
-    public static final Id<MagicPacket> ID = new Id<>(Identifier.of("clairvoyance", "magic"));
+    public static final Id<MagicPacket> ID = new Id<>(Identifier.of("monvhua", "magic"));
     public static final PacketCodec<RegistryByteBuf, MagicPacket> CODEC = PacketCodec.tuple(
             PacketCodecs.INTEGER, MagicPacket::entityId,
             MagicPacket::new

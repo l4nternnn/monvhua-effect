@@ -13,7 +13,7 @@ public record MirrorStateS2CPacket(
 	boolean slot2Active, double x2, double y2, double z2,
 	boolean viewportActive
 ) implements CustomPayload {
-	public static final Id<MirrorStateS2CPacket> ID = new Id<>(Identifier.of("clairvoyance", "mirror_state"));
+	public static final Id<MirrorStateS2CPacket> ID = new Id<>(Identifier.of("monvhua", "mirror_state"));
 	public static final PacketCodec<PacketByteBuf, MirrorStateS2CPacket> CODEC = PacketCodec.tuple(
 		PacketCodecs.BOOLEAN, MirrorStateS2CPacket::slot1Active,
 		PacketCodecs.DOUBLE, MirrorStateS2CPacket::x1,

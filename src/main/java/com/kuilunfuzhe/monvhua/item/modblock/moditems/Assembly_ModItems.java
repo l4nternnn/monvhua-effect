@@ -29,7 +29,7 @@ public class Assembly_ModItems {
     }
 
     private static BlockItem createBlockItem(String path, net.minecraft.block.Block block) {
-        Identifier id = Identifier.of("clairvoyance", path);
+        Identifier id = Identifier.of("monvhua", path);
         RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM, id);
         Item.Settings settings = new Item.Settings()
                 .registryKey(key)
@@ -61,7 +61,7 @@ public class Assembly_ModItems {
     }
 
     private static void register(BlockItem item, String path) {
-        Identifier id = Identifier.of("clairvoyance", path);
+        Identifier id = Identifier.of("monvhua", path);
         Registry.register(Registries.ITEM, id, item);
     }
 }

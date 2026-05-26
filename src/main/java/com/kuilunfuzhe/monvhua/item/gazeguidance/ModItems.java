@@ -13,7 +13,7 @@ public class ModItems {
     public static final MagicStickItem MAGIC_STICK;
 
     static {
-        Identifier id = Identifier.of("clairvoyance", "magic_stick");
+        Identifier id = Identifier.of("monvhua", "magic_stick");
         RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM, id);
         Item.Settings settings = new Item.Settings()
                 .registryKey(key)
@@ -22,7 +22,7 @@ public class ModItems {
     }
 
     public static void initialize() {
-        Registry.register(Registries.ITEM, Identifier.of("clairvoyance", "magic_stick"), MAGIC_STICK);
+        Registry.register(Registries.ITEM, Identifier.of("monvhua", "magic_stick"), MAGIC_STICK);
         ItemGroupEvents.modifyEntriesEvent(ItemGroups.TOOLS)
                 .register(entries -> entries.add(MAGIC_STICK));
     }

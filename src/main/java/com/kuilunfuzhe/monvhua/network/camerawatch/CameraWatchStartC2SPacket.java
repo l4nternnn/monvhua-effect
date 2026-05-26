@@ -11,7 +11,7 @@ import java.util.UUID;
 
 public record CameraWatchStartC2SPacket(UUID targetUuid) implements CustomPayload {
     public static final Id<CameraWatchStartC2SPacket> ID =
-            new Id<>(Identifier.of("clairvoyance", "camera_watch_start"));
+            new Id<>(Identifier.of("monvhua", "camera_watch_start"));
     public static final PacketCodec<PacketByteBuf, CameraWatchStartC2SPacket> CODEC =
             PacketCodec.tuple(Uuids.PACKET_CODEC, CameraWatchStartC2SPacket::targetUuid, CameraWatchStartC2SPacket::new);
 

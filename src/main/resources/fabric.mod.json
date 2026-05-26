@@ -2,10 +2,11 @@
 	"schemaVersion": 1,
 	"id": "monvhua",
 	"version": "${version}",
-	"name": "魔女化状态效果",
-	"description": "纯显示用途的魔女化阶段状态效果系统，由 monvhua 计分板驱动。",
+	"name": "魔女化",
+	"description": "魔女化状态效果系统 + 千里眼/视线诱导/身体部件/镜像/搬运等辅助功能，由 monvhua 计分板驱动。",
 	"authors": [
-		"kuilunfuzhe"
+		"kuilunfuzhe",
+		"shushuwonie"
 	],
 	"contact": {},
 	"license": "GPL-3.0",
@@ -14,8 +15,15 @@
 	"entrypoints": {
 		"main": [
 			"com.kuilunfuzhe.monvhua.MonvhuaMod"
+		],
+		"client": [
+			"com.kuilunfuzhe.monvhua.MonvhuaModClient"
 		]
 	},
+	"mixins": [
+		"monvhua.mixins.json",
+		"monvhua.client.mixins.json"
+	],
 	"depends": {
 		"fabricloader": ">=0.16.0",
 		"minecraft": "~1.21.8",
