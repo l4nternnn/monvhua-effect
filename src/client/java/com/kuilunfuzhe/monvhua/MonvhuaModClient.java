@@ -136,8 +136,8 @@ public class MonvhuaModClient implements ClientModInitializer {
 		Evil_EyesClient.initialize();
 		GazeguidanceClient.initialize(); // 此方法内部不应再注册接收器，只保留业务初始化
 		// 按键绑定
-		configKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.clairvoyance.config", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_U, "category.clairvoyance"));
-		markKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.clairvoyance.mark", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_V, "category.clairvoyance"));
+		configKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.config", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_U, "category.monvhua"));
+		markKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.mark", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_V, "category.monvhua"));
 
 		// 按键处理
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {

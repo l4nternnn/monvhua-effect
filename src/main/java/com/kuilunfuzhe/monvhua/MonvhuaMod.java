@@ -85,6 +85,7 @@ public class MonvhuaMod implements ModInitializer {
     public static final Map<UUID, String> VIEW_MODE_PREFERENCE = new ConcurrentHashMap<>();
 
     private int tickCounter = 0;
+    private static boolean DEBUG_LOGGED = false;
 
     @Override
     public void onInitialize() {
@@ -314,6 +315,14 @@ public class MonvhuaMod implements ModInitializer {
                     player.fallDistance = 0;
                 }
 
+                // Diagnostic: log first tick to help troubleshoot
+                if (tickCounter == 0 && !DEBUG_LOGGED) {
+                    LOGGER.info("[{}] Tick check: player={}, tags={}, role={}",
+                            MOD_ID, player.getName().getString(),
+                            player.getCommandTags(), role);
+                    DEBUG_LOGGED = true;
+                }
+
                 if (role == null) {
                     RegistryEntry<StatusEffect> prev = lastEffect.remove(uuid);
                     if (prev != null) player.removeStatusEffect(prev);
@@ -323,7 +332,11 @@ public class MonvhuaMod implements ModInitializer {
 
                 Scoreboard scoreboard = player.getScoreboard();
                 ScoreboardObjective objective = scoreboard.getNullableObjective(OBJECTIVE_NAME);
-                if (objective == null) continue;
+                if (objective == null) {
+                    if (!DEBUG_LOGGED)
+                        LOGGER.warn("[{}] Objective '{}' not found on scoreboard!", MOD_ID, OBJECTIVE_NAME);
+                    continue;
+                }
 
                 var info = scoreboard.getScore(player, objective);
                 int value = info == null ? 0 : info.getScore();
