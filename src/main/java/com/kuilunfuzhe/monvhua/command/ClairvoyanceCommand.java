@@ -4,7 +4,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import com.kuilunfuzhe.monvhua.Clairvoyance;
+import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import net.minecraft.command.CommandRegistryAccess;
 import net.minecraft.entity.Entity;

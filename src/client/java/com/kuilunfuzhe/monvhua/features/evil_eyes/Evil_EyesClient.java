@@ -1,6 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.evil_eyes;
 
-import com.kuilunfuzhe.monvhua.client.gui.evil_eyes.Evil_eyesScreen;
+import com.kuilunfuzhe.monvhua.gui.evil_eyes.Evil_eyesScreen;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;

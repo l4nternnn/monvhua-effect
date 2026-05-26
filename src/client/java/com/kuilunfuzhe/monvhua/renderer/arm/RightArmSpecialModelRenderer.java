@@ -1,10 +1,10 @@
 package com.kuilunfuzhe.monvhua.renderer.arm;
 
 import com.mojang.serialization.MapCodec;
-import com.kuilunfuzhe.monvhua.client.model.ModModelLayers;
-import com.kuilunfuzhe.monvhua.client.model.arm.RightArmModel;
-import com.kuilunfuzhe.monvhua.client.model.arm.RightArmSlimModel;
-import com.kuilunfuzhe.monvhua.client.renderer.special.BodyPartSpecialModelRenderer;
+import com.kuilunfuzhe.monvhua.model.ModModelLayers;
+import com.kuilunfuzhe.monvhua.model.arm.RightArmModel;
+import com.kuilunfuzhe.monvhua.model.arm.RightArmSlimModel;
+import com.kuilunfuzhe.monvhua.renderer.special.BodyPartSpecialModelRenderer;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.model.LoadedEntityModels;

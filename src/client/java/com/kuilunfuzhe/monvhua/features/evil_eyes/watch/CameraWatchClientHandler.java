@@ -1,6 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.evil_eyes.watch;
 
-import com.kuilunfuzhe.monvhua.client.features.evil_eyes.Evil_EyesClient;
+import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
 import com.kuilunfuzhe.monvhua.network.camerawatch.CameraWatchStopC2SPacket;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;

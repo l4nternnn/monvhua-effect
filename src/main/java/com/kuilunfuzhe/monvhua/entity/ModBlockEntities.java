@@ -1,6 +1,6 @@
 package com.kuilunfuzhe.monvhua.entity;
 
-import com.kuilunfuzhe.monvhua.Clairvoyance;
+import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.features.block.body.arm.LeftArmBlockEntity;
 import com.kuilunfuzhe.monvhua.features.block.body.arm.RightArmBlockEntity;
 import com.kuilunfuzhe.monvhua.features.block.body.leg.LeftLegBlockEntity;

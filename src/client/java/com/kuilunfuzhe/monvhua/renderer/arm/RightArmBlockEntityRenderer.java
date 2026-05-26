@@ -1,8 +1,8 @@
 package com.kuilunfuzhe.monvhua.renderer.arm;
 
-import com.kuilunfuzhe.monvhua.client.model.ModModelLayers;
-import com.kuilunfuzhe.monvhua.client.model.arm.RightArmModel;
-import com.kuilunfuzhe.monvhua.client.model.arm.RightArmSlimModel;
+import com.kuilunfuzhe.monvhua.model.ModModelLayers;
+import com.kuilunfuzhe.monvhua.model.arm.RightArmModel;
+import com.kuilunfuzhe.monvhua.model.arm.RightArmSlimModel;
 import com.kuilunfuzhe.monvhua.features.block.body.arm.RightArmBlock;
 import com.kuilunfuzhe.monvhua.features.block.body.arm.RightArmBlockEntity;
 import com.mojang.authlib.GameProfile;

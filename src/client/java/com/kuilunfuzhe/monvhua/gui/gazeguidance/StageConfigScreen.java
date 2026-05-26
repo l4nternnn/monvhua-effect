@@ -1,7 +1,7 @@
 //package com.kuilunfuzhe.monvhua.gui.gazeguidance;
 //
-//import com.kuilunfuzhe.monvhua.client.gui.CombinedConfigScreen;
-//import com.kuilunfuzhe.monvhua.client.gui.evil_eyes.GlobalConfigScreen;
+//import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
+//import com.kuilunfuzhe.monvhua.gui.evil_eyes.GlobalConfigScreen;
 //import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 //import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 //import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;

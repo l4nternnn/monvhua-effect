@@ -46,7 +46,6 @@ import net.minecraft.resource.featuretoggle.FeatureSet;
 import net.minecraft.screen.ScreenHandlerType;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
-import net.minecraft.scoreboard.ScoreboardScore;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -59,6 +58,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class MonvhuaMod implements ModInitializer {
     public static final String MOD_ID = "monvhua";
@@ -297,20 +297,20 @@ public class MonvhuaMod implements ModInitializer {
                 processPendingTainted(player, uuid);
 
                 // Floating flight ability
-                boolean canFloat = player.getTags().contains("Floating")
-                        && player.getTags().contains("MonvhuaFull");
+                boolean canFloat = player.getCommandTags().contains("Floating")
+                        && player.getCommandTags().contains("MonvhuaFull");
                 if (canFloat && !floatingPlayers.contains(uuid)) {
-                    player.getAbilities().mayfly = true;
-                    player.onUpdateAbilities();
+                    player.getAbilities().allowFlying = true;
+                    player.sendAbilitiesUpdate();
                     floatingPlayers.add(uuid);
                     player.sendMessage(
                             Text.literal("您已获得飞行能力，尽情杀戮吧！")
                                     .formatted(Formatting.DARK_RED)
                     );
                 } else if (!canFloat && floatingPlayers.remove(uuid)) {
-                    player.getAbilities().mayfly = false;
+                    player.getAbilities().allowFlying = false;
                     player.getAbilities().flying = false;
-                    player.onUpdateAbilities();
+                    player.sendAbilitiesUpdate();
                     player.fallDistance = 0;
                 }
 
@@ -321,15 +321,15 @@ public class MonvhuaMod implements ModInitializer {
                     continue;
                 }
 
-                Scoreboard scoreboard = player.getServerWorld().getScoreboard();
-                ScoreboardObjective objective = scoreboard.getObjective(OBJECTIVE_NAME);
+                Scoreboard scoreboard = player.getScoreboard();
+                ScoreboardObjective objective = scoreboard.getNullableObjective(OBJECTIVE_NAME);
                 if (objective == null) continue;
 
-                ScoreboardScore info = scoreboard.getScore(player, objective);
+                var info = scoreboard.getScore(player, objective);
                 int value = info == null ? 0 : info.getScore();
                 WitchStage stage = WitchStage.fromScore(value);
                 if (stage == WitchStage.PROTO_WITCH
-                        && player.getTags().contains("MonvhuaFull")) {
+                        && player.getCommandTags().contains("MonvhuaFull")) {
                     stage = WitchStage.WITCH;
                 }
                 RegistryEntry<StatusEffect> desired = EFFECTS.get(role).get(stage);
@@ -343,7 +343,7 @@ public class MonvhuaMod implements ModInitializer {
                 if (previous != null) player.removeStatusEffect(previous);
                 player.addStatusEffect(new StatusEffectInstance(
                         desired,
-                        StatusEffectInstance.INFINITE_DURATION,
+                        -1, // infinite duration
                         0, false, false, true
                 ));
 
@@ -410,7 +410,7 @@ public class MonvhuaMod implements ModInitializer {
         ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> {
             if (entity instanceof ServerPlayerEntity player
                     && floatingPlayers.contains(player.getUuid())
-                    && source.typeHolder().is(DamageTypes.FALL)) {
+                    && source.isOf(DamageTypes.FALL)) {
                 player.fallDistance = 0;
                 return false;
             }

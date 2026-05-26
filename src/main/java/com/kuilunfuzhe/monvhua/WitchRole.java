@@ -617,7 +617,7 @@ public enum WitchRole {
     }
 
     public static WitchRole fromPlayer(ServerPlayerEntity player) {
-        var tags = player.getTags();
+        var tags = player.getCommandTags();
         for (WitchRole role : values()) {
             if (tags.contains(role.id)) return role;
         }

@@ -1,7 +1,7 @@
 package com.kuilunfuzhe.monvhua.renderer.leg;
 
-import com.kuilunfuzhe.monvhua.client.model.ModModelLayers;
-import com.kuilunfuzhe.monvhua.client.model.leg.LeftLegModel;
+import com.kuilunfuzhe.monvhua.model.ModModelLayers;
+import com.kuilunfuzhe.monvhua.model.leg.LeftLegModel;
 import com.kuilunfuzhe.monvhua.features.block.body.leg.LeftLegBlock;
 import com.kuilunfuzhe.monvhua.features.block.body.leg.LeftLegBlockEntity;
 import com.mojang.authlib.GameProfile;

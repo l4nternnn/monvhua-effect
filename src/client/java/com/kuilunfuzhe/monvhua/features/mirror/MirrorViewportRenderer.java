@@ -2,7 +2,7 @@ package com.kuilunfuzhe.monvhua.features.mirror;
 
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.kuilunfuzhe.monvhua.client.mixin.CameraAccessor;
+import com.kuilunfuzhe.monvhua.mixin.CameraAccessor;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.SimpleFramebuffer;

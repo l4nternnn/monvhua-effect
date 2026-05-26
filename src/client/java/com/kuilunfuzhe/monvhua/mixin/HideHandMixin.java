@@ -1,6 +1,6 @@
 package com.kuilunfuzhe.monvhua.mixin;
 
-import com.kuilunfuzhe.monvhua.client.features.evil_eyes.watch.CameraWatchClientHandler;
+import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
 import net.minecraft.client.render.item.HeldItemRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.render.VertexConsumerProvider;

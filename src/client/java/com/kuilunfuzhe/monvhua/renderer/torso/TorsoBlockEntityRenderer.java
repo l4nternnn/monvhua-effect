@@ -1,7 +1,7 @@
 package com.kuilunfuzhe.monvhua.renderer.torso;
 
-import com.kuilunfuzhe.monvhua.client.model.ModModelLayers;
-import com.kuilunfuzhe.monvhua.client.model.torso.TorsoModel;
+import com.kuilunfuzhe.monvhua.model.ModModelLayers;
+import com.kuilunfuzhe.monvhua.model.torso.TorsoModel;
 import com.kuilunfuzhe.monvhua.features.block.body.torso.TorsoBlock;
 import com.kuilunfuzhe.monvhua.features.block.body.torso.TorsoBlockEntity;
 import com.mojang.authlib.GameProfile;

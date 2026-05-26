@@ -1,7 +1,7 @@
 package com.kuilunfuzhe.monvhua.mixin;
 
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
-import com.kuilunfuzhe.monvhua.client.features.mirror.MirrorViewportRenderer;
+import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.render.WorldRenderer;

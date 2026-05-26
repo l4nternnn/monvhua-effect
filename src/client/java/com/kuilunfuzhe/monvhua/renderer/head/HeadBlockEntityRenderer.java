@@ -1,7 +1,7 @@
 package com.kuilunfuzhe.monvhua.renderer.head;
 
-import com.kuilunfuzhe.monvhua.client.model.ModModelLayers;
-import com.kuilunfuzhe.monvhua.client.model.head.HeadModel;
+import com.kuilunfuzhe.monvhua.model.ModModelLayers;
+import com.kuilunfuzhe.monvhua.model.head.HeadModel;
 import com.kuilunfuzhe.monvhua.features.block.body.head.HeadBlock;
 import com.kuilunfuzhe.monvhua.features.block.body.head.HeadBlockEntity;
 import com.mojang.authlib.GameProfile;
