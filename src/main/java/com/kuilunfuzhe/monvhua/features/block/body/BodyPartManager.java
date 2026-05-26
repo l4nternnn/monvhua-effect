@@ -68,7 +68,7 @@ public class BodyPartManager {
 			field.setAccessible(true);
 			key = (TrackedData) field.get(null);
 		} catch (Exception e) {
-			com.kuilunfuzhe.monvhua.Clairvoyance.LOGGER.error("Failed to access DisplayEntity.LEFT_ROTATION", e);
+			com.kuilunfuzhe.monvhua.MonvhuaMod.LOGGER.error("Failed to access DisplayEntity.LEFT_ROTATION", e);
 		}
 		LEFT_ROTATION_KEY = key;
 	}

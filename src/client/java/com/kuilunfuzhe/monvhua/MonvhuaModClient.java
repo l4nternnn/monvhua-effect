@@ -101,7 +101,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient.getTargetEntity;
 
-public class ClairvoyanceClient implements ClientModInitializer {
+public class MonvhuaModClient implements ClientModInitializer {
 	private static KeyBinding configKey;
 	private static KeyBinding markKey;
 	private static boolean hasRequestedConfig = false;
@@ -443,7 +443,7 @@ public class ClairvoyanceClient implements ClientModInitializer {
 		});
 
 		// 注册 Screen
-		HandledScreens.register(Clairvoyance.OTHER_INVENTORY_HANDLER, OtherPlayerInventoryScreen::new);
+		HandledScreens.register(MonvhuaMod.OTHER_INVENTORY_HANDLER, OtherPlayerInventoryScreen::new);
 
 		// 右键交互（搬运实体）
 		UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {

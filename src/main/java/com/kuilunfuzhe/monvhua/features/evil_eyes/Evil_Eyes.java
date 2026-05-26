@@ -428,7 +428,7 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
             watchingPlayers.put(player.getUuid(), new WatchingInfo(selected, player.getWorld().getTime()));
 
             // 根据玩家偏好选择观看系统
-            String mode = com.kuilunfuzhe.monvhua.Clairvoyance.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "modern");
+            String mode = com.kuilunfuzhe.monvhua.MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "modern");
             if ("legacy".equals(mode)) {
                 // 旧系统：通知客户端使用本地盔甲架相机
                 ServerPlayNetworking.send(player, new SelectViewPayload(selected));

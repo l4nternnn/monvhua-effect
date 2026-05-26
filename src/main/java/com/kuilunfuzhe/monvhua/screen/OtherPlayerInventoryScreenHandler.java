@@ -20,7 +20,7 @@ public class OtherPlayerInventoryScreenHandler extends ScreenHandler {
 
     // 服务端使用的构造器
     public OtherPlayerInventoryScreenHandler(int syncId, PlayerInventory viewerInv, Inventory targetInventory) {
-        super(Clairvoyance.OTHER_INVENTORY_HANDLER, syncId);
+        super(MonvhuaMod.OTHER_INVENTORY_HANDLER, syncId);
         this.otherInventory = targetInventory;
         this.viewer = viewerInv.player;
         targetInventory.onOpen(viewerInv.player);

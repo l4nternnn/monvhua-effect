@@ -46,7 +46,7 @@ public class ClairvoyanceCommand {
                         )
                         .executes(ctx -> {
                             ServerPlayerEntity player = ctx.getSource().getPlayer();
-                            String current = Clairvoyance.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "modern");
+                            String current = MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "modern");
                             String modeName = "legacy".equals(current) ? "§e旧版(客户端盔甲架)" : "§a新版(服务端CameraWatch)";
                             player.sendMessage(Text.literal("§6当前观看模式: " + modeName), false);
                             player.sendMessage(Text.literal("§7使用 /clairvoyance viewmode <legacy|modern> 切换"), false);
@@ -58,7 +58,7 @@ public class ClairvoyanceCommand {
 
     private static int setViewMode(CommandContext<ServerCommandSource> ctx, String mode) throws CommandSyntaxException {
         ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
-        Clairvoyance.VIEW_MODE_PREFERENCE.put(player.getUuid(), mode);
+        MonvhuaMod.VIEW_MODE_PREFERENCE.put(player.getUuid(), mode);
 
         // 如果在观看中，停止当前观看
         if (com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager.isWatching(player)) {

@@ -17,35 +17,35 @@ import net.minecraft.util.Identifier;
 public class ModBlockEntities {
     public static final BlockEntityType<TorsoBlockEntity> TORSO_BLOCK_ENTITY = Registry.register(
             Registries.BLOCK_ENTITY_TYPE,
-            Identifier.of(Clairvoyance.MOD_ID, "torso"),
+            Identifier.of(MonvhuaMod.MOD_ID, "torso"),
             FabricBlockEntityTypeBuilder.create(TorsoBlockEntity::new, ModBlocks.TORSO).build()
     );
 
     public static final BlockEntityType<LeftArmBlockEntity> LEFT_ARM_BLOCK_ENTITY = Registry.register(
             Registries.BLOCK_ENTITY_TYPE,
-            Identifier.of(Clairvoyance.MOD_ID, "left_arm"),
+            Identifier.of(MonvhuaMod.MOD_ID, "left_arm"),
             FabricBlockEntityTypeBuilder.create(LeftArmBlockEntity::new, ModBlocks.LEFT_ARM).build()
     );
 
     public static final BlockEntityType<RightArmBlockEntity> RIGHT_ARM_BLOCK_ENTITY = Registry.register(
             Registries.BLOCK_ENTITY_TYPE,
-            Identifier.of(Clairvoyance.MOD_ID, "right_arm"),
+            Identifier.of(MonvhuaMod.MOD_ID, "right_arm"),
             FabricBlockEntityTypeBuilder.create(RightArmBlockEntity::new, ModBlocks.RIGHT_ARM).build()
     );
     public static final BlockEntityType<LeftLegBlockEntity> LEFT_LEG_BLOCK_ENTITY = Registry.register(
             Registries.BLOCK_ENTITY_TYPE,
-            Identifier.of(Clairvoyance.MOD_ID, "left_leg"),
+            Identifier.of(MonvhuaMod.MOD_ID, "left_leg"),
             FabricBlockEntityTypeBuilder.create(LeftLegBlockEntity::new, ModBlocks.LEFT_LEG).build()
     );
     public static final BlockEntityType<RightLegBlockEntity> RIGHT_LEG_BLOCK_ENTITY = Registry.register(
             Registries.BLOCK_ENTITY_TYPE,
-            Identifier.of(Clairvoyance.MOD_ID, "right_leg"),
+            Identifier.of(MonvhuaMod.MOD_ID, "right_leg"),
             FabricBlockEntityTypeBuilder.create(RightLegBlockEntity::new, ModBlocks.RIGHT_LEG).build()
     );
 
     public static final BlockEntityType<HeadBlockEntity> HEAD_BLOCK_ENTITY = Registry.register(
             Registries.BLOCK_ENTITY_TYPE,
-            Identifier.of(Clairvoyance.MOD_ID, "head"),
+            Identifier.of(MonvhuaMod.MOD_ID, "head"),
             FabricBlockEntityTypeBuilder.create(HeadBlockEntity::new, ModBlocks.HEAD).build()
     );
 
