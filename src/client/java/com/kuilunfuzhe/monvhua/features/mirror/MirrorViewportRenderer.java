@@ -41,7 +41,7 @@ public class MirrorViewportRenderer {
 
 
 
-				Vec3d slotPos = data.pos().add(originOffset).add(-3.6,16,-0.4);
+				Vec3d slotPos = data.pos().add(originOffset).add(-5.0,24.1,8.8);
 
 				SimpleFramebuffer fbo = getOrCreateFbo(slot);
 				FramebufferOverride.setOverride(fbo);

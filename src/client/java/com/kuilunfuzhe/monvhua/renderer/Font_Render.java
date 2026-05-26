@@ -7,8 +7,8 @@ import net.minecraft.item.ItemGroup;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.MathHelper;
 
+import sun.misc.Unsafe;
 import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 
 public class Font_Render {
 
@@ -42,15 +42,33 @@ public class Font_Render {
         setItemGroupDisplayName(ModItemGroups.MAIN_GROUP, newName);
     }
 
+    private static final Unsafe UNSAFE;
+
+    static {
+        Unsafe u = null;
+        try {
+            Field f = Unsafe.class.getDeclaredField("theUnsafe");
+            f.setAccessible(true);
+            u = (Unsafe) f.get(null);
+        } catch (Exception ignored) {}
+        UNSAFE = u;
+    }
+
+    private static final Field DISPLAY_NAME_FIELD;
+
+    static {
+        Field f = null;
+        try {
+            f = ItemGroup.class.getDeclaredField("displayName");
+        } catch (Exception ignored) {}
+        DISPLAY_NAME_FIELD = f;
+    }
+
     private static void setItemGroupDisplayName(ItemGroup group, Text name) {
         try {
-            Field field = ItemGroup.class.getDeclaredField("displayName");
-            field.setAccessible(true);
-            // 移除 final 修饰符（Java 反射允许修改 final 字段，但需要先修改 modifiers）
-            Field modifiersField = Field.class.getDeclaredField("modifiers");
-            modifiersField.setAccessible(true);
-            modifiersField.setInt(field, field.getModifiers() & ~Modifier.FINAL);
-            field.set(group, name);
+            if (UNSAFE == null || DISPLAY_NAME_FIELD == null) return;
+            long offset = UNSAFE.objectFieldOffset(DISPLAY_NAME_FIELD);
+            UNSAFE.putObject(group, offset, name);
         } catch (Exception e) {
             MonvhuaMod.LOGGER.error("Failed to update item group display name", e);
         }
