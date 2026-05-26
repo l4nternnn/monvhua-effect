@@ -1,26 +1,24 @@
-package com.kuilunfuzhe.monvhua.network.clairvoyance;
+package com.kuilunfuzhe.monvhua.network.evil_eyes;
 
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
-public record OpenUIPacket() implements CustomPayload {
-    public static final Id<OpenUIPacket> ID = new Id<>(Identifier.of("monvhua", "open_ui"));
-    public static final PacketCodec<RegistryByteBuf, OpenUIPacket> CODEC = PacketCodec.unit(new OpenUIPacket());
+public record ForceExitViewPayload() implements CustomPayload {
+    public static final Id<ForceExitViewPayload> ID = new Id<>(Identifier.of("monvhua", "force_exit_view"));
+    public static final PacketCodec<RegistryByteBuf, ForceExitViewPayload> CODEC = PacketCodec.unit(new ForceExitViewPayload());
 
-
-    @Override
-    public Id<? extends CustomPayload> getId() {
-        return ID;
-    }
 
     private static boolean registered = false;
-
     public static void register() {
         if (!registered) {
             net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playS2C().register(ID, CODEC);
             registered = true;
         }
+    }
+    @Override
+    public Id<? extends CustomPayload> getId() {
+        return ID;
     }
 }

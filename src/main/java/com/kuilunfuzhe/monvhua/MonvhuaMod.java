@@ -11,6 +11,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ViewingModeBlocker;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
 import com.kuilunfuzhe.monvhua.features.guidance.Gazeguidance;
+import com.kuilunfuzhe.monvhua.item.ModItemGroups;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
@@ -18,10 +19,12 @@ import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
-import com.kuilunfuzhe.monvhua.network.clairvoyance.*;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigUpdateC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorToggleC2SPacket;
+import com.kuilunfuzhe.monvhua.network.mirror.RequestMirrorConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.openback.CarryEntityPayload;
 import com.kuilunfuzhe.monvhua.network.openback.OpenOtherInventoryPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
@@ -146,6 +149,8 @@ public class MonvhuaMod implements ModInitializer {
         CameraWatchStartC2SPacket.register();
         CameraWatchStopC2SPacket.register();
         MirrorToggleC2SPacket.register();
+        MirrorConfigUpdateC2SPacket.register();
+        RequestMirrorConfigC2SPacket.register();
 
         ServerPlayNetworking.registerGlobalReceiver(MirrorToggleC2SPacket.ID, (packet, context) -> {
             MirrorCommand.toggleViewport(context.player());
@@ -227,6 +232,8 @@ public class MonvhuaMod implements ModInitializer {
         mirror_of_then_and_now.initialize();
         ModBlockEntities.initialize();
         ModScreenHandlers.initialize();
+        ModItemGroups.initialize();
+
 
         // ===== 7. 功能事件注册 =====
         CarryEvents.register();

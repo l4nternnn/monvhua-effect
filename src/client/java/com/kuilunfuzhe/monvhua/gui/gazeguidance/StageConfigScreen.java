@@ -1,9 +1,9 @@
-//package com.kuilunfuzhe.monvhua.gui.gazeguidance;
+package com.kuilunfuzhe.monvhua.gui.gazeguidance;//package com.shushuwonie.clairvoyance.client.gui.gazeguidance;
 //
-//import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
-//import com.kuilunfuzhe.monvhua.gui.evil_eyes.GlobalConfigScreen;
-//import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
-//import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
+//import com.shushuwonie.clairvoyance.client.gui.CombinedConfigScreen;
+//import com.shushuwonie.clairvoyance.client.gui.evil_eyes.GlobalConfigScreen;
+//import com.shushuwonie.clairvoyance.item.config.GazeConfig;
+//import com.shushuwonie.clairvoyance.network.gazeguidance.*;
 //import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 //import net.minecraft.client.gui.screen.Screen;
 //import net.minecraft.client.gui.tooltip.Tooltip;

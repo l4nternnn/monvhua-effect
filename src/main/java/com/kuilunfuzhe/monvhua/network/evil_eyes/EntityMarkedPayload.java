@@ -1,5 +1,4 @@
-// 文件：SetCameraEntityS2CPacket.java
-package com.kuilunfuzhe.monvhua.network.clairvoyance;
+package com.kuilunfuzhe.monvhua.network.evil_eyes;
 
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
@@ -9,12 +8,14 @@ import net.minecraft.util.Identifier;
 
 import java.util.UUID;
 
-public record SetCameraEntityS2CPacket(UUID cameraEntityUuid) implements CustomPayload {
-    public static final Id<SetCameraEntityS2CPacket> ID = new Id<>(Identifier.of("monvhua", "set_camera"));
-    public static final PacketCodec<RegistryByteBuf, SetCameraEntityS2CPacket> CODEC = PacketCodec.tuple(
-            PacketCodecs.STRING.xmap(UUID::fromString, UUID::toString), SetCameraEntityS2CPacket::cameraEntityUuid,
-            SetCameraEntityS2CPacket::new
+public record EntityMarkedPayload(UUID entityUuid, String entityName) implements CustomPayload {
+    public static final Id<EntityMarkedPayload> ID = new Id<>(Identifier.of("monvhua", "entity_marked"));
+    public static final PacketCodec<RegistryByteBuf, EntityMarkedPayload> CODEC = PacketCodec.tuple(
+            PacketCodecs.STRING.xmap(UUID::fromString, UUID::toString), EntityMarkedPayload::entityUuid,
+            PacketCodecs.STRING, EntityMarkedPayload::entityName,
+            EntityMarkedPayload::new
     );
+
 
     private static boolean registered = false;
     public static void register() {
@@ -23,7 +24,6 @@ public record SetCameraEntityS2CPacket(UUID cameraEntityUuid) implements CustomP
             registered = true;
         }
     }
-
     @Override
     public Id<? extends CustomPayload> getId() {
         return ID;

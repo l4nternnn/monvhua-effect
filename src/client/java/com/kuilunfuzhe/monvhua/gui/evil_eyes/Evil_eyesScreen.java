@@ -1,16 +1,16 @@
 package com.kuilunfuzhe.monvhua.gui.evil_eyes;
 
-import com.kuilunfuzhe.monvhua.network.clairvoyance.SelectViewPayload;
-import com.kuilunfuzhe.monvhua.network.clairvoyance.UnmarkEntityPayload;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.SelectViewPayload;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.UnmarkEntityPayload;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.Element;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextWidget;
 import net.minecraft.text.Text;
 
-import net.minecraft.client.gui.Element;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.UUID;
@@ -70,7 +70,7 @@ public class Evil_eyesScreen extends Screen {
 
     private void refreshEntityButtons() {
         // 隐藏旧的按钮并从children移除（drawables无法直接访问，通过visible=false避免渲染）
-        java.util.List<Element> oldBtns = new java.util.ArrayList<>();
+        java.util.List<Element> oldBtns = new ArrayList<>();
         for (Element child : children()) {
             if (child instanceof ButtonWidget btn) {
                 btn.visible = false;

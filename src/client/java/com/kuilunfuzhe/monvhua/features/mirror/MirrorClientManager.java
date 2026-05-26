@@ -7,7 +7,7 @@ import net.minecraft.util.math.Vec3d;
 public class MirrorClientManager {
 	private static boolean viewportActive = false;
 	private static final CameraData[] slots = new CameraData[2];
-	private static Vec3d origin = null; // 首次启用视口时的玩家位置
+	private static Vec3d origin = null; // player position when viewport was first enabled
 
 	static {
 		slots[0] = new CameraData(false, Vec3d.ZERO);
@@ -20,7 +20,7 @@ public class MirrorClientManager {
 		boolean wasActive = viewportActive;
 		viewportActive = packet.viewportActive();
 
-		// 首次启用时记录起点
+		// Capture origin on first enable
 		if (viewportActive && !wasActive && origin == null) {
 			MinecraftClient client = MinecraftClient.getInstance();
 			if (client.player != null) {
@@ -33,9 +33,9 @@ public class MirrorClientManager {
 	}
 
 	/**
-	 * 镜像视口相机位于：保存的设置点 + 玩家相对于起点的位移。
-	 * origin = 首次启用视口时玩家的位置。
-	 * 当玩家移动时，视口跟随移动，保持相同的相对位置。
+	 * The mirror viewport camera sits at: saved set point + player's displacement from origin.
+	 * origin = the player's position when the viewport was first enabled.
+	 * As you move, the viewport tracks with you, staying in the same relative position.
 	 */
 	public static Vec3d getOriginOffset() {
 		if (origin == null) return Vec3d.ZERO;

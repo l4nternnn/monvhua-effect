@@ -10,7 +10,7 @@ import net.minecraft.util.Identifier;
 
 public class BodyPartScreen extends HandledScreen<BodyPartScreenHandler> {
     // 原版通用容器纹理（9x3 槽位背景）
-        private static final Identifier TEXTURE = Identifier.of("monvhua", "textures/gui/img_2.png");
+        private static final Identifier TEXTURE = Identifier.of("clairvoyance", "textures/gui/img_2.png");
 //    private static final Identifier TEXTURE = Identifier.of("minecraft", "textures/gui/container/generic_54.png");
     // 纹理的实际宽度和高度（原版为 176x166）
     private static final int TEXTURE_WIDTH = 256;

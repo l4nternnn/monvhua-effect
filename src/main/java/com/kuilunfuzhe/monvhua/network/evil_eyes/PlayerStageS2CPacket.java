@@ -1,5 +1,5 @@
 // 文件：com.kuilunfuzhe.monvhua.network.clairvoyance.PlayerStageS2CPacket
-package com.kuilunfuzhe.monvhua.network.clairvoyance;
+package com.kuilunfuzhe.monvhua.network.evil_eyes;
 
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.codec.PacketCodec;

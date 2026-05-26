@@ -16,10 +16,10 @@ public class MirrorHudOverlay {
 			MinecraftClient client = MinecraftClient.getInstance();
 			if (client.player == null) return;
 
-			// 将镜像帧缓冲渲染到主帧缓冲
+			// Blit mirror framebuffers to main framebuffer
 			MirrorViewportRenderer.blitToMainFramebuffer();
 
-			// 绘制边框和标签
+			// Draw borders and labels
 			int scaleFactor = (int) client.getWindow().getScaleFactor();
 			int vpW = Math.ceilDiv(VIEWPORT_WIDTH, scaleFactor);
 			int vpH = Math.ceilDiv(VIEWPORT_HEIGHT, scaleFactor);
@@ -32,14 +32,14 @@ public class MirrorHudOverlay {
 
 				int x = sw - vpW - PADDING;
 
-				// 边框
+				// Border
 				int borderColor = slot == 0 ? 0xFFFF55FF : 0xFF55FFFF;
 				context.fill(x - 1, y - 1, x + vpW + 1, y + vpH + 1, borderColor);
 
-				// 标签背景条
+				// Background bar for label
 				context.fill(x, y, x + 40, y + 12, 0xAA000000);
 
-				// 标签
+				// Label
 				String label = slot == 0 ? "镜1" : "镜2";
 				int labelColor = slot == 0 ? 0xFFFF55FF : 0xFF55FFFF;
 				context.drawText(client.textRenderer, Text.literal(label),

@@ -1,4 +1,4 @@
-package com.kuilunfuzhe.monvhua.network.clairvoyance;
+package com.kuilunfuzhe.monvhua.network.evil_eyes;
 
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.network.PacketByteBuf;

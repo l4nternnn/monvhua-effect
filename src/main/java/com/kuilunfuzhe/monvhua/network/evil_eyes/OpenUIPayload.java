@@ -1,4 +1,4 @@
-package com.kuilunfuzhe.monvhua.network.clairvoyance;
+package com.kuilunfuzhe.monvhua.network.evil_eyes;
 
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;

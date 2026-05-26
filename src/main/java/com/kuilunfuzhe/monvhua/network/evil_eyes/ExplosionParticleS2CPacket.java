@@ -1,5 +1,4 @@
-// 锚点粒子 S2C 数据包
-package com.kuilunfuzhe.monvhua.network.clairvoyance;
+package com.kuilunfuzhe.monvhua.network.evil_eyes;
 
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
@@ -7,20 +6,18 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
 
-import java.util.UUID;
-
-public record AnchorParticleS2CPacket(UUID standId, Vec3d pos, int type) implements CustomPayload {
-    public static final Id<AnchorParticleS2CPacket> ID = new Id<>(Identifier.of("monvhua", "anchor_particle"));
-    public static final PacketCodec<RegistryByteBuf, AnchorParticleS2CPacket> CODEC = PacketCodec.of(
+public record ExplosionParticleS2CPacket(Vec3d pos) implements CustomPayload {
+    public static final Id<ExplosionParticleS2CPacket> ID = new Id<>(Identifier.of("monvhua", "explosion_particle"));
+    public static final PacketCodec<RegistryByteBuf, ExplosionParticleS2CPacket> CODEC = PacketCodec.of(
             (packet, buf) -> {
-                buf.writeUuid(packet.standId);
                 buf.writeDouble(packet.pos.x);
                 buf.writeDouble(packet.pos.y);
                 buf.writeDouble(packet.pos.z);
-                buf.writeInt(packet.type);
             },
-            buf -> new AnchorParticleS2CPacket(buf.readUuid(), new Vec3d(buf.readDouble(), buf.readDouble(), buf.readDouble()), buf.readInt())
+            buf -> new ExplosionParticleS2CPacket(new Vec3d(buf.readDouble(), buf.readDouble(), buf.readDouble()))
     );
+
+
     private static boolean registered = false;
     public static void register() {
         if (!registered) {

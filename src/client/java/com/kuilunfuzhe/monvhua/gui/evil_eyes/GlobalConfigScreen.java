@@ -1,15 +1,15 @@
 package com.kuilunfuzhe.monvhua.gui.evil_eyes;
 
-import com.kuilunfuzhe.monvhua.network.clairvoyance.GlobalConfigS2CPacket;
-import com.kuilunfuzhe.monvhua.network.clairvoyance.RequestGlobalConfigC2SPacket;
-import com.kuilunfuzhe.monvhua.network.clairvoyance.UpdateGlobalConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.GlobalConfigS2CPacket;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.RequestGlobalConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.UpdateGlobalConfigC2SPacket;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.gui.widget.TextWidget;
-import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.text.Text;
 
 public class GlobalConfigScreen extends Screen {

@@ -1,12 +1,11 @@
 package com.kuilunfuzhe.monvhua.network;
 
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
-import com.kuilunfuzhe.monvhua.network.clairvoyance.*;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorToggleC2SPacket;
 import com.kuilunfuzhe.monvhua.network.openback.*;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 
 public class ModNetworking {
 	// 注册所有 S2C 包（客户端和服务端都需要）

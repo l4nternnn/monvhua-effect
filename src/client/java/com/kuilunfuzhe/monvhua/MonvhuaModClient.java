@@ -2,7 +2,6 @@ package com.kuilunfuzhe.monvhua;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.ClientCameraWatchReceiver;
@@ -18,6 +17,7 @@ import com.kuilunfuzhe.monvhua.model.head.HeadModel;
 import com.kuilunfuzhe.monvhua.model.leg.LeftLegModel;
 import com.kuilunfuzhe.monvhua.model.leg.RightLegModel;
 import com.kuilunfuzhe.monvhua.model.torso.TorsoModel;
+import com.kuilunfuzhe.monvhua.renderer.Font_Render;
 import com.kuilunfuzhe.monvhua.renderer.arm.LeftArmBlockEntityRenderer;
 import com.kuilunfuzhe.monvhua.renderer.arm.RightArmBlockEntityRenderer;
 import com.kuilunfuzhe.monvhua.renderer.head.HeadBlockEntityRenderer;
@@ -33,7 +33,7 @@ import com.kuilunfuzhe.monvhua.renderer.torso.TorsoBlockEntityRenderer;
 import com.kuilunfuzhe.monvhua.renderer.torso.TorsoSpecialModelRenderer;
 import com.kuilunfuzhe.monvhua.entity.ModBlockEntities;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
-import com.kuilunfuzhe.monvhua.network.clairvoyance.*;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 //import com.shushuwonie.client.evil_eyes.Evil_EyesClient;
 //import com.shushuwonie.client.evil_eyes.client.CameraWatchClientHandler;
@@ -560,6 +560,11 @@ public class MonvhuaModClient implements ClientModInitializer {
 
 
 		HandledScreens.register(ModScreenHandlers.BODY_PART_SCREEN_HANDLER, BodyPartScreen::new);
+		ClientTickEvents.END_CLIENT_TICK.register(client -> {
+			Font_Render.tick(client);
+		});
+
+
 	}
 
 	// ==================== 渲染方法（保持不变）====================

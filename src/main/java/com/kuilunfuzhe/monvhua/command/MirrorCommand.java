@@ -2,6 +2,8 @@ package com.kuilunfuzhe.monvhua.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
+import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.command.CommandRegistryAccess;
@@ -20,28 +22,32 @@ public class MirrorCommand {
 	public static final Map<UUID, Vec3d[]> PLAYER_MIRRORS = new ConcurrentHashMap<>();
 	public static final Map<UUID, Boolean> VIEWPORT_ACTIVE = new ConcurrentHashMap<>();
 
+	// Config-driven tracking
+	public static final Map<UUID, Integer> VIEWPORT_ACCUMULATED_TICKS = new ConcurrentHashMap<>();
+	public static final Map<UUID, Integer> VIEWPORT_USES_LEFT = new ConcurrentHashMap<>();
+
 	public static void register(CommandDispatcher<ServerCommandSource> dispatcher,
-			CommandRegistryAccess registryAccess,
-			CommandManager.RegistrationEnvironment environment) {
+	                            CommandRegistryAccess registryAccess,
+	                            CommandManager.RegistrationEnvironment environment) {
 		dispatcher.register(CommandManager.literal("mirror")
-			.requires(source -> source.hasPermissionLevel(2))
-			.then(CommandManager.literal("set")
-				.then(CommandManager.argument("slot", IntegerArgumentType.integer(1, 2))
-					.executes(ctx -> executeSet(ctx.getSource(),
-						IntegerArgumentType.getInteger(ctx, "slot"),
-						null))
-					.then(CommandManager.argument("pos", Vec3ArgumentType.vec3())
-						.executes(ctx -> executeSet(ctx.getSource(),
-							IntegerArgumentType.getInteger(ctx, "slot"),
-							Vec3ArgumentType.getVec3(ctx, "pos"))))))
-			.then(CommandManager.literal("remove")
-				.then(CommandManager.argument("slot", IntegerArgumentType.integer(1, 2))
-					.executes(ctx -> executeRemove(ctx.getSource(),
-						IntegerArgumentType.getInteger(ctx, "slot")))))
-			.then(CommandManager.literal("list")
-				.executes(ctx -> executeList(ctx.getSource())))
-			.then(CommandManager.literal("clear")
-				.executes(ctx -> executeClear(ctx.getSource())))
+				.requires(source -> source.hasPermissionLevel(2))
+				.then(CommandManager.literal("set")
+						.then(CommandManager.argument("slot", IntegerArgumentType.integer(1, 2))
+								.executes(ctx -> executeSet(ctx.getSource(),
+										IntegerArgumentType.getInteger(ctx, "slot"),
+										null))
+								.then(CommandManager.argument("pos", Vec3ArgumentType.vec3())
+										.executes(ctx -> executeSet(ctx.getSource(),
+												IntegerArgumentType.getInteger(ctx, "slot"),
+												Vec3ArgumentType.getVec3(ctx, "pos"))))))
+				.then(CommandManager.literal("remove")
+						.then(CommandManager.argument("slot", IntegerArgumentType.integer(1, 2))
+								.executes(ctx -> executeRemove(ctx.getSource(),
+										IntegerArgumentType.getInteger(ctx, "slot")))))
+				.then(CommandManager.literal("list")
+						.executes(ctx -> executeList(ctx.getSource())))
+				.then(CommandManager.literal("clear")
+						.executes(ctx -> executeClear(ctx.getSource())))
 		);
 	}
 
@@ -62,7 +68,7 @@ public class MirrorCommand {
 		});
 
 		source.sendMessage(Text.literal("§a镜位 " + slot + " 已设置为: " +
-			String.format("%.1f, %.1f, %.1f", targetPos.x, targetPos.y, targetPos.z)));
+				String.format("%.1f, %.1f, %.1f", targetPos.x, targetPos.y, targetPos.z)));
 
 		syncToClient(player);
 		return 1;
@@ -95,7 +101,7 @@ public class MirrorCommand {
 			if (p != null) {
 				anyActive = true;
 				source.sendMessage(Text.literal("§a镜位 " + (i + 1) + ": §f" +
-					String.format("%.1f, %.1f, %.1f", p.x, p.y, p.z)));
+						String.format("%.1f, %.1f, %.1f", p.x, p.y, p.z)));
 			} else {
 				source.sendMessage(Text.literal("§7镜位 " + (i + 1) + ": §7未设置"));
 			}
@@ -137,12 +143,80 @@ public class MirrorCommand {
 		}
 
 		boolean current = VIEWPORT_ACTIVE.getOrDefault(uuid, false);
+
+		if (!current) {
+			// Enabling — check config
+			int stage = Evil_Eyes.getPlayerStage(player, Evil_Eyes.configManager);
+			MirrorConfig config = MirrorConfig.getInstance();
+			int usesLeft = config.getViewCount(stage);
+
+			if (usesLeft <= 0) {
+				player.sendMessage(Text.literal("§c当前阶段无法使用镜子"), true);
+				return;
+			}
+
+			VIEWPORT_USES_LEFT.put(uuid, usesLeft);
+			VIEWPORT_ACCUMULATED_TICKS.put(uuid, 0);
+			player.sendMessage(Text.literal("§a镜像视图已开启 (剩余" + usesLeft + "次)"), true);
+		} else {
+			player.sendMessage(Text.literal("§7镜像视图已关闭"), true);
+		}
+
 		VIEWPORT_ACTIVE.put(uuid, !current);
-		player.sendMessage(Text.literal(current ? "§7镜像视图已关闭" : "§a镜像视图已开启"), true);
 		syncToClient(player);
 	}
 
-	private static void syncToClient(ServerPlayerEntity player) {
+	public static void tickViewports(ServerPlayerEntity player) {
+		UUID uuid = player.getUuid();
+		if (!VIEWPORT_ACTIVE.getOrDefault(uuid, false)) return;
+
+		int stage = Evil_Eyes.getPlayerStage(player, Evil_Eyes.configManager);
+		MirrorConfig config = MirrorConfig.getInstance();
+
+		int watchTimeTicks = config.getWatchTime(stage) * 20;
+		double successRate = config.getSuccessRate(stage);
+		int usesLeft = VIEWPORT_USES_LEFT.getOrDefault(uuid, 0);
+
+		if (usesLeft <= 0) {
+			VIEWPORT_ACTIVE.put(uuid, false);
+			VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
+			VIEWPORT_USES_LEFT.remove(uuid);
+			syncToClient(player);
+			player.sendMessage(Text.literal("§c本次观看次数已用完"), true);
+			return;
+		}
+
+		int accumulated = VIEWPORT_ACCUMULATED_TICKS.getOrDefault(uuid, 0) + 1;
+		VIEWPORT_ACCUMULATED_TICKS.put(uuid, accumulated);
+
+		if (accumulated >= watchTimeTicks) {
+			VIEWPORT_ACCUMULATED_TICKS.put(uuid, 0);
+
+			if (player.getRandom().nextDouble() < successRate) {
+				usesLeft--;
+				VIEWPORT_USES_LEFT.put(uuid, usesLeft);
+
+				if (usesLeft <= 0) {
+					VIEWPORT_ACTIVE.put(uuid, false);
+					VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
+					VIEWPORT_USES_LEFT.remove(uuid);
+					player.sendMessage(Text.literal("§c本次观看次数已用完"), true);
+				} else {
+					player.sendMessage(Text.literal("§a观看成功! 剩余" + usesLeft + "次"), true);
+				}
+				syncToClient(player);
+			}
+		}
+	}
+
+	public static void cleanup(UUID uuid) {
+		PLAYER_MIRRORS.remove(uuid);
+		VIEWPORT_ACTIVE.remove(uuid);
+		VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
+		VIEWPORT_USES_LEFT.remove(uuid);
+	}
+
+	public static void syncToClient(ServerPlayerEntity player) {
 		UUID uuid = player.getUuid();
 		Vec3d[] mirrors = PLAYER_MIRRORS.get(uuid);
 
@@ -151,9 +225,9 @@ public class MirrorCommand {
 		boolean active = VIEWPORT_ACTIVE.getOrDefault(uuid, false);
 
 		ServerPlayNetworking.send(player, new MirrorStateS2CPacket(
-			p1 != null, p1 != null ? p1.x : 0, p1 != null ? p1.y : 0, p1 != null ? p1.z : 0,
-			p2 != null, p2 != null ? p2.x : 0, p2 != null ? p2.y : 0, p2 != null ? p2.z : 0,
-			active
+				p1 != null, p1 != null ? p1.x : 0, p1 != null ? p1.y : 0, p1 != null ? p1.z : 0,
+				p2 != null, p2 != null ? p2.x : 0, p2 != null ? p2.y : 0, p2 != null ? p2.z : 0,
+				active
 		));
 	}
 }

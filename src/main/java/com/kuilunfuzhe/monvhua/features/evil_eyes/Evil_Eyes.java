@@ -3,7 +3,7 @@ package com.kuilunfuzhe.monvhua.features.evil_eyes;
 import com.kuilunfuzhe.monvhua.config.GlobalConfigManager;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
 import com.kuilunfuzhe.monvhua.item.evil_eyes.ClairvoyanceItem;
-import com.kuilunfuzhe.monvhua.network.clairvoyance.*;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
 //import com.shushuwonie.client.network.clairvoyance.*;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -250,7 +250,7 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
 //        ExitViewPayload.register();        // 客户端到服务端
 //        ForceExitViewPayload.register();   // 客户端到服务端
 
-        Identifier id = Identifier.of("monvhua", "clairvoyance_item");
+        Identifier id = Identifier.of("monvhua", "evil_eyes");
         RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM, id);
         Item.Settings settings = new Item.Settings()
                 .registryKey(key)

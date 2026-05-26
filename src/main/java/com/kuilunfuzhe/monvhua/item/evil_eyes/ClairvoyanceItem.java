@@ -1,6 +1,6 @@
 package com.kuilunfuzhe.monvhua.item.evil_eyes;
 
-import com.kuilunfuzhe.monvhua.network.clairvoyance.OpenUIPacket;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.OpenUIPacket;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
