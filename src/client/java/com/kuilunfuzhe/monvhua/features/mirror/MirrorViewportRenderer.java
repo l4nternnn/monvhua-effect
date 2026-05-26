@@ -93,9 +93,6 @@ public class MirrorViewportRenderer {
 			}
 
 			hasRenderedMirrors = true;
-
-			// Rebuild chunk visibility for main camera after mirror rendering
-			client.worldRenderer.scheduleTerrainUpdate();
 		} finally {
 			renderingMirror.set(false);
 		}
