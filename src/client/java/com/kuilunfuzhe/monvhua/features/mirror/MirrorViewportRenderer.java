@@ -39,9 +39,8 @@ public class MirrorViewportRenderer {
 				MirrorClientManager.CameraData data = MirrorClientManager.getSlot(slot);
 				if (!data.active()) continue;
 
-
-
-				Vec3d slotPos = data.pos().add(originOffset).add(-3.6,16,-0.4);
+				// Use mirror position directly, with small eye-height offset
+				Vec3d slotPos = data.pos().add(originOffset).add(0, 1.6, 0);
 
 				SimpleFramebuffer fbo = getOrCreateFbo(slot);
 				FramebufferOverride.setOverride(fbo);
