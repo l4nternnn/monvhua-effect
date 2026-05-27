@@ -18,19 +18,19 @@ import com.kuilunfuzhe.monvhua.model.leg.LeftLegModel;
 import com.kuilunfuzhe.monvhua.model.leg.RightLegModel;
 import com.kuilunfuzhe.monvhua.model.torso.TorsoModel;
 import com.kuilunfuzhe.monvhua.renderer.Font_Render;
-import com.kuilunfuzhe.monvhua.renderer.arm.LeftArmBlockEntityRenderer;
-import com.kuilunfuzhe.monvhua.renderer.arm.RightArmBlockEntityRenderer;
-import com.kuilunfuzhe.monvhua.renderer.head.HeadBlockEntityRenderer;
-import com.kuilunfuzhe.monvhua.renderer.head.HeadSpecialModelRenderer;
-import com.kuilunfuzhe.monvhua.renderer.leg.LeftLegBlockEntityRenderer;
-import com.kuilunfuzhe.monvhua.renderer.leg.RightLegBlockEntityRenderer;
-import com.kuilunfuzhe.monvhua.renderer.arm.LeftArmSpecialModelRenderer;
-import com.kuilunfuzhe.monvhua.renderer.arm.RightArmSpecialModelRenderer;
-import com.kuilunfuzhe.monvhua.renderer.leg.LeftLegSpecialModelRenderer;
-import com.kuilunfuzhe.monvhua.renderer.leg.RightLegSpecialModelRenderer;
-import com.kuilunfuzhe.monvhua.renderer.special.CombinedBodySpecialModelRenderer;
-import com.kuilunfuzhe.monvhua.renderer.torso.TorsoBlockEntityRenderer;
-import com.kuilunfuzhe.monvhua.renderer.torso.TorsoSpecialModelRenderer;
+import com.kuilunfuzhe.monvhua.renderer.body.arm.LeftArmBlockEntityRenderer;
+import com.kuilunfuzhe.monvhua.renderer.body.arm.RightArmBlockEntityRenderer;
+import com.kuilunfuzhe.monvhua.renderer.body.head.HeadBlockEntityRenderer;
+import com.kuilunfuzhe.monvhua.renderer.body.head.HeadSpecialModelRenderer;
+import com.kuilunfuzhe.monvhua.renderer.body.leg.LeftLegBlockEntityRenderer;
+import com.kuilunfuzhe.monvhua.renderer.body.leg.RightLegBlockEntityRenderer;
+import com.kuilunfuzhe.monvhua.renderer.body.arm.LeftArmSpecialModelRenderer;
+import com.kuilunfuzhe.monvhua.renderer.body.arm.RightArmSpecialModelRenderer;
+import com.kuilunfuzhe.monvhua.renderer.body.leg.LeftLegSpecialModelRenderer;
+import com.kuilunfuzhe.monvhua.renderer.body.leg.RightLegSpecialModelRenderer;
+import com.kuilunfuzhe.monvhua.renderer.body.special.CombinedBodySpecialModelRenderer;
+import com.kuilunfuzhe.monvhua.renderer.body.torso.TorsoBlockEntityRenderer;
+import com.kuilunfuzhe.monvhua.renderer.body.torso.TorsoSpecialModelRenderer;
 import com.kuilunfuzhe.monvhua.entity.ModBlockEntities;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
@@ -42,10 +42,12 @@ import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 //import com.shushuwonie.client.gui.evil_eyes.Evil_eyesScreen;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
+import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorHudOverlay;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorToggleC2SPacket;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
@@ -147,17 +149,7 @@ public class MonvhuaModClient implements ClientModInitializer {
 			}
 			if (markKey.wasPressed()) {
 				ItemStack mainHand = client.player.getMainHandStack();
-				// V键抱起功能已移除
-				// if (client.player.isSneaking() && mainHand.isEmpty() && client.player.getOffHandStack().isEmpty()) {
-				// 	Entity target = getTargetEntity(client, 5.0);
-				// 	if (target instanceof LivingEntity ) {
-				// 		ClientPlayNetworking.send(new CarryEntityPayload(target.getId()));
-				// 		client.player.sendMessage(Text.literal("§e尝试抱起实体"), true);
-				// 	} else {
-				// 		client.player.sendMessage(Text.literal("§c请对准一个可抱起的生物"), true);
-				// 	}
-				// 	return;
-				// }
+
 				if (mainHand.getItem() == Evil_Eyes.CLAIRVOYANCE_ITEM) {
 					// 同时检测实体和方块射线，取近的
 					Vec3d eye = client.player.getEyePos();
@@ -298,6 +290,16 @@ public class MonvhuaModClient implements ClientModInitializer {
 				GazeConfig config = GazeConfig.fromJson(packet.json());
 				if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
 					screen.receiveGazeConfig(config);
+				}
+			});
+		});
+
+		// mirror config sync S2C
+		ClientPlayNetworking.registerGlobalReceiver(MirrorConfigS2CPacket.ID, (packet, context) -> {
+			context.client().execute(() -> {
+				MirrorConfig config = MirrorConfig.fromJson(packet.json());
+				if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
+					screen.receiveMirrorConfig(config);
 				}
 			});
 		});
@@ -708,7 +710,8 @@ public class MonvhuaModClient implements ClientModInitializer {
 			MirrorClientManager.CameraData data = MirrorClientManager.getSlot(i);
 			if (!data.active()) continue;
 
-			Vec3d worldPos = data.pos();
+			Vec3d worldPos = MirrorClientManager.getSlotWorldPos(i, client.player.getPos());
+				if (worldPos == null) continue;
 			int light = WorldRenderer.getLightmapCoordinates(client.world, BlockPos.ofFloored(worldPos));
 			int overlay = OverlayTexture.DEFAULT_UV;
 			float height = 2.0f;

@@ -58,8 +58,8 @@ public class GazeguidanceClient {
 	public static void initialize() {
 		// 所有接收器已移至 ClairvoyanceClient，此处不再注册
 		// 只保留业务逻辑所需的初始化（如按键绑定）
-		stageConfigKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				"key.gazeguidance.stage_config", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_U, "category.gazeguidance"));
+//		stageConfigKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+//				"key.gazeguidance.stage_config", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_U, "category.gazeguidance"));
 
 		// Tick 事件处理（右键长按检测）
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -74,13 +74,13 @@ public class GazeguidanceClient {
 				}
 			}
 			// K 键打开配置界面（仅创造模式）
-			if (stageConfigKey.wasPressed() && client.player.isCreative()) {
-				// 注意：StageConfigScreen 可能需要从旧包导入，但此处暂时注释
-				// client.setScreen(new StageConfigScreen(null));
-				client.player.sendMessage(Text.literal("§a阶段配置界面待实现"), true);
-			} else if (stageConfigKey.wasPressed()) {
-				client.player.sendMessage(Text.literal("§c仅创造模式可配置"), true);
-			}
+//			if (stageConfigKey.wasPressed() && client.player.isCreative()) {
+//				// 注意：StageConfigScreen 可能需要从旧包导入，但此处暂时注释
+//				// client.setScreen(new StageConfigScreen(null));
+//				client.player.sendMessage(Text.literal("§a阶段配置界面待实现"), true);
+//			} else if (stageConfigKey.wasPressed()) {
+//				client.player.sendMessage(Text.literal("§c仅创造模式可配置"), true);
+//			}
 		});
 
 		// HUD 渲染（能量条）

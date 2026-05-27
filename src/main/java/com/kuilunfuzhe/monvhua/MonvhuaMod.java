@@ -2,6 +2,8 @@ package com.kuilunfuzhe.monvhua;
 
 import com.google.gson.JsonObject;
 import com.kuilunfuzhe.monvhua.command.*;
+import com.kuilunfuzhe.monvhua.command.mirror.MirrorCommand;
+import com.kuilunfuzhe.monvhua.command.mirror.MirrorDataStore;
 import com.kuilunfuzhe.monvhua.config.GlobalConfigManager;
 import com.kuilunfuzhe.monvhua.effect.DisplayOnlyEffect;
 import com.kuilunfuzhe.monvhua.entity.ModBlockEntities;
@@ -21,6 +23,8 @@ import com.kuilunfuzhe.monvhua.network.ModNetworking;
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
+import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigUpdateC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorToggleC2SPacket;
@@ -131,6 +135,7 @@ public class MonvhuaMod implements ModInitializer {
         CameraWatchUnbindS2CPacket.register();
         CameraUpdateS2CPacket.register();
         MirrorStateS2CPacket.register();
+        MirrorConfigS2CPacket.register();
 
         ModNetworking.registerC2SPackets();
         MarkEntityPayload.register();
@@ -154,6 +159,26 @@ public class MonvhuaMod implements ModInitializer {
 
         ServerPlayNetworking.registerGlobalReceiver(MirrorToggleC2SPacket.ID, (packet, context) -> {
             MirrorCommand.toggleViewport(context.player());
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(MirrorConfigUpdateC2SPacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                MirrorConfig newConfig = MirrorConfig.fromJson(packet.json());
+                if (newConfig != null) {
+                    MirrorConfig.setInstance(newConfig);
+                    for (ServerPlayerEntity p : context.server().getPlayerManager().getPlayerList()) {
+                        ServerPlayNetworking.send(p, new MirrorConfigS2CPacket(newConfig.toJson()));
+                    }
+                    if (context.player() != null) {
+                        context.player().sendMessage(Text.literal("§a镜子配置已更新并同步"), true);
+                    }
+                }
+            });
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(RequestMirrorConfigC2SPacket.ID, (packet, context) -> {
+            MirrorConfig config = MirrorConfig.getInstance();
+            ServerPlayNetworking.send(context.player(), new MirrorConfigS2CPacket(config.toJson()));
         });
 
         // ===== 3. 命令注册 =====
@@ -206,10 +231,19 @@ public class MonvhuaMod implements ModInitializer {
             sendGlobalConfigToPlayer(player, configManager);
             int stage = Evil_Eyes.getPlayerStage(player, configManager);
             ServerPlayNetworking.send(player, new PlayerStageS2CPacket(stage));
+            MirrorCommand.syncToClient(player);
         });
 
-        // ===== 5. 摄像机追踪 =====
-        ServerTickEvents.END_SERVER_TICK.register(CameraWatchManager::tick);
+        // ===== 5. 持久化加载 =====
+        MirrorDataStore.load();
+
+        // ===== 6. 摄像机追踪 & 镜面视口 tick =====
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            CameraWatchManager.tick(server);
+            for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+                MirrorCommand.tickViewports(player);
+            }
+        });
 
         ServerPlayNetworking.registerGlobalReceiver(CameraWatchStartC2SPacket.ID, (packet, context) -> {
             ServerPlayerEntity player = context.player();
@@ -223,7 +257,7 @@ public class MonvhuaMod implements ModInitializer {
             Evil_Eyes.forceStopWatching(player, server);
         });
 
-        // ===== 6. 模块初始化 =====
+        // ===== 7. 模块初始化 =====
         Evil_Eyes.initialize(configManager);
         Gazeguidance.initialize();
         ModItems.initialize();
@@ -235,12 +269,12 @@ public class MonvhuaMod implements ModInitializer {
         ModItemGroups.initialize();
 
 
-        // ===== 7. 功能事件注册 =====
+        // ===== 8. 功能事件注册 =====
         CarryEvents.register();
         ViewingModeBlocker.register();
         BodyPartManager.registerEvents();
 
-        // ===== 8. 打开他人背包 =====
+        // ===== 9. 打开他人背包 =====
         ServerPlayNetworking.registerGlobalReceiver(OpenOtherInventoryPayload.ID, (payload, context) -> {
             ServerPlayerEntity requester = context.player();
             if (!requester.isCreative()) {
@@ -269,7 +303,7 @@ public class MonvhuaMod implements ModInitializer {
 
         Registry.register(Registries.SCREEN_HANDLER, Identifier.of(MOD_ID, "other_inventory"), OTHER_INVENTORY_HANDLER);
 
-        // ===== 9. 锚点破坏 =====
+        // ===== 10. 锚点破坏 =====
         ServerPlayNetworking.registerGlobalReceiver(AnchorDestroyC2SPacket.ID, (packet, context) -> {
             ServerPlayerEntity player = context.player();
             UUID standId = packet.standId();
@@ -290,7 +324,7 @@ public class MonvhuaMod implements ModInitializer {
             }
         });
 
-        // ===== 10. 魔女化效果 tick 循环 =====
+        // ===== 11. 魔女化效果 tick 循环 =====
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             tickCounter++;
             if (tickCounter < 20) return;
@@ -388,7 +422,7 @@ public class MonvhuaMod implements ModInitializer {
             }
         });
 
-        // ===== 11. 断线清理 =====
+        // ===== 12. 断线清理 =====
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
             UUID uuid = player.getUuid();
@@ -401,19 +435,21 @@ public class MonvhuaMod implements ModInitializer {
             VIEWING_MAP.remove(player);
             VIEWING_MAP.values().removeIf(v -> v == player);
             VIEW_MODE_PREFERENCE.remove(uuid);
+            MirrorCommand.cleanup(uuid);
         });
 
-        // ===== 12. 死亡清理 =====
+        // ===== 13. 死亡清理 =====
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
             if (entity instanceof ServerPlayerEntity player) {
                 UUID uuid = player.getUuid();
                 lastEffect.remove(uuid);
                 cancelPendingTainted(uuid);
                 floatingPlayers.remove(uuid);
+                MirrorCommand.cleanup(uuid);
             }
         });
 
-        // ===== 13. 飘浮玩家免疫摔落伤害 =====
+        // ===== 14. 飘浮玩家免疫摔落伤害 =====
         ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> {
             if (entity instanceof ServerPlayerEntity player
                     && floatingPlayers.contains(player.getUuid())

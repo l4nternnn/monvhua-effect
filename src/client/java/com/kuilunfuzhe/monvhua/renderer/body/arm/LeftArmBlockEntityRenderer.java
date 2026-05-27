@@ -1,17 +1,18 @@
-package com.kuilunfuzhe.monvhua.renderer.torso;
+package com.kuilunfuzhe.monvhua.renderer.body.arm;
 
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
-import com.kuilunfuzhe.monvhua.model.torso.TorsoModel;
-import com.kuilunfuzhe.monvhua.features.block.body.torso.TorsoBlock;
-import com.kuilunfuzhe.monvhua.features.block.body.torso.TorsoBlockEntity;
+import com.kuilunfuzhe.monvhua.model.arm.LeftArmModel;
+import com.kuilunfuzhe.monvhua.model.arm.LeftArmSlimModel;
+import com.kuilunfuzhe.monvhua.features.block.body.arm.LeftArmBlock;
+import com.kuilunfuzhe.monvhua.features.block.body.arm.LeftArmBlockEntity;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.block.entity.BlockEntityRenderer;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
+import net.minecraft.client.render.block.entity.SkullBlockEntityModel;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.component.type.ProfileComponent;
 import net.minecraft.util.Identifier;
@@ -22,25 +23,26 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.UUID;
 
-public class TorsoBlockEntityRenderer implements BlockEntityRenderer<TorsoBlockEntity> {
-    private final TorsoModel model;
+public class LeftArmBlockEntityRenderer implements BlockEntityRenderer<LeftArmBlockEntity> {
+    private final LeftArmModel model;
+    private final LeftArmSlimModel slimModel;
 
-    public TorsoBlockEntityRenderer(BlockEntityRendererFactory.Context ctx) {
-        this.model = new TorsoModel(ctx.getLayerModelPart(ModModelLayers.TORSO));
+    public LeftArmBlockEntityRenderer(BlockEntityRendererFactory.Context ctx) {
+        this.model = new LeftArmModel(ctx.getLayerModelPart(ModModelLayers.LEFT_ARM));
+        this.slimModel = new LeftArmSlimModel(ctx.getLayerModelPart(ModModelLayers.LEFT_ARM_SLIM));
     }
 
     @Override
-    public void render(TorsoBlockEntity entity, float tickDelta, MatrixStack matrices,
+    public void render(LeftArmBlockEntity entity, float tickDelta, MatrixStack matrices,
                        VertexConsumerProvider vertexConsumers, int light, int overlay, Vec3d cameraPos) {
-        Direction direction = entity.getCachedState().get(TorsoBlock.FACING);
+        Direction direction = entity.getCachedState().get(LeftArmBlock.FACING);
         float yaw = getYawFromDirection(direction);
 
         matrices.push();
-        matrices.translate(0.5F, 0.0F, 0.5F);
+        matrices.translate(0.4F, 0.0F, 0.6F);
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0F - yaw));
-        matrices.scale(1.0F, -1.0F, 1.0F);
-        matrices.translate(-0.0F, -0.2F, -0.0F);
-
+        matrices.scale(1.00F, -1.0F, -1.0F);
+        matrices.translate(0.0F, 0.0F, 0.0F);
 
         String localSkin = entity.getLocalSkin();
         Identifier texture;
@@ -50,9 +52,11 @@ public class TorsoBlockEntityRenderer implements BlockEntityRenderer<TorsoBlockE
             texture = getSkinTexture(entity.getOwner(), entity.getPlayerUuid());
         }
         RenderLayer renderLayer = RenderLayer.getEntityTranslucent(texture);
-        VertexConsumer vertexConsumer = vertexConsumers.getBuffer(renderLayer);
-        model.setHeadRotation(0, yaw, 0);
-        model.render(matrices, vertexConsumers.getBuffer(renderLayer), light, OverlayTexture.DEFAULT_UV);
+
+        boolean slim = "slim".equals(entity.getSkinType());
+        SkullBlockEntityModel activeModel = slim ? slimModel : model;
+        activeModel.setHeadRotation(0, yaw, 0);
+        activeModel.render(matrices, vertexConsumers.getBuffer(renderLayer), light, OverlayTexture.DEFAULT_UV);
         matrices.pop();
     }
 

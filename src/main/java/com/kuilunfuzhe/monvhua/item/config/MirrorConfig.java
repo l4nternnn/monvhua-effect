@@ -19,6 +19,7 @@ public class MirrorConfig {
 		public int watchTime = 3;        // seconds viewport must be active
 		public double successRate = 0.5; // probability (0.0-1.0)
 		public int viewCount = 1;        // max successful views
+		public double radius = 10.0;     // 触发半径
 	}
 
 	public MirrorConfig() {
@@ -78,8 +79,10 @@ public class MirrorConfig {
 	public int getWatchTime(int stage) { return stages[stage - 1].watchTime; }
 	public double getSuccessRate(int stage) { return stages[stage - 1].successRate; }
 	public int getViewCount(int stage) { return stages[stage - 1].viewCount; }
+	public double getRadius(int stage) { return stages[stage - 1].radius; }
 
 	public void setWatchTime(int stage, int val) { stages[stage - 1].watchTime = val; save(); }
 	public void setSuccessRate(int stage, double val) { stages[stage - 1].successRate = val; save(); }
 	public void setViewCount(int stage, int val) { stages[stage - 1].viewCount = val; save(); }
+	public void setRadius(int stage, double val) { stages[stage - 1].radius = val; save(); }
 }

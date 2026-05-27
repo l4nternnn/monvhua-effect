@@ -15,7 +15,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
 public class ModItemGroups {
-    public static final RegistryKey<ItemGroup> MAIN_GROUP_KEY = RegistryKey.of(RegistryKeys.ITEM_GROUP, Identifier.of("clairvoyance", "main_group"));
+    public static final RegistryKey<ItemGroup> MAIN_GROUP_KEY = RegistryKey.of(RegistryKeys.ITEM_GROUP, Identifier.of("monvhua", "main_group"));
 
     public static ItemGroup MAIN_GROUP; // 供动态更新器使用
 

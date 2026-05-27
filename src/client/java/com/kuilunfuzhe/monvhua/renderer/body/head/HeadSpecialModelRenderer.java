@@ -1,9 +1,9 @@
-package com.kuilunfuzhe.monvhua.renderer.torso;
+package com.kuilunfuzhe.monvhua.renderer.body.head;
 
 import com.mojang.serialization.MapCodec;
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
-import com.kuilunfuzhe.monvhua.model.torso.TorsoModel;
-import com.kuilunfuzhe.monvhua.renderer.special.BodyPartSpecialModelRenderer;
+import com.kuilunfuzhe.monvhua.model.head.HeadModel;
+import com.kuilunfuzhe.monvhua.renderer.body.special.BodyPartSpecialModelRenderer;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.model.LoadedEntityModels;
@@ -11,12 +11,12 @@ import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Vector3f;
 import java.util.Set;
 
-public class TorsoSpecialModelRenderer extends BodyPartSpecialModelRenderer {
-    private final TorsoModel model;
+public class HeadSpecialModelRenderer extends BodyPartSpecialModelRenderer {
+    private final HeadModel model;
 
-    public TorsoSpecialModelRenderer(LoadedEntityModels entityModels) {
+    public HeadSpecialModelRenderer(LoadedEntityModels entityModels) {
         super(entityModels);
-        this.model = new TorsoModel(entityModels.getModelPart(ModModelLayers.TORSO));
+        this.model = new HeadModel(entityModels.getModelPart(ModModelLayers.HEAD));
     }
 
     @Override
@@ -25,11 +25,10 @@ public class TorsoSpecialModelRenderer extends BodyPartSpecialModelRenderer {
         model.render(matrices, vertexConsumers.getBuffer(renderLayer), light, overlay, 1.0F, 1.0F, 1.0F, 1.0F);
     }
 
-    // 实现 collectVertices 方法
     @Override
     public void collectVertices(Set<Vector3f> vertices) {
         MatrixStack matrixStack = new MatrixStack();
-        matrixStack.translate(0.5F, 1.0F, 0.5F);
+        matrixStack.translate(0.5F, 0.5F, 0.5F);
         matrixStack.scale(-1.0F, -1.0F, 1.0F);
         this.model.getRootPart().collectVertices(matrixStack, vertices);
     }
@@ -44,7 +43,7 @@ public class TorsoSpecialModelRenderer extends BodyPartSpecialModelRenderer {
 
         @Override
         public BodyPartSpecialModelRenderer bake(LoadedEntityModels entityModels) {
-            return new TorsoSpecialModelRenderer(entityModels);
+            return new HeadSpecialModelRenderer(entityModels);
         }
     }
 }

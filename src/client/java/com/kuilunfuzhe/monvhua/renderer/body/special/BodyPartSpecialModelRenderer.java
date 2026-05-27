@@ -1,7 +1,6 @@
-package com.kuilunfuzhe.monvhua.renderer.special;
+package com.kuilunfuzhe.monvhua.renderer.body.special;
 
 import com.mojang.authlib.GameProfile;
-import com.mojang.serialization.MapCodec;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumerProvider;

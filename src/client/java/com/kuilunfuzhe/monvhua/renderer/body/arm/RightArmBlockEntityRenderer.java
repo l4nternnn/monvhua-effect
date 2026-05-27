@@ -1,4 +1,4 @@
-package com.kuilunfuzhe.monvhua.renderer.arm;
+package com.kuilunfuzhe.monvhua.renderer.body.arm;
 
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.model.arm.RightArmModel;

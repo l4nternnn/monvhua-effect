@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.network;
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorToggleC2SPacket;
 import com.kuilunfuzhe.monvhua.network.openback.*;
@@ -29,6 +30,7 @@ public class ModNetworking {
 		CameraWatchUnbindS2CPacket.register();
 		CameraUpdateS2CPacket.register();
 		MirrorStateS2CPacket.register();
+		MirrorConfigS2CPacket.register();
 	}
 
 	// 注册所有 C2S 包（只需要服务端）

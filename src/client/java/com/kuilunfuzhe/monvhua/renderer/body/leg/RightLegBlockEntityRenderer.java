@@ -1,4 +1,4 @@
-package com.kuilunfuzhe.monvhua.renderer.leg;
+package com.kuilunfuzhe.monvhua.renderer.body.leg;
 
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.model.leg.RightLegModel;

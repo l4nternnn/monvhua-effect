@@ -1,28 +1,33 @@
-package com.kuilunfuzhe.monvhua.renderer.leg;
+package com.kuilunfuzhe.monvhua.renderer.body.special;
 
 import com.mojang.serialization.MapCodec;
-import com.kuilunfuzhe.monvhua.model.ModModelLayers;
-import com.kuilunfuzhe.monvhua.model.leg.LeftLegModel;
-import com.kuilunfuzhe.monvhua.renderer.special.BodyPartSpecialModelRenderer;
 import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.entity.model.EntityModelLayers;
 import net.minecraft.client.render.entity.model.LoadedEntityModels;
+import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Vector3f;
+
 import java.util.Set;
 
-public class LeftLegSpecialModelRenderer extends BodyPartSpecialModelRenderer {
-    private final LeftLegModel model;
+public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRenderer {
+    private final PlayerEntityModel model;
+    private final PlayerEntityModel slimModel;
 
-    public LeftLegSpecialModelRenderer(LoadedEntityModels entityModels) {
+    public CombinedBodySpecialModelRenderer(LoadedEntityModels entityModels) {
         super(entityModels);
-        this.model = new LeftLegModel(entityModels.getModelPart(ModModelLayers.LEFT_LEG));
+        this.model = new PlayerEntityModel(entityModels.getModelPart(EntityModelLayers.PLAYER), false);
+        this.slimModel = new PlayerEntityModel(entityModels.getModelPart(EntityModelLayers.PLAYER_SLIM), true);
     }
 
     @Override
     protected void renderModel(MatrixStack matrices, VertexConsumerProvider vertexConsumers,
                                RenderLayer renderLayer, int light, int overlay, Data data) {
-        model.render(matrices, vertexConsumers.getBuffer(renderLayer), light, overlay, 1.0F, 1.0F, 1.0F, 1.0F);
+        VertexConsumer vertexConsumer = vertexConsumers.getBuffer(renderLayer);
+        boolean slim = "slim".equals(data.armModel());
+        (slim ? slimModel : model).render(matrices, vertexConsumer, light, overlay);
     }
 
     @Override
@@ -43,7 +48,7 @@ public class LeftLegSpecialModelRenderer extends BodyPartSpecialModelRenderer {
 
         @Override
         public BodyPartSpecialModelRenderer bake(LoadedEntityModels entityModels) {
-            return new LeftLegSpecialModelRenderer(entityModels);
+            return new CombinedBodySpecialModelRenderer(entityModels);
         }
     }
 }

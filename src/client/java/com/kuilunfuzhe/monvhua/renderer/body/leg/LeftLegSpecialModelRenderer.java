@@ -1,9 +1,9 @@
-package com.kuilunfuzhe.monvhua.renderer.head;
+package com.kuilunfuzhe.monvhua.renderer.body.leg;
 
 import com.mojang.serialization.MapCodec;
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
-import com.kuilunfuzhe.monvhua.model.head.HeadModel;
-import com.kuilunfuzhe.monvhua.renderer.special.BodyPartSpecialModelRenderer;
+import com.kuilunfuzhe.monvhua.model.leg.LeftLegModel;
+import com.kuilunfuzhe.monvhua.renderer.body.special.BodyPartSpecialModelRenderer;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.model.LoadedEntityModels;
@@ -11,12 +11,12 @@ import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Vector3f;
 import java.util.Set;
 
-public class HeadSpecialModelRenderer extends BodyPartSpecialModelRenderer {
-    private final HeadModel model;
+public class LeftLegSpecialModelRenderer extends BodyPartSpecialModelRenderer {
+    private final LeftLegModel model;
 
-    public HeadSpecialModelRenderer(LoadedEntityModels entityModels) {
+    public LeftLegSpecialModelRenderer(LoadedEntityModels entityModels) {
         super(entityModels);
-        this.model = new HeadModel(entityModels.getModelPart(ModModelLayers.HEAD));
+        this.model = new LeftLegModel(entityModels.getModelPart(ModModelLayers.LEFT_LEG));
     }
 
     @Override
@@ -28,7 +28,7 @@ public class HeadSpecialModelRenderer extends BodyPartSpecialModelRenderer {
     @Override
     public void collectVertices(Set<Vector3f> vertices) {
         MatrixStack matrixStack = new MatrixStack();
-        matrixStack.translate(0.5F, 0.5F, 0.5F);
+        matrixStack.translate(0.5F, 1.0F, 0.5F);
         matrixStack.scale(-1.0F, -1.0F, 1.0F);
         this.model.getRootPart().collectVertices(matrixStack, vertices);
     }
@@ -43,7 +43,7 @@ public class HeadSpecialModelRenderer extends BodyPartSpecialModelRenderer {
 
         @Override
         public BodyPartSpecialModelRenderer bake(LoadedEntityModels entityModels) {
-            return new HeadSpecialModelRenderer(entityModels);
+            return new LeftLegSpecialModelRenderer(entityModels);
         }
     }
 }

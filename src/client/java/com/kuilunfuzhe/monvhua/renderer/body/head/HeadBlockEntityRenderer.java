@@ -1,4 +1,4 @@
-package com.kuilunfuzhe.monvhua.renderer.head;
+package com.kuilunfuzhe.monvhua.renderer.body.head;
 
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.model.head.HeadModel;

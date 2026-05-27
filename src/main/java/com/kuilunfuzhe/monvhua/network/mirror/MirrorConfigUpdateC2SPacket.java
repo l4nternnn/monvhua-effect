@@ -7,7 +7,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 public record MirrorConfigUpdateC2SPacket(String json) implements CustomPayload {
-    public static final Id<MirrorConfigUpdateC2SPacket> ID = new Id<>(Identifier.of("clairvoyance", "mirror_config_update"));
+    public static final Id<MirrorConfigUpdateC2SPacket> ID = new Id<>(Identifier.of("monvhua", "mirror_config_update"));
     public static final PacketCodec<RegistryByteBuf, MirrorConfigUpdateC2SPacket> CODEC = PacketCodec.of(MirrorConfigUpdateC2SPacket::write, MirrorConfigUpdateC2SPacket::new);
 
     private MirrorConfigUpdateC2SPacket(RegistryByteBuf buf) {
