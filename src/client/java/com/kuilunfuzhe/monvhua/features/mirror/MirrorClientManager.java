@@ -32,16 +32,15 @@ public class MirrorClientManager {
 		slots[1] = new CameraData(packet.slot2Active(), packet.getPos2() != null ? packet.getPos2() : Vec3d.ZERO);
 	}
 
-	/**
-	 * The mirror viewport camera sits at: saved set point + player's displacement from origin.
-	 * origin = the player's position when the viewport was first enabled.
-	 * As you move, the viewport tracks with you, staying in the same relative position.
-	 */
-	public static Vec3d getOriginOffset() {
-		if (origin == null) return Vec3d.ZERO;
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client.player == null) return Vec3d.ZERO;
-		return client.player.getPos().subtract(origin);
+
+
+
+	public static Vec3d getSlotWorldPos(int slot, Vec3d playerPos) {
+		CameraData data = getSlot(slot);
+		if (!data.active()) return null;
+		// data.pos() = 镜子目标坐标相对布置时玩家的偏移
+		// 加上当前玩家位置实现 1:1 跟随
+		return playerPos.add(data.pos());
 	}
 
 	public static boolean isActive() {

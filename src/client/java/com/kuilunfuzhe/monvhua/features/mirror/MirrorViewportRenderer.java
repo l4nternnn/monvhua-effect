@@ -4,8 +4,8 @@ import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.kuilunfuzhe.monvhua.mixin.CameraAccessor;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.SimpleFramebuffer;
+import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.util.ObjectAllocator;
@@ -16,128 +16,126 @@ import org.joml.Vector4f;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MirrorViewportRenderer {
-	private static final int VIEWPORT_WIDTH = 1920;
-	private static final int VIEWPORT_HEIGHT = 1080;
-	private static final int PADDING = 8;
-
 	private static final AtomicBoolean renderingMirror = new AtomicBoolean(false);
-	private static final SimpleFramebuffer[] fbos = new SimpleFramebuffer[2];
-	private static boolean hasRenderedMirrors = false;
+	private static SimpleFramebuffer fullMirrorFbo;
 
-	public static void renderViewports(RenderTickCounter tickCounter, GpuBufferSlice fogBuffer, Vector4f fogColor, Camera mainCamera) {
+	/**
+	 * 渲染镜子视角到全屏 FBO（由 WorldRenderer HEAD mixin 调用）
+	 */
+	public static void renderFullScreenMirror(RenderTickCounter tickCounter, GpuBufferSlice fog, Vector4f fogColor, Camera mainCamera) {
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (client.world == null || client.player == null) return;
 		if (!MirrorClientManager.isActive()) return;
 		if (renderingMirror.getAndSet(true)) return;
 
+		MirrorClientManager.CameraData slot0 = MirrorClientManager.getSlot(0);
+		if (!slot0.active()) {
+			renderingMirror.set(false);
+			return;
+		}
+
 		try {
-			float camYaw = mainCamera.getYaw();
-			float camPitch = mainCamera.getPitch();
-			Vec3d originOffset = MirrorClientManager.getOriginOffset();
+			int fbw = client.getFramebuffer().textureWidth;
+			int fbh = client.getFramebuffer().textureHeight;
+			if (fbw <= 0 || fbh <= 0) return;
 
-			for (int slot = 0; slot < 2; slot++) {
-				MirrorClientManager.CameraData data = MirrorClientManager.getSlot(slot);
-				if (!data.active()) continue;
+			fullMirrorFbo = resizeFbo(fullMirrorFbo, "mirror_full", fbw, fbh);
 
+			float yaw = mainCamera.getYaw();
+			float pitch = mainCamera.getPitch();
+			Vec3d playerPos = client.player.getPos();
+			Vec3d pos = MirrorClientManager.getSlotWorldPos(0, playerPos);
+			if (pos == null) return;
 
+			FramebufferOverride.setOverride(fullMirrorFbo);
+			try {
+				Camera cam = new Camera();
+				CameraAccessor acc = (CameraAccessor) cam;
+				acc.invokeSetPos(pos.x, pos.y, pos.z);
+				acc.invokeSetRotation(yaw, pitch);
 
-				Vec3d slotPos = data.pos().add(originOffset).add(-5.0,24.1,8.8);
+				float fov = client.options.getFov().getValue().floatValue();
+				float aspect = (float) fbw / fbh;
+				Matrix4f proj = new Matrix4f().perspective(
+					fov * (float) (Math.PI / 180.0), aspect, 0.05f,
+					client.gameRenderer.getFarPlaneDistance()
+				);
 
-				SimpleFramebuffer fbo = getOrCreateFbo(slot);
-				FramebufferOverride.setOverride(fbo);
+				// 用 lookAt 确保偏航/俯仰正确，然后清零平移（平移由 cam.getPos() 提供一次）
+				Vec3d forward = new Vec3d(
+					-Math.sin(yaw * (float)(Math.PI / 180.0)) * Math.cos(pitch * (float)(Math.PI / 180.0)),
+					-Math.sin(pitch * (float)(Math.PI / 180.0)),
+					Math.cos(yaw * (float)(Math.PI / 180.0)) * Math.cos(pitch * (float)(Math.PI / 180.0))
+				);
+				Matrix4f view = new Matrix4f().lookAt(0, 0, 0, (float)forward.x, (float)forward.y, (float)forward.z, 0, 1, 0);
 
-				try {
-					Camera mirrorCamera = new Camera();
-					CameraAccessor acc = (CameraAccessor) mirrorCamera;
-					acc.invokeSetPos(slotPos.x, slotPos.y, slotPos.z);
-					acc.invokeSetRotation(camYaw, camPitch);
-
-					float fovDeg = client.options.getFov().getValue().floatValue();
-					float fovRad = fovDeg * (float) (Math.PI / 180.0);
-					Matrix4f projMatrix = new Matrix4f().perspective(
-						fovRad,
-						(float) VIEWPORT_WIDTH / VIEWPORT_HEIGHT,
-						0.05F,
-						client.gameRenderer.getFarPlaneDistance()
-					);
-
-					float yawRad = camYaw * (float)(Math.PI / 180.0);
-					float pitchRad = camPitch * (float)(Math.PI / 180.0);
-					Matrix4f viewMatrix = new Matrix4f().lookAt(
-						(float)slotPos.x, (float)slotPos.y, (float)slotPos.z,
-						(float)(slotPos.x - Math.sin(yawRad) * Math.cos(pitchRad)),
-						(float)(slotPos.y - Math.sin(pitchRad)),
-						(float)(slotPos.z + Math.cos(yawRad) * Math.cos(pitchRad)),
-						0, 1, 0
-					);
-
-					client.worldRenderer.render(
-						ObjectAllocator.TRIVIAL,
-						tickCounter,
-						false,
-						mirrorCamera,
-						viewMatrix,
-						projMatrix,
-						fogBuffer,
-						fogColor,
-						true
-					);
-				} finally {
-					FramebufferOverride.clearOverride();
-				}
+				client.worldRenderer.render(
+					ObjectAllocator.TRIVIAL, tickCounter, false,
+					cam, view, proj, fog, fogColor, true
+				);
+			} finally {
+				FramebufferOverride.clearOverride();
 			}
-
-			hasRenderedMirrors = true;
 		} finally {
 			renderingMirror.set(false);
 		}
 	}
 
-	public static void blitToMainFramebuffer() {
-		if (!hasRenderedMirrors) return;
+	/**
+	 * 对角线合成：将镜子 FBO 的内容拷贝到主 framebuffer 的左下三角区域。
+	 * 对角线从屏幕左下到右上，左边 = 镜子视角，右边 = 主视角。
+	 * 由 HUD overlay 在 main world render 完成后调用。
+	 */
+	public static void renderDiagonalSplit(DrawContext context) {
 		MinecraftClient client = MinecraftClient.getInstance();
-		Framebuffer mainFbo = client.getFramebuffer();
-		int scaleFactor = (int) client.getWindow().getScaleFactor();
-		int sw = client.getWindow().getFramebufferWidth();
-		int sh = client.getWindow().getFramebufferHeight();
+		if (fullMirrorFbo == null) return;
+		if (!MirrorClientManager.isActive()) return;
 
-		hasRenderedMirrors = false;
+		var mainFb = client.getFramebuffer();
+		int fbw = mainFb.textureWidth;
+		int fbh = mainFb.textureHeight;
 
-		for (int slot = 0; slot < 2; slot++) {
-			MirrorClientManager.CameraData data = MirrorClientManager.getSlot(slot);
-			if (!data.active()) continue;
-			SimpleFramebuffer fbo = fbos[slot];
-			if (fbo == null) continue;
+		if (fullMirrorFbo.textureWidth != fbw || fullMirrorFbo.textureHeight != fbh) return;
 
-			int x = sw - VIEWPORT_WIDTH - PADDING * scaleFactor;
-			int y = PADDING * scaleFactor + slot * (VIEWPORT_HEIGHT + PADDING * scaleFactor);
-			int invertedY = sh - y - VIEWPORT_HEIGHT;
+		var encoder = RenderSystem.getDevice().createCommandEncoder();
+		for (int row = 0; row < fbh; row++) {
+			int bx = fbw * (fbh - row) / fbh;
+			if (bx <= 0) continue;
+			if (bx > fbw) bx = fbw;
 
-			RenderSystem.getDevice().createCommandEncoder().copyTextureToTexture(
-				fbo.getColorAttachment(),
-				mainFbo.getColorAttachment(),
+			encoder.copyTextureToTexture(
+				fullMirrorFbo.getColorAttachment(),
+				mainFb.getColorAttachment(),
 				0,
-				x, invertedY,
-				0, 0,
-				VIEWPORT_WIDTH, VIEWPORT_HEIGHT
+				0, row,
+				0, row,
+				bx, 1
 			);
 		}
+
+		// 绘制对角线
+		int sw = client.getWindow().getScaledWidth();
+		int sh = client.getWindow().getScaledHeight();
+//		for (int sy = 0; sy < sh; sy++) {
+//			int sx = sw * (sh - sy) / sh;
+//			if (sx >= 0 && sx < sw) {
+//				context.fill(sx, sy, sx + 1, sy + 1, 0xFFFFFFFF);
+//			}
+//		}
 	}
 
-	private static SimpleFramebuffer getOrCreateFbo(int slot) {
-		if (fbos[slot] == null) {
-			fbos[slot] = new SimpleFramebuffer("mirror_" + slot, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, true);
+	private static SimpleFramebuffer resizeFbo(SimpleFramebuffer fbo, String name, int w, int h) {
+		if (fbo == null || fbo.textureWidth != w || fbo.textureHeight != h) {
+			if (fbo != null) fbo.delete();
+			return new SimpleFramebuffer(name, w, h, true);
 		}
-		return fbos[slot];
+		return fbo;
 	}
 
 	public static void cleanup() {
-		for (int i = 0; i < 2; i++) {
-			if (fbos[i] != null) {
-				fbos[i].delete();
-				fbos[i] = null;
-			}
+		if (fullMirrorFbo != null) {
+			fullMirrorFbo.delete();
+			fullMirrorFbo = null;
 		}
-		hasRenderedMirrors = false;
 	}
 }

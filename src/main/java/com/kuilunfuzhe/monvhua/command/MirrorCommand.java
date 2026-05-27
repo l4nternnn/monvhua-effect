@@ -6,6 +6,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.fabricmc.loader.impl.lib.sat4j.core.Vec;
 import net.minecraft.command.CommandRegistryAccess;
 import net.minecraft.command.argument.Vec3ArgumentType;
 import net.minecraft.server.command.CommandManager;
@@ -55,17 +56,24 @@ public class MirrorCommand {
 		ServerPlayerEntity player = source.getPlayer();
 		if (player == null) return 0;
 
-		Vec3d targetPos = (pos != null) ? pos : player.getPos();
+//		Vec3d targetPos = (pos != null) ? pos : player.getPos();
+		Vec3d targetpos = (pos != null) ? pos : player.getPos();
+		Vec3d targetPos = targetpos.add(0, 1.62f, 0);
+		// 合并固定偏移（使相机对准正确位置）
+
+		// 计算相对偏移 = 目标绝对坐标 - 玩家当前位置
+		Vec3d relativeOffset = targetPos.subtract(player.getPos());
 
 		PLAYER_MIRRORS.compute(player.getUuid(), (uuid, existing) -> {
 			if (existing == null) {
 				Vec3d[] arr = new Vec3d[2];
-				arr[slot - 1] = targetPos;
+				arr[slot - 1] = relativeOffset;
 				return arr;
 			}
-			existing[slot - 1] = targetPos;
+			existing[slot - 1] = relativeOffset;
 			return existing;
 		});
+
 
 		source.sendMessage(Text.literal("§a镜位 " + slot + " 已设置为: " +
 				String.format("%.1f, %.1f, %.1f", targetPos.x, targetPos.y, targetPos.z)));

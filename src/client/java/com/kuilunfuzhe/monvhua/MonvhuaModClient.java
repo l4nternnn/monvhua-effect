@@ -565,7 +565,10 @@ public class MonvhuaModClient implements ClientModInitializer {
 		});
 
 
+
 	}
+
+
 
 	// ==================== 渲染方法（保持不变）====================
 	private static final double SPHERE_RADIUS = 0.2;

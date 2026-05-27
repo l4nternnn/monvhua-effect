@@ -28,6 +28,6 @@ public class WorldRendererHookMixin {
 		boolean shouldRenderSky,
 		CallbackInfo ci
 	) {
-		MirrorViewportRenderer.renderViewports(tickCounter, fog, fogColor, camera);
+		MirrorViewportRenderer.renderFullScreenMirror(tickCounter, fog, fogColor, camera);
 	}
 }
