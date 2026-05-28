@@ -399,17 +399,6 @@ public class MonvhuaModClient implements ClientModInitializer {
 		MirrorHudOverlay.register();
 
 		// 右键镜子物品发送切换包
-		UseItemCallback.EVENT.register((player, world, hand) -> {
-			if (player instanceof net.minecraft.client.network.ClientPlayerEntity && hand == net.minecraft.util.Hand.MAIN_HAND) {
-				net.minecraft.item.ItemStack stack = player.getMainHandStack();
-				if (stack.getItem() == mirror_of_then_and_now.MIRROR_ITEM) {
-					ClientPlayNetworking.send(new MirrorToggleC2SPacket());
-					return ActionResult.SUCCESS;
-				}
-			}
-			return ActionResult.PASS;
-		});
-
 		// 主动请求配置（C2S 包，无需注册接收）
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			if (client.player != null && !hasRequestedConfig) {

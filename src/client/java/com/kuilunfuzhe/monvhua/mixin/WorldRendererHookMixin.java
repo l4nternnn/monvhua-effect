@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(WorldRenderer.class)
 public class WorldRendererHookMixin {
-	@Inject(method = "render", at = @At("HEAD"))
+	@Inject(method = "render", at = @At("TAIL"))
 	private void onRenderStart(
 		ObjectAllocator allocator,
 		RenderTickCounter tickCounter,
