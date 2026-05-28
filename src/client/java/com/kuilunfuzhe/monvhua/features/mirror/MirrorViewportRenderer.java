@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.features.mirror;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.kuilunfuzhe.monvhua.mixin.CameraAccessor;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.SimpleFramebuffer;
 import net.minecraft.client.gui.DrawContext;
@@ -17,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MirrorViewportRenderer {
 	private static final AtomicBoolean renderingMirror = new AtomicBoolean(false);
+	private static final boolean IRIS_LOADED = FabricLoader.getInstance().isModLoaded("iris");
 	private static SimpleFramebuffer fullMirrorFbo;
 
 	/**
@@ -26,6 +28,7 @@ public class MirrorViewportRenderer {
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (client.world == null || client.player == null) return;
 		if (!MirrorClientManager.isActive()) return;
+		if (IRIS_LOADED) return;
 		if (renderingMirror.getAndSet(true)) return;
 
 		MirrorClientManager.CameraData slot0 = MirrorClientManager.getSlot(0);
