@@ -4,6 +4,12 @@ import net.minecraft.client.render.entity.model.EntityModelLayer;
 import net.minecraft.util.Identifier;
 
 public class ModModelLayers {
+    public static final EntityModelLayer COMBINED_BODY = new EntityModelLayer(Identifier.
+            of("monvhua", "combined_body"), "main");
+
+    public static final EntityModelLayer COMBINED_BODY_SLIM = new EntityModelLayer(Identifier.
+            of("monvhua", "combined_body"), "slim");
+
     public static final EntityModelLayer TORSO = new EntityModelLayer(Identifier.
             of("monvhua", "torso"), "main");
 

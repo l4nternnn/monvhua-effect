@@ -1,10 +1,10 @@
 package com.kuilunfuzhe.monvhua.renderer.body.special;
 
+import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.entity.model.EntityModelLayers;
 import net.minecraft.client.render.entity.model.LoadedEntityModels;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.util.math.MatrixStack;
@@ -18,8 +18,8 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
 
     public CombinedBodySpecialModelRenderer(LoadedEntityModels entityModels) {
         super(entityModels);
-        this.model = new PlayerEntityModel(entityModels.getModelPart(EntityModelLayers.PLAYER), false);
-        this.slimModel = new PlayerEntityModel(entityModels.getModelPart(EntityModelLayers.PLAYER_SLIM), true);
+        this.model = new PlayerEntityModel(entityModels.getModelPart(ModModelLayers.COMBINED_BODY), false);
+        this.slimModel = new PlayerEntityModel(entityModels.getModelPart(ModModelLayers.COMBINED_BODY_SLIM), true);
     }
 
     @Override

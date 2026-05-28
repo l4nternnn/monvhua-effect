@@ -8,6 +8,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.ClientCameraWatchReceive
 import com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient;
 import com.kuilunfuzhe.monvhua.gui.bodyback.BodyPartScreen;
 import com.kuilunfuzhe.monvhua.gui.openback.OtherPlayerInventoryScreen;
+import com.kuilunfuzhe.monvhua.model.CombinedBodyModelData;
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.model.arm.LeftArmModel;
 import com.kuilunfuzhe.monvhua.model.arm.LeftArmSlimModel;
@@ -495,6 +496,9 @@ public class MonvhuaModClient implements ClientModInitializer {
 
 		// 注册模型层
 		//躯干
+
+		EntityModelLayerRegistry.registerModelLayer(ModModelLayers.COMBINED_BODY, CombinedBodyModelData::getDefaultTexturedModelData);
+		EntityModelLayerRegistry.registerModelLayer(ModModelLayers.COMBINED_BODY_SLIM, CombinedBodyModelData::getSlimTexturedModelData);
 
 		EntityModelLayerRegistry.registerModelLayer(ModModelLayers.TORSO, TorsoModel::getTexturedModelData);
 		BlockEntityRendererFactories.register(
