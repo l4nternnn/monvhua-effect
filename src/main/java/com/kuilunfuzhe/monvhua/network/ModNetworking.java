@@ -10,6 +10,7 @@ import com.kuilunfuzhe.monvhua.network.openback.*;
 import com.kuilunfuzhe.monvhua.network.secrecy.RequestSecrecyConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigUpdateC2SPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyStateS2CPacket;
 
 public class ModNetworking {
 	// 注册所有 S2C 包（客户端和服务端都需要）
@@ -35,6 +36,7 @@ public class ModNetworking {
 		MirrorStateS2CPacket.register();
 		MirrorConfigS2CPacket.register();
 		SecrecyConfigS2CPacket.register();
+		SecrecyStateS2CPacket.register();
 	}
 
 	// 注册所有 C2S 包（只需要服务端）

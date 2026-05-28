@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.item.secrecy;
 
 import com.kuilunfuzhe.monvhua.config.GlobalConfigManager;
 import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyStateS2CPacket;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.minecraft.entity.LivingEntity;
@@ -44,8 +45,11 @@ public class SecrecyItem extends Item {
 
     private static final int INFINITE_DURATION = -1;
     private static final int HEART_SOUND_INTERVAL_TICKS = 40;
+    private static final float HEART_SOUND_MAX_VOLUME = 1.2F;
+    private static final String SILENCED_TAG = "Silenced";
     private static final Map<UUID, Long> VANISH_PENDING_TICKS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> HEART_SOUND_TICKS = new ConcurrentHashMap<>();
+    private static final Set<UUID> EXITING_SECRECY = ConcurrentHashMap.newKeySet();
     private static GlobalConfigManager configManager;
 
     public SecrecyItem(Settings settings) {
@@ -58,10 +62,17 @@ public class SecrecyItem extends Item {
             return ActionResult.PASS;
         }
 
-        user.setCurrentHand(hand);
-        if (!world.isClient() && user instanceof ServerPlayerEntity player && !isSecrecyActive(player)) {
-            enterSecrecy(player);
-            player.sendMessage(Text.literal("§b正在隐匿身形..."), true);
+        if (!world.isClient() && user instanceof ServerPlayerEntity player) {
+            if (!canUseSecrecy(player, true)) {
+                return ActionResult.FAIL;
+            }
+            user.setCurrentHand(hand);
+            if (!isSecrecyActive(player)) {
+                enterSecrecy(player);
+                player.sendMessage(Text.literal("§b正在集中精神..."), true);
+            }
+        } else {
+            user.setCurrentHand(hand);
         }
         return ActionResult.SUCCESS;
     }
@@ -69,8 +80,12 @@ public class SecrecyItem extends Item {
     @Override
     public void usageTick(World world, LivingEntity user, ItemStack stack, int remainingUseTicks) {
         if (!world.isClient() && user instanceof ServerPlayerEntity player && !isSecrecyActive(player)) {
+            if (!canUseSecrecy(player, true)) {
+                player.stopUsingItem();
+                return;
+            }
             enterSecrecy(player);
-            player.sendMessage(Text.literal("§b正在隐匿身形..."), true);
+            player.sendMessage(Text.literal("§b正在集中精神..."), true);
         }
     }
 
@@ -104,6 +119,9 @@ public class SecrecyItem extends Item {
             long now = server.getOverworld().getTime();
             Set<UUID> activePlayers = new HashSet<>();
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+                if (EXITING_SECRECY.remove(player.getUuid())) {
+                    continue;
+                }
                 if (!isSecrecyActive(player)) continue;
                 if (!shouldContinueSecrecy(player)) {
                     exitSecrecy(player);
@@ -121,7 +139,8 @@ public class SecrecyItem extends Item {
                 ServerPlayerEntity player = server.getPlayerManager().getPlayer(entry.getKey());
                 if (player != null && hasPreparationEffects(player) && shouldContinueSecrecy(player)) {
                     player.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, INFINITE_DURATION, 0, false, false, true));
-                    player.sendMessage(Text.literal("§b身形完全隐没"), true);
+                    syncSecrecyState(player, true, 0);
+                    player.sendMessage(Text.literal("§b精神集中..."), true);
                 }
                 iterator.remove();
             }
@@ -138,12 +157,18 @@ public class SecrecyItem extends Item {
     }
 
     public static void exitSecrecy(ServerPlayerEntity player) {
+        if (!isSecrecyActive(player)) {
+            return;
+        }
+
         VANISH_PENDING_TICKS.remove(player.getUuid());
         HEART_SOUND_TICKS.remove(player.getUuid());
+        EXITING_SECRECY.add(player.getUuid());
         removeSpeedModifier(player);
+        player.removeStatusEffect(StatusEffects.INVISIBILITY);
         player.removeStatusEffect(StatusEffects.BLINDNESS);
         player.removeStatusEffect(StatusEffects.DARKNESS);
-        player.removeStatusEffect(StatusEffects.INVISIBILITY);
+        syncSecrecyState(player, false, 0);
     }
 
     private static void enterSecrecy(ServerPlayerEntity player) {
@@ -151,22 +176,15 @@ public class SecrecyItem extends Item {
         SecrecyConfig config = SecrecyConfig.getInstance();
         double speedMultiplier = config.getSpeedMultiplier(stage);
         int delaySeconds = config.getVanishDelaySeconds(stage);
-        int delayTicks = Math.max(0, delaySeconds * 20);
+        int delayTicks = delaySeconds * 20;
 
         applySpeedMultiplier(player, speedMultiplier);
         playHeartSound(player);
-
-        if (delaySeconds < 0) {
-            player.removeStatusEffect(StatusEffects.BLINDNESS);
-            player.removeStatusEffect(StatusEffects.DARKNESS);
-            player.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, INFINITE_DURATION, 0, false, false, true));
-            VANISH_PENDING_TICKS.remove(player.getUuid());
-            return;
-        }
-
-        player.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, INFINITE_DURATION, 0, false, false, true));
-        player.addStatusEffect(new StatusEffectInstance(StatusEffects.DARKNESS, INFINITE_DURATION, 0, false, false, true));
+        EXITING_SECRECY.remove(player.getUuid());
+        player.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, INFINITE_DURATION, 0, false, false, false));
+        player.addStatusEffect(new StatusEffectInstance(StatusEffects.DARKNESS, INFINITE_DURATION, 0, false, false, false));
         player.removeStatusEffect(StatusEffects.INVISIBILITY);
+        syncSecrecyState(player, false, 0);
         VANISH_PENDING_TICKS.put(player.getUuid(), player.getWorld().getTime() + delayTicks);
     }
 
@@ -185,7 +203,26 @@ public class SecrecyItem extends Item {
     private static boolean shouldContinueSecrecy(ServerPlayerEntity player) {
         return player.isUsingItem()
                 && player.getActiveHand() == Hand.MAIN_HAND
-                && isHoldingSecrecy(player.getMainHandStack());
+                && isHoldingSecrecy(player.getMainHandStack())
+                && canUseSecrecy(player, false);
+    }
+
+    private static boolean canUseSecrecy(ServerPlayerEntity player, boolean notify) {
+        if (player.getCommandTags().contains(SILENCED_TAG)) {
+            if (notify) {
+                player.sendMessage(Text.literal("§c你难以集中精神"), true);
+            }
+            return false;
+        }
+
+        int stage = getPlayerStage(player);
+        if (SecrecyConfig.getInstance().getVanishDelaySeconds(stage) < 0) {
+            if (notify) {
+                player.sendMessage(Text.literal("§c你难以集中精神"), true);
+            }
+            return false;
+        }
+        return true;
     }
 
     private static void applySpeedMultiplier(ServerPlayerEntity player, double multiplier) {
@@ -218,7 +255,11 @@ public class SecrecyItem extends Item {
             HEART_SOUND_TICKS.put(uuid, ticks - 1);
             return;
         }
-        player.getWorld().playSound(null, player.getX(), player.getY(), player.getZ(), HEART_SOUND, SoundCategory.PLAYERS, 1.0F, 1.0F);
+        player.getWorld().playSound(null, player.getX(), player.getY(), player.getZ(), HEART_SOUND, SoundCategory.PLAYERS, HEART_SOUND_MAX_VOLUME, 1.0F);
         HEART_SOUND_TICKS.put(uuid, HEART_SOUND_INTERVAL_TICKS);
+    }
+
+    private static void syncSecrecyState(ServerPlayerEntity player, boolean invisible, int fadeOutTicks) {
+        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player, new SecrecyStateS2CPacket(invisible, Math.max(0, fadeOutTicks)));
     }
 }

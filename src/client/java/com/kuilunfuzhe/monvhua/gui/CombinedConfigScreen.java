@@ -299,7 +299,7 @@ public class CombinedConfigScreen extends Screen {
         int labelWidth = 110;
         int inputWidth = 70;
 
-        String[] labels = {"范围:", "概率(0-1):", "速度倍率:", "隐身延迟(秒,-1无):"};
+        String[] labels = {"范围:", "概率(0-1):", "速度倍率:", "隐身延迟(秒,-1禁用):"};
         for (int i = 0; i < labels.length; i++) {
             TextWidget label = new TextWidget(rightX, rowY + i * rowHeight + 4, labelWidth, 9, Text.literal(labels[i]), textRenderer);
             addDrawableChild(label);
@@ -312,7 +312,7 @@ public class CombinedConfigScreen extends Screen {
         secrecyDelayField = createField(rightX + labelWidth, rowY + 3*rowHeight, inputWidth);
 
         saveSecrecyButton = ButtonWidget.builder(Text.literal("保存"), btn -> saveSecrecyConfig())
-                .dimensions(rightX, rowY + 4*rowHeight + 10, 80, 20).build();
+                .dimensions(rightX, rowY + 5*rowHeight + 10, 80, 20).build();
         addDrawableChild(saveSecrecyButton);
     }
 

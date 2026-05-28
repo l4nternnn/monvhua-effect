@@ -37,6 +37,7 @@ import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
 import com.kuilunfuzhe.monvhua.network.secrecy.RequestSecrecyConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigUpdateC2SPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyStateS2CPacket;
 import com.kuilunfuzhe.monvhua.screen.ModScreenHandlers;
 import com.kuilunfuzhe.monvhua.screen.OtherPlayerInventoryScreenHandler;
 import com.kuilunfuzhe.monvhua.screen.OtherPlayerInventoryScreenHandlerFactory;
@@ -142,6 +143,7 @@ public class MonvhuaMod implements ModInitializer {
         MirrorStateS2CPacket.register();
         MirrorConfigS2CPacket.register();
         SecrecyConfigS2CPacket.register();
+        SecrecyStateS2CPacket.register();
 
         ModNetworking.registerC2SPackets();
         MarkEntityPayload.register();
