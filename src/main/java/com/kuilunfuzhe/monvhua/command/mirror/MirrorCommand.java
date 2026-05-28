@@ -120,7 +120,7 @@ public class MirrorCommand {
 		boolean active = VIEWPORT_ACTIVE.getOrDefault(player.getUuid(), false);
 		int stage = VIEWPORT_STAGE.getOrDefault(player.getUuid(), Evil_Eyes.getPlayerStage(player, Evil_Eyes.configManager));
 		int usesLeft = VIEWPORT_USES_LEFT.getOrDefault(player.getUuid(), MirrorConfig.getInstance().getViewCount(stage));
-		source.sendMessage(Text.literal("§6镜像视图: " + (active ? "§a开启" : "§7关闭") + " §7剩余启动次数: §f" + usesLeft));
+		source.sendMessage(Text.literal("§6镜像视图: " + (active ? "§a开启" : "§7关闭") + " §7剩余使用次数: §f" + usesLeft));
 
 		if (!anyActive) {
 			source.sendMessage(Text.literal("§7使用 /clairvoyance-mirror set <1|2> {hsPos|mapPos|radius} <值> 设置镜面"));
@@ -147,20 +147,6 @@ public class MirrorCommand {
 			return;
 		}
 
-		boolean current = VIEWPORT_ACTIVE.getOrDefault(uuid, false);
-		if (current) {
-			VIEWPORT_ACTIVE.put(uuid, false);
-			VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
-			syncToClient(player);
-			player.sendMessage(Text.literal("§7镜像视图已关闭"), true);
-			return;
-		}
-
-		if (!isInAnyRange(player, data)) {
-			player.sendMessage(Text.literal("§c你不在任何镜面的触发范围内"), true);
-			return;
-		}
-
 		int stage = Evil_Eyes.getPlayerStage(player, Evil_Eyes.configManager);
 		MirrorConfig config = MirrorConfig.getInstance();
 		int maxUses = config.getViewCount(stage);
@@ -168,17 +154,39 @@ public class MirrorCommand {
 		int usesLeft = storedStage == stage ? Math.min(VIEWPORT_USES_LEFT.getOrDefault(uuid, maxUses), maxUses) : maxUses;
 
 		if (usesLeft <= 0) {
-			player.sendMessage(Text.literal("§c当前阶段镜子启动次数已用完"), true);
+			player.sendMessage(Text.literal("§c当前阶段镜子使用次数已用完"), true);
 			return;
 		}
 
 		usesLeft--;
 		VIEWPORT_STAGE.put(uuid, stage);
 		VIEWPORT_USES_LEFT.put(uuid, usesLeft);
+
+		boolean current = VIEWPORT_ACTIVE.getOrDefault(uuid, false);
+		if (current) {
+			VIEWPORT_ACTIVE.put(uuid, false);
+			VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
+			syncToClient(player);
+			player.sendMessage(Text.literal("§7镜像视图已关闭，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
+			return;
+		}
+
+		if (!isInAnyRange(player, data)) {
+			syncToClient(player);
+			player.sendMessage(Text.literal("§c你不在任何镜面的触发范围内，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
+			return;
+		}
+
+		if (player.getRandom().nextDouble() >= config.getSuccessRate(stage)) {
+			syncToClient(player);
+			player.sendMessage(Text.literal("§7观看判定失败，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
+			return;
+		}
+
 		VIEWPORT_ACCUMULATED_TICKS.put(uuid, 0);
 		VIEWPORT_ACTIVE.put(uuid, true);
 		syncToClient(player);
-		player.sendMessage(Text.literal("§a镜像视图已开启，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
+		player.sendMessage(Text.literal("§a观看判定成功，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
 	}
 
 	public static void tickViewports(ServerPlayerEntity player) {
@@ -197,7 +205,6 @@ public class MirrorCommand {
 		int stage = Evil_Eyes.getPlayerStage(player, Evil_Eyes.configManager);
 		MirrorConfig config = MirrorConfig.getInstance();
 		int watchTimeTicks = Math.max(1, config.getWatchTime(stage)) * 20;
-		double successRate = config.getSuccessRate(stage);
 
 		int accumulated = VIEWPORT_ACCUMULATED_TICKS.getOrDefault(uuid, 0) + 1;
 		VIEWPORT_ACCUMULATED_TICKS.put(uuid, accumulated);
@@ -205,11 +212,7 @@ public class MirrorCommand {
 		if (accumulated >= watchTimeTicks) {
 			VIEWPORT_ACTIVE.put(uuid, false);
 			VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
-			if (player.getRandom().nextDouble() < successRate) {
-				player.sendMessage(Text.literal("§a观看成功"), true);
-			} else {
-				player.sendMessage(Text.literal("§7观看未成功"), true);
-			}
+			player.sendMessage(Text.literal("§a观看结束"), true);
 			syncToClient(player);
 		}
 	}
