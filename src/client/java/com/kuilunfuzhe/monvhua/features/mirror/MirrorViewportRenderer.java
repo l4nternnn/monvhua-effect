@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.mirror;
 
+import com.kuilunfuzhe.monvhua.compat.DhCompat;
 import com.kuilunfuzhe.monvhua.mixin.CameraAccessor;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -56,6 +57,7 @@ public class MirrorViewportRenderer {
 			if (pos == null) return;
 
 			FramebufferOverride.setOverride(fullMirrorFbo);
+			DhCompat.suspend();
 			try {
 				Camera cam = new Camera();
 				CameraAccessor acc = (CameraAccessor) cam;
@@ -91,6 +93,7 @@ public class MirrorViewportRenderer {
 				);
 				lastMirrorRenderTick = worldTick;
 			} finally {
+				DhCompat.resume();
 				FramebufferOverride.clearOverride();
 			}
 		} catch (RuntimeException e) {

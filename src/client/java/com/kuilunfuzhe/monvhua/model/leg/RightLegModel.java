@@ -17,14 +17,34 @@ public class RightLegModel extends SkullBlockEntityModel {
     public static TexturedModelData getTexturedModelData() {
         ModelData modelData = new ModelData();
         ModelPartData root = modelData.getRoot();
-        // 左臂：宽6，高12，深6，原点偏移使其位于方块左侧
-        ModelPartData rightLeg =  root.addChild(EntityModelPartNames.HEAD,
-                ModelPartBuilder.create().uv(0, 16).cuboid(-2.0F, -12.0F, -2.0f, 4.0F, 12.0F, 4.0F),
-                ModelTransform.origin(0.0f,-6.0f,0.0f));
 
-        rightLeg.addChild("right_pants",
+        ModelPartData rightLeg = root.addChild(EntityModelPartNames.HEAD,
+                ModelPartBuilder.create().uv(0, 16).cuboid(-2.0F, -12.0F, -2.0f, 4.0F, 12.0F, 4.0F),
+                ModelTransform.origin(0.0f, -6.0f, 0.0f));
+
+        ModelPartData pants = rightLeg.addChild("right_pants",
                 ModelPartBuilder.create().uv(0, 32).cuboid(-2.0F, -12.0F, -2.0F, 4.0F, 12.0F, 4.0F, new Dilation(0.25F)),
-                ModelTransform.origin(-0.0f,-0.0f,0.0f));
+                ModelTransform.origin(-0.0f, -0.0f, 0.0f));
+
+        pants.addChild("edge_front",
+                ModelPartBuilder.create().uv(0, 32).cuboid(-2.0F, -12.0F, 2.0F, 4.0F, 12.0F, 0.25F),
+                ModelTransform.origin(0.0f, 0.0f, 0.0f));
+        pants.addChild("edge_back",
+                ModelPartBuilder.create().uv(0, 32).cuboid(-2.0F, -12.0F, -2.25F, 4.0F, 12.0F, 0.25F),
+                ModelTransform.origin(0.0f, 0.0f, 0.0f));
+        pants.addChild("edge_left",
+                ModelPartBuilder.create().uv(0, 32).cuboid(-2.25F, -12.0F, -2.0F, 0.25F, 12.0F, 4.0F),
+                ModelTransform.origin(0.0f, 0.0f, 0.0f));
+        pants.addChild("edge_right",
+                ModelPartBuilder.create().uv(0, 32).cuboid(2.0F, -12.0F, -2.0F, 0.25F, 12.0F, 4.0F),
+                ModelTransform.origin(0.0f, 0.0f, 0.0f));
+        pants.addChild("edge_top",
+                ModelPartBuilder.create().uv(0, 32).cuboid(-2.0F, -12.25F, -2.0F, 4.0F, 0.25F, 4.0F),
+                ModelTransform.origin(0.0f, 0.0f, 0.0f));
+        pants.addChild("edge_bottom",
+                ModelPartBuilder.create().uv(0, 32).cuboid(-2.0F, 0.0F, -2.0F, 4.0F, 0.25F, 4.0F),
+                ModelTransform.origin(0.0f, 0.0f, 0.0f));
+
         return TexturedModelData.of(modelData, 64, 64);
     }
 
@@ -33,7 +53,7 @@ public class RightLegModel extends SkullBlockEntityModel {
         this.right_leg.yaw = yaw * (float)(Math.PI / 180.0);
         this.right_leg.pitch = pitch * (float)(Math.PI / 180.0);
     }
-    //    @Override
+
     public void render(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, float red, float green, float blue, float alpha) {
         this.right_leg.render(matrices, vertices, light, overlay);
     }

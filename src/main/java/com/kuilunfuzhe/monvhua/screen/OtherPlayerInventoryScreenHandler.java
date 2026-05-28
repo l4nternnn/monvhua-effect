@@ -25,17 +25,19 @@ public class OtherPlayerInventoryScreenHandler extends ScreenHandler {
         this.viewer = viewerInv.player;
         targetInventory.onOpen(viewerInv.player);
 
+
+        // 快捷栏 9 格 (索引 0-8)
+        for (int col = 0; col < 9; ++col) {
+            this.addSlot(new Slot(targetInventory, col, 8 + col * 18, 81-24));
+        }
+
         // 目标玩家的背包槽位 (41 格)
         // 主背包 27 格 (索引 9-35)
         for (int row = 0; row < 3; ++row) {
             for (int col = 0; col < 9; ++col) {
-                this.addSlot(new Slot(targetInventory, col + row * 9 + 9, 8 + col * 18, 46+35 + row * 18));
+                this.addSlot(new Slot(targetInventory, col + row * 9 + 9, 8 + col * 18, 46+33 + row * 19));
             }
         }
-        // 快捷栏 9 格 (索引 0-8)
-//        for (int col = 0; col < 9; ++col) {
-//            this.addSlot(new Slot(targetInventory, col, 8 + col * 18, 142));
-//        }
         // 盔甲栏 4 格 (索引 36-39)
 //        for (int i = 0; i < 4; ++i) {
 //            final EquipmentSlot slotType = EquipmentSlot.values()[2 + i];

@@ -568,7 +568,7 @@ public class BodyPartManager {
 			nbt.putString("local_skin", skinName);
 			combinedStack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
 		}
-		combinedStack.set(DataComponentTypes.CUSTOM_NAME, Text.literal("§6§k13§4合并肢体§r§6§k13§r"));
+		combinedStack.set(DataComponentTypes.CUSTOM_NAME, Text.literal("§6§k13§4躯体§r§6§k13§r"));
 		combinedStack.set(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, true);
 
 		ItemDisplayEntity display = EntityType.ITEM_DISPLAY.create(world, SpawnReason.TRIGGERED);

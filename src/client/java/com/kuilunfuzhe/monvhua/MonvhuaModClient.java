@@ -45,6 +45,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
+import com.kuilunfuzhe.monvhua.compat.DhCompat;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorHudOverlay;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
@@ -130,8 +131,7 @@ public class MonvhuaModClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 
-
-
+		DhCompat.init();
 
 		ModNetworking.registerS2CPackets();
 
