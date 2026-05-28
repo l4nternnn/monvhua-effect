@@ -7,6 +7,9 @@ import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorToggleC2SPacket;
 import com.kuilunfuzhe.monvhua.network.openback.*;
+import com.kuilunfuzhe.monvhua.network.secrecy.RequestSecrecyConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigS2CPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigUpdateC2SPacket;
 
 public class ModNetworking {
 	// 注册所有 S2C 包（客户端和服务端都需要）
@@ -31,6 +34,7 @@ public class ModNetworking {
 		CameraUpdateS2CPacket.register();
 		MirrorStateS2CPacket.register();
 		MirrorConfigS2CPacket.register();
+		SecrecyConfigS2CPacket.register();
 	}
 
 	// 注册所有 C2S 包（只需要服务端）
@@ -53,5 +57,7 @@ public class ModNetworking {
 		CameraWatchStartC2SPacket.register();
 		CameraWatchStopC2SPacket.register();
 		MirrorToggleC2SPacket.register();
+		RequestSecrecyConfigC2SPacket.register();
+		SecrecyConfigUpdateC2SPacket.register();
 	}
 }
