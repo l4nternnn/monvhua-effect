@@ -6,6 +6,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.ClientCameraWatchReceiver;
 import com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient;
+import com.kuilunfuzhe.monvhua.features.secrecy.SecrecyClientAudioManager;
 import com.kuilunfuzhe.monvhua.gui.bodyback.BodyPartScreen;
 import com.kuilunfuzhe.monvhua.gui.openback.OtherPlayerInventoryScreen;
 import com.kuilunfuzhe.monvhua.model.CombinedBodyModelData;
@@ -44,14 +45,17 @@ import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
+import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
-import com.kuilunfuzhe.monvhua.compat.DhCompat;
+import com.kuilunfuzhe.monvhua.item.secrecy.SecrecyItem;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorHudOverlay;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorToggleC2SPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigS2CPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyStateS2CPacket;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
 
 import com.kuilunfuzhe.monvhua.network.openback.CarryEntityPayload;
@@ -131,7 +135,8 @@ public class MonvhuaModClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 
-		DhCompat.init();
+
+
 
 		ModNetworking.registerS2CPackets();
 
@@ -144,6 +149,7 @@ public class MonvhuaModClient implements ClientModInitializer {
 
 		// 按键处理
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
+			SecrecyClientAudioManager.tick();
 			if (client.player == null) return;
 			if (configKey.wasPressed() && client.player.isCreative()) {
 				client.setScreen(new CombinedConfigScreen());
@@ -305,6 +311,19 @@ public class MonvhuaModClient implements ClientModInitializer {
 			});
 		});
 
+		ClientPlayNetworking.registerGlobalReceiver(SecrecyConfigS2CPacket.ID, (packet, context) -> {
+			context.client().execute(() -> {
+				SecrecyConfig config = SecrecyConfig.fromJson(packet.json());
+				if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
+					screen.receiveSecrecyConfig(config);
+				}
+			});
+		});
+
+		ClientPlayNetworking.registerGlobalReceiver(SecrecyStateS2CPacket.ID, (packet, context) -> {
+			context.client().execute(() -> SecrecyClientAudioManager.setInvisible(packet.invisible(), packet.fadeOutTicks()));
+		});
+
 		// 9. 能量同步
 		ClientPlayNetworking.registerGlobalReceiver(EnergySyncPacket.ID, (packet, context) -> {
 			context.client().execute(() -> GazeguidanceClient.setEnergy(packet.currentEnergy(), packet.maxEnergy()));
@@ -413,7 +432,7 @@ public class MonvhuaModClient implements ClientModInitializer {
 			PlayerEntity player = MinecraftClient.getInstance().player;
 			if (player != null) {
 				ItemStack mainHand = player.getMainHandStack();
-				if (mainHand.getItem() == Evil_Eyes.CLAIRVOYANCE_ITEM || mainHand.getItem() == ModItems.MAGIC_STICK) {
+				if (mainHand.getItem() == Evil_Eyes.CLAIRVOYANCE_ITEM || mainHand.getItem() == ModItems.MAGIC_STICK || SecrecyItem.isHoldingSecrecy(mainHand)) {
 					renderBackTexture(context.matrixStack(), context.consumers(), player);
 					renderOrbitTextures(context.matrixStack(), context.consumers(), player);
 				}
@@ -485,6 +504,7 @@ public class MonvhuaModClient implements ClientModInitializer {
 		// 锚点过期清理
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			if (client.world == null) {
+				SecrecyClientAudioManager.setInvisible(false, 0);
 				if (!anchors.isEmpty()) anchors.clear();
 				MirrorClientManager.reset();
 				MirrorViewportRenderer.cleanup();
@@ -624,7 +644,7 @@ public class MonvhuaModClient implements ClientModInitializer {
 	private static void renderBackTexture(MatrixStack matrices, VertexConsumerProvider consumers, PlayerEntity player) {
 		if (!imagesEnabled) return;
 		ItemStack mainHand = player.getMainHandStack();
-		boolean hasValidItem = mainHand.getItem() == Evil_Eyes.CLAIRVOYANCE_ITEM || mainHand.getItem() == ModItems.MAGIC_STICK;
+		boolean hasValidItem = mainHand.getItem() == Evil_Eyes.CLAIRVOYANCE_ITEM || mainHand.getItem() == ModItems.MAGIC_STICK || SecrecyItem.isHoldingSecrecy(mainHand);
 		if (!hasValidItem) return;
 
 		String playerName = player.getName().getString();

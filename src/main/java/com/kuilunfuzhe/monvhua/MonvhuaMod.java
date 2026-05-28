@@ -15,8 +15,10 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
 import com.kuilunfuzhe.monvhua.features.guidance.Gazeguidance;
 import com.kuilunfuzhe.monvhua.item.ModItemGroups;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
+import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
+import com.kuilunfuzhe.monvhua.item.secrecy.SecrecyItem;
 import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
@@ -32,6 +34,10 @@ import com.kuilunfuzhe.monvhua.network.mirror.RequestMirrorConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.openback.CarryEntityPayload;
 import com.kuilunfuzhe.monvhua.network.openback.OpenOtherInventoryPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
+import com.kuilunfuzhe.monvhua.network.secrecy.RequestSecrecyConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigS2CPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigUpdateC2SPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyStateS2CPacket;
 import com.kuilunfuzhe.monvhua.screen.ModScreenHandlers;
 import com.kuilunfuzhe.monvhua.screen.OtherPlayerInventoryScreenHandler;
 import com.kuilunfuzhe.monvhua.screen.OtherPlayerInventoryScreenHandlerFactory;
@@ -136,6 +142,8 @@ public class MonvhuaMod implements ModInitializer {
         CameraUpdateS2CPacket.register();
         MirrorStateS2CPacket.register();
         MirrorConfigS2CPacket.register();
+        SecrecyConfigS2CPacket.register();
+        SecrecyStateS2CPacket.register();
 
         ModNetworking.registerC2SPackets();
         MarkEntityPayload.register();
@@ -156,6 +164,8 @@ public class MonvhuaMod implements ModInitializer {
         MirrorToggleC2SPacket.register();
         MirrorConfigUpdateC2SPacket.register();
         RequestMirrorConfigC2SPacket.register();
+        RequestSecrecyConfigC2SPacket.register();
+        SecrecyConfigUpdateC2SPacket.register();
 
         ServerPlayNetworking.registerGlobalReceiver(MirrorToggleC2SPacket.ID, (packet, context) -> {
             MirrorCommand.toggleViewport(context.player());
@@ -179,6 +189,31 @@ public class MonvhuaMod implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(RequestMirrorConfigC2SPacket.ID, (packet, context) -> {
             MirrorConfig config = MirrorConfig.getInstance();
             ServerPlayNetworking.send(context.player(), new MirrorConfigS2CPacket(config.toJson()));
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(RequestSecrecyConfigC2SPacket.ID, (packet, context) -> {
+            ServerPlayNetworking.send(context.player(), new SecrecyConfigS2CPacket(SecrecyConfig.getInstance().toJson()));
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(SecrecyConfigUpdateC2SPacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                if (!context.player().hasPermissionLevel(2) && !context.player().isCreative()) {
+                    context.player().sendMessage(Text.literal("§c你没有权限修改窃密配置"), true);
+                    return;
+                }
+                SecrecyConfig newConfig = SecrecyConfig.fromJson(packet.json());
+                SecrecyConfig.setInstance(newConfig);
+                for (int stage = 1; stage <= newConfig.stages.length; stage++) {
+                    int range = newConfig.getRange(stage);
+                    double probability = newConfig.getProbability(stage);
+                    String command = "mindreading " + stage + " " + range + " " + probability;
+                    context.server().getCommandManager().executeWithPrefix(context.server().getCommandSource().withLevel(4), command);
+                }
+                for (ServerPlayerEntity p : context.server().getPlayerManager().getPlayerList()) {
+                    ServerPlayNetworking.send(p, new SecrecyConfigS2CPacket(newConfig.toJson()));
+                }
+                context.player().sendMessage(Text.literal("§a窃密配置已更新，并已同步 mindreading 范围/概率"), true);
+            });
         });
 
         // ===== 3. 命令注册 =====
@@ -232,6 +267,7 @@ public class MonvhuaMod implements ModInitializer {
             int stage = Evil_Eyes.getPlayerStage(player, configManager);
             ServerPlayNetworking.send(player, new PlayerStageS2CPacket(stage));
             MirrorCommand.syncToClient(player);
+            ServerPlayNetworking.send(player, new SecrecyConfigS2CPacket(SecrecyConfig.getInstance().toJson()));
         });
 
         // ===== 5. 持久化加载 =====
@@ -261,6 +297,7 @@ public class MonvhuaMod implements ModInitializer {
         Evil_Eyes.initialize(configManager);
         Gazeguidance.initialize();
         ModItems.initialize();
+        SecrecyItem.initialize(configManager);
         ModBlocks.initialize();
         Assembly_ModItems.initialize();
         mirror_of_then_and_now.initialize();
@@ -436,6 +473,7 @@ public class MonvhuaMod implements ModInitializer {
             VIEWING_MAP.values().removeIf(v -> v == player);
             VIEW_MODE_PREFERENCE.remove(uuid);
             MirrorCommand.cleanup(uuid);
+            SecrecyItem.exitSecrecy(player);
         });
 
         // ===== 13. 死亡清理 =====
@@ -446,6 +484,7 @@ public class MonvhuaMod implements ModInitializer {
                 cancelPendingTainted(uuid);
                 floatingPlayers.remove(uuid);
                 MirrorCommand.cleanup(uuid);
+            SecrecyItem.exitSecrecy(player);
             }
         });
 

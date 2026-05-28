@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.gui;
 
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
+import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.GlobalConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.RequestGlobalConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.UpdateGlobalConfigC2SPacket;
@@ -9,6 +10,8 @@ import com.kuilunfuzhe.monvhua.network.gazeguidance.RequestConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.UpdateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigUpdateC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.RequestMirrorConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.RequestSecrecyConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigUpdateC2SPacket;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -21,10 +24,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class CombinedConfigScreen extends Screen {
-    private enum ConfigType { EVIL_EYES, GAZE_GUIDANCE, MIRROR, STAGE_RANGE }
+    private enum ConfigType { EVIL_EYES, GAZE_GUIDANCE, MIRROR, SECRECY, STAGE_RANGE }
     private ConfigType currentType = ConfigType.EVIL_EYES;
 
-    private ButtonWidget btnEvilEyes, btnGaze, btnMirror, btnStageRange;
+    private ButtonWidget btnEvilEyes, btnGaze, btnMirror, btnSecrecy, btnStageRange;
     private int panelX, panelY, panelWidth, panelHeight;
     private int leftWidth, rightWidth;
 
@@ -59,16 +62,28 @@ public class CombinedConfigScreen extends Screen {
     private ButtonWidget saveStageRangeButton;
     private final List<TextWidget> stageRangeLabels = new ArrayList<>();
 
+    // ===== 窃密配置组件 =====
+    private final List<ButtonWidget> secrecyStageButtons = new ArrayList<>();
+    private int secrecyCurrentStage = 1;
+    private TextFieldWidget secrecyRangeField, secrecyProbabilityField, secrecySpeedMultiplierField, secrecyDelayField;
+    private ButtonWidget saveSecrecyButton;
+    private final List<TextWidget> secrecyLabels = new ArrayList<>();
+    private static SecrecyConfig cachedSecrecyConfig = null;
+
     public CombinedConfigScreen() {
         super(Text.literal("物品配置"));
         ClientPlayNetworking.send(new RequestGlobalConfigC2SPacket());
         ClientPlayNetworking.send(new RequestConfigC2SPacket());
         ClientPlayNetworking.send(new RequestMirrorConfigC2SPacket());
+        ClientPlayNetworking.send(new RequestSecrecyConfigC2SPacket());
         if (cachedGazeConfig == null) {
             cachedGazeConfig = createDefaultGazeConfig();
         }
         if (cachedMirrorConfig == null) {
             cachedMirrorConfig = createDefaultMirrorConfig();
+        }
+        if (cachedSecrecyConfig == null) {
+            cachedSecrecyConfig = createDefaultSecrecyConfig();
         }
     }
 
@@ -99,6 +114,19 @@ public class CombinedConfigScreen extends Screen {
         return config;
     }
 
+    private SecrecyConfig createDefaultSecrecyConfig() {
+        SecrecyConfig config = new SecrecyConfig();
+        for (int i = 0; i < 7; i++) {
+            int stage = i + 1;
+            config.stages[i] = new SecrecyConfig.StageConfig();
+            config.stages[i].range = 5 + stage * 2;
+            config.stages[i].probability = Math.min(1.0D, 0.1D + stage * 0.1D);
+            config.stages[i].speedMultiplier = 0.1D;
+            config.stages[i].vanishDelaySeconds = Math.max(1, 8 - stage);
+        }
+        return config;
+    }
+
     @Override
     protected void init() {
         super.init();
@@ -112,26 +140,30 @@ public class CombinedConfigScreen extends Screen {
         leftWidth = 140;
         rightWidth = panelWidth - leftWidth - 15;
 
-        int btnWidth = 80, btnHeight = 20;
+        int btnWidth = 76, btnHeight = 20;
         int btnY = panelY - btnHeight - 5;
         int centerX = panelX + panelWidth / 2;
 
         btnEvilEyes = ButtonWidget.builder(Text.literal("千里眼"), btn -> switchTo(ConfigType.EVIL_EYES))
-                .dimensions(centerX - btnWidth * 2 - 8, btnY, btnWidth, btnHeight).build();
+                .dimensions(centerX - btnWidth * 2 - 38, btnY, btnWidth, btnHeight).build();
         btnGaze = ButtonWidget.builder(Text.literal("视线诱导"), btn -> switchTo(ConfigType.GAZE_GUIDANCE))
-                .dimensions(centerX - btnWidth - 3, btnY, btnWidth, btnHeight).build();
+                .dimensions(centerX - btnWidth - 34, btnY, btnWidth, btnHeight).build();
         btnMirror = ButtonWidget.builder(Text.literal("镜子"), btn -> switchTo(ConfigType.MIRROR))
-                .dimensions(centerX + 2, btnY, btnWidth, btnHeight).build();
+                .dimensions(centerX - 30, btnY, btnWidth, btnHeight).build();
+        btnSecrecy = ButtonWidget.builder(Text.literal("窃密"), btn -> switchTo(ConfigType.SECRECY))
+                .dimensions(centerX + btnWidth - 26, btnY, btnWidth, btnHeight).build();
         btnStageRange = ButtonWidget.builder(Text.literal("阶段区间"), btn -> switchTo(ConfigType.STAGE_RANGE))
-                .dimensions(centerX + btnWidth + 7, btnY, btnWidth, btnHeight).build();
+                .dimensions(centerX + btnWidth * 2 - 22, btnY, btnWidth, btnHeight).build();
         addDrawableChild(btnEvilEyes);
         addDrawableChild(btnGaze);
         addDrawableChild(btnMirror);
+        addDrawableChild(btnSecrecy);
         addDrawableChild(btnStageRange);
 
         buildEvilEyesUI();
         buildGazeGuidanceUI();
         buildMirrorUI();
+        buildSecrecyUI();
         buildStageRangeUI();
 
         switchTo(ConfigType.EVIL_EYES);
@@ -248,6 +280,42 @@ public class CombinedConfigScreen extends Screen {
         addDrawableChild(saveMirrorButton);
     }
 
+    // ==================== 窃密配置 UI ====================
+    private void buildSecrecyUI() {
+        int leftX = panelX + 5;
+        for (int i = 1; i <= 7; i++) {
+            int stage = i;
+            ButtonWidget btn = ButtonWidget.builder(Text.literal("阶段 " + i), button -> {
+                secrecyCurrentStage = stage;
+                loadSecrecyStageUI();
+            }).dimensions(leftX, panelY + 10 + (i-1)*25, leftWidth - 10, 20).build();
+            addDrawableChild(btn);
+            secrecyStageButtons.add(btn);
+        }
+
+        int rightX = panelX + leftWidth + 5;
+        int rowY = panelY + 10;
+        int rowHeight = 22;
+        int labelWidth = 110;
+        int inputWidth = 70;
+
+        String[] labels = {"范围:", "概率(0-1):", "速度倍率:", "隐身延迟(秒,-1禁用):"};
+        for (int i = 0; i < labels.length; i++) {
+            TextWidget label = new TextWidget(rightX, rowY + i * rowHeight + 4, labelWidth, 9, Text.literal(labels[i]), textRenderer);
+            addDrawableChild(label);
+            secrecyLabels.add(label);
+        }
+
+        secrecyRangeField = createField(rightX + labelWidth, rowY, inputWidth);
+        secrecyProbabilityField = createField(rightX + labelWidth, rowY + rowHeight, inputWidth);
+        secrecySpeedMultiplierField = createField(rightX + labelWidth, rowY + 2*rowHeight, inputWidth);
+        secrecyDelayField = createField(rightX + labelWidth, rowY + 3*rowHeight, inputWidth);
+
+        saveSecrecyButton = ButtonWidget.builder(Text.literal("保存"), btn -> saveSecrecyConfig())
+                .dimensions(rightX, rowY + 5*rowHeight + 10, 80, 20).build();
+        addDrawableChild(saveSecrecyButton);
+    }
+
     // ==================== 阶段区间 UI ====================
     private void buildStageRangeUI() {
         int leftX = panelX + 5;
@@ -295,17 +363,20 @@ public class CombinedConfigScreen extends Screen {
         btnEvilEyes.setMessage(currentType == ConfigType.EVIL_EYES ? Text.literal("§l§a千里眼") : Text.literal("千里眼"));
         btnGaze.setMessage(currentType == ConfigType.GAZE_GUIDANCE ? Text.literal("§l§a视线诱导") : Text.literal("视线诱导"));
         btnMirror.setMessage(currentType == ConfigType.MIRROR ? Text.literal("§l§a昔今之镜") : Text.literal("镜子"));
+        btnSecrecy.setMessage(currentType == ConfigType.SECRECY ? Text.literal("§l§a窃密") : Text.literal("窃密"));
         btnStageRange.setMessage(currentType == ConfigType.STAGE_RANGE ? Text.literal("§l§a阶段区间") : Text.literal("阶段区间"));
 
         setEvilComponentsVisible(currentType == ConfigType.EVIL_EYES);
         setGazeComponentsVisible(currentType == ConfigType.GAZE_GUIDANCE);
         setMirrorComponentsVisible(currentType == ConfigType.MIRROR);
+        setSecrecyComponentsVisible(currentType == ConfigType.SECRECY);
         setStageRangeComponentsVisible(currentType == ConfigType.STAGE_RANGE);
 
         switch (currentType) {
             case EVIL_EYES -> loadEvilStageUI();
             case GAZE_GUIDANCE -> loadGazeStageUI();
             case MIRROR -> loadMirrorStageUI();
+            case SECRECY -> loadSecrecyStageUI();
             case STAGE_RANGE -> loadStageRangeUI();
         }
     }
@@ -340,6 +411,16 @@ public class CombinedConfigScreen extends Screen {
         if (mirrorViewCountField != null) mirrorViewCountField.visible = visible;
         if (mirrorRadiusField != null) mirrorRadiusField.visible = visible;
         if (saveMirrorButton != null) saveMirrorButton.visible = visible;
+    }
+
+    private void setSecrecyComponentsVisible(boolean visible) {
+        for (ButtonWidget btn : secrecyStageButtons) btn.visible = visible;
+        for (TextWidget label : secrecyLabels) label.visible = visible;
+        if (secrecyRangeField != null) secrecyRangeField.visible = visible;
+        if (secrecyProbabilityField != null) secrecyProbabilityField.visible = visible;
+        if (secrecySpeedMultiplierField != null) secrecySpeedMultiplierField.visible = visible;
+        if (secrecyDelayField != null) secrecyDelayField.visible = visible;
+        if (saveSecrecyButton != null) saveSecrecyButton.visible = visible;
     }
 
     private void setStageRangeComponentsVisible(boolean visible) {
@@ -499,6 +580,51 @@ public class CombinedConfigScreen extends Screen {
         }
     }
 
+    // ========== 窃密配置 ==========
+    private void loadSecrecyStageUI() {
+        if (cachedSecrecyConfig == null) {
+            secrecyRangeField.setText("");
+            secrecyProbabilityField.setText("");
+            secrecySpeedMultiplierField.setText("");
+            secrecyDelayField.setText("");
+            return;
+        }
+        secrecyRangeField.setText(String.valueOf(cachedSecrecyConfig.getRange(secrecyCurrentStage)));
+        secrecyProbabilityField.setText(String.valueOf(cachedSecrecyConfig.getProbability(secrecyCurrentStage)));
+        secrecySpeedMultiplierField.setText(String.valueOf(cachedSecrecyConfig.getSpeedMultiplier(secrecyCurrentStage)));
+        secrecyDelayField.setText(String.valueOf(cachedSecrecyConfig.getVanishDelaySeconds(secrecyCurrentStage)));
+    }
+
+    private void saveSecrecyConfig() {
+        try {
+            int range = Integer.parseInt(secrecyRangeField.getText().trim());
+            double probability = Double.parseDouble(secrecyProbabilityField.getText().trim());
+            double speedMultiplier = Double.parseDouble(secrecySpeedMultiplierField.getText().trim());
+            int delaySeconds = Integer.parseInt(secrecyDelayField.getText().trim());
+
+            if (cachedSecrecyConfig == null) cachedSecrecyConfig = new SecrecyConfig();
+            cachedSecrecyConfig.setRange(secrecyCurrentStage, range);
+            cachedSecrecyConfig.setProbability(secrecyCurrentStage, probability);
+            cachedSecrecyConfig.setSpeedMultiplier(secrecyCurrentStage, speedMultiplier);
+            cachedSecrecyConfig.setVanishDelaySeconds(secrecyCurrentStage, delaySeconds);
+
+            ClientPlayNetworking.send(new SecrecyConfigUpdateC2SPacket(cachedSecrecyConfig.toJson()));
+            if (client != null && client.player != null)
+                client.player.sendMessage(Text.literal("§e阶段 " + secrecyCurrentStage + " 窃密配置已提交，正在同步..."), true);
+        } catch (NumberFormatException e) {
+            if (client != null && client.player != null)
+                client.player.sendMessage(Text.literal("§c请输入有效的数字"), true);
+        }
+    }
+
+    public void receiveSecrecyConfig(SecrecyConfig config) {
+        if (config == null) return;
+        cachedSecrecyConfig = config;
+        if (currentType == ConfigType.SECRECY) {
+            loadSecrecyStageUI();
+        }
+    }
+
     // ========== 阶段区间配置 ==========
     private void loadStageRangeUI() {
         GlobalConfigS2CPacket.StageConfig cfg = CACHED_EVIL_CONFIGS[stageRangeCurrentStage];
@@ -559,6 +685,10 @@ public class CombinedConfigScreen extends Screen {
             case MIRROR -> {
                 context.drawText(textRenderer, "镜子阶段配置", panelX + 5, panelY + 5, 0xFFFFFF, false);
                 context.drawText(textRenderer, "当前编辑: 阶段 " + mirrorCurrentStage, panelX + leftWidth + 5, panelY + 5, 0xFFFFFF, false);
+            }
+            case SECRECY -> {
+                context.drawText(textRenderer, "窃密阶段配置", panelX + 5, panelY + 5, 0x55FFFF, false);
+                context.drawText(textRenderer, "当前编辑: 阶段 " + secrecyCurrentStage, panelX + leftWidth + 5, panelY + 5, 0x55FFFF, false);
             }
             case STAGE_RANGE -> {
                 context.drawText(textRenderer, "阶段区间配置", panelX + 5, panelY + 5, 0xFFFFFF, false);
