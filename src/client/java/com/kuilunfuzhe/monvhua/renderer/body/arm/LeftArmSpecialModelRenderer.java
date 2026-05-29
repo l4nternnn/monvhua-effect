@@ -4,10 +4,14 @@ import com.mojang.serialization.MapCodec;
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.model.arm.LeftArmModel;
 import com.kuilunfuzhe.monvhua.model.arm.LeftArmSlimModel;
+import com.kuilunfuzhe.monvhua.renderer.body.SkinOuterLayerVoxelRenderer;
 import com.kuilunfuzhe.monvhua.renderer.body.special.BodyPartSpecialModelRenderer;
+import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.block.entity.SkullBlockEntityModel;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.model.LoadedEntityModels;
+import net.minecraft.client.render.entity.model.EntityModelPartNames;
 import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Vector3f;
 
@@ -27,11 +31,25 @@ public class LeftArmSpecialModelRenderer extends BodyPartSpecialModelRenderer {
     protected void renderModel(MatrixStack matrices, VertexConsumerProvider vertexConsumers,
                                RenderLayer renderLayer, int light, int overlay, Data data) {
         boolean slim = "slim".equals(data.armModel());
-        if (slim) {
-            slimModel.render(matrices, vertexConsumers.getBuffer(renderLayer), light, overlay, 1.0F, 1.0F, 1.0F, 1.0F);
-        } else {
-            model.render(matrices, vertexConsumers.getBuffer(renderLayer), light, overlay, 1.0F, 1.0F, 1.0F, 1.0F);
+        SkullBlockEntityModel activeModel = slim ? slimModel : model;
+        ModelPart arm = activeModel.getRootPart().getChild(EntityModelPartNames.LEFT_ARM);
+        ModelPart sleeve = arm.getChild("left_sleeve");
+        sleeve.visible = false;
+        activeModel.render(matrices, vertexConsumers.getBuffer(renderLayer), light, overlay);
+        sleeve.visible = true;
+
+        matrices.push();
+        activeModel.getRootPart().applyTransform(matrices);
+        arm.applyTransform(matrices);
+        matrices.push();
+        sleeve.applyTransform(matrices);
+        boolean renderedVoxelLayer = SkinOuterLayerVoxelRenderer.renderLeftSleeve(matrices, vertexConsumers.getBuffer(renderLayer),
+                data.texture(), light, overlay, slim);
+        matrices.pop();
+        if (!renderedVoxelLayer) {
+            sleeve.render(matrices, vertexConsumers.getBuffer(renderLayer), light, overlay);
         }
+        matrices.pop();
     }
 
     @Override

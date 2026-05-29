@@ -5,7 +5,6 @@ import com.kuilunfuzhe.monvhua.model.leg.RightLegModel;
 import com.kuilunfuzhe.monvhua.features.block.body.leg.RightLegBlock;
 import com.kuilunfuzhe.monvhua.features.block.body.leg.RightLegBlockEntity;
 import com.kuilunfuzhe.monvhua.renderer.body.SkinOuterLayerVoxelRenderer;
-import com.kuilunfuzhe.monvhua.util.SkinColorSampler;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.model.ModelPart;
@@ -52,27 +51,27 @@ public class RightLegBlockEntityRenderer implements BlockEntityRenderer<RightLeg
             texture = getSkinTexture(entity.getOwner(), entity.getPlayerUuid());
         }
 
-        SkinColorSampler.OuterLayerColors colors = SkinColorSampler.getOrSample(texture);
         model.setHeadRotation(0, yaw, 0);
 
-        if (colors != null) {
-            ModelPart leg = model.getRootPart().getChild(EntityModelPartNames.HEAD);
-            ModelPart pants = leg.getChild("right_pants");
-            pants.visible = false;
+        ModelPart leg = model.getRootPart().getChild(EntityModelPartNames.HEAD);
+        ModelPart pants = leg.getChild("right_pants");
+        pants.visible = false;
 
-            model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+        model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
 
-            pants.visible = true;
-            matrices.push();
-            model.getRootPart().applyTransform(matrices);
-            leg.applyTransform(matrices);
-            pants.applyTransform(matrices);
-            SkinOuterLayerVoxelRenderer.renderRightPants(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)),
-                    texture, light, OverlayTexture.DEFAULT_UV);
-            matrices.pop();
-        } else {
-            model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+        pants.visible = true;
+        matrices.push();
+        model.getRootPart().applyTransform(matrices);
+        leg.applyTransform(matrices);
+        matrices.push();
+        pants.applyTransform(matrices);
+        boolean renderedVoxelLayer = SkinOuterLayerVoxelRenderer.renderRightPants(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)),
+                texture, light, OverlayTexture.DEFAULT_UV);
+        matrices.pop();
+        if (!renderedVoxelLayer) {
+            pants.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
         }
+        matrices.pop();
 
         matrices.pop();
     }

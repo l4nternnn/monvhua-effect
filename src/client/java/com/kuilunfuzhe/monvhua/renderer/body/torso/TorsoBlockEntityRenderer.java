@@ -5,7 +5,6 @@ import com.kuilunfuzhe.monvhua.model.torso.TorsoModel;
 import com.kuilunfuzhe.monvhua.features.block.body.torso.TorsoBlock;
 import com.kuilunfuzhe.monvhua.features.block.body.torso.TorsoBlockEntity;
 import com.kuilunfuzhe.monvhua.renderer.body.SkinOuterLayerVoxelRenderer;
-import com.kuilunfuzhe.monvhua.util.SkinColorSampler;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.model.ModelPart;
@@ -53,27 +52,27 @@ public class TorsoBlockEntityRenderer implements BlockEntityRenderer<TorsoBlockE
             texture = getSkinTexture(entity.getOwner(), entity.getPlayerUuid());
         }
 
-        SkinColorSampler.OuterLayerColors colors = SkinColorSampler.getOrSample(texture);
         model.setHeadRotation(0, yaw, 0);
 
-        if (colors != null) {
-            ModelPart torso = model.getRootPart().getChild(EntityModelPartNames.HEAD);
-            ModelPart jacket = torso.getChild(EntityModelPartNames.JACKET);
-            jacket.visible = false;
+        ModelPart torso = model.getRootPart().getChild(EntityModelPartNames.HEAD);
+        ModelPart jacket = torso.getChild(EntityModelPartNames.JACKET);
+        jacket.visible = false;
 
-            model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+        model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
 
-            jacket.visible = true;
-            matrices.push();
-            model.getRootPart().applyTransform(matrices);
-            torso.applyTransform(matrices);
-            jacket.applyTransform(matrices);
-            SkinOuterLayerVoxelRenderer.renderJacket(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)),
-                    texture, light, OverlayTexture.DEFAULT_UV);
-            matrices.pop();
-        } else {
-            model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+        jacket.visible = true;
+        matrices.push();
+        model.getRootPart().applyTransform(matrices);
+        torso.applyTransform(matrices);
+        matrices.push();
+        jacket.applyTransform(matrices);
+        boolean renderedVoxelLayer = SkinOuterLayerVoxelRenderer.renderJacket(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)),
+                texture, light, OverlayTexture.DEFAULT_UV);
+        matrices.pop();
+        if (!renderedVoxelLayer) {
+            jacket.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
         }
+        matrices.pop();
 
         matrices.pop();
     }
