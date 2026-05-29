@@ -14,45 +14,66 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class SkinOuterLayerVoxelRenderer {
-    private static final float PIXEL_DEPTH = 0.25F;
+    private static final float PIXEL_SIZE = 0.25F;
+    private static final float HEAD_SIZE = 1.0f;
     private static final Map<Identifier, SkinPixels> PIXEL_CACHE = new HashMap<>();
 
     private SkinOuterLayerVoxelRenderer() {
     }
 
-    public static void renderHeadHat(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
-        renderCuboid(matrices, vertices, texture, light, overlay, 32, 0, -4.0F, -8.0F, -4.0F, 8, 8, 8);
+    public static boolean renderHeadHat(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
+        return renderCuboid(matrices, vertices, texture, light, overlay, 32, 0, -4.0F, -8.0F, -4.0F, 8, 8, 8);
     }
 
-    public static void renderJacket(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
-        renderCuboid(matrices, vertices, texture, light, overlay, 16, 32, -4.0F, -12.0F, -2.0F, 8, 12, 4);
+    public static boolean renderJacket(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
+        return renderCuboid(matrices, vertices, texture, light, overlay, 16, 32, -4.0F, -12.0F, -2.0F, 8, 12, 4);
     }
 
-    public static void renderRightSleeve(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay, boolean slim) {
-        renderCuboid(matrices, vertices, texture, light, overlay, 40, 32, -4.0F, -12.0F, -4.0F, slim ? 3 : 4, 12, 4);
+    public static boolean renderPlayerJacket(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
+        return renderCuboid(matrices, vertices, texture, light, overlay, 16, 32, -4.0F, 0.0F, -2.0F, 8, 12, 4);
     }
 
-    public static void renderLeftSleeve(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay, boolean slim) {
-        renderCuboid(matrices, vertices, texture, light, overlay, 48, 48, -4.0F, -12.0F, -4.0F, slim ? 3 : 4, 12, 4);
+    public static boolean renderRightSleeve(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay, boolean slim) {
+        return renderCuboid(matrices, vertices, texture, light, overlay, 40, 32, -4.0F, -12.0F, -4.0F, slim ? 3 : 4, 12, 4);
     }
 
-    public static void renderRightPants(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
-        renderCuboid(matrices, vertices, texture, light, overlay, 0, 48, -2.0F, -12.0F, -2.0F, 4, 12, 4);
+    public static boolean renderPlayerRightSleeve(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay, boolean slim) {
+        return renderCuboid(matrices, vertices, texture, light, overlay, 40, 32, slim ? -2.0F : -3.0F, -2.0F, -2.0F, slim ? 3 : 4, 12, 4);
     }
 
-    public static void renderLeftPants(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
-        renderCuboid(matrices, vertices, texture, light, overlay, 0, 32, -4.0F, -12.0F, -4.0F, 4, 12, 4);
+    public static boolean renderLeftSleeve(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay, boolean slim) {
+        return renderCuboid(matrices, vertices, texture, light, overlay, 48, 48, -4.0F, -12.0F, -4.0F, slim ? 3 : 4, 12, 4);
     }
 
-    private static void renderCuboid(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay,
+    public static boolean renderPlayerLeftSleeve(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay, boolean slim) {
+        return renderCuboid(matrices, vertices, texture, light, overlay, 48, 48, -1.0F, -2.0F, -2.0F, slim ? 3 : 4, 12, 4);
+    }
+
+    public static boolean renderRightPants(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
+        return renderCuboid(matrices, vertices, texture, light, overlay, 0, 48, -2.0F, -12.0F, -2.0F, 4, 12, 4);
+    }
+
+    public static boolean renderPlayerRightPants(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
+        return renderCuboid(matrices, vertices, texture, light, overlay, 0, 32, -2.0F, 0.0F, -2.0F, 4, 12, 4);
+    }
+
+    public static boolean renderLeftPants(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
+        return renderCuboid(matrices, vertices, texture, light, overlay, 0, 32, -4.0F, -12.0F, -4.0F, 4, 12, 4);
+    }
+
+    public static boolean renderPlayerLeftPants(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
+        return renderCuboid(matrices, vertices, texture, light, overlay, 0, 48, -2.0F, 0.0F, -2.0F, 4, 12, 4);
+    }
+
+    private static boolean renderCuboid(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay,
                                      int textureX, int textureY, float x, float y, float z, int width, int height, int depth) {
         SkinPixels pixels = getPixels(texture);
         if (pixels == null) {
-            return;
+            return false;
         }
 
         renderFace(matrices, vertices, pixels, light, overlay, textureX + depth, textureY,
-                width, depth, new Point(x, y, z), new Point(1.0F, 0.0F, 0.0F), new Point(0.0F, 0.0F, 1.0F), new Point(0.0F, -1.0F, 0.0F));
+                width, depth, new Point(x, y, z + depth), new Point(1.0F, 0.0F, 0.0F), new Point(0.0F, 0.0F, -1.0F), new Point(0.0F, -1.0F, 0.0F));
         renderFace(matrices, vertices, pixels, light, overlay, textureX + depth + width, textureY,
                 width, depth, new Point(x, y + height, z + depth), new Point(1.0F, 0.0F, 0.0F), new Point(0.0F, 0.0F, -1.0F), new Point(0.0F, 1.0F, 0.0F));
         renderFace(matrices, vertices, pixels, light, overlay, textureX, textureY + depth,
@@ -63,6 +84,7 @@ public final class SkinOuterLayerVoxelRenderer {
                 depth, height, new Point(x + width, y, z), new Point(0.0F, 0.0F, 1.0F), new Point(0.0F, 1.0F, 0.0F), new Point(1.0F, 0.0F, 0.0F));
         renderFace(matrices, vertices, pixels, light, overlay, textureX + depth + width + depth, textureY + depth,
                 width, height, new Point(x + width, y, z + depth), new Point(-1.0F, 0.0F, 0.0F), new Point(0.0F, 1.0F, 0.0F), new Point(0.0F, 0.0F, 1.0F));
+        return true;
     }
 
     private static void renderFace(MatrixStack matrices, VertexConsumer vertices, SkinPixels pixels, int light, int overlay,
@@ -75,15 +97,15 @@ public final class SkinOuterLayerVoxelRenderer {
                     continue;
                 }
 
-                Point base00 = origin.add(uStep.multiply(col)).add(vStep.multiply(row));
-                Point base10 = base00.add(uStep);
-                Point base11 = base10.add(vStep);
-                Point base01 = base00.add(vStep);
-                Point offset = normal.multiply(PIXEL_DEPTH);
-                Point outer00 = base00.add(offset);
-                Point outer10 = base10.add(offset);
-                Point outer11 = base11.add(offset);
-                Point outer01 = base01.add(offset);
+                Point inner00 = origin.add(uStep.multiply(col)).add(vStep.multiply(row));
+                Point inner10 = inner00.add(uStep);
+                Point inner11 = inner10.add(vStep);
+                Point inner01 = inner00.add(vStep);
+                Point offset = normal.multiply(PIXEL_SIZE);
+                Point outer00 = inner00.add(offset);
+                Point outer10 = inner10.add(offset);
+                Point outer11 = inner11.add(offset);
+                Point outer01 = inner01.add(offset);
 
                 float u0 = pixelX / (float) pixels.width();
                 float v0 = pixelY / (float) pixels.height();
@@ -93,20 +115,27 @@ public final class SkinOuterLayerVoxelRenderer {
 
                 float centerU = (pixelX + 0.5F) / pixels.width();
                 float centerV = (pixelY + 0.5F) / pixels.height();
-                if (!pixels.isOpaque(pixelX, pixelY - 1)) {
-                    emitSolidUvQuad(matrices, vertices, light, overlay, outer00, outer10, base10, base00, vStep.negate(), centerU, centerV);
+                if (!isFacePixelOpaque(pixels, textureX, textureY, width, height, col, row - 1)) {
+                    emitSolidUvQuad(matrices, vertices, light, overlay, outer00, outer10, inner10, inner00, vStep.negate(), centerU, centerV);
                 }
-                if (!pixels.isOpaque(pixelX + 1, pixelY)) {
-                    emitSolidUvQuad(matrices, vertices, light, overlay, outer10, outer11, base11, base10, uStep, centerU, centerV);
+                if (!isFacePixelOpaque(pixels, textureX, textureY, width, height, col + 1, row)) {
+                    emitSolidUvQuad(matrices, vertices, light, overlay, outer10, outer11, inner11, inner10, uStep, centerU, centerV);
                 }
-                if (!pixels.isOpaque(pixelX, pixelY + 1)) {
-                    emitSolidUvQuad(matrices, vertices, light, overlay, outer11, outer01, base01, base11, vStep, centerU, centerV);
+                if (!isFacePixelOpaque(pixels, textureX, textureY, width, height, col, row + 1)) {
+                    emitSolidUvQuad(matrices, vertices, light, overlay, outer11, outer01, inner01, inner11, vStep, centerU, centerV);
                 }
-                if (!pixels.isOpaque(pixelX - 1, pixelY)) {
-                    emitSolidUvQuad(matrices, vertices, light, overlay, outer01, outer00, base00, base01, uStep.negate(), centerU, centerV);
+                if (!isFacePixelOpaque(pixels, textureX, textureY, width, height, col - 1, row)) {
+                    emitSolidUvQuad(matrices, vertices, light, overlay, outer01, outer00, inner00, inner01, uStep.negate(), centerU, centerV);
                 }
             }
         }
+    }
+
+    private static boolean isFacePixelOpaque(SkinPixels pixels, int textureX, int textureY, int width, int height, int col, int row) {
+        if (col < 0 || row < 0 || col >= width || row >= height) {
+            return false;
+        }
+        return pixels.isOpaque(textureX + col, textureY + row);
     }
 
     private static void emitTexturedQuad(MatrixStack matrices, VertexConsumer vertices, int light, int overlay,

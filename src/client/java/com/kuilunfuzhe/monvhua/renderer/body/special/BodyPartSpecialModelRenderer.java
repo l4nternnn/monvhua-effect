@@ -23,9 +23,9 @@ import java.util.Optional;
 import java.util.Set;
 
 public abstract class BodyPartSpecialModelRenderer implements SpecialModelRenderer<BodyPartSpecialModelRenderer.Data> {
-    public record Data(RenderLayer layer, String armModel) {
+    public record Data(RenderLayer layer, Identifier texture, String armModel) {
         static Data of(SkinTextures textures) {
-            return new Data(RenderLayer.getEntityTranslucent(textures.texture()), "default");
+            return new Data(RenderLayer.getEntityTranslucent(textures.texture()), textures.texture(), "default");
         }
     }
 
@@ -35,7 +35,7 @@ public abstract class BodyPartSpecialModelRenderer implements SpecialModelRender
         var session = MinecraftClient.getInstance().getSession();
         GameProfile profile = new GameProfile(session.getUuidOrNull(), session.getUsername());
         SkinTextures textures = MinecraftClient.getInstance().getSkinProvider().getSkinTextures(profile);
-        this.defaultData = new Data(RenderLayer.getEntityTranslucent(textures.texture()), "default");
+        this.defaultData = Data.of(textures);
     }
 
     @Override
@@ -71,7 +71,7 @@ public abstract class BodyPartSpecialModelRenderer implements SpecialModelRender
             if (localSkin.isPresent()) {
                 armModel = nbt.getString("arm_model").orElse("default");
                 Identifier localTexture = Identifier.of("monvhua", "textures/local_skin/" + localSkin.get() + ".png");
-                return new Data(RenderLayer.getEntityTranslucent(localTexture), armModel);
+                return new Data(RenderLayer.getEntityTranslucent(localTexture), localTexture, armModel);
             }
         }
 
@@ -90,7 +90,7 @@ public abstract class BodyPartSpecialModelRenderer implements SpecialModelRender
             }
         }
 
-        return new Data(RenderLayer.getEntityTranslucent(textures.texture()), armModel);
+        return new Data(RenderLayer.getEntityTranslucent(textures.texture()), textures.texture(), armModel);
     }
 
     @Override

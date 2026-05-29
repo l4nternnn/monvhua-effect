@@ -1,7 +1,9 @@
 package com.kuilunfuzhe.monvhua.renderer.body.special;
 
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
+import com.kuilunfuzhe.monvhua.renderer.body.SkinOuterLayerVoxelRenderer;
 import com.mojang.serialization.MapCodec;
+import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
@@ -27,7 +29,68 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
                                RenderLayer renderLayer, int light, int overlay, Data data) {
         VertexConsumer vertexConsumer = vertexConsumers.getBuffer(renderLayer);
         boolean slim = "slim".equals(data.armModel());
-        (slim ? slimModel : model).render(matrices, vertexConsumer, light, overlay);
+        PlayerEntityModel activeModel = slim ? slimModel : model;
+
+        boolean hatVisible = activeModel.hat.visible;
+        boolean jacketVisible = activeModel.jacket.visible;
+        boolean leftSleeveVisible = activeModel.leftSleeve.visible;
+        boolean rightSleeveVisible = activeModel.rightSleeve.visible;
+        boolean leftPantsVisible = activeModel.leftPants.visible;
+        boolean rightPantsVisible = activeModel.rightPants.visible;
+
+        activeModel.hat.visible = false;
+        activeModel.jacket.visible = false;
+        activeModel.leftSleeve.visible = false;
+        activeModel.rightSleeve.visible = false;
+        activeModel.leftPants.visible = false;
+        activeModel.rightPants.visible = false;
+        activeModel.render(matrices, vertexConsumer, light, overlay);
+
+        activeModel.hat.visible = hatVisible;
+        activeModel.jacket.visible = jacketVisible;
+        activeModel.leftSleeve.visible = leftSleeveVisible;
+        activeModel.rightSleeve.visible = rightSleeveVisible;
+        activeModel.leftPants.visible = leftPantsVisible;
+        activeModel.rightPants.visible = rightPantsVisible;
+
+        matrices.push();
+        activeModel.getRootPart().applyTransform(matrices);
+        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.head, activeModel.hat,
+                (m, v) -> SkinOuterLayerVoxelRenderer.renderHeadHat(m, v, data.texture(), light, overlay));
+        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.body, activeModel.jacket,
+                (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerJacket(m, v, data.texture(), light, overlay));
+        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.leftArm, activeModel.leftSleeve,
+                (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerLeftSleeve(m, v, data.texture(), light, overlay, slim));
+        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.rightArm, activeModel.rightSleeve,
+                (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerRightSleeve(m, v, data.texture(), light, overlay, slim));
+        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.leftLeg, activeModel.leftPants,
+                (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerLeftPants(m, v, data.texture(), light, overlay));
+        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.rightLeg, activeModel.rightPants,
+                (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerRightPants(m, v, data.texture(), light, overlay));
+        matrices.pop();
+    }
+
+    private void renderVoxelLayer(MatrixStack matrices, VertexConsumerProvider vertexConsumers, RenderLayer renderLayer,
+                                  int light, int overlay, ModelPart parent, ModelPart outer,
+                                  VoxelRenderCall voxelRenderCall) {
+        if (!outer.visible) {
+            return;
+        }
+
+        matrices.push();
+        parent.applyTransform(matrices);
+        matrices.push();
+        outer.applyTransform(matrices);
+        boolean renderedVoxelLayer = voxelRenderCall.render(matrices, vertexConsumers.getBuffer(renderLayer));
+        matrices.pop();
+        if (!renderedVoxelLayer) {
+            outer.render(matrices, vertexConsumers.getBuffer(renderLayer), light, overlay);
+        }
+        matrices.pop();
+    }
+
+    private interface VoxelRenderCall {
+        boolean render(MatrixStack matrices, VertexConsumer vertexConsumer);
     }
 
     @Override
