@@ -49,6 +49,7 @@ public class SecrecyItem extends Item {
     private static final String SILENCED_TAG = "Silenced";
     private static final Map<UUID, Long> VANISH_PENDING_TICKS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> HEART_SOUND_TICKS = new ConcurrentHashMap<>();
+    private static final Set<UUID> ACTIVE_SECRECY = ConcurrentHashMap.newKeySet();
     private static final Set<UUID> EXITING_SECRECY = ConcurrentHashMap.newKeySet();
     private static GlobalConfigManager configManager;
 
@@ -160,9 +161,9 @@ public class SecrecyItem extends Item {
         if (!isSecrecyActive(player)) {
             return;
         }
-
         VANISH_PENDING_TICKS.remove(player.getUuid());
         HEART_SOUND_TICKS.remove(player.getUuid());
+        ACTIVE_SECRECY.remove(player.getUuid());
         EXITING_SECRECY.add(player.getUuid());
         removeSpeedModifier(player);
         player.removeStatusEffect(StatusEffects.INVISIBILITY);
@@ -178,6 +179,7 @@ public class SecrecyItem extends Item {
         int delaySeconds = config.getVanishDelaySeconds(stage);
         int delayTicks = delaySeconds * 20;
 
+        ACTIVE_SECRECY.add(player.getUuid());
         applySpeedMultiplier(player, speedMultiplier);
         playHeartSound(player);
         EXITING_SECRECY.remove(player.getUuid());
@@ -189,10 +191,10 @@ public class SecrecyItem extends Item {
     }
 
     private static boolean isSecrecyActive(ServerPlayerEntity player) {
-        return VANISH_PENDING_TICKS.containsKey(player.getUuid())
-                || hasSpeedModifier(player)
-                || hasPreparationEffects(player)
-                || player.hasStatusEffect(StatusEffects.INVISIBILITY);
+        UUID uuid = player.getUuid();
+        return ACTIVE_SECRECY.contains(uuid)
+                || VANISH_PENDING_TICKS.containsKey(uuid)
+                || hasSpeedModifier(player);
     }
 
     private static boolean hasPreparationEffects(ServerPlayerEntity player) {
