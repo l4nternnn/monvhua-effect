@@ -26,24 +26,6 @@ public class HeadModel extends SkullBlockEntityModel {
                 ModelPartBuilder.create().uv(32, 0).cuboid(-4.0F, -8.0F, -4.0F, 8.0F, 8.0F, 8.0F, new Dilation(0.25F)),
                 ModelTransform.origin(0.0F, 0.0F, 0.0F));
 
-        hat.addChild("edge_front",
-                ModelPartBuilder.create().uv(32, 0).cuboid(-4.0F, -8.0F, 4.0F, 8.0F, 8.0F, 0.25F),
-                ModelTransform.origin(0.0F, 0.0F, 0.0F));
-        hat.addChild("edge_back",
-                ModelPartBuilder.create().uv(32, 0).cuboid(-4.0F, -8.0F, -4.25F, 8.0F, 8.0F, 0.25F),
-                ModelTransform.origin(0.0F, 0.0F, 0.0F));
-        hat.addChild("edge_left",
-                ModelPartBuilder.create().uv(32, 0).cuboid(-4.25F, -8.0F, -4.0F, 0.25F, 8.0F, 8.0F),
-                ModelTransform.origin(0.0F, 0.0F, 0.0F));
-        hat.addChild("edge_right",
-                ModelPartBuilder.create().uv(32, 0).cuboid(4.0F, -8.0F, -4.0F, 0.25F, 8.0F, 8.0F),
-                ModelTransform.origin(0.0F, 0.0F, 0.0F));
-        hat.addChild("edge_top",
-                ModelPartBuilder.create().uv(32, 0).cuboid(-4.0F, -8.25F, -4.0F, 8.0F, 0.25F, 8.0F),
-                ModelTransform.origin(0.0F, 0.0F, 0.0F));
-        hat.addChild("edge_bottom",
-                ModelPartBuilder.create().uv(32, 0).cuboid(-4.0F, 0.0F, -4.0F, 8.0F, 0.25F, 8.0F),
-                ModelTransform.origin(0.0F, 0.0F, 0.0F));
 
         return TexturedModelData.of(modelData, 64, 64);
     }

@@ -26,24 +26,6 @@ public class RightArmSlimModel extends SkullBlockEntityModel {
                 ModelPartBuilder.create().uv(40, 32).cuboid(-4.0F, -12.0F, -4.0F, 3.0F, 12.0F, 4.0F, new Dilation(0.25F)),
                 ModelTransform.origin(0.0f, 0.0f, 0.0f));
 
-        sleeve.addChild("edge_front",
-                ModelPartBuilder.create().uv(40, 32).cuboid(-4.0F, -12.0F, 0.0F, 3.0F, 12.0F, 0.25F),
-                ModelTransform.origin(0.0f, 0.0f, 0.0f));
-        sleeve.addChild("edge_back",
-                ModelPartBuilder.create().uv(40, 32).cuboid(-4.0F, -12.0F, -4.25F, 3.0F, 12.0F, 0.25F),
-                ModelTransform.origin(0.0f, 0.0f, 0.0f));
-        sleeve.addChild("edge_left",
-                ModelPartBuilder.create().uv(40, 32).cuboid(-4.25F, -12.0F, -4.0F, 0.25F, 12.0F, 4.0F),
-                ModelTransform.origin(0.0f, 0.0f, 0.0f));
-        sleeve.addChild("edge_right",
-                ModelPartBuilder.create().uv(40, 32).cuboid(-1.0F, -12.0F, -4.0F, 0.25F, 12.0F, 4.0F),
-                ModelTransform.origin(0.0f, 0.0f, 0.0f));
-        sleeve.addChild("edge_top",
-                ModelPartBuilder.create().uv(40, 32).cuboid(-4.0F, -12.25F, -4.0F, 3.0F, 0.25F, 4.0F),
-                ModelTransform.origin(0.0f, 0.0f, 0.0f));
-        sleeve.addChild("edge_bottom",
-                ModelPartBuilder.create().uv(40, 32).cuboid(-4.0F, 0.0F, -4.0F, 3.0F, 0.25F, 4.0F),
-                ModelTransform.origin(0.0f, 0.0f, 0.0f));
 
         return TexturedModelData.of(modelData, 64, 64);
     }

@@ -5,14 +5,17 @@ import com.kuilunfuzhe.monvhua.model.arm.LeftArmModel;
 import com.kuilunfuzhe.monvhua.model.arm.LeftArmSlimModel;
 import com.kuilunfuzhe.monvhua.features.block.body.arm.LeftArmBlock;
 import com.kuilunfuzhe.monvhua.features.block.body.arm.LeftArmBlockEntity;
+import com.kuilunfuzhe.monvhua.util.SkinColorSampler;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.block.entity.BlockEntityRenderer;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
 import net.minecraft.client.render.block.entity.SkullBlockEntityModel;
+import net.minecraft.client.render.entity.model.EntityModelPartNames;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.component.type.ProfileComponent;
 import net.minecraft.util.Identifier;
@@ -51,12 +54,45 @@ public class LeftArmBlockEntityRenderer implements BlockEntityRenderer<LeftArmBl
         } else {
             texture = getSkinTexture(entity.getOwner(), entity.getPlayerUuid());
         }
-        RenderLayer renderLayer = RenderLayer.getEntityTranslucent(texture);
 
         boolean slim = "slim".equals(entity.getSkinType());
         SkullBlockEntityModel activeModel = slim ? slimModel : model;
         activeModel.setHeadRotation(0, yaw, 0);
-        activeModel.render(matrices, vertexConsumers.getBuffer(renderLayer), light, OverlayTexture.DEFAULT_UV);
+
+        SkinColorSampler.OuterLayerColors colors = SkinColorSampler.getOrSample(texture);
+        if (colors != null) {
+            ModelPart arm = activeModel.getRootPart().getChild(EntityModelPartNames.LEFT_ARM);
+            ModelPart sleeve = arm.getChild("left_sleeve");
+            sleeve.visible = false;
+
+            activeModel.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+
+            sleeve.visible = true;
+            sleeve.hidden = true;
+            matrices.push();
+            activeModel.getRootPart().applyTransform(matrices);
+            arm.applyTransform(matrices);
+
+            double dist = cameraPos.distanceTo(Vec3d.ofCenter(entity.getPos()));
+            if (dist < 12.0) {
+                if (slim) {
+                    matrices.translate(-2.5F, -6.0F, -2.0F);
+                    matrices.scale(1.5F, 1.125F, 1.375F);
+                    matrices.translate(2.5F, 6.0F, 2.0F);
+                } else {
+                    matrices.translate(-2.0F, -6.0F, -2.0F);
+                    matrices.scale(1.375F, 1.125F, 1.375F);
+                    matrices.translate(2.0F, 6.0F, 2.0F);
+                }
+            }
+
+            sleeve.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+            matrices.pop();
+            sleeve.hidden = false;
+        } else {
+            activeModel.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+        }
+
         matrices.pop();
     }
 

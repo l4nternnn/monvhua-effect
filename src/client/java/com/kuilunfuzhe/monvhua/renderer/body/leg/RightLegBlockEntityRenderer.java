@@ -4,13 +4,16 @@ import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.model.leg.RightLegModel;
 import com.kuilunfuzhe.monvhua.features.block.body.leg.RightLegBlock;
 import com.kuilunfuzhe.monvhua.features.block.body.leg.RightLegBlockEntity;
+import com.kuilunfuzhe.monvhua.util.SkinColorSampler;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.block.entity.BlockEntityRenderer;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
+import net.minecraft.client.render.entity.model.EntityModelPartNames;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.component.type.ProfileComponent;
 import net.minecraft.util.Identifier;
@@ -47,9 +50,37 @@ public class RightLegBlockEntityRenderer implements BlockEntityRenderer<RightLeg
         } else {
             texture = getSkinTexture(entity.getOwner(), entity.getPlayerUuid());
         }
-        RenderLayer renderLayer = RenderLayer.getEntityTranslucent(texture);
+
+        SkinColorSampler.OuterLayerColors colors = SkinColorSampler.getOrSample(texture);
         model.setHeadRotation(0, yaw, 0);
-        model.render(matrices, vertexConsumers.getBuffer(renderLayer), light, OverlayTexture.DEFAULT_UV);
+
+        if (colors != null) {
+            ModelPart leg = model.getRootPart().getChild(EntityModelPartNames.HEAD);
+            ModelPart pants = leg.getChild("right_pants");
+            pants.visible = false;
+
+            model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+
+            pants.visible = true;
+            pants.hidden = true;
+            matrices.push();
+            model.getRootPart().applyTransform(matrices);
+            leg.applyTransform(matrices);
+
+            double dist = cameraPos.distanceTo(Vec3d.ofCenter(entity.getPos()));
+            if (dist < 12.0) {
+                matrices.translate(0.0F, -6.0F, 0.0F);
+                matrices.scale(1.375F, 1.125F, 1.375F);
+                matrices.translate(0.0F, 6.0F, 0.0F);
+            }
+
+            pants.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+            matrices.pop();
+            pants.hidden = false;
+        } else {
+            model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+        }
+
         matrices.pop();
     }
 
