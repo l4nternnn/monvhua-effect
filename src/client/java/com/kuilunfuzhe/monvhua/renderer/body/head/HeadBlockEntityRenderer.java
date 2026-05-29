@@ -4,6 +4,7 @@ import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.model.head.HeadModel;
 import com.kuilunfuzhe.monvhua.features.block.body.head.HeadBlock;
 import com.kuilunfuzhe.monvhua.features.block.body.head.HeadBlockEntity;
+import com.kuilunfuzhe.monvhua.renderer.body.SkinOuterLayerVoxelRenderer;
 import com.kuilunfuzhe.monvhua.util.SkinColorSampler;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.client.MinecraftClient;
@@ -61,21 +62,13 @@ public class HeadBlockEntityRenderer implements BlockEntityRenderer<HeadBlockEnt
             model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
 
             hat.visible = true;
-            hat.hidden = true;
             matrices.push();
             model.getRootPart().applyTransform(matrices);
             head.applyTransform(matrices);
-
-            double dist = cameraPos.distanceTo(Vec3d.ofCenter(entity.getPos()));
-            if (dist < 12.0) {
-                matrices.translate(0.0F, -4.0F, 0.0F);
-                matrices.scale(1.75F, 1.75F, 1.75F);
-                matrices.translate(0.0F, 4.0F, 0.0F);
-            }
-
-            hat.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+            hat.applyTransform(matrices);
+            SkinOuterLayerVoxelRenderer.renderHeadHat(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)),
+                    texture, light, OverlayTexture.DEFAULT_UV);
             matrices.pop();
-            hat.hidden = false;
         } else {
             model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
         }

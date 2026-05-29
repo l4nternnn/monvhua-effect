@@ -4,6 +4,7 @@ import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.model.torso.TorsoModel;
 import com.kuilunfuzhe.monvhua.features.block.body.torso.TorsoBlock;
 import com.kuilunfuzhe.monvhua.features.block.body.torso.TorsoBlockEntity;
+import com.kuilunfuzhe.monvhua.renderer.body.SkinOuterLayerVoxelRenderer;
 import com.kuilunfuzhe.monvhua.util.SkinColorSampler;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.client.MinecraftClient;
@@ -63,21 +64,13 @@ public class TorsoBlockEntityRenderer implements BlockEntityRenderer<TorsoBlockE
             model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
 
             jacket.visible = true;
-            jacket.hidden = true;
             matrices.push();
             model.getRootPart().applyTransform(matrices);
             torso.applyTransform(matrices);
-
-            double dist = cameraPos.distanceTo(Vec3d.ofCenter(entity.getPos()));
-            if (dist < 12.0) {
-                matrices.translate(0.0F, -5.0F, 0.0F);
-                matrices.scale(1.75F, 1.5F, 2.5F);
-                matrices.translate(0.0F, 5.0F, 0.0F);
-            }
-
-            jacket.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+            jacket.applyTransform(matrices);
+            SkinOuterLayerVoxelRenderer.renderJacket(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)),
+                    texture, light, OverlayTexture.DEFAULT_UV);
             matrices.pop();
-            jacket.hidden = false;
         } else {
             model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
         }

@@ -5,6 +5,7 @@ import com.kuilunfuzhe.monvhua.model.arm.RightArmModel;
 import com.kuilunfuzhe.monvhua.model.arm.RightArmSlimModel;
 import com.kuilunfuzhe.monvhua.features.block.body.arm.RightArmBlock;
 import com.kuilunfuzhe.monvhua.features.block.body.arm.RightArmBlockEntity;
+import com.kuilunfuzhe.monvhua.renderer.body.SkinOuterLayerVoxelRenderer;
 import com.kuilunfuzhe.monvhua.util.SkinColorSampler;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.client.MinecraftClient;
@@ -68,27 +69,13 @@ public class RightArmBlockEntityRenderer implements BlockEntityRenderer<RightArm
             activeModel.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
 
             sleeve.visible = true;
-            sleeve.hidden = true;
             matrices.push();
             activeModel.getRootPart().applyTransform(matrices);
             arm.applyTransform(matrices);
-
-            double dist = cameraPos.distanceTo(Vec3d.ofCenter(entity.getPos()));
-            if (dist < 12.0) {
-                if (slim) {
-                    matrices.translate(-2.5F, -6.0F, -2.0F);
-                    matrices.scale(3.0F, 1.5F, 2.5F);
-                    matrices.translate(2.5F, 6.0F, 2.0F);
-                } else {
-                    matrices.translate(-2.0F, -6.0F, -2.0F);
-                    matrices.scale(2.5F, 1.5F, 2.5F);
-                    matrices.translate(2.0F, 6.0F, 2.0F);
-                }
-            }
-
-            sleeve.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+            sleeve.applyTransform(matrices);
+            SkinOuterLayerVoxelRenderer.renderRightSleeve(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)),
+                    texture, light, OverlayTexture.DEFAULT_UV, slim);
             matrices.pop();
-            sleeve.hidden = false;
         } else {
             activeModel.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
         }

@@ -4,6 +4,7 @@ import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.model.leg.LeftLegModel;
 import com.kuilunfuzhe.monvhua.features.block.body.leg.LeftLegBlock;
 import com.kuilunfuzhe.monvhua.features.block.body.leg.LeftLegBlockEntity;
+import com.kuilunfuzhe.monvhua.renderer.body.SkinOuterLayerVoxelRenderer;
 import com.kuilunfuzhe.monvhua.util.SkinColorSampler;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.client.MinecraftClient;
@@ -62,21 +63,13 @@ public class LeftLegBlockEntityRenderer implements BlockEntityRenderer<LeftLegBl
             model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
 
             pants.visible = true;
-            pants.hidden = true;
             matrices.push();
             model.getRootPart().applyTransform(matrices);
             leg.applyTransform(matrices);
-
-            double dist = cameraPos.distanceTo(Vec3d.ofCenter(entity.getPos()));
-            if (dist < 12.0) {
-                matrices.translate(-2.0F, -6.0F, -2.0F);
-                matrices.scale(2.5F, 1.5F, 2.5F);
-                matrices.translate(2.0F, 6.0F, 2.0F);
-            }
-
-            pants.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+            pants.applyTransform(matrices);
+            SkinOuterLayerVoxelRenderer.renderLeftPants(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)),
+                    texture, light, OverlayTexture.DEFAULT_UV);
             matrices.pop();
-            pants.hidden = false;
         } else {
             model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
         }
