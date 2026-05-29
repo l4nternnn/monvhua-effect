@@ -26,6 +26,7 @@ import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigUpdateC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
@@ -171,6 +172,19 @@ public class MonvhuaMod implements ModInitializer {
             MirrorCommand.toggleViewport(context.player());
         });
 
+        ServerPlayNetworking.registerGlobalReceiver(MirrorChargeC2SPacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity player = context.player();
+                if (player.getMainHandStack().getItem() == mirror_of_then_and_now.MIRROR_ITEM) {
+                    if (packet.start()) {
+                        MirrorCommand.startCharging(player);
+                    } else {
+                        MirrorCommand.stopCharging(player);
+                    }
+                }
+            });
+        });
+
         ServerPlayNetworking.registerGlobalReceiver(MirrorConfigUpdateC2SPacket.ID, (packet, context) -> {
             context.server().execute(() -> {
                 MirrorConfig newConfig = MirrorConfig.fromJson(packet.json());
@@ -278,6 +292,7 @@ public class MonvhuaMod implements ModInitializer {
             CameraWatchManager.tick(server);
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                 MirrorCommand.tickViewports(player);
+                MirrorCommand.tickCharging(player);
             }
         });
 

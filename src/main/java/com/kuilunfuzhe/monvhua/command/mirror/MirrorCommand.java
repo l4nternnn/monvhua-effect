@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.command.mirror;
 
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
@@ -24,6 +25,10 @@ public class MirrorCommand {
 	public static final Map<UUID, Integer> VIEWPORT_ACCUMULATED_TICKS = new ConcurrentHashMap<>();
 	public static final Map<UUID, Integer> VIEWPORT_USES_LEFT = new ConcurrentHashMap<>();
 	private static final Map<UUID, Integer> VIEWPORT_STAGE = new ConcurrentHashMap<>();
+
+	// Charging state
+	public static final Map<UUID, Integer> CHARGING_PLAYERS = new ConcurrentHashMap<>();
+	private static final Map<UUID, Integer> CHARGING_STAGE = new ConcurrentHashMap<>();
 
 	public static void register(CommandDispatcher<ServerCommandSource> dispatcher,
 	                            CommandRegistryAccess registryAccess,
@@ -189,6 +194,127 @@ public class MirrorCommand {
 		player.sendMessage(Text.literal("§a观看判定成功，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
 	}
 
+	// ========== Charging system ==========
+
+	public static void startCharging(ServerPlayerEntity player) {
+		UUID uuid = player.getUuid();
+
+		// Don't start charging if viewport is already active
+		if (VIEWPORT_ACTIVE.getOrDefault(uuid, false)) return;
+
+		// Don't start charging if already charging
+		if (CHARGING_PLAYERS.containsKey(uuid)) return;
+
+		// Validate slots
+		MirrorDataStore.PlayerData data = MirrorDataStore.getOrCreate(uuid);
+		if (!hasAnySlot(data)) {
+			player.sendMessage(Text.literal("§c请先使用 /clairvoyance-mirror set 指令设置镜面"), false);
+			return;
+		}
+
+		// Check range
+		if (!isInAnyRange(player, data)) {
+			player.sendMessage(Text.literal("§c你不在镜面触发范围内"), true);
+			return;
+		}
+
+		// Check uses
+		int stage = Evil_Eyes.getPlayerStage(player, Evil_Eyes.configManager);
+		MirrorConfig config = MirrorConfig.getInstance();
+		int maxUses = config.getViewCount(stage);
+		int storedStage = VIEWPORT_STAGE.getOrDefault(uuid, stage);
+		int usesLeft = storedStage == stage ? Math.min(VIEWPORT_USES_LEFT.getOrDefault(uuid, maxUses), maxUses) : maxUses;
+
+		if (usesLeft <= 0) {
+			player.sendMessage(Text.literal("§c当前阶段镜子使用次数已用完"), true);
+			return;
+		}
+
+		CHARGING_PLAYERS.put(uuid, 0);
+		CHARGING_STAGE.put(uuid, stage);
+		syncChargeToClient(player, 0, config.getChargeTime(stage));
+	}
+
+	public static void stopCharging(ServerPlayerEntity player) {
+		UUID uuid = player.getUuid();
+		if (CHARGING_PLAYERS.containsKey(uuid)) {
+			CHARGING_PLAYERS.remove(uuid);
+			CHARGING_STAGE.remove(uuid);
+			// Send zero charge to hide the HUD bar
+			syncChargeToClient(player, 0, 0);
+		}
+	}
+
+	public static void tickCharging(ServerPlayerEntity player) {
+		UUID uuid = player.getUuid();
+		if (!CHARGING_PLAYERS.containsKey(uuid)) return;
+
+		// Verify player still holds the mirror item
+		if (player.getMainHandStack().getItem() != com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now.MIRROR_ITEM) {
+			stopCharging(player);
+			return;
+		}
+
+		// Verify still in range
+		MirrorDataStore.PlayerData data = MirrorDataStore.getOrCreate(uuid);
+		if (!isInAnyRange(player, data)) {
+			stopCharging(player);
+			player.sendMessage(Text.literal("§c已离开镜面触发范围，充能取消"), true);
+			return;
+		}
+
+		int stage = CHARGING_STAGE.getOrDefault(uuid, Evil_Eyes.getPlayerStage(player, Evil_Eyes.configManager));
+		MirrorConfig config = MirrorConfig.getInstance();
+		int chargeTime = config.getChargeTime(stage);
+
+		int ticks = CHARGING_PLAYERS.get(uuid) + 1;
+		CHARGING_PLAYERS.put(uuid, ticks);
+
+		// Sync every 2 ticks to reduce bandwidth
+		if (ticks % 2 == 0 || ticks >= chargeTime) {
+			syncChargeToClient(player, ticks, chargeTime);
+		}
+
+		if (ticks >= chargeTime) {
+			// Fully charged — clear charging state
+			CHARGING_PLAYERS.remove(uuid);
+			CHARGING_STAGE.remove(uuid);
+			syncChargeToClient(player, 0, 0);
+
+			// Consume a use and do success check
+			int maxUses = config.getViewCount(stage);
+			int storedStage = VIEWPORT_STAGE.getOrDefault(uuid, stage);
+			int usesLeft = storedStage == stage ? Math.min(VIEWPORT_USES_LEFT.getOrDefault(uuid, maxUses), maxUses) : maxUses;
+
+			if (usesLeft <= 0) {
+				player.sendMessage(Text.literal("§c使用次数不足"), true);
+				return;
+			}
+
+			usesLeft--;
+			VIEWPORT_USES_LEFT.put(uuid, usesLeft);
+			VIEWPORT_STAGE.put(uuid, stage);
+
+			if (player.getRandom().nextDouble() >= config.getSuccessRate(stage)) {
+				syncToClient(player);
+				player.sendMessage(Text.literal("§7观看判定失败，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
+				return;
+			}
+
+			// Success — activate viewport
+			VIEWPORT_ACCUMULATED_TICKS.put(uuid, 0);
+			VIEWPORT_ACTIVE.put(uuid, true);
+			syncToClient(player);
+			player.sendMessage(Text.literal("§a观看判定成功，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
+		}
+	}
+
+	public static void syncChargeToClient(ServerPlayerEntity player, int currentTicks, int maxTicks) {
+		if (player.networkHandler != null) {
+			ServerPlayNetworking.send(player, new MirrorChargeSyncS2CPacket(currentTicks, maxTicks));
+		}
+	}
+
 	public static void tickViewports(ServerPlayerEntity player) {
 		UUID uuid = player.getUuid();
 		if (!VIEWPORT_ACTIVE.getOrDefault(uuid, false)) return;
@@ -222,6 +348,8 @@ public class MirrorCommand {
 		VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
 		VIEWPORT_USES_LEFT.remove(uuid);
 		VIEWPORT_STAGE.remove(uuid);
+		CHARGING_PLAYERS.remove(uuid);
+		CHARGING_STAGE.remove(uuid);
 	}
 
 	public static void syncToClient(ServerPlayerEntity player) {

@@ -77,11 +77,11 @@ public class RightArmBlockEntityRenderer implements BlockEntityRenderer<RightArm
             if (dist < 12.0) {
                 if (slim) {
                     matrices.translate(-2.5F, -6.0F, -2.0F);
-                    matrices.scale(1.5F, 1.125F, 1.375F);
+                    matrices.scale(3.0F, 1.5F, 2.5F);
                     matrices.translate(2.5F, 6.0F, 2.0F);
                 } else {
                     matrices.translate(-2.0F, -6.0F, -2.0F);
-                    matrices.scale(1.375F, 1.125F, 1.375F);
+                    matrices.scale(2.5F, 1.5F, 2.5F);
                     matrices.translate(2.0F, 6.0F, 2.0F);
                 }
             }

@@ -50,7 +50,7 @@ public class CombinedConfigScreen extends Screen {
     // ===== 镜子配置组件 =====
     private final List<ButtonWidget> mirrorStageButtons = new ArrayList<>();
     private int mirrorCurrentStage = 1;
-    private TextFieldWidget mirrorWatchTimeField, mirrorSuccessRateField, mirrorViewCountField, mirrorRadiusField;
+    private TextFieldWidget mirrorWatchTimeField, mirrorSuccessRateField, mirrorViewCountField, mirrorRadiusField, mirrorChargeTimeField;
     private ButtonWidget saveMirrorButton;
     private final List<TextWidget> mirrorLabels = new ArrayList<>();
     private static MirrorConfig cachedMirrorConfig = null;
@@ -263,7 +263,7 @@ public class CombinedConfigScreen extends Screen {
         int labelWidth = 110;
         int inputWidth = 60;
 
-        String[] labels = {"观看时间(秒):", "成功概率(0-1):", "观看次数:", "触发半径:"};
+        String[] labels = {"观看时间(秒):", "成功概率(0-1):", "观看次数:", "触发半径:", "充能时间(ticks):"};
         for (int i = 0; i < labels.length; i++) {
             TextWidget label = new TextWidget(rightX, rowY + i * rowHeight + 4, labelWidth, 9, Text.literal(labels[i]), textRenderer);
             addDrawableChild(label);
@@ -274,9 +274,10 @@ public class CombinedConfigScreen extends Screen {
         mirrorSuccessRateField = createField(rightX + labelWidth, rowY + rowHeight, inputWidth);
         mirrorViewCountField = createField(rightX + labelWidth, rowY + 2*rowHeight, inputWidth);
         mirrorRadiusField = createField(rightX + labelWidth, rowY + 3*rowHeight, inputWidth);
+        mirrorChargeTimeField = createField(rightX + labelWidth, rowY + 4*rowHeight, inputWidth);
 
         saveMirrorButton = ButtonWidget.builder(Text.literal("保存"), btn -> saveMirrorConfig())
-                .dimensions(rightX, rowY + 3*rowHeight + 10, 80, 20).build();
+                .dimensions(rightX, rowY + 4*rowHeight + 15, 80, 20).build();
         addDrawableChild(saveMirrorButton);
     }
 
@@ -410,6 +411,7 @@ public class CombinedConfigScreen extends Screen {
         if (mirrorSuccessRateField != null) mirrorSuccessRateField.visible = visible;
         if (mirrorViewCountField != null) mirrorViewCountField.visible = visible;
         if (mirrorRadiusField != null) mirrorRadiusField.visible = visible;
+        if (mirrorChargeTimeField != null) mirrorChargeTimeField.visible = visible;
         if (saveMirrorButton != null) saveMirrorButton.visible = visible;
     }
 
@@ -542,12 +544,14 @@ public class CombinedConfigScreen extends Screen {
             mirrorSuccessRateField.setText("");
             mirrorViewCountField.setText("");
             mirrorRadiusField.setText("");
+            mirrorChargeTimeField.setText("");
             return;
         }
         mirrorWatchTimeField.setText(String.valueOf(cachedMirrorConfig.getWatchTime(mirrorCurrentStage)));
         mirrorSuccessRateField.setText(String.valueOf(cachedMirrorConfig.getSuccessRate(mirrorCurrentStage)));
         mirrorViewCountField.setText(String.valueOf(cachedMirrorConfig.getViewCount(mirrorCurrentStage)));
         mirrorRadiusField.setText(String.valueOf(cachedMirrorConfig.getRadius(mirrorCurrentStage)));
+        mirrorChargeTimeField.setText(String.valueOf(cachedMirrorConfig.getChargeTime(mirrorCurrentStage)));
     }
 
     private void saveMirrorConfig() {
@@ -556,12 +560,14 @@ public class CombinedConfigScreen extends Screen {
             double successRate = Double.parseDouble(mirrorSuccessRateField.getText().trim());
             int viewCount = Integer.parseInt(mirrorViewCountField.getText().trim());
             double radius = Double.parseDouble(mirrorRadiusField.getText().trim());
+            int chargeTime = Integer.parseInt(mirrorChargeTimeField.getText().trim());
 
             if (cachedMirrorConfig == null) cachedMirrorConfig = new MirrorConfig();
             cachedMirrorConfig.setWatchTime(mirrorCurrentStage, watchTime);
             cachedMirrorConfig.setSuccessRate(mirrorCurrentStage, successRate);
             cachedMirrorConfig.setViewCount(mirrorCurrentStage, viewCount);
             cachedMirrorConfig.setRadius(mirrorCurrentStage, radius);
+            cachedMirrorConfig.setChargeTime(mirrorCurrentStage, chargeTime);
 
             ClientPlayNetworking.send(new MirrorConfigUpdateC2SPacket(cachedMirrorConfig.toJson()));
             if (client != null && client.player != null)

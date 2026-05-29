@@ -20,6 +20,7 @@ public class MirrorConfig {
 		public double successRate = 0.5; // probability (0.0-1.0)
 		public int viewCount = 1;        // max successful views
 		public double radius = 10.0;     // 触发半径
+		public int chargeTime = 60;      // ticks to charge (default 60 = 3s)
 	}
 
 	public MirrorConfig() {
@@ -58,6 +59,7 @@ public class MirrorConfig {
 			config.stages[i].watchTime = Math.max(1, 5 - stage);
 			config.stages[i].successRate = 0.1 + stage * 0.1;
 			config.stages[i].viewCount = stage <= 2 ? 1 : (stage <= 4 ? 3 : 5);
+			config.stages[i].chargeTime = Math.max(20, 80 - (stage - 1) * 10);
 		}
 		return config;
 	}
@@ -80,9 +82,11 @@ public class MirrorConfig {
 	public double getSuccessRate(int stage) { return stages[stage - 1].successRate; }
 	public int getViewCount(int stage) { return stages[stage - 1].viewCount; }
 	public double getRadius(int stage) { return stages[stage - 1].radius; }
+	public int getChargeTime(int stage) { return stages[stage - 1].chargeTime; }
 
 	public void setWatchTime(int stage, int val) { stages[stage - 1].watchTime = val; save(); }
 	public void setSuccessRate(int stage, double val) { stages[stage - 1].successRate = val; save(); }
 	public void setViewCount(int stage, int val) { stages[stage - 1].viewCount = val; save(); }
 	public void setRadius(int stage, double val) { stages[stage - 1].radius = val; save(); }
+	public void setChargeTime(int stage, int val) { stages[stage - 1].chargeTime = val; save(); }
 }

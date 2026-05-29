@@ -3,6 +3,8 @@ package com.kuilunfuzhe.monvhua.network;
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeC2SPacket;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorToggleC2SPacket;
@@ -35,6 +37,7 @@ public class ModNetworking {
 		CameraUpdateS2CPacket.register();
 		MirrorStateS2CPacket.register();
 		MirrorConfigS2CPacket.register();
+		MirrorChargeSyncS2CPacket.register();
 		SecrecyConfigS2CPacket.register();
 		SecrecyStateS2CPacket.register();
 	}
@@ -59,6 +62,7 @@ public class ModNetworking {
 		CameraWatchStartC2SPacket.register();
 		CameraWatchStopC2SPacket.register();
 		MirrorToggleC2SPacket.register();
+		MirrorChargeC2SPacket.register();
 		RequestSecrecyConfigC2SPacket.register();
 		SecrecyConfigUpdateC2SPacket.register();
 	}

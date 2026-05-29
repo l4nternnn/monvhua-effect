@@ -23,7 +23,7 @@ public class RightLegModel extends SkullBlockEntityModel {
                 ModelTransform.origin(0.0f, -6.0f, 0.0f));
 
         ModelPartData pants = rightLeg.addChild("right_pants",
-                ModelPartBuilder.create().uv(0, 32).cuboid(-2.0F, -12.0F, -2.0F, 4.0F, 12.0F, 4.0F, new Dilation(0.25F)),
+                ModelPartBuilder.create().uv(0, 48).cuboid(-2.0F, -12.0F, -2.0F, 4.0F, 12.0F, 4.0F, new Dilation(0.25F)),
                 ModelTransform.origin(-0.0f, -0.0f, 0.0f));
 
 

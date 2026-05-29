@@ -8,6 +8,10 @@ public class MirrorClientManager {
 	private static boolean viewportActive = false;
 	private static final CameraData[] slots = new CameraData[2];
 
+	// Charging state (for HUD bar)
+	private static int currentCharge = 0;
+	private static int maxCharge = 0;
+
 	/** 镜面视角硬偏移，修改此处数值调整观看位置 */
 	private static final Vec3d VIEWPORT_OFFSET = new Vec3d(0, 1.640, 0);
 
@@ -54,9 +58,24 @@ public class MirrorClientManager {
 		return slots[index];
 	}
 
+	public static void setCharge(int current, int max) {
+		currentCharge = current;
+		maxCharge = max;
+	}
+
+	public static int getCurrentCharge() { return currentCharge; }
+	public static int getMaxCharge() { return maxCharge; }
+	public static boolean isCharging() { return currentCharge > 0 && maxCharge > 0; }
+	public static float getChargeRatio() {
+		if (maxCharge <= 0) return 0;
+		return Math.min(1.0f, (float) currentCharge / maxCharge);
+	}
+
 	public static void reset() {
 		viewportActive = false;
 		slots[0] = new CameraData(false, Vec3d.ZERO, Vec3d.ZERO, 0);
 		slots[1] = new CameraData(false, Vec3d.ZERO, Vec3d.ZERO, 0);
+		currentCharge = 0;
+		maxCharge = 0;
 	}
 }

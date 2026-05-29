@@ -51,6 +51,8 @@ import com.kuilunfuzhe.monvhua.item.secrecy.SecrecyItem;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorHudOverlay;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeC2SPacket;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorToggleC2SPacket;
@@ -68,6 +70,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityModelLayerRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
@@ -131,6 +134,7 @@ public class MonvhuaModClient implements ClientModInitializer {
 	private static final Map<UUID, AnchorInfo> anchors = new ConcurrentHashMap<>();
 	private static boolean imagesEnabled = false;
 	private static boolean lastMainHandEmpty = true;
+	private static boolean lastMirrorRightClick = false;
 
 	@Override
 	public void onInitializeClient() {
@@ -417,6 +421,44 @@ public class MonvhuaModClient implements ClientModInitializer {
 
 		// 注册镜像 HUD 叠加层
 		MirrorHudOverlay.register();
+
+		// 镜像充能同步接收
+		ClientPlayNetworking.registerGlobalReceiver(MirrorChargeSyncS2CPacket.ID, (packet, context) -> {
+			context.client().execute(() -> MirrorClientManager.setCharge(packet.currentTicks(), packet.maxTicks()));
+		});
+
+		// 镜面充能右键检测（长按/松开）
+		ClientTickEvents.END_CLIENT_TICK.register(client -> {
+			if (client.player == null) return;
+			boolean rightPressed = client.options.useKey.isPressed();
+			if (rightPressed != lastMirrorRightClick) {
+				lastMirrorRightClick = rightPressed;
+				if (client.player.getMainHandStack().getItem() == mirror_of_then_and_now.MIRROR_ITEM) {
+					ClientPlayNetworking.send(new MirrorChargeC2SPacket(rightPressed));
+				}
+			}
+		});
+
+		// 镜面充能条 HUD（金色）
+		HudRenderCallback.EVENT.register((drawContext, tickDelta) -> {
+			if (!MirrorClientManager.isCharging()) return;
+			MinecraftClient client = MinecraftClient.getInstance();
+			if (client.player == null) return;
+
+			int screenWidth = drawContext.getScaledWindowWidth();
+			int screenHeight = drawContext.getScaledWindowHeight();
+			int barWidth = 80;
+			int barHeight = 5;
+			int x = (screenWidth - barWidth) / 2;
+			int y = screenHeight - 49;
+
+			drawContext.fill(x, y, x + barWidth, y + barHeight, 0xFF444444);
+			int fillWidth = (int) (barWidth * MirrorClientManager.getChargeRatio());
+			drawContext.fill(x, y, x + fillWidth, y + barHeight, 0xFFFFAA00);
+
+			String text = String.format("充能: %d%%", (int) (MirrorClientManager.getChargeRatio() * 100));
+			drawContext.drawText(client.textRenderer, text, x + barWidth + 5, y - 2, 0xFFFFAA, true);
+		});
 
 		// 右键镜子物品发送切换包
 		// 主动请求配置（C2S 包，无需注册接收）

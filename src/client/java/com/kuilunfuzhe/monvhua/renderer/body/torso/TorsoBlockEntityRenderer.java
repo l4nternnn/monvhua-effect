@@ -71,7 +71,7 @@ public class TorsoBlockEntityRenderer implements BlockEntityRenderer<TorsoBlockE
             double dist = cameraPos.distanceTo(Vec3d.ofCenter(entity.getPos()));
             if (dist < 12.0) {
                 matrices.translate(0.0F, -5.0F, 0.0F);
-                matrices.scale(1.188F, 1.125F, 1.375F);
+                matrices.scale(1.75F, 1.5F, 2.5F);
                 matrices.translate(0.0F, 5.0F, 0.0F);
             }
 

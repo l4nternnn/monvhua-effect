@@ -70,7 +70,7 @@ public class LeftLegBlockEntityRenderer implements BlockEntityRenderer<LeftLegBl
             double dist = cameraPos.distanceTo(Vec3d.ofCenter(entity.getPos()));
             if (dist < 12.0) {
                 matrices.translate(-2.0F, -6.0F, -2.0F);
-                matrices.scale(1.375F, 1.125F, 1.375F);
+                matrices.scale(2.5F, 1.5F, 2.5F);
                 matrices.translate(2.0F, 6.0F, 2.0F);
             }
 

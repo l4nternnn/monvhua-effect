@@ -69,7 +69,7 @@ public class HeadBlockEntityRenderer implements BlockEntityRenderer<HeadBlockEnt
             double dist = cameraPos.distanceTo(Vec3d.ofCenter(entity.getPos()));
             if (dist < 12.0) {
                 matrices.translate(0.0F, -4.0F, 0.0F);
-                matrices.scale(1.188F, 1.188F, 1.188F);
+                matrices.scale(1.75F, 1.75F, 1.75F);
                 matrices.translate(0.0F, 4.0F, 0.0F);
             }
 
