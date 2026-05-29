@@ -30,6 +30,12 @@ public class MirrorCommand {
 	public static final Map<UUID, Integer> CHARGING_PLAYERS = new ConcurrentHashMap<>();
 	private static final Map<UUID, Integer> CHARGING_STAGE = new ConcurrentHashMap<>();
 
+	// Pending activation (1s delay after charge completes) & anti-fast-trigger cooldown
+	private static final Map<UUID, Integer> PENDING_ACTIVATION = new ConcurrentHashMap<>();
+	private static final Map<UUID, Integer> TRIGGER_COOLDOWN = new ConcurrentHashMap<>();
+	private static final int PENDING_ACTIVATION_TICKS = 16;
+	private static final int TRIGGER_COOLDOWN_TICKS = 10;
+
 	public static void register(CommandDispatcher<ServerCommandSource> dispatcher,
 	                            CommandRegistryAccess registryAccess,
 	                            CommandManager.RegistrationEnvironment environment) {
@@ -145,7 +151,7 @@ public class MirrorCommand {
 
 	public static void toggleViewport(ServerPlayerEntity player) {
 		UUID uuid = player.getUuid();
-            if (player.getCommandTags().contains("Silenced")) { player.sendMessage(net.minecraft.text.Text.literal("§c你难以集中精神"), true); return; }
+		if (player.getCommandTags().contains("Silenced")) { player.sendMessage(Text.literal("§c你难以集中精神"), true); return; }
 		MirrorDataStore.PlayerData data = MirrorDataStore.getOrCreate(uuid);
 
 		if (!hasAnySlot(data)) {
@@ -185,27 +191,30 @@ public class MirrorCommand {
 
 		if (player.getRandom().nextDouble() >= config.getSuccessRate(stage)) {
 			syncToClient(player);
-			player.sendMessage(Text.literal("§7观看判定失败，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
+			player.sendMessage(Text.literal("§7没有观察到痕迹 " + usesLeft + " 次"), true);
 			return;
 		}
 
 		VIEWPORT_ACCUMULATED_TICKS.put(uuid, 0);
 		VIEWPORT_ACTIVE.put(uuid, true);
 		syncToClient(player);
-		player.sendMessage(Text.literal("§a观看判定成功，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
+		player.sendMessage(Text.literal("§a往日将重现。。 " + usesLeft + " 次"), true);
 	}
 
 	// ========== Charging system ==========
 
 	public static void startCharging(ServerPlayerEntity player) {
 		UUID uuid = player.getUuid();
-        if (player.getCommandTags().contains("Silenced")) { player.sendMessage(net.minecraft.text.Text.literal("§c你难以集中精神"), true); return; }
+		if (player.getCommandTags().contains("Silenced")) { player.sendMessage(Text.literal("§c你难以集中精神"), true); return; }
 
 		// Don't start charging if viewport is already active
 		if (VIEWPORT_ACTIVE.getOrDefault(uuid, false)) return;
 
-		// Don't start charging if already charging
-		if (CHARGING_PLAYERS.containsKey(uuid)) return;
+		// Anti-fast-trigger: cooldown check
+		if (TRIGGER_COOLDOWN.containsKey(uuid)) return;
+
+		// Don't start if already charging or in pending activation
+		if (CHARGING_PLAYERS.containsKey(uuid) || PENDING_ACTIVATION.containsKey(uuid)) return;
 
 		// Validate slots
 		MirrorDataStore.PlayerData data = MirrorDataStore.getOrCreate(uuid);
@@ -216,7 +225,7 @@ public class MirrorCommand {
 
 		// Check range
 		if (!isInAnyRange(player, data)) {
-			player.sendMessage(Text.literal("§c你不在镜面触发范围内"), true);
+			player.sendMessage(Text.literal("§c这俩没有"), true);
 			return;
 		}
 
@@ -232,6 +241,7 @@ public class MirrorCommand {
 			return;
 		}
 
+		// Start charging immediately
 		CHARGING_PLAYERS.put(uuid, 0);
 		CHARGING_STAGE.put(uuid, stage);
 		syncChargeToClient(player, 0, config.getChargeTime(stage));
@@ -239,11 +249,14 @@ public class MirrorCommand {
 
 	public static void stopCharging(ServerPlayerEntity player) {
 		UUID uuid = player.getUuid();
-		if (CHARGING_PLAYERS.containsKey(uuid)) {
+		boolean wasActive = CHARGING_PLAYERS.containsKey(uuid);
+		if (wasActive) {
 			CHARGING_PLAYERS.remove(uuid);
 			CHARGING_STAGE.remove(uuid);
 			// Send zero charge to hide the HUD bar
 			syncChargeToClient(player, 0, 0);
+			// Set anti-fast-trigger cooldown
+			TRIGGER_COOLDOWN.put(uuid, TRIGGER_COOLDOWN_TICKS);
 		}
 	}
 
@@ -261,7 +274,7 @@ public class MirrorCommand {
 		MirrorDataStore.PlayerData data = MirrorDataStore.getOrCreate(uuid);
 		if (!isInAnyRange(player, data)) {
 			stopCharging(player);
-			player.sendMessage(Text.literal("§c已离开镜面触发范围，充能取消"), true);
+			player.sendMessage(Text.literal("§c已无法观察到往日"), true);
 			return;
 		}
 
@@ -278,7 +291,7 @@ public class MirrorCommand {
 		}
 
 		if (ticks >= chargeTime) {
-			// Fully charged — clear charging state
+			// Fully charged — clear charging state and do success check immediately
 			CHARGING_PLAYERS.remove(uuid);
 			CHARGING_STAGE.remove(uuid);
 			syncChargeToClient(player, 0, 0);
@@ -299,16 +312,56 @@ public class MirrorCommand {
 
 			if (player.getRandom().nextDouble() >= config.getSuccessRate(stage)) {
 				syncToClient(player);
-				player.sendMessage(Text.literal("§7观看判定失败，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
+				player.sendMessage(Text.literal("§7呜嗯。。。没看到 " + usesLeft + " 次"), true);
 				return;
 			}
 
-			// Success — activate viewport
+			// Success — enter 0.8s pending activation delay before viewport activates
+			PENDING_ACTIVATION.put(uuid, PENDING_ACTIVATION_TICKS);
+			player.sendMessage(Text.literal("§a往昔将现 " + " §e0.8s后启动…"), true);
+		}
+	}
+
+	/**
+	 * Tick pending activations: countdown 0.8s after success check before viewport activates.
+	 * Only interrupted if the player switches items or leaves range.
+	 */
+	public static void tickPendingActivations(ServerPlayerEntity player) {
+		UUID uuid = player.getUuid();
+		if (!PENDING_ACTIVATION.containsKey(uuid)) return;
+
+		// Verify player still holds the mirror item
+		if (player.getMainHandStack().getItem() != com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now.MIRROR_ITEM) {
+			PENDING_ACTIVATION.remove(uuid);
+			stopCharging(player);
+			return;
+		}
+
+		// Verify still in range
+		MirrorDataStore.PlayerData data = MirrorDataStore.getOrCreate(uuid);
+		if (!isInAnyRange(player, data)) {
+			PENDING_ACTIVATION.remove(uuid);
+			stopCharging(player);
+			player.sendMessage(Text.literal("§c暂无法再观察"), true);
+			return;
+		}
+
+		int ticksLeft = PENDING_ACTIVATION.get(uuid) - 1;
+		if (ticksLeft <= 0) {
+			PENDING_ACTIVATION.remove(uuid);
+			// Activate viewport (success check already done in tickCharging)
 			VIEWPORT_ACCUMULATED_TICKS.put(uuid, 0);
 			VIEWPORT_ACTIVE.put(uuid, true);
 			syncToClient(player);
-			player.sendMessage(Text.literal("§a观看判定成功，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
+		} else {
+			PENDING_ACTIVATION.put(uuid, ticksLeft);
 		}
+	}
+
+	/** Tick anti-fast-trigger cooldowns down to zero. */
+	public static void tickCooldowns() {
+		TRIGGER_COOLDOWN.replaceAll((uuid, ticks) -> ticks - 1);
+		TRIGGER_COOLDOWN.values().removeIf(ticks -> ticks <= 0);
 	}
 
 	public static void syncChargeToClient(ServerPlayerEntity player, int currentTicks, int maxTicks) {
@@ -326,7 +379,7 @@ public class MirrorCommand {
 			VIEWPORT_ACTIVE.put(uuid, false);
 			VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
 			syncToClient(player);
-			player.sendMessage(Text.literal("§7已离开范围，"), true);
+			player.sendMessage(Text.literal("§7暂观察不到，"), true);
 			return;
 		}
 
@@ -352,6 +405,8 @@ public class MirrorCommand {
 		VIEWPORT_STAGE.remove(uuid);
 		CHARGING_PLAYERS.remove(uuid);
 		CHARGING_STAGE.remove(uuid);
+		PENDING_ACTIVATION.remove(uuid);
+		TRIGGER_COOLDOWN.remove(uuid);
 	}
 
 	public static void syncToClient(ServerPlayerEntity player) {

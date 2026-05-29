@@ -290,8 +290,10 @@ public class MonvhuaMod implements ModInitializer {
         // ===== 6. 摄像机追踪 & 镜面视口 tick =====
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             CameraWatchManager.tick(server);
+            MirrorCommand.tickCooldowns();
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                 MirrorCommand.tickViewports(player);
+                MirrorCommand.tickPendingActivations(player);
                 MirrorCommand.tickCharging(player);
             }
         });
