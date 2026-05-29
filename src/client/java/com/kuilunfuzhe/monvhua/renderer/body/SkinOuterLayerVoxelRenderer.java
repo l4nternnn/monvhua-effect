@@ -14,7 +14,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class SkinOuterLayerVoxelRenderer {
-    private static final float PIXEL_SIZE = 0.25F;
+    private static final float PIXEL_SIZE = 0.5F;
     private static final float HEAD_SIZE = 1.0f;
     private static final Map<Identifier, SkinPixels> PIXEL_CACHE = new HashMap<>();
 

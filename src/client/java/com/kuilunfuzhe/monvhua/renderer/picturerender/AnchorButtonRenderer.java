@@ -23,6 +23,7 @@ public class AnchorButtonRenderer {
     private static final double SPHERE_RADIUS = 0.2;
 
     public static void render(MatrixStack matrices, VertexConsumerProvider consumers) {
+        if (!BackTextureRenderer.imagesEnabled) return;
         if (anchors.isEmpty()) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null || client.player == null) return;
