@@ -88,7 +88,8 @@ public final class SkinOuterLayerVoxelRenderer {
     }
 
     private static void renderFace(MatrixStack matrices, VertexConsumer vertices, SkinPixels pixels, int light, int overlay,
-                                   int textureX, int textureY, int width, int height, Point origin, Point uStep, Point vStep, Point normal) {
+                                   int textureX, int textureY, int width, int height,
+                                   Point origin, Point uStep, Point vStep, Point normal) {
         for (int row = 0; row < height; row++) {
             for (int col = 0; col < width; col++) {
                 int pixelX = textureX + col;
@@ -270,5 +271,6 @@ public final class SkinOuterLayerVoxelRenderer {
         float dot(Point other) {
             return x * other.x + y * other.y + z * other.z;
         }
+
     }
 }

@@ -58,7 +58,8 @@ public class TorsoBlockEntityRenderer implements BlockEntityRenderer<TorsoBlockE
         ModelPart jacket = torso.getChild(EntityModelPartNames.JACKET);
         jacket.visible = false;
 
-        model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+        RenderLayer renderLayer = RenderLayer.getEntityCutoutNoCull(texture);
+        model.render(matrices, vertexConsumers.getBuffer(renderLayer), light, OverlayTexture.DEFAULT_UV);
 
         jacket.visible = true;
         matrices.push();
@@ -66,11 +67,11 @@ public class TorsoBlockEntityRenderer implements BlockEntityRenderer<TorsoBlockE
         torso.applyTransform(matrices);
         matrices.push();
         jacket.applyTransform(matrices);
-        boolean renderedVoxelLayer = SkinOuterLayerVoxelRenderer.renderJacket(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)),
+        boolean renderedVoxelLayer = SkinOuterLayerVoxelRenderer.renderJacket(matrices, vertexConsumers.getBuffer(renderLayer),
                 texture, light, OverlayTexture.DEFAULT_UV);
         matrices.pop();
         if (!renderedVoxelLayer) {
-            jacket.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+            jacket.render(matrices, vertexConsumers.getBuffer(renderLayer), light, OverlayTexture.DEFAULT_UV);
         }
         matrices.pop();
 

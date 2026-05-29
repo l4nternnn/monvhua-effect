@@ -40,45 +40,46 @@ public class BodyBlockModelRegister {
                 TorsoBlockEntityRenderer::new
         );
 
-        //左手
+        // Left arm
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.LEFT_ARM, LeftArmModel::getTexturedModelData);
         BlockEntityRendererFactories.register(
                 ModBlockEntities.LEFT_ARM_BLOCK_ENTITY,
                 LeftArmBlockEntityRenderer::new
         );
 
-        //右手臂
+        // Right arm
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.RIGHT_ARM, RightArmModel::getTexturedModelData);
         BlockEntityRendererFactories.register(
                 ModBlockEntities.RIGHT_ARM_BLOCK_ENTITY,
                 RightArmBlockEntityRenderer::new
         );
-        // Slim手臂模型
+
+        // Slim arm models
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.LEFT_ARM_SLIM, LeftArmSlimModel::getTexturedModelData);
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.RIGHT_ARM_SLIM, RightArmSlimModel::getTexturedModelData);
 
-        //左腿
+        // Left leg
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.LEFT_LEG, LeftLegModel::getTexturedModelData);
         BlockEntityRendererFactories.register(
                 ModBlockEntities.LEFT_LEG_BLOCK_ENTITY,
                 LeftLegBlockEntityRenderer::new
         );
 
-        //右腿
+        // Right leg
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.RIGHT_LEG, RightLegModel::getTexturedModelData);
         BlockEntityRendererFactories.register(
                 ModBlockEntities.RIGHT_LEG_BLOCK_ENTITY,
                 RightLegBlockEntityRenderer::new
         );
 
-        //头部
+        // Head
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.HEAD, HeadModel::getTexturedModelData);
         BlockEntityRendererFactories.register(
                 ModBlockEntities.HEAD_BLOCK_ENTITY,
                 HeadBlockEntityRenderer::new
         );
 
-        // 注册 SpecialModelRenderer 类型（物品栏/手持 3D 渲染）
+        // Item inventory/hand special renderers
         SpecialModelTypes.ID_MAPPER.put(Identifier.of("monvhua", "torso"), TorsoSpecialModelRenderer.Unbaked.CODEC);
         SpecialModelTypes.ID_MAPPER.put(Identifier.of("monvhua", "left_arm"), LeftArmSpecialModelRenderer.Unbaked.CODEC);
         SpecialModelTypes.ID_MAPPER.put(Identifier.of("monvhua", "right_arm"), RightArmSpecialModelRenderer.Unbaked.CODEC);

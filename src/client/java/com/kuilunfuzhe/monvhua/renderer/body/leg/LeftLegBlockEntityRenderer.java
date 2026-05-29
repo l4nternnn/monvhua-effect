@@ -57,7 +57,8 @@ public class LeftLegBlockEntityRenderer implements BlockEntityRenderer<LeftLegBl
         ModelPart pants = leg.getChild("left_pants");
         pants.visible = false;
 
-        model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+        RenderLayer renderLayer = RenderLayer.getEntityCutoutNoCull(texture);
+        model.render(matrices, vertexConsumers.getBuffer(renderLayer), light, OverlayTexture.DEFAULT_UV);
 
         pants.visible = true;
         matrices.push();
@@ -65,11 +66,11 @@ public class LeftLegBlockEntityRenderer implements BlockEntityRenderer<LeftLegBl
         leg.applyTransform(matrices);
         matrices.push();
         pants.applyTransform(matrices);
-        boolean renderedVoxelLayer = SkinOuterLayerVoxelRenderer.renderLeftPants(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)),
+        boolean renderedVoxelLayer = SkinOuterLayerVoxelRenderer.renderLeftPants(matrices, vertexConsumers.getBuffer(renderLayer),
                 texture, light, OverlayTexture.DEFAULT_UV);
         matrices.pop();
         if (!renderedVoxelLayer) {
-            pants.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+            pants.render(matrices, vertexConsumers.getBuffer(renderLayer), light, OverlayTexture.DEFAULT_UV);
         }
         matrices.pop();
 

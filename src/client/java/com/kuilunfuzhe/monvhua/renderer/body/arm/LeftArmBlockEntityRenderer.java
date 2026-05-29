@@ -63,7 +63,8 @@ public class LeftArmBlockEntityRenderer implements BlockEntityRenderer<LeftArmBl
         ModelPart sleeve = arm.getChild("left_sleeve");
         sleeve.visible = false;
 
-        activeModel.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+        RenderLayer renderLayer = RenderLayer.getEntityCutoutNoCull(texture);
+        activeModel.render(matrices, vertexConsumers.getBuffer(renderLayer), light, OverlayTexture.DEFAULT_UV);
 
         sleeve.visible = true;
         matrices.push();
@@ -71,11 +72,11 @@ public class LeftArmBlockEntityRenderer implements BlockEntityRenderer<LeftArmBl
         arm.applyTransform(matrices);
         matrices.push();
         sleeve.applyTransform(matrices);
-        boolean renderedVoxelLayer = SkinOuterLayerVoxelRenderer.renderLeftSleeve(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)),
+        boolean renderedVoxelLayer = SkinOuterLayerVoxelRenderer.renderLeftSleeve(matrices, vertexConsumers.getBuffer(renderLayer),
                 texture, light, OverlayTexture.DEFAULT_UV, slim);
         matrices.pop();
         if (!renderedVoxelLayer) {
-            sleeve.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+            sleeve.render(matrices, vertexConsumers.getBuffer(renderLayer), light, OverlayTexture.DEFAULT_UV);
         }
         matrices.pop();
 

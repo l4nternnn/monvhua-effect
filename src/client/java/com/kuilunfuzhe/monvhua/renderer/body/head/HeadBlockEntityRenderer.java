@@ -56,7 +56,8 @@ public class HeadBlockEntityRenderer implements BlockEntityRenderer<HeadBlockEnt
         ModelPart hat = head.getChild(EntityModelPartNames.HAT);
         hat.visible = false;
 
-        model.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+        RenderLayer renderLayer = RenderLayer.getEntityCutoutNoCull(texture);
+        model.render(matrices, vertexConsumers.getBuffer(renderLayer), light, OverlayTexture.DEFAULT_UV);
 
         hat.visible = true;
         matrices.push();
@@ -64,11 +65,11 @@ public class HeadBlockEntityRenderer implements BlockEntityRenderer<HeadBlockEnt
         head.applyTransform(matrices);
         matrices.push();
         hat.applyTransform(matrices);
-        boolean renderedVoxelLayer = SkinOuterLayerVoxelRenderer.renderHeadHat(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)),
+        boolean renderedVoxelLayer = SkinOuterLayerVoxelRenderer.renderHeadHat(matrices, vertexConsumers.getBuffer(renderLayer),
                 texture, light, OverlayTexture.DEFAULT_UV);
         matrices.pop();
         if (!renderedVoxelLayer) {
-            hat.render(matrices, vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture)), light, OverlayTexture.DEFAULT_UV);
+            hat.render(matrices, vertexConsumers.getBuffer(renderLayer), light, OverlayTexture.DEFAULT_UV);
         }
         matrices.pop();
 
