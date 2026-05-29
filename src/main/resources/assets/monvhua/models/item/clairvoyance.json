@@ -1,7 +1,7 @@
 {
   "parent": "minecraft:item/handheld",
   "textures": {
-    "layer0": "monvhua:item/evil_eyes"
+    "layer0": "monvhua:item/clairvoyance"
   },
   "display": {
     "thirdperson_righthand": {

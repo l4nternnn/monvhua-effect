@@ -250,7 +250,7 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
 //        ExitViewPayload.register();        // 客户端到服务端
 //        ForceExitViewPayload.register();   // 客户端到服务端
 
-        Identifier id = Identifier.of("monvhua", "evil_eyes");
+        Identifier id = Identifier.of("monvhua", "clairvoyance");
         RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM, id);
         Item.Settings settings = new Item.Settings()
                 .registryKey(key)

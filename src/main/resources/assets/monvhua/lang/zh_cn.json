@@ -1,8 +1,7 @@
 {
-  "item.monvhua.evil_eyes": "|魔法:§4千里眼§r|",
+  "item.monvhua.clairvoyance": "|魔法:§4千里眼§r|",
   "category.monvhua": "千里眼",
   "key.monvhua.mark": "标记实体 (G)",
-  "key.monvhua.config": "打开配置 (L)",
   "key.monvhua.use": "使用物品",
   "item.monvhua.magic_stick": "|魔法:§6视线诱导§r|",
   "item.monvhua.secrecy": "|魔法:§b窃密§r|",

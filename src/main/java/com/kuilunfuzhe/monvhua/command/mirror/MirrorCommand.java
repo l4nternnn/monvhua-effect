@@ -145,6 +145,7 @@ public class MirrorCommand {
 
 	public static void toggleViewport(ServerPlayerEntity player) {
 		UUID uuid = player.getUuid();
+            if (player.getCommandTags().contains("Silenced")) { player.sendMessage(net.minecraft.text.Text.literal("§c你难以集中精神"), true); return; }
 		MirrorDataStore.PlayerData data = MirrorDataStore.getOrCreate(uuid);
 
 		if (!hasAnySlot(data)) {
@@ -172,13 +173,13 @@ public class MirrorCommand {
 			VIEWPORT_ACTIVE.put(uuid, false);
 			VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
 			syncToClient(player);
-			player.sendMessage(Text.literal("§7镜像视图已关闭，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
+			player.sendMessage(Text.literal("§7昔日重现已不再，剩余 " + usesLeft + " 次"), true);
 			return;
 		}
 
 		if (!isInAnyRange(player, data)) {
 			syncToClient(player);
-			player.sendMessage(Text.literal("§c你不在任何镜面的触发范围内，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
+			player.sendMessage(Text.literal("§c这里没有往昔残片，§k123§r " + usesLeft + " §1k§r"), true);
 			return;
 		}
 
@@ -198,6 +199,7 @@ public class MirrorCommand {
 
 	public static void startCharging(ServerPlayerEntity player) {
 		UUID uuid = player.getUuid();
+        if (player.getCommandTags().contains("Silenced")) { player.sendMessage(net.minecraft.text.Text.literal("§c你难以集中精神"), true); return; }
 
 		// Don't start charging if viewport is already active
 		if (VIEWPORT_ACTIVE.getOrDefault(uuid, false)) return;
@@ -287,7 +289,7 @@ public class MirrorCommand {
 			int usesLeft = storedStage == stage ? Math.min(VIEWPORT_USES_LEFT.getOrDefault(uuid, maxUses), maxUses) : maxUses;
 
 			if (usesLeft <= 0) {
-				player.sendMessage(Text.literal("§c使用次数不足"), true);
+				player.sendMessage(Text.literal("§c今天没有魔力了。。"), true);
 				return;
 			}
 
@@ -324,7 +326,7 @@ public class MirrorCommand {
 			VIEWPORT_ACTIVE.put(uuid, false);
 			VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
 			syncToClient(player);
-			player.sendMessage(Text.literal("§7已离开镜面触发范围，镜像视图结束"), true);
+			player.sendMessage(Text.literal("§7已离开范围，"), true);
 			return;
 		}
 
@@ -338,7 +340,7 @@ public class MirrorCommand {
 		if (accumulated >= watchTimeTicks) {
 			VIEWPORT_ACTIVE.put(uuid, false);
 			VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
-			player.sendMessage(Text.literal("§a观看结束"), true);
+			player.sendMessage(Text.literal("§a头昏脑涨了,"), true);
 			syncToClient(player);
 		}
 	}

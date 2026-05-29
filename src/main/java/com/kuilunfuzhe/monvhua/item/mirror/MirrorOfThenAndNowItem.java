@@ -4,6 +4,7 @@ import com.kuilunfuzhe.monvhua.command.mirror.MirrorCommand;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.world.World;
@@ -11,6 +12,8 @@ import net.minecraft.world.World;
 import java.util.UUID;
 
 public class MirrorOfThenAndNowItem extends Item {
+	private static final String SILENCED_TAG = "Silenced";
+
 	public MirrorOfThenAndNowItem(Settings settings) {
 		super(settings);
 	}
@@ -18,6 +21,10 @@ public class MirrorOfThenAndNowItem extends Item {
 	@Override
 	public ActionResult use(World world, PlayerEntity user, Hand hand) {
 		if (!world.isClient && user instanceof ServerPlayerEntity serverPlayer) {
+			if (serverPlayer.getCommandTags().contains(SILENCED_TAG)) {
+				serverPlayer.sendMessage(Text.literal("§c你难以集中精神"), true);
+				return ActionResult.FAIL;
+			}
 			UUID uuid = serverPlayer.getUuid();
 			// If viewport is active, click to deactivate
 			if (MirrorCommand.VIEWPORT_ACTIVE.getOrDefault(uuid, false)) {
