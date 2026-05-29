@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua;
 import com.kuilunfuzhe.monvhua.event.ClientTickHandler;
 import com.kuilunfuzhe.monvhua.event.KeyBindingHandler;
 import com.kuilunfuzhe.monvhua.event.WorldRenderHandler;
+import com.kuilunfuzhe.monvhua.compat.DhCompat;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.ClientCameraWatchReceiver;
@@ -42,6 +43,7 @@ public class MonvhuaModClient implements ClientModInitializer {
 
         Evil_EyesClient.initialize();
         GazeguidanceClient.initialize();
+        DhCompat.init();
 
         KeyBindingHandler.register();
         ClientTickHandler.register();

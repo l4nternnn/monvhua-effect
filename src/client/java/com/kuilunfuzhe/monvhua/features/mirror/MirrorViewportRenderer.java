@@ -56,6 +56,7 @@ public class MirrorViewportRenderer {
 			Vec3d pos = MirrorClientManager.getSlotWorldPos(0, playerPos);
 			if (pos == null) return;
 
+			clearMirrorFramebuffer(fullMirrorFbo);
 			FramebufferOverride.setOverride(fullMirrorFbo);
 			DhCompat.suspend();
 			try {
@@ -139,6 +140,16 @@ public class MirrorViewportRenderer {
 			return new SimpleFramebuffer(name, w, h, true);
 		}
 		return fbo;
+	}
+
+	private static void clearMirrorFramebuffer(SimpleFramebuffer fbo) {
+		if (fbo == null || fbo.getColorAttachment() == null || fbo.getDepthAttachment() == null) return;
+		RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(
+			fbo.getColorAttachment(),
+			0x00000000,
+			fbo.getDepthAttachment(),
+			1.0
+		);
 	}
 
 	public static void cleanup() {
