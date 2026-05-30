@@ -15,7 +15,7 @@ import java.lang.reflect.Field;
  * 通过Unsafe修改ItemGroup的displayName final字段来实现动态颜色变化，
  * 每20 tick更新一次标题颜色，色相随时间匀速变化形成彩虹渐变效果。
  */
-public class FontRender {
+public class Font_Render {
 
     private static final int UPDATE_INTERVAL_TICKS = 20; // 每20 tick更新一次（约1秒）
     /** 上次更新的tick计数，用于控制更新频率 */
