@@ -308,7 +308,7 @@ public class SecrecyItem extends Item {
             HEART_SOUND_TICKS.put(uuid, ticks - 1);
             return;
         }
-        player.getWorld().playSound(null, player.getX(), player.getY(), player.getZ(), HEART_SOUND, SoundCategory.PLAYERS, HEART_SOUND_MAX_VOLUME, 1.0F);
+        player.playSoundToPlayer(HEART_SOUND, SoundCategory.PLAYERS, HEART_SOUND_MAX_VOLUME, 1.0F);
         HEART_SOUND_TICKS.put(uuid, HEART_SOUND_INTERVAL_TICKS);
     }
 
