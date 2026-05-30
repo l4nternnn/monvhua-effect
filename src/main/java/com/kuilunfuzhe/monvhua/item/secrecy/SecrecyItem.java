@@ -93,7 +93,7 @@ public class SecrecyItem extends Item {
                 return ActionResult.FAIL;
             }
             user.setCurrentHand(hand);
-            if (!isSecrecyActive(player)) {
+            if (isSecrecyActive(player)) {
                 enterSecrecy(player);
                 player.sendMessage(Text.literal("§b正在集中精神..."), true);
             }
@@ -110,7 +110,7 @@ public class SecrecyItem extends Item {
      */
     @Override
     public void usageTick(World world, LivingEntity user, ItemStack stack, int remainingUseTicks) {
-        if (!world.isClient() && user instanceof ServerPlayerEntity player && !isSecrecyActive(player)) {
+        if (!world.isClient() && user instanceof ServerPlayerEntity player && isSecrecyActive(player)) {
             if (!canUseSecrecy(player, true)) {
                 player.stopUsingItem();
                 return;
@@ -164,7 +164,7 @@ public class SecrecyItem extends Item {
                 if (EXITING_SECRECY.remove(player.getUuid())) {
                     continue;
                 }
-                if (!isSecrecyActive(player)) continue;
+                if (isSecrecyActive(player)) continue;
                 if (!shouldContinueSecrecy(player)) {
                     exitSecrecy(player);
                     continue;
@@ -181,7 +181,7 @@ public class SecrecyItem extends Item {
                 ServerPlayerEntity player = server.getPlayerManager().getPlayer(entry.getKey());
                 if (player != null && hasPreparationEffects(player) && shouldContinueSecrecy(player)) {
                     player.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, INFINITE_DURATION, 0, false, false, true));
-                    syncSecrecyState(player, true, 0);
+                    syncSecrecyState(player, true);
                     player.sendMessage(Text.literal("§b精神集中..."), true);
                 }
                 iterator.remove();
@@ -209,7 +209,7 @@ public class SecrecyItem extends Item {
      * 并将玩家加入EXITING_SECRECY集合以在下一tick跳过处理。
      */
     public static void exitSecrecy(ServerPlayerEntity player) {
-        if (!isSecrecyActive(player)) {
+        if (isSecrecyActive(player)) {
             return;
         }
         VANISH_PENDING_TICKS.remove(player.getUuid());
@@ -220,7 +220,7 @@ public class SecrecyItem extends Item {
         player.removeStatusEffect(StatusEffects.INVISIBILITY);
         player.removeStatusEffect(StatusEffects.BLINDNESS);
         player.removeStatusEffect(StatusEffects.DARKNESS);
-        syncSecrecyState(player, false, 0);
+        syncSecrecyState(player, false);
     }
 
     private static void enterSecrecy(ServerPlayerEntity player) {
@@ -237,15 +237,15 @@ public class SecrecyItem extends Item {
         player.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, INFINITE_DURATION, 0, false, false, false));
         player.addStatusEffect(new StatusEffectInstance(StatusEffects.DARKNESS, INFINITE_DURATION, 0, false, false, false));
         player.removeStatusEffect(StatusEffects.INVISIBILITY);
-        syncSecrecyState(player, false, 0);
+        syncSecrecyState(player, false);
         VANISH_PENDING_TICKS.put(player.getUuid(), player.getWorld().getTime() + delayTicks);
     }
 
     private static boolean isSecrecyActive(ServerPlayerEntity player) {
         UUID uuid = player.getUuid();
-        return ACTIVE_SECRECY.contains(uuid)
-                || VANISH_PENDING_TICKS.containsKey(uuid)
-                || hasSpeedModifier(player);
+        return !ACTIVE_SECRECY.contains(uuid)
+                && !VANISH_PENDING_TICKS.containsKey(uuid)
+                && !hasSpeedModifier(player);
     }
 
     private static boolean hasPreparationEffects(ServerPlayerEntity player) {
@@ -312,7 +312,7 @@ public class SecrecyItem extends Item {
         HEART_SOUND_TICKS.put(uuid, HEART_SOUND_INTERVAL_TICKS);
     }
 
-    private static void syncSecrecyState(ServerPlayerEntity player, boolean invisible, int fadeOutTicks) {
-        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player, new SecrecyStateS2CPacket(invisible, Math.max(0, fadeOutTicks)));
+    private static void syncSecrecyState(ServerPlayerEntity player, boolean invisible) {
+        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player, new SecrecyStateS2CPacket(invisible, 0));
     }
 }
