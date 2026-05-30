@@ -50,14 +50,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-/**
- * 肢体展示管理器。
- * 处理玩家死亡时掉落肢体（六部位分开或合并身体）的展示实体创建、
- * 通过右键交互实体拾取/打开背包、合并/拆分肢体、以及组合身体的放置。
- * 肢体使用 ItemDisplayEntity 渲染，配以 InteractionEntity 作为交互碰撞箱。
- */
 public class BodyPartManager {
-	/** 死亡掉落肢体时每个肢体的四元数旋转（6个肢体：头/躯干/左臂/右臂/左腿/右腿） */
+	// 死亡掉落肢体时每个肢体的四元数旋转
 	private static final Quaternionf[] PART_ROTATIONS = {
 		new Quaternionf(0.6087613f, 0.0f, 0.0f, 0.79335344f),
 		new Quaternionf(0.6f, 0.0f, 0.0f, 0.79f),
@@ -66,7 +60,6 @@ public class BodyPartManager {
 		new Quaternionf(0.68573505f, 0.06322056f, -0.05999406f, 0.7226142f),
 		new Quaternionf(0.69693834f, -0.07450287f, 0.07333822f, 0.70947003f)
 	};
-	/** DisplayEntity 的 LEFT_ROTATION 同步键，通过反射获取（用于设置肢体的展示方向） */
 	private static final TrackedData LEFT_ROTATION_KEY;
 	static {
 		TrackedData key = null;
@@ -80,25 +73,15 @@ public class BodyPartManager {
 		LEFT_ROTATION_KEY = key;
 	}
 
-	/** 肢体展示实体UUID -> 9格物品栏（仅躯干部位有物品栏） */
 	public static final Map<UUID, DefaultedList<ItemStack>> BODY_PART_DISPLAY_INVENTORIES = new ConcurrentHashMap<>();
-	/** 六个肢体物品的集合（头/躯干/左臂/右臂/左腿/右腿） */
 	public static final Set<Item> BODY_PART_DISPLAY_ITEMS = Set.of(
 		Assembly_ModItems.HEAD_ITEM, Assembly_ModItems.TORSO_ITEM,
 		Assembly_ModItems.LEFT_ARM_ITEM, Assembly_ModItems.RIGHT_ARM_ITEM,
 		Assembly_ModItems.LEFT_LEG_ITEM, Assembly_ModItems.RIGHT_LEG_ITEM
 	);
-	/** InteractionEntity UUID -> 对应 ItemDisplayEntity UUID 的映射 */
 	public static final Map<UUID, UUID> INTERACTION_TO_DISPLAY = new ConcurrentHashMap<>();
-	/** ItemDisplayEntity UUID -> 对应 InteractionEntity UUID 的映射 */
 	public static final Map<UUID, UUID> DISPLAY_TO_INTERACTION = new ConcurrentHashMap<>();
 
-	/**
-	 * 注册肢体系统的所有事件监听器：
-	 * 1. 玩家死亡掉落肢体 / 合并身体展示实体（含内置皮肤检测）
-	 * 2. 右键交互实体：潜行拾取带物品栏数据的肢体 / 普通右键打开躯干背包
-	 * 3. 手持肢体物品右键空气/方块放置为展示实体
-	 */
 	public static void registerEvents() {
 		// 玩家死亡掉落肢体/合并身体作为可交互展示实体
 		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
@@ -203,7 +186,6 @@ public class BodyPartManager {
 			UUID displayUuid = INTERACTION_TO_DISPLAY.get(interaction.getUuid());
 			if (displayUuid == null) return ActionResult.PASS;
 			Entity targetDisplay = world.getEntity(displayUuid);
-			if (targetDisplay == null) return ActionResult.PASS;
 
 			if (player.isSneaking()) {
 				if (targetDisplay instanceof ItemDisplayEntity display) {
@@ -277,12 +259,43 @@ public class BodyPartManager {
 			}
 			if (!BODY_PART_DISPLAY_ITEMS.contains(stack.getItem())) return ActionResult.PASS;
 			if (player.isSneaking()) return ActionResult.PASS;
-			Vec3d pos = new Vec3d(player.getBlockPos().getX() + 0.5, player.getBlockPos().getY() + 0.3, player.getBlockPos().getZ() + 0.5);
-			UUID displayUuid = spawnPartDisplay((ServerWorld) world, pos, stack, (ServerPlayerEntity) player);
-			if (displayUuid != null && !player.isCreative()) {
-				stack.decrement(1);
-				if (stack.isEmpty()) {
-					player.getInventory().removeOne(stack);
+			BlockPos placePos = player.getBlockPos();
+			ItemDisplayEntity display = EntityType.ITEM_DISPLAY.create(world, SpawnReason.TRIGGERED);
+			if (display != null) {
+				ItemStack placeStack = stack.copy();
+				placeStack.setCount(1);
+				NbtComponent customData = placeStack.get(DataComponentTypes.CUSTOM_DATA);
+				if (customData != null) {
+					NbtCompound root = customData.copyNbt();
+					NbtElement invElem = root.get("body_part_inv_items");
+					if (invElem instanceof NbtList itemsList) {
+						DefaultedList<ItemStack> savedInv = DefaultedList.ofSize(9, ItemStack.EMPTY);
+						for (int i = 0; i < Math.min(itemsList.size(), 9); i++) {
+							NbtCompound tag = itemsList.getCompound(i).orElse(new NbtCompound());
+							if (!tag.isEmpty()) {
+								savedInv.set(i, ItemStack.CODEC.parse(NbtOps.INSTANCE, tag).result().orElse(ItemStack.EMPTY));
+							}
+						}
+						BODY_PART_DISPLAY_INVENTORIES.put(display.getUuid(), savedInv);
+						root.remove("body_part_inv_items");
+						placeStack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+					}
+				}
+				display.setItemStack(placeStack);
+				display.setPosition(placePos.getX() + 0.5, placePos.getY() + 0.3, placePos.getZ() + 0.5);
+				world.spawnEntity(display);
+				InteractionEntity interaction = new InteractionEntity(EntityType.INTERACTION, world);
+				interaction.setPosition(display.getPos());
+				interaction.setInteractionWidth(0.75f);
+				interaction.setInteractionHeight(0.75f);
+				world.spawnEntity(interaction);
+				INTERACTION_TO_DISPLAY.put(interaction.getUuid(), display.getUuid());
+				DISPLAY_TO_INTERACTION.put(display.getUuid(), interaction.getUuid());
+				if (!player.isCreative()) {
+					stack.decrement(1);
+					if (stack.isEmpty()) {
+						player.getInventory().removeOne(stack);
+					}
 				}
 			}
 			return ActionResult.SUCCESS;
@@ -300,12 +313,42 @@ public class BodyPartManager {
 			}
 			if (!BODY_PART_DISPLAY_ITEMS.contains(stack.getItem())) return ActionResult.PASS;
 			BlockPos placePos = hitResult.getBlockPos().offset(hitResult.getSide());
-			Vec3d pos = new Vec3d(placePos.getX() + 0.5, placePos.getY(), placePos.getZ() + 0.5);
-			UUID displayUuid = spawnPartDisplay((ServerWorld) world, pos, stack, (ServerPlayerEntity) player);
-			if (displayUuid != null && !player.isCreative()) {
-				stack.decrement(1);
-				if (stack.isEmpty()) {
-					player.getInventory().removeOne(stack);
+			ItemDisplayEntity display = EntityType.ITEM_DISPLAY.create(world, SpawnReason.TRIGGERED);
+			if (display != null) {
+				ItemStack placeStack = stack.copy();
+				placeStack.setCount(1);
+				NbtComponent customData = placeStack.get(DataComponentTypes.CUSTOM_DATA);
+				if (customData != null) {
+					NbtCompound root = customData.copyNbt();
+					NbtElement invElem = root.get("body_part_inv_items");
+					if (invElem instanceof NbtList itemsList) {
+						DefaultedList<ItemStack> savedInv = DefaultedList.ofSize(9, ItemStack.EMPTY);
+						for (int i = 0; i < Math.min(itemsList.size(), 9); i++) {
+							NbtCompound tag = itemsList.getCompound(i).orElse(new NbtCompound());
+							if (!tag.isEmpty()) {
+								savedInv.set(i, ItemStack.CODEC.parse(NbtOps.INSTANCE, tag).result().orElse(ItemStack.EMPTY));
+							}
+						}
+						BODY_PART_DISPLAY_INVENTORIES.put(display.getUuid(), savedInv);
+						root.remove("body_part_inv_items");
+						placeStack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+					}
+				}
+				display.setItemStack(placeStack);
+				display.setPosition(placePos.getX() + 0.5, placePos.getY(), placePos.getZ() + 0.5);
+				world.spawnEntity(display);
+				InteractionEntity interaction = new InteractionEntity(EntityType.INTERACTION, world);
+				interaction.setPosition(display.getPos());
+				interaction.setInteractionWidth(0.75f);
+				interaction.setInteractionHeight(0.75f);
+				world.spawnEntity(interaction);
+				INTERACTION_TO_DISPLAY.put(interaction.getUuid(), display.getUuid());
+				DISPLAY_TO_INTERACTION.put(display.getUuid(), interaction.getUuid());
+				if (!player.isCreative()) {
+					stack.decrement(1);
+					if (stack.isEmpty()) {
+						player.getInventory().removeOne(stack);
+					}
 				}
 			}
 			return ActionResult.SUCCESS;
@@ -315,11 +358,6 @@ public class BodyPartManager {
 
 	// ========== 核心方法 ==========
 
-	/**
-	 * 根据物品类型返回肢体的部位标识字符串。
-	 * @param stack 物品堆
-	 * @return 部位标识（head/torso/left_arm/right_arm/left_leg/right_leg），非肢体物品返回 null
-	 */
 	public static String getPartType(ItemStack stack) {
 		Item item = stack.getItem();
 		if (item == Assembly_ModItems.HEAD_ITEM) return "head";
@@ -331,24 +369,11 @@ public class BodyPartManager {
 		return null;
 	}
 
-	/**
-	 * 判断物品是否是一个组合身体物品（通过 ITEM_MODEL 是否为 monvhua:combined_body 判断）。
-	 * @param stack 物品堆
-	 * @return 是否为组合身体物品
-	 */
 	public static boolean isCombinedBodyItem(ItemStack stack) {
 		Identifier model = stack.get(DataComponentTypes.ITEM_MODEL);
 		return model != null && model.equals(Identifier.of("monvhua", "combined_body"));
 	}
 
-	/**
-	 * 将手持的组合身体物品放置为世界中的展示实体。
-	 * 提取物品上的皮肤数据（Profile 或内置皮肤名称）和物品栏数据，创建组合身体展示实体。
-	 * @param world 世界
-	 * @param pos 放置位置
-	 * @param stack 手持的组合身体物品
-	 * @param player 放置的玩家（用于判断创造模式扣减物品）
-	 */
 	public static void placeCombinedBody(World world, BlockPos pos, ItemStack stack, ServerPlayerEntity player) {
 		ProfileComponent profile = stack.get(DataComponentTypes.PROFILE);
 		String localSkin = null;
@@ -383,12 +408,6 @@ public class BodyPartManager {
 		}
 	}
 
-	/**
-	 * 将玩家周围 5 格范围内的六个分离肢体展示实体合并为一个组合身体展示实体。
-	 * 合并后保留躯干位置和物品栏数据。若未集齐全部肢体则提示缺少的部位。
-	 * @param player 执行合并的玩家
-	 * @return 1 表示成功，0 表示失败（肢体不齐）
-	 */
 	public static int mergeBodyParts(ServerPlayerEntity player) {
 		ServerWorld world = (ServerWorld) player.getWorld();
 		Vec3d center = player.getPos();
@@ -445,12 +464,6 @@ public class BodyPartManager {
 		return 1;
 	}
 
-	/**
-	 * 将玩家周围 3 格范围内的所有组合身体展示实体拆分为六个独立的肢体展示实体。
-	 * 拆分后保留皮肤数据和物品栏数据（物品栏附加到躯干部位）。
-	 * @param player 执行拆分的玩家
-	 * @return 拆分处理的组合身体数量
-	 */
 	public static int splitCombinedBody(ServerPlayerEntity player) {
 		ServerWorld world = (ServerWorld) player.getWorld();
 		Box box = new Box(player.getBlockPos()).expand(3);
@@ -545,66 +558,6 @@ public class BodyPartManager {
 		return count;
 	}
 
-	/**
-	 * 在指定位置创建肢体展示实体（ItemDisplayEntity + InteractionEntity），
-	 * 读取物品 NBT 中的背包数据，注册映射关系。
-	 *
-	 * @param world        服务端世界
-	 * @param pos          放置位置
-	 * @param partStack    肢体物品堆
-	 * @param player       放置玩家
-	 * @return 创建的 ItemDisplayEntity 的 UUID，失败返回 null
-	 */
-	private static UUID spawnPartDisplay(ServerWorld world, Vec3d pos, ItemStack partStack, ServerPlayerEntity player) {
-		ItemDisplayEntity display = EntityType.ITEM_DISPLAY.create(world, SpawnReason.TRIGGERED);
-		if (display == null) return null;
-
-		ItemStack placeStack = partStack.copy();
-		placeStack.setCount(1);
-
-		NbtComponent customData = placeStack.get(DataComponentTypes.CUSTOM_DATA);
-		if (customData != null) {
-			NbtCompound root = customData.copyNbt();
-			NbtElement invElem = root.get("body_part_inv_items");
-			if (invElem instanceof NbtList itemsList) {
-				DefaultedList<ItemStack> savedInv = DefaultedList.ofSize(9, ItemStack.EMPTY);
-				for (int i = 0; i < Math.min(itemsList.size(), 9); i++) {
-					NbtCompound tag = itemsList.getCompound(i).orElse(new NbtCompound());
-					if (!tag.isEmpty()) {
-						savedInv.set(i, ItemStack.CODEC.parse(NbtOps.INSTANCE, tag).result().orElse(ItemStack.EMPTY));
-					}
-				}
-				BODY_PART_DISPLAY_INVENTORIES.put(display.getUuid(), savedInv);
-				root.remove("body_part_inv_items");
-				placeStack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
-			}
-		}
-
-		display.setItemStack(placeStack);
-		display.setPosition(pos);
-		world.spawnEntity(display);
-
-		InteractionEntity interaction = new InteractionEntity(EntityType.INTERACTION, world);
-		interaction.setPosition(pos);
-		interaction.setInteractionWidth(0.75f);
-		interaction.setInteractionHeight(0.75f);
-		world.spawnEntity(interaction);
-
-		INTERACTION_TO_DISPLAY.put(interaction.getUuid(), display.getUuid());
-		DISPLAY_TO_INTERACTION.put(display.getUuid(), interaction.getUuid());
-
-		return display.getUuid();
-	}
-
-	/**
-	 * 在指定位置创建一个组合身体展示实体（ItemDisplayEntity + InteractionEntity 交互对）。
-	 * 组合身体使用 NETHERITE_SCRAP 作为基物品，附加自定义物品模型 monvhua:combined_body。
-	 * @param world 服务端世界
-	 * @param pos 放置位置
-	 * @param skinName 内置皮肤名称（当 profile 为 null 时使用）
-	 * @param torsoInv 躯干物品栏数据（可选，为 null 则不附加物品栏）
-	 * @param profile 玩家 Profile（用于从 Mojang 获取皮肤纹理），为 null 时使用内置皮肤
-	 */
 	public static void createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile) {
 		ItemStack combinedStack = new ItemStack(Items.NETHERITE_SCRAP);
 		combinedStack.set(DataComponentTypes.ITEM_MODEL, Identifier.of("monvhua", "combined_body"));

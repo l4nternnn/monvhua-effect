@@ -74,75 +74,35 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * 模组主入口，负责所有服务端初始化逻辑。
- * <p>
- * 核心职责包括：注册显示用状态效果（14角色×8阶段=112个）、注册网络包和命令、
- * 每20tick扫描玩家计分板更新魔女化阶段、管理腐化阶段的延期消息调度、
- * 控制飘浮飞行能力、协调千里眼/摄像机追踪等功能模块的初始化。
- * </p>
- */
 public class MonvhuaMod implements ModInitializer {
-    /** 模组ID，同时也是记分板目标名称 */
     public static final String MOD_ID = "monvhua";
-    /** 魔女化积分记分板名称 */
     public static final String OBJECTIVE_NAME = "monvhua";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     // ===== 魔女化效果系统 =====
-    /** 所有注册的状态效果：外层按角色索引，内层按阶段索引 */
     public static final EnumMap<WitchRole, EnumMap<WitchStage, RegistryEntry<StatusEffect>>> EFFECTS =
             new EnumMap<>(WitchRole.class);
-    /** 记录每个玩家当前生效的效果Holder，用于比较是否需要切换（避免闪烁） */
     private static final Map<UUID, RegistryEntry<StatusEffect>> lastEffect = new HashMap<>();
 
     // 腐化阶段随机调度
     private static final Random RANDOM = new Random();
-    /** 待发送的腐化阶段后续描述文本队列（每个玩家最多2条） */
     private static final Map<UUID, List<String>> pendingTainted = new HashMap<>();
-    /** 距下一条腐化消息的剩余tick数 */
     private static final Map<UUID, Integer> pendingTaintedDelay = new HashMap<>();
 
     // 飘浮飞行能力追踪
-    /** 当前已启用飘浮飞行的玩家UUID集合 */
     private static final Set<UUID> floatingPlayers = new HashSet<>();
 
     // ===== 千里眼共享状态 =====
-    /** 打开他人背包的屏幕处理器类型，使用空FeatureSet表示无功能开关限制 */
     public static ScreenHandlerType<OtherPlayerInventoryScreenHandler> OTHER_INVENTORY_HANDLER =
             new ScreenHandlerType<>(OtherPlayerInventoryScreenHandler::new, FeatureSet.empty());
-    /** 千里眼观看关系映射：观看者 → 被观看者 */
     public static final Map<ServerPlayerEntity, ServerPlayerEntity> VIEWING_MAP = new ConcurrentHashMap<>();
-    /** 玩家的视图模式偏好 */
     public static final Map<UUID, String> VIEW_MODE_PREFERENCE = new ConcurrentHashMap<>();
 
-    /** 每秒tick计数器，每20tick（=1秒）重置一次 */
     private int tickCounter = 0;
 
-    /**
-     * 模组初始化入口。
-     * <p>
-     * 按执行顺序完成以下初始化步骤：
-     * <ol>
-     *   <li>注册112个DisplayOnlyEffect（14角色×8阶段）</li>
-     *   <li>注册所有S2C/C2S网络包接收器</li>
-     *   <li>注册命令（肢体、镜子、千里眼等）</li>
-     *   <li>初始化配置系统并注册配置同步包处理器</li>
-     *   <li>加载镜像数据持久化</li>
-     *   <li>注册摄像机追踪和镜面视口的每tick回调</li>
-     *   <li>初始化各功能模块</li>
-     *   <li>注册功能事件（搬运实体、视角模式拦截、肢体管理等）</li>
-     *   <li>注册打开他人背包逻辑</li>
-     *   <li>注册锚点破坏逻辑</li>
-     *   <li>核心：每20tick扫描玩家计分板，更新魔女化阶段与效果</li>
-     *   <li>断线/死亡清理缓存</li>
-     *   <li>飘浮玩家免疫摔落伤害</li>
-     * </ol>
-     * </p>
-     */
     @Override
     public void onInitialize() {
-        // ===== 1. 注册 112 个 DisplayOnlyEffect 实例（14角色 × 8阶段 = 112个） =====
+        // ===== 1. 注册 112 个 DisplayOnlyEffect 实例 =====
         int count = 0;
         for (WitchRole role : WitchRole.values()) {
             EnumMap<WitchStage, RegistryEntry<StatusEffect>> roleMap = new EnumMap<>(WitchStage.class);
@@ -227,10 +187,6 @@ public class MonvhuaMod implements ModInitializer {
 
         ServerPlayNetworking.registerGlobalReceiver(MirrorConfigUpdateC2SPacket.ID, (packet, context) -> {
             context.server().execute(() -> {
-                if (context.player() != null && !context.player().hasPermissionLevel(2)) {
-                    context.player().sendMessage(Text.literal("§c你没有权限修改镜子配置"), true);
-                    return;
-                }
                 MirrorConfig newConfig = MirrorConfig.fromJson(packet.json());
                 if (newConfig != null) {
                     MirrorConfig.setInstance(newConfig);
@@ -255,7 +211,6 @@ public class MonvhuaMod implements ModInitializer {
 
         ServerPlayNetworking.registerGlobalReceiver(SecrecyConfigUpdateC2SPacket.ID, (packet, context) -> {
             context.server().execute(() -> {
-                // 仅权限等级>=2（管理员）或创造模式的玩家可修改窃密配置
                 if (!context.player().hasPermissionLevel(2) && !context.player().isCreative()) {
                     context.player().sendMessage(Text.literal("§c你没有权限修改窃密配置"), true);
                     return;
@@ -320,7 +275,6 @@ public class MonvhuaMod implements ModInitializer {
             }
         });
 
-        // 玩家加入时同步千里眼配置、玩家阶段、镜子状态和窃密配置
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
             sendGlobalConfigToPlayer(player, configManager);
@@ -331,15 +285,14 @@ public class MonvhuaMod implements ModInitializer {
         });
 
         // ===== 5. 持久化加载 =====
-        // 从磁盘加载镜面视口绑定的持久化数据
         MirrorDataStore.load();
 
-        // ===== 6. 摄像机追踪 & 镜面视口每tick更新 =====
+        // ===== 6. 摄像机追踪 & 镜面视口 tick =====
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            CameraWatchManager.tick(server); // 更新所有千里眼摄像机追踪状态
+            CameraWatchManager.tick(server);
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-                MirrorCommand.tickViewports(player); // 更新镜面视口渲染
-                MirrorCommand.tickCharging(player);   // 更新镜子充能进度
+                MirrorCommand.tickViewports(player);
+                MirrorCommand.tickCharging(player);
             }
         });
 
@@ -373,10 +326,9 @@ public class MonvhuaMod implements ModInitializer {
         ViewingModeBlocker.register();
         BodyPartManager.registerEvents();
 
-        // ===== 9. 打开他人背包（千里眼功能） =====
+        // ===== 9. 打开他人背包 =====
         ServerPlayNetworking.registerGlobalReceiver(OpenOtherInventoryPayload.ID, (payload, context) -> {
             ServerPlayerEntity requester = context.player();
-            // 非创造模式玩家需持有 "kaibao" tag 才有权限（制造模式时使用）
             if (!requester.isCreative()) {
                 if (!requester.getCommandTags().contains("kaibao")) {
                     requester.sendMessage(Text.literal("§c你没有§k12§r打开§k1234§r"), false);
@@ -389,7 +341,6 @@ public class MonvhuaMod implements ModInitializer {
                 requester.sendMessage(Text.literal("§c目标玩家不存在"), false);
                 return;
             }
-            // 距离检查：必须在3格以内才能打开他人背包
             if (requester.distanceTo(targetPlayer) > 3.0) {
                 requester.sendMessage(Text.literal("§c太远了，也许我该离近点？"), false);
                 return;
@@ -404,7 +355,7 @@ public class MonvhuaMod implements ModInitializer {
 
         Registry.register(Registries.SCREEN_HANDLER, Identifier.of(MOD_ID, "other_inventory"), OTHER_INVENTORY_HANDLER);
 
-        // ===== 10. 锚点破坏（摧毁千里眼标记锚点装甲架） =====
+        // ===== 10. 锚点破坏 =====
         ServerPlayNetworking.registerGlobalReceiver(AnchorDestroyC2SPacket.ID, (packet, context) -> {
             ServerPlayerEntity player = context.player();
             UUID standId = packet.standId();
@@ -425,10 +376,10 @@ public class MonvhuaMod implements ModInitializer {
             }
         });
 
-        // ===== 11. 魔女化效果 tick 循环（每20tick = 1秒执行一次） =====
+        // ===== 11. 魔女化效果 tick 循环 =====
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             tickCounter++;
-            if (tickCounter < 20) return; // 未满20tick（1秒）则跳过
+            if (tickCounter < 20) return;
             tickCounter = 0;
 
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
@@ -438,11 +389,10 @@ public class MonvhuaMod implements ModInitializer {
                 // 先处理待发送的腐化消息
                 processPendingTainted(player, uuid);
 
-                // 飘浮飞行能力：需同时拥有 Floating 和 MonvhuaFull 两个tag
+                // 飘浮飞行能力
                 boolean canFloat = player.getCommandTags().contains("Floating")
                         && player.getCommandTags().contains("MonvhuaFull");
                 if (canFloat && !floatingPlayers.contains(uuid)) {
-                    // 首次获得飞行能力：启用allowFlying并发送更新
                     player.getAbilities().allowFlying = true;
                     player.sendAbilitiesUpdate();
                     floatingPlayers.add(uuid);
@@ -471,21 +421,11 @@ public class MonvhuaMod implements ModInitializer {
                 var info = scoreboard.getScore(player, objective);
                 int value = info == null ? 0 : info.getScore();
                 WitchStage stage = WitchStage.fromScore(value);
-                // PROTO_WITCH 阶段：若玩家持有 MonvhuaFull tag，则升级为 WITCH
                 if (stage == WitchStage.PROTO_WITCH
                         && player.getCommandTags().contains("MonvhuaFull")) {
                     stage = WitchStage.WITCH;
                 }
-                var roleEffects = EFFECTS.get(role);
-                if (roleEffects == null) {
-                    LOGGER.warn("No effects registered for role: {}", role);
-                    continue;
-                }
-                RegistryEntry<StatusEffect> desired = roleEffects.get(stage);
-                if (desired == null) {
-                    LOGGER.warn("No effect registered for role: {} stage: {}", role, stage);
-                    continue;
-                }
+                RegistryEntry<StatusEffect> desired = EFFECTS.get(role).get(stage);
 
                 RegistryEntry<StatusEffect> previous = lastEffect.get(uuid);
                 if (previous == desired) continue;
@@ -494,7 +434,6 @@ public class MonvhuaMod implements ModInitializer {
                 cancelPendingTainted(uuid);
                 lastEffect.put(uuid, desired);
                 if (previous != null) player.removeStatusEffect(previous);
-                // 添加无限持续时间的状态效果（-1=无限，0=无增幅，不显示粒子，不显示图标，显示在HUD）
                 player.addStatusEffect(new StatusEffectInstance(
                         desired,
                         -1, // 无限持续时间
@@ -513,24 +452,20 @@ public class MonvhuaMod implements ModInitializer {
                         Text.literal("◆ " + fullName).formatted(stage.chatColor, Formatting.BOLD)
                 );
 
-                // 阶段描述文本
+                // 阶段描述
                 if (stage == WitchStage.TAINTED) {
-                    // 腐化阶段：随机打乱所有变体描述，取第一条立即发送
                     List<String> variants = new ArrayList<>(role.taintedVariants);
                     Collections.shuffle(variants, RANDOM);
                     String description = variants.get(0);
                     player.sendMessage(
                             Text.literal(description).formatted(Formatting.GRAY)
                     );
-                    // 剩余变体（至少3条才延期发送）：加入待发送队列，延迟90~150秒（随机）
                     if (variants.size() >= 3) {
                         pendingTainted.put(uuid, new ArrayList<>(variants.subList(1, 3)));
-                        pendingTaintedDelay.put(uuid, 90 + RANDOM.nextInt(61)); // 90~150秒
+                        pendingTaintedDelay.put(uuid, 90 + RANDOM.nextInt(61));
                     }
                 } else {
-                    // 非腐化阶段：直接发送单条对白
                     String description = role.getDialogue(stage);
-                    // 阈值>=60（第一阶段及以上）用暗红色强调，否则灰色
                     Formatting descColor = stage.threshold >= 60 ? Formatting.DARK_RED : Formatting.GRAY;
                     player.sendMessage(
                             Text.literal(description).formatted(descColor)
@@ -543,24 +478,32 @@ public class MonvhuaMod implements ModInitializer {
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
             UUID uuid = player.getUuid();
-            cleanupPlayerState(player);
+            lastEffect.remove(uuid);
+            cancelPendingTainted(uuid);
+            floatingPlayers.remove(uuid);
             CameraWatchManager.stopWatching(player, server);
             Evil_Eyes.forceStopWatching(player, server);
             Evil_Eyes.clearPlayerMarks(uuid);
             VIEWING_MAP.remove(player);
             VIEWING_MAP.values().removeIf(v -> v == player);
             VIEW_MODE_PREFERENCE.remove(uuid);
+            MirrorCommand.cleanup(uuid);
+            SecrecyItem.exitSecrecy(player);
         });
 
         // ===== 13. 死亡清理 =====
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
             if (entity instanceof ServerPlayerEntity player) {
-                cleanupPlayerState(player);
+                UUID uuid = player.getUuid();
+                lastEffect.remove(uuid);
+                cancelPendingTainted(uuid);
+                floatingPlayers.remove(uuid);
+                MirrorCommand.cleanup(uuid);
+            SecrecyItem.exitSecrecy(player);
             }
         });
 
         // ===== 14. 飘浮玩家免疫摔落伤害 =====
-        // 拥有飞行能力的飘浮玩家不会受到摔落伤害，同时重置摔落距离防止累积
         ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> {
             if (entity instanceof ServerPlayerEntity player
                     && floatingPlayers.contains(player.getUuid())
@@ -572,10 +515,6 @@ public class MonvhuaMod implements ModInitializer {
         });
     }
 
-    /**
-     * 逐tick递减腐化消息的等待计时器，到期时发送队列中的下一条消息。
-     * <p>每条消息之间间隔90~150秒（随机）。队列耗尽后自动清除状态。</p>
-     */
     private static void processPendingTainted(ServerPlayerEntity player, UUID uuid) {
         Integer delay = pendingTaintedDelay.get(uuid);
         if (delay == null) return;
@@ -600,33 +539,13 @@ public class MonvhuaMod implements ModInitializer {
         }
     }
 
-    /**
-     * 清除指定玩家的所有腐化消息调度状态（阶段/角色变化、断线、死亡时调用）。
-     */
     private static void cancelPendingTainted(UUID uuid) {
         pendingTainted.remove(uuid);
         pendingTaintedDelay.remove(uuid);
     }
 
-    /**
-     * 将千里眼的7个阶段配置打包成JSON并通过网络包发送给指定玩家。
-     */
-    /**
-     * 统一的玩家清理逻辑：移除效果缓存、取消腐化消息队列、清空飘浮状态、
-     * 清理镜像数据和隐秘状态。
-     */
-    private static void cleanupPlayerState(ServerPlayerEntity player) {
-        UUID uuid = player.getUuid();
-        lastEffect.remove(uuid);
-        cancelPendingTainted(uuid);
-        floatingPlayers.remove(uuid);
-        MirrorCommand.cleanup(uuid);
-        SecrecyItem.exitSecrecy(player);
-    }
-
     private static void sendGlobalConfigToPlayer(ServerPlayerEntity player, GlobalConfigManager configManager) {
         JsonObject root = new JsonObject();
-        // 遍历7个千里眼阶段（1~7），每个阶段包含独立的限制配置
         for (int i = 1; i <= 7; i++) {
             var cfg = configManager.getStageConfig(i);
             JsonObject stageObj = new JsonObject();
