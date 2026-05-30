@@ -14,6 +14,18 @@ import org.joml.Vector3f;
 
 import java.util.Set;
 
+/**
+ * 全身组合特殊模型渲染器，使用PlayerEntityModel一次性渲染完整的玩家身体模型。
+ * 支持标准（default）和纤细（slim）两种身材，通过Data中的armModel字段切换。
+ *
+ * <h3>渲染流程</h3>
+ * <ol>
+ *   <li>保存6个outer层（hat/jacket/leftSleeve/rightSleeve/leftPants/rightPants）的可见性</li>
+ *   <li>全部隐藏后先渲染身体本体</li>
+ *   <li>恢复外层可见性</li>
+ *   <li>逐个渲染voxel外层（先尝试体素渲染，失败回退标准渲染）</li>
+ * </ol>
+ */
 public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRenderer {
     private final PlayerEntityModel model;
     private final PlayerEntityModel slimModel;
@@ -24,6 +36,11 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         this.slimModel = new PlayerEntityModel(entityModels.getModelPart(ModModelLayers.COMBINED_BODY_SLIM), true);
     }
 
+    /**
+     * 渲染全身组合模型：
+     * 先保存并隐藏所有6个outer层（hat/jacket/双sleeve/双pants）以绘制身体本体，
+     * 然后恢复可见性并逐个渲染各部位的外层（先尝试体素渲染，失败回退标准渲染）。
+     */
     @Override
     protected void renderModel(MatrixStack matrices, VertexConsumerProvider vertexConsumers,
                                RenderLayer renderLayer, int light, int overlay, Data data) {
@@ -31,6 +48,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         boolean slim = "slim".equals(data.armModel());
         PlayerEntityModel activeModel = slim ? slimModel : model;
 
+        // 保存6个outer层的当前可见性，用于后续恢复
         boolean hatVisible = activeModel.hat.visible;
         boolean jacketVisible = activeModel.jacket.visible;
         boolean leftSleeveVisible = activeModel.leftSleeve.visible;
@@ -38,6 +56,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         boolean leftPantsVisible = activeModel.leftPants.visible;
         boolean rightPantsVisible = activeModel.rightPants.visible;
 
+        // 隐藏所有外层，绘制不含外层的身体本体
         activeModel.hat.visible = false;
         activeModel.jacket.visible = false;
         activeModel.leftSleeve.visible = false;
@@ -46,6 +65,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         activeModel.rightPants.visible = false;
         activeModel.render(matrices, vertexConsumer, light, overlay);
 
+        // 恢复所有外层可见性
         activeModel.hat.visible = hatVisible;
         activeModel.jacket.visible = jacketVisible;
         activeModel.leftSleeve.visible = leftSleeveVisible;
@@ -70,6 +90,10 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         matrices.pop();
     }
 
+    /**
+     * 渲染单个部位的外层：应用父部件变换→应用外层变换→尝试体素渲染，
+     * 若体素渲染失败（返回false），则回退到标准的outer层渲染。
+     */
     private void renderVoxelLayer(MatrixStack matrices, VertexConsumerProvider vertexConsumers, RenderLayer renderLayer,
                                   int light, int overlay, ModelPart parent, ModelPart outer,
                                   VoxelRenderCall voxelRenderCall) {
@@ -84,11 +108,13 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         boolean renderedVoxelLayer = voxelRenderCall.render(matrices, vertexConsumers.getBuffer(renderLayer));
         matrices.pop();
         if (!renderedVoxelLayer) {
+            // 体素渲染失败时回退到标准外层渲染
             outer.render(matrices, vertexConsumers.getBuffer(renderLayer), light, overlay);
         }
         matrices.pop();
     }
 
+    /** 体素渲染回调接口：执行体素渲染并返回是否成功 */
     private interface VoxelRenderCall {
         boolean render(MatrixStack matrices, VertexConsumer vertexConsumer);
     }

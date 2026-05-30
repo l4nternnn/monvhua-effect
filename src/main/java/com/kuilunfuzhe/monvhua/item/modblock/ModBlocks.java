@@ -18,6 +18,10 @@ import net.minecraft.util.Identifier;
 
 import java.util.function.Function;
 
+/**
+ * 身体部件方块注册类
+ * 注册魔法少女的 6 个身体部件方块（躯干、左右臂、左右腿、头部），使用统一的 register 辅助方法简化重复代码
+ */
 public class ModBlocks {
     // 定义 5 个方块实例
     public static final Block TORSO = register("torso",

@@ -7,6 +7,10 @@ import net.fabricmc.loader.api.FabricLoader;
 import java.io.*;
 import java.nio.file.Path;
 
+/**
+ * 镜像显示配置文件
+ * 控制镜中镜屏幕的显示尺寸和扇形渲染参数（角度、旋转），支持 JSON 持久化和参数钳位校验
+ */
 public class MirrorDisplayConfig {
     private static final Path CONFIG_PATH = FabricLoader.getInstance().getConfigDir().resolve("mirror_display.json");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();

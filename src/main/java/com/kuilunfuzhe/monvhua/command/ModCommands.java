@@ -10,12 +10,25 @@ import net.minecraft.text.Text;
 
 import static net.minecraft.server.command.CommandManager.literal;
 
+/**
+ * 模组命令注册入口，负责将所有命令注册到 Brigadier 命令分发器。
+ * 当前仅包含测试用的 placemannequin 命令。
+ */
 public class ModCommands {
+    /**
+     * 向命令分发器注册所有模组命令。
+     * @param dispatcher Minecraft 服务端命令分发器
+     */
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
         dispatcher.register(literal("placemannequin")
                 .executes(ModCommands::placeMannequin));
     }
 
+    /**
+     * 在玩家当前位置生成一个测试模型实体，用于验证模型渲染效果。
+     * @param ctx 命令上下文
+     * @return 1 表示成功，0 表示玩家不存在
+     */
     private static int placeMannequin(CommandContext<ServerCommandSource> ctx) {
         ServerPlayerEntity player = ctx.getSource().getPlayer();
         if (player == null) return 0;

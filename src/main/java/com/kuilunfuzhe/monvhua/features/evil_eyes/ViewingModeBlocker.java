@@ -15,10 +15,26 @@ import net.minecraft.world.World;
 
 import java.util.UUID;
 
+/**
+ * 观看模式操作拦截器 —— 阻断观看模式下的玩家攻击/破坏/交互/使用操作。
+ * <p>
+ * 同时提供"邪恶印记"(signed_evil)功能：玩家可以在潜行副手持千里眼时右键实体/方块，
+ * 给主手物品打上签名的NBT标签。携带签名物品的玩家将被自动标记。
+ */
 public class ViewingModeBlocker {
 
-	// Track already-notified signed_evil marker:marked pairs (never expires in session)
+	/** 已通知的 signed_evil 标记者-被标记者对集合（会话级别，永不过期），用于避免重复提示 */
 	private static final java.util.Set<String> SIGNED_EVIL_NOTIFIED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+	/**
+	 * 注册所有事件拦截器。
+	 * <ol>
+	 *   <li>阻止实体攻击 —— 潜行+副手千里眼→签名物品；观看模式→拒绝攻击</li>
+	 *   <li>阻止破坏方块 —— 同上逻辑</li>
+	 *   <li>物品栏扫描：检测携带signed_evil物品的玩家并自动标记</li>
+	 *   <li>阻止使用方块/实体交互/使用物品 —— 观看模式下全部拒绝</li>
+	 * </ol>
+	 */
 	public static void register() {
 
 
@@ -140,6 +156,12 @@ public class ViewingModeBlocker {
 		});
 	}
 
+	/**
+	 * 判断玩家是否处于观看模式（综合检查 Evil_Eyes 和 CameraWatchManager 两处状态）。
+	 *
+	 * @param player 目标玩家
+	 * @return 是否正在观看某个实体
+	 */
 	public static boolean isViewing(ServerPlayerEntity player) {
 		if (Evil_Eyes.isWatching(player)) return true;
 		if (CameraWatchManager.isWatching(player)) return true;

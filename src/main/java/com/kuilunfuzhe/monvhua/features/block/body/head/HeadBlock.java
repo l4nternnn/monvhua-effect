@@ -27,8 +27,16 @@ import net.minecraft.world.BlockView;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
+/**
+ * 头部方块，继承自 {@link BlockWithEntity}，关联 {@link HeadBlockEntity} 进行自定义渲染。
+ * 方块本身不可见（{@link BlockRenderType#INVISIBLE}），通过 BlockEntity 渲染玩家头部模型。
+ * 放置时从物品 NBT 读取本地皮肤（local_skin）并传递给方块实体。
+ * 与其他身体部件不同，头部仅支持 local_skin 皮肤来源。
+ */
 public class HeadBlock extends BlockWithEntity {
+    /** 水平朝向属性，放置时面向玩家的相反方向 */
     public static final EnumProperty<Direction> FACING = Properties.HORIZONTAL_FACING;
+    /** 碰撞箱：宽0.5格（x/z方向居中），高0.5格（头部为立方体），底部对齐 */
     private static final VoxelShape SHAPE = VoxelShapes.cuboid(0.25, 0, 0.25, 0.75, 0.5, 0.75);
 
     public HeadBlock(Settings settings) {
@@ -41,6 +49,9 @@ public class HeadBlock extends BlockWithEntity {
         return createCodec(HeadBlock::new);
     }
 
+    /**
+     * 右键交互：在服务端打开方块实体的配置界面。
+     */
     @Override
     public ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, BlockHitResult hit) {
         if (!world.isClient) {
@@ -88,6 +99,10 @@ public class HeadBlock extends BlockWithEntity {
         return new HeadBlockEntity(pos, state);
     }
 
+    /**
+     * 方块放置回调：将放置者的皮肤信息和本地皮肤覆盖标记（local_skin）
+     * 从物品 NBT 写入方块实体，用于后续渲染。
+     */
     @Override
     public void onPlaced(World world, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack itemStack) {
         super.onPlaced(world, pos, state, placer, itemStack);

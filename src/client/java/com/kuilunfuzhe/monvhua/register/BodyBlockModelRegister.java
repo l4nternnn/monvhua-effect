@@ -29,7 +29,15 @@ import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
 import net.minecraft.client.render.item.model.special.SpecialModelTypes;
 import net.minecraft.util.Identifier;
 
+/**
+ * 身体部件方块模型注册中心。
+ * 注册所有肢体部件（躯干、左右臂/腿、头部）的 ModelLayer、BlockEntityRenderer 和物品栏 SpecialModelRenderer，
+ * 包括普通和 Slim 两种手臂模型变体。
+ */
 public class BodyBlockModelRegister {
+    /**
+     * 注册所有身体部件相关的模型层、方块实体渲染器和物品特殊模型渲染器。
+     */
     public static void register() {
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.COMBINED_BODY, CombinedBodyModelData::getDefaultTexturedModelData);
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.COMBINED_BODY_SLIM, CombinedBodyModelData::getSlimTexturedModelData);

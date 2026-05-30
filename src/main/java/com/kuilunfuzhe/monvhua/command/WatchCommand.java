@@ -22,7 +22,14 @@ import net.minecraft.util.math.Vec3d;
 import java.util.Collection;
 import java.util.List;
 
+/**
+ * /watch 命令，用于观看准星指向的实体或按名称查找实体进行观看。
+ * 支持射线检测自动查找实体、按名称匹配实体，以及设置相机偏移角度和距离。
+ */
 public class WatchCommand {
+    /**
+     * 注册 /watch 命令及其子命令（angle 等）。
+     */
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher,
                                 CommandRegistryAccess registryAccess,
                                 CommandManager.RegistrationEnvironment environment) {
@@ -61,7 +68,10 @@ public class WatchCommand {
 
     }
 
-    // 无参数：观看准星指向的实体
+    /**
+     * 无参数执行：观看准星指向的实体。
+     * 如果当前正在观看则停止，否则通过射线检测获取目标实体并开始观看。
+     */
     private static int executeWatchLooking(CommandContext<ServerCommandSource> ctx) {
         ServerPlayerEntity viewer = ctx.getSource().getPlayer();
         if (viewer == null) return 0;
@@ -96,7 +106,9 @@ public class WatchCommand {
         return 1;
     }
 
-    // 按名称观看（玩家名或实体自定义名）
+    /**
+     * 按名称观看目标（玩家名或实体自定义名，不区分大小写）。
+     */
     private static int executeWatchByName(CommandContext<ServerCommandSource> ctx) {
         ServerPlayerEntity viewer = ctx.getSource().getPlayer();
         if (viewer == null) return 0;
@@ -129,7 +141,11 @@ public class WatchCommand {
         return 1;
     }
 
-    // 服务端射线检测获取准星实体
+    /**
+     * 服务端射线检测获取玩家准星对准的实体。
+     * @param maxDistance 最大检测距离
+     * @return 命中的实体，未命中则返回 null
+     */
     private static Entity getTargetEntity(ServerPlayerEntity player, double maxDistance) {
         Vec3d start = player.getEyePos();
         Vec3d direction = player.getRotationVec(1.0f);
@@ -142,6 +158,12 @@ public class WatchCommand {
         return null;
     }
 
+    /**
+     * 射线碰撞检测：遍历所有实体，找到视线路径上最近的命中实体。
+     * 遍历附近实体的性能可接受，因为命令调用频率低。
+     * @param maxDistance 最大检测距离（平方距离用于粗略过滤）
+     * @return 最近的实体命中结果，未命中则返回 null
+     */
     private static EntityHitResult raycastEntity(ServerPlayerEntity player, Vec3d start, Vec3d end, double maxDistance) {
         // 简单遍历附近实体（性能可接受，因为调用频率低）
         double closest = maxDistance;
@@ -165,6 +187,11 @@ public class WatchCommand {
         return closestHit;
     }
 
+    /**
+     * 按名称查找实体：先匹配自定义名称，再匹配玩家名（均不区分大小写）。
+     * @param name 目标名称
+     * @return 匹配的实体，未找到则返回 null
+     */
     private static Entity findEntityByName(ServerPlayerEntity player, String name) {
         for (Entity e : player.getWorld().iterateEntities()) {
             if (e.hasCustomName() && e.getCustomName().getString().equalsIgnoreCase(name)) {

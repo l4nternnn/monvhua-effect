@@ -17,23 +17,43 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static com.mojang.text2speech.Narrator.LOGGER;
 
+/**
+ * 千里眼客户端核心逻辑。
+ * 负责创建观察视角的盔甲架实体、更新相机位置（含射线检测避障）、
+ * 让相机注视目标实体，并提供视角进入/退出管理。
+ */
 public class Evil_EyesClient {
+    /** 当前正在观察的目标实体UUID */
     private static UUID currentViewingEntity = null;
+    /** 作为虚拟相机的隐形盔甲架实体 */
     private static ArmorStandEntity cameraEntity = null;
+    /** UI打开时间戳（tick计数） */
     private static long uiOpenTime = 0;
+    /** UI最大存活tick数（1200 tick = 60秒） */
     private static final long UI_MAX_TICKS = 1200;
+    /** 是否正在观察模式 */
     private static boolean isViewing = false;
     private static boolean lastRightClickState = false;
     private static long lastRightClickTime = 0;
+    /** 右键防抖延迟（10 tick = 0.5秒） */
     private static final long RIGHT_CLICK_DELAY_TICKS = 10;
+    /** 相机距离目标的固定距离（3格） */
     private static final double CAM_DISTANCE = 3.0;
+    /** 相机相对目标的基础偏航角（45度） */
     private static final float CAM_YAW = 45.0f;
+    /** 相机相对目标的基础俯仰角（30度） */
     private static final float CAM_PITCH = 30.0f;
 
     // 公开的标记实体映射（供其他类使用）
     public static final Map<UUID, Long> localMarkedEntities = new ConcurrentHashMap<>();
 
-    // 供外部调用的方法（由网络接收器调用）
+    /**
+     * 选择要观察的目标实体，创建虚拟相机并进入观察模式。
+     * 生成隐形盔甲架作为相机实体，放置在目标周围经射线检测的安全位置，
+     * 然后将客户端相机绑定到该实体。
+     *
+     * @param entityUuid 要观察的目标实体UUID
+     */
     public static void onSelectView(UUID entityUuid) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null) return;
@@ -65,6 +85,10 @@ public class Evil_EyesClient {
         isViewing = true;
     }
 
+    /**
+     * 退出观察模式，销毁相机实体并将客户端相机归还给玩家。
+     * @param client Minecraft客户端实例
+     */
     public static void exitViewMode(MinecraftClient client) {
         if (cameraEntity != null) {
             cameraEntity.discard();
@@ -101,7 +125,7 @@ public class Evil_EyesClient {
         if (hit.getType() == HitResult.Type.BLOCK) {
             Vec3d hitPos = hit.getPos();
             Vec3d direction = idealDir;
-            Vec3d safePos = hitPos.subtract(direction.multiply(0.5));
+            Vec3d safePos = hitPos.subtract(direction.multiply(0.5)); // 从碰撞点回退0.5格，避免穿模
             cameraEntity.setPosition(safePos);
         } else {
             cameraEntity.setPosition(idealEnd);
@@ -113,15 +137,11 @@ public class Evil_EyesClient {
         double dy = target.getEyeY() - entity.getEyeY();
         double dz = target.getZ() - entity.getZ();
         double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
-        float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0f);
-        float pitch = (float) (-Math.toDegrees(Math.atan2(dy, horizontalDistance)));
+        float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0f); // 修正Minecraft坐标系：atan2得出的角度需要减去90度
+        float pitch = (float) (-Math.toDegrees(Math.atan2(dy, horizontalDistance))); // 取反：atan2正值表示下方，Minecraft俯仰角正值表示上方
         entity.setYaw(yaw);
         entity.setPitch(pitch);
         entity.setHeadYaw(yaw);
     }
 
-    // 初始化（保留空，所有接收器已在 ClairvoyanceClient 中注册）
-    public static void initialize() {
-        // 所有接收器已移至 ClairvoyanceClient，此处不再注册
-    }
 }

@@ -3,6 +3,11 @@ package com.kuilunfuzhe.monvhua;
 import net.minecraft.entity.effect.StatusEffectCategory;
 import net.minecraft.util.Formatting;
 
+/**
+ * 魔女化阶段枚举，共8个阶段，每个阶段有对应的分数阈值、显示名称、描述、颜色和效果分类。
+ * 阶段从低到高排列：神智清醒(SANE) → 魔女(WITCH)。
+ * 通过 {@link #fromScore(int)} 根据玩家分数确定当前阶段，规则为取最大阈值不超过分数的阶段。
+ */
 public enum WitchStage {
     SANE(0, "1", "神智清醒",
             "初来乍到，对未来还有着希望，对魔法的了解仅限于知道如何释放。理性没有受到影响，仅能在日常探索中使用魔法辅助。",
@@ -29,12 +34,19 @@ public enum WitchStage {
             "最后的理智也即将丢失。没有救赎，没有希望，强烈的杀人欲望充斥脑海。并非完全失去意识，而是在极强杀人欲望驱使之下保留最后一点意志——需要进行RP演绎，而非无脑清图行为。杀完一个人后也会暂时冷静。被看守抓捕，也许是你不再伤害他人最后的方式。作为怪物，你已经没有回头路了。",
             0xAA00AA, StatusEffectCategory.HARMFUL, Formatting.DARK_PURPLE);
 
+    /** 触发该阶段所需的分数阈值 */
     public final int threshold;
+    /** 阶段标识符（对应图标文件名中的数字部分） */
     public final String id;
+    /** 阶段中文显示名称 */
     public final String displayName;
+    /** 阶段中文描述文本 */
     public final String description;
+    /** 效果图标颜色（RGB十六进制） */
     public final int color;
+    /** 药水效果分类（增益/中性/负面） */
     public final StatusEffectCategory category;
+    /** 聊天消息文本颜色 */
     public final Formatting chatColor;
 
     WitchStage(int threshold, String id, String displayName, String description,
@@ -48,6 +60,14 @@ public enum WitchStage {
         this.chatColor = chatColor;
     }
 
+    /**
+     * 根据玩家分数确定魔女化阶段。
+     * 遍历所有阶段，取最大阈值不超过当前分数的阶段作为当前阶段。
+     * 若分数低于所有阶段阈值，则返回默认阶段 {@code SANE}。
+     *
+     * @param score 玩家的魔女化分数（{@code monvhua} 计分板数值）
+     * @return 当前所处的魔女化阶段
+     */
     public static WitchStage fromScore(int score) {
         WitchStage result = SANE;
         for (WitchStage stage : values()) {

@@ -11,21 +11,35 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.Path;
 
+/**
+ * 隐秘配置文件
+ * 管理隐秘功能的阶段参数（作用范围、触发概率、速度倍率、消失延迟），支持 JSON 持久化读写和参数归一化校验
+ */
 public class SecrecyConfig {
+    /** 隐秘的阶段总数 */
     private static final int STAGES = 7;
     private static final Path CONFIG_PATH = FabricLoader.getInstance().getConfigDir().resolve("secrecy.json");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static SecrecyConfig instance;
 
+    /** 各阶段的配置数组（索引 0 对应阶段 1） */
     public StageConfig[] stages = new StageConfig[STAGES];
 
+    /**
+     * 单阶段配置项
+     */
     public static class StageConfig {
+        /** 作用范围（格） */
         public int range = 10;
+        /** 触发概率（0.0-1.0） */
         public double probability = 0.5D;
+        /** 速度倍率 */
         public double speedMultiplier = 0.1D;
+        /** 消失延迟（秒），-1 表示永不消失 */
         public int vanishDelaySeconds = 5;
     }
 
+    /** 构造时预填充 stages 数组，避免后续 null 检查 */
     public SecrecyConfig() {
         stages = new StageConfig[STAGES];
         for (int i = 0; i < STAGES; i++) {
@@ -33,6 +47,9 @@ public class SecrecyConfig {
         }
     }
 
+    /**
+     * @return 单例配置实例（首次调用时从文件加载并归一化）
+     */
     public static SecrecyConfig getInstance() {
         if (instance == null) instance = load();
         return instance;
@@ -56,6 +73,11 @@ public class SecrecyConfig {
         return config;
     }
 
+    /**
+     * 归一化配置数据：补全缺失的阶段数组、钳位非法值到合法范围
+     * @param config 原始配置（可能为 null 或字段残缺）
+     * @return 归一化后的安全配置对象
+     */
     private static SecrecyConfig normalize(SecrecyConfig config) {
         if (config == null) return createDefault();
         if (config.stages == null || config.stages.length != STAGES) {
@@ -75,21 +97,28 @@ public class SecrecyConfig {
         return config;
     }
 
+    /**
+     * 创建带默认值的配置（首次运行或配置文件损坏时使用）
+     */
     private static SecrecyConfig createDefault() {
         SecrecyConfig config = new SecrecyConfig();
 
+        // 各阶段作用范围（格），从阶段1到阶段7递增
         int[] ranges = {
                 4, 8, 12, 18, 24, 32, 40
         };
 
+        // 各阶段触发概率，高级阶段逐渐逼近 100%
         double[] probabilities = {
                 0.25D, 0.33D, 0.50D, 0.66D, 0.75D, 0.80D, 1.00D
         };
 
+        // 各阶段速度倍率，当前所有阶段统一为 0.05
         double[] speedMultipliers = {
                 0.05D, 0.05D, 0.05D, 0.05D, 0.05D, 0.05D, 0.05D
         };
 
+        // 各阶段消失延迟（秒），高级阶段消失更快
         int[] vanishDelaySeconds = {
                 4, 4, 3, 3, 2, 2, 1
         };

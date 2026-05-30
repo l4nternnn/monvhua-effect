@@ -15,6 +15,10 @@ import net.minecraft.registry.RegistryKeys;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
+/**
+ * 模组物品栏分组注册类
+ * 创建"魔法重构"创造模式物品栏标签页，汇总所有模组物品（魔法棒、千里眼、镜子、隐秘物品、身体部件）
+ */
 public class ModItemGroups {
     public static final RegistryKey<ItemGroup> MAIN_GROUP_KEY = RegistryKey.of(RegistryKeys.ITEM_GROUP, Identifier.of("monvhua", "main_group"));
 

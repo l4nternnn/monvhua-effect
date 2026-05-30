@@ -8,6 +8,11 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import org.jetbrains.annotations.Nullable;
 
+/**
+ * 服务端射线检测工具类。
+ * 通过遍历所有实体、使用包围盒射线相交检测来模拟玩家视线指向的实体判定，
+ * 支持返回最近命中实体或带命中点的结果。
+ */
 public class RaycastHelper {
 
     /**
@@ -24,13 +29,14 @@ public class RaycastHelper {
         Vec3d end = start.add(direction.multiply(maxDistance));
 
         Entity closestEntity = null;
-        double closestDistance = maxDistance;
+        double closestDistance = maxDistance; // 初始化为最大距离，作为最近距离上界
 
-        // 使用 iterateEntities() 遍历所有实体
+        // 遍历所有实体，通过包围盒射线相交检测找最近命中
         for (Entity entity : world.iterateEntities()) {
             if (entity == player) continue;
             if (!entity.isAlive()) continue;
 
+            // 平方距离预筛：快速排除超出最大距离的实体，避免不必要的包围盒计算
             double distanceToPlayerSq = entity.squaredDistanceTo(start);
             if (distanceToPlayerSq > maxDistance * maxDistance) continue;
 
@@ -58,9 +64,10 @@ public class RaycastHelper {
         Vec3d end = start.add(direction.multiply(maxDistance));
 
         Entity closestEntity = null;
-        Vec3d closestHitPoint = null;
+        Vec3d closestHitPoint = null; // 保存最近命中点的精确坐标
         double closestDistance = maxDistance;
 
+        // 与getTargetEntity相同的遍历逻辑，额外记录命中点用于返回EntityHitResult
         for (Entity entity : world.iterateEntities()) {
             if (entity == player) continue;
             if (!entity.isAlive()) continue;

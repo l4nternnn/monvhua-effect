@@ -14,6 +14,10 @@ import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Vector3f;
 import java.util.Set;
 
+/**
+ * 头部特殊模型渲染器，用于在物品展示/掉落物上下文中渲染自定义头部模型。
+ * 渲染时先关闭hat层绘制头部本体，再尝试体素渲染hat层，失败时回退到标准hat渲染。
+ */
 public class HeadSpecialModelRenderer extends BodyPartSpecialModelRenderer {
     private final HeadModel model;
 
@@ -22,13 +26,19 @@ public class HeadSpecialModelRenderer extends BodyPartSpecialModelRenderer {
         this.model = new HeadModel(entityModels.getModelPart(ModModelLayers.HEAD));
     }
 
+    /**
+     * 渲染头部模型：先隐藏hat层绘制头部本体，再尝试通过体素渲染器绘制hat层，
+     * 若体素渲染失败则回退到标准的hat层渲染。
+     */
     @Override
     protected void renderModel(MatrixStack matrices, VertexConsumerProvider vertexConsumers,
                                RenderLayer renderLayer, int light, int overlay, Data data) {
         ModelPart head = model.getRootPart().getChild(EntityModelPartNames.HEAD);
         ModelPart hat = head.getChild(EntityModelPartNames.HAT);
+        // 先隐藏hat，绘制不含外层的头部本体
         hat.visible = false;
         model.render(matrices, vertexConsumers.getBuffer(renderLayer), light, overlay, 1.0F, 1.0F, 1.0F, 1.0F);
+        // 恢复hat可见性，后续用于体素渲染或标准外层渲染
         hat.visible = true;
 
         matrices.push();
@@ -45,10 +55,15 @@ public class HeadSpecialModelRenderer extends BodyPartSpecialModelRenderer {
         matrices.pop();
     }
 
+    /**
+     * 收集模型顶点，用于物品展示上下文中计算包围盒。
+     */
     @Override
     public void collectVertices(Set<Vector3f> vertices) {
         MatrixStack matrixStack = new MatrixStack();
+        // 将模型原点平移到方块中心，使渲染位置与物品展示一致
         matrixStack.translate(0.5F, 0.5F, 0.5F);
+        // 镜像翻转以匹配物品展示时的坐标系
         matrixStack.scale(-1.0F, -1.0F, 1.0F);
         this.model.getRootPart().collectVertices(matrixStack, vertices);
     }

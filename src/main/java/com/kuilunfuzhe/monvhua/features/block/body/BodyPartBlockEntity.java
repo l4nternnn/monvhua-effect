@@ -32,6 +32,12 @@ import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 import java.util.Base64;
 
+/**
+ * 肢体方块实体。
+ * 存储皮肤 Profile 数据（异步解析玩家皮肤纹理）、内置皮肤名称、
+ * 皮肤类型检测（Steve/Alex）、9 格物品栏，并提供 GUI 接口。
+ * 支持从 NBT 读写数据以在方块实体中持久化。
+ */
 public class BodyPartBlockEntity extends BlockEntity implements ImplementedInventory, NamedScreenHandlerFactory {
     // ========== 皮肤数据部分 ==========
     @Nullable private ProfileComponent owner;
@@ -49,6 +55,11 @@ public class BodyPartBlockEntity extends BlockEntity implements ImplementedInven
         return owner;
     }
 
+    /**
+     * 设置方块实体的皮肤拥有者，提取 UUID 和皮肤类型。
+     * 如果 Profile 不完整（isCompleted=false），则异步解析皮肤纹理，完成后同步到客户端。
+     * @param owner 玩家 Profile 组件
+     */
     public void setOwner(ProfileComponent owner) {
         this.owner = owner;
         // 提取UUID和皮肤类型
@@ -92,6 +103,10 @@ public class BodyPartBlockEntity extends BlockEntity implements ImplementedInven
         return skinType;
     }
 
+    /**
+     * 设置皮肤类型并同步到客户端。
+     * @param skinType "default" 表示 Steve，"slim" 表示 Alex
+     */
     public void setSkinType(String skinType) {
         this.skinType = skinType;
         this.markDirty();
@@ -105,6 +120,10 @@ public class BodyPartBlockEntity extends BlockEntity implements ImplementedInven
         return localSkin;
     }
 
+    /**
+     * 设置内置皮肤名称并同步到客户端。为 null 时表示使用玩家皮肤。
+     * @param localSkin 内置皮肤名称，null 表示使用玩家 Profile 皮肤
+     */
     public void setLocalSkin(@Nullable String localSkin) {
         this.localSkin = localSkin;
         this.markDirty();

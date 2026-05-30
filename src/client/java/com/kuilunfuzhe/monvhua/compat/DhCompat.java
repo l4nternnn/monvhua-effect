@@ -13,18 +13,29 @@ import java.lang.reflect.Method;
  * Prevents DH from rendering LOD terrain during mirror viewport re-render.
  */
 public class DhCompat {
+    /** DH 模组是否已加载 */
     private static boolean dhLoaded;
+    /** DH API 是否不可用（反射失败后标记，避免反复尝试） */
     private static boolean apiUnavailable;
+    /** suspend 嵌套深度计数器，支持嵌套调用 */
     private static int suspendDepth;
 
+    /** DH API 的 renderingEnabled 配置对象，首次获取后缓存 */
     private static Object renderingEnabledConfig;
+    /** suspend 前保存的 DH API 渲染开关原始值 */
     private static Object previousApiValue;
+    /** 是否已成功捕获 API 原始值 */
     private static boolean capturedPreviousApiValue;
+    /** DH API 渲染是否已被暂停 */
     private static boolean apiSuspended;
 
+    /** 被替换前的 WorldRenderEvents.AFTER_SETUP 原始 invoker */
     private static Object originalAfterSetup;
+    /** 被替换前的 WorldRenderEvents.AFTER_ENTITIES 原始 invoker */
     private static Object originalAfterEntities;
+    /** 被替换前的 WorldRenderEvents.AFTER_TRANSLUCENT 原始 invoker */
     private static Object originalAfterTranslucent;
+    /** WorldRenderEvents 事件是否已被暂停 */
     private static boolean eventsSuspended;
 
     public static void init() {
@@ -68,6 +79,10 @@ public class DhCompat {
         }
     }
 
+    /**
+     * 通过 DH API 关闭渲染——反射调用 renderingEnabled.setValue(false)。
+     * @return 是否成功暂停
+     */
     private static boolean suspendDhApiRendering() {
         if (apiUnavailable) return false;
         try {
@@ -86,6 +101,9 @@ public class DhCompat {
         }
     }
 
+    /**
+     * 恢复 DH API 渲染——将 renderingEnabled 设回 suspend 前的值或清除覆盖。
+     */
     private static void resumeDhApiRendering() {
         try {
             Object config = getRenderingEnabledConfig();
@@ -105,6 +123,12 @@ public class DhCompat {
         }
     }
 
+    /**
+     * 通过反射获取 DH API 的 renderingEnabled 配置对象。
+     * 路径: DhApi.Delayed → configs → graphics() → renderingEnabled()
+     * 首次获取后缓存到 renderingEnabledConfig。
+     * @return renderingEnabled 配置对象，或 null
+     */
     private static Object getRenderingEnabledConfig() throws Exception {
         if (renderingEnabledConfig != null) return renderingEnabledConfig;
 
@@ -119,6 +143,11 @@ public class DhCompat {
         return renderingEnabledConfig;
     }
 
+    /**
+     * 暂停 Fabric WorldRenderEvents 的三个渲染事件——将 invoker 替换为空实现。
+     * 保存原始 invoker 以便后续恢复。
+     * @return 是否成功暂停
+     */
     private static boolean suspendWorldRenderEvents() {
         try {
             Field invokerField = Event.class.getDeclaredField("invoker");
@@ -138,6 +167,9 @@ public class DhCompat {
         }
     }
 
+    /**
+     * 恢复 Fabric WorldRenderEvents 的三个渲染事件——将 invoker 还原为原始值。
+     */
     private static void resumeWorldRenderEvents() {
         if (originalAfterSetup == null) return;
         try {
@@ -156,6 +188,12 @@ public class DhCompat {
         }
     }
 
+    /**
+     * 反射调用目标对象的无参方法，失败时静默返回 null。
+     * @param target 目标对象
+     * @param methodName 方法名
+     * @return 方法返回值，或 null
+     */
     private static Object invokeIfPresent(Object target, String methodName) {
         try {
             return findMethod(target.getClass(), methodName, 0).invoke(target);
@@ -164,6 +202,15 @@ public class DhCompat {
         }
     }
 
+    /**
+     * 在类的继承链中查找指定名称和参数数量的方法，包括父类。
+     * 查找到的方法会自动 setAccessible(true)。
+     * @param type 起始类型
+     * @param name 方法名
+     * @param parameterCount 参数个数
+     * @return 可访问的 Method 对象
+     * @throws NoSuchMethodException 未找到匹配方法
+     */
     private static Method findMethod(Class<?> type, String name, int parameterCount) throws NoSuchMethodException {
         Class<?> current = type;
         while (current != null) {

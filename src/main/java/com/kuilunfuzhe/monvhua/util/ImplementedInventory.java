@@ -26,6 +26,10 @@ public interface ImplementedInventory extends Inventory {
         return getItems().get(slot);
     }
 
+    /**
+     * 从指定槽位移除指定数量的物品，剩余数量不足则全部移除。
+     * @return 被移除的物品堆
+     */
     @Override
     default ItemStack removeStack(int slot, int count) {
         ItemStack result = getItems().get(slot).split(count);
@@ -42,6 +46,9 @@ public interface ImplementedInventory extends Inventory {
         return stack;
     }
 
+    /**
+     * 设置指定槽位的物品堆，若数量超过单堆上限则自动裁剪。
+     */
     @Override
     default void setStack(int slot, ItemStack stack) {
         getItems().set(slot, stack);

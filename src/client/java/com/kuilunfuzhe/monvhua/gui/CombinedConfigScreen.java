@@ -23,7 +23,13 @@ import net.minecraft.text.Text;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 聚合配置界面，通过顶部标签页切换管理五个子配置模块：
+ * 千里眼（全局阶段配置）、视线诱导、镜子、窃密、阶段区间。
+ * 每个子模块都有独立的7阶段配置、缓存和网络收发逻辑。
+ */
 public class CombinedConfigScreen extends Screen {
+    /** 配置类型枚举，对应顶部五个标签页 */
     private enum ConfigType { EVIL_EYES, GAZE_GUIDANCE, MIRROR, SECRECY, STAGE_RANGE }
     private ConfigType currentType = ConfigType.EVIL_EYES;
 
@@ -36,6 +42,7 @@ public class CombinedConfigScreen extends Screen {
     private int currentStage = 1;
     private TextFieldWidget dailyField, marksField, watchTimeField, parrotDailyField, maxActiveField;
     private ButtonWidget saveEvilButton;
+    /** 已缓存的千里眼全局配置数据，索引1-7对应阶段1-7 */
     private static final GlobalConfigS2CPacket.StageConfig[] CACHED_EVIL_CONFIGS = new GlobalConfigS2CPacket.StageConfig[8];
     private final List<TextWidget> evilLabels = new ArrayList<>();
 
@@ -70,6 +77,10 @@ public class CombinedConfigScreen extends Screen {
     private final List<TextWidget> secrecyLabels = new ArrayList<>();
     private static SecrecyConfig cachedSecrecyConfig = null;
 
+    /**
+     * 构造聚合配置界面，初始化时向服务器请求四种配置数据，
+     * 本地缓存未就绪时使用默认值填充。
+     */
     public CombinedConfigScreen() {
         super(Text.literal("物品配置"));
         ClientPlayNetworking.send(new RequestGlobalConfigC2SPacket());
@@ -87,6 +98,10 @@ public class CombinedConfigScreen extends Screen {
         }
     }
 
+    /**
+     * 创建视线诱导的默认配置（用于本地缓存未就绪时的占位数据）。
+     * 各阶段的值按递增规则生成：阶段越高，消耗越少、范围越大、标记数越多。
+     */
     private GazeConfig createDefaultGazeConfig() {
         GazeConfig config = new GazeConfig();
         for (int i = 0; i < 7; i++) {
@@ -101,6 +116,10 @@ public class CombinedConfigScreen extends Screen {
         return config;
     }
 
+    /**
+     * 创建镜子的默认配置，各阶段参数随阶段递增而改善：
+     * 观看时间越短、成功率越高、观看次数和触发半径越大。
+     */
     private MirrorConfig createDefaultMirrorConfig() {
         MirrorConfig config = new MirrorConfig();
         for (int i = 0; i < 7; i++) {
@@ -114,6 +133,9 @@ public class CombinedConfigScreen extends Screen {
         return config;
     }
 
+    /**
+     * 创建窃密的默认配置，概率上限为1.0（100%），隐身延迟随阶段增加而减少。
+     */
     private SecrecyConfig createDefaultSecrecyConfig() {
         SecrecyConfig config = new SecrecyConfig();
         for (int i = 0; i < 7; i++) {
@@ -132,15 +154,20 @@ public class CombinedConfigScreen extends Screen {
         super.init();
         int sw = this.client.getWindow().getScaledWidth();
         int sh = this.client.getWindow().getScaledHeight();
+        // 主面板占屏幕宽度的3/5，保持16:9比例
         panelWidth = sw * 3 / 5;
         panelHeight = (int)(panelWidth * 9f / 16f);
+        // 向左偏移100px为左侧阶段按钮留空间
         panelX = (sw - panelWidth) / 2 - 100;
         panelY = (sh - panelHeight) / 2;
 
+        // 左侧阶段选择栏宽度和右侧配置区宽度
         leftWidth = 140;
-        rightWidth = panelWidth - leftWidth - 15;
+        rightWidth = panelWidth - leftWidth - 15;  // 15px 分隔线间距
 
+        // 顶部标签按钮尺寸
         int btnWidth = 76, btnHeight = 20;
+        // 按钮放在面板上方5px处
         int btnY = panelY - btnHeight - 5;
         int centerX = panelX + panelWidth / 2;
 
@@ -352,6 +379,9 @@ public class CombinedConfigScreen extends Screen {
     }
 
     // ==================== 工具方法 ====================
+    /**
+     * 创建一个限制最大输入长度为6的文本输入框。
+     */
     private TextFieldWidget createField(int x, int y, int width) {
         TextFieldWidget field = new TextFieldWidget(textRenderer, x, y, width, 18, Text.empty());
         field.setMaxLength(6);
@@ -359,6 +389,9 @@ public class CombinedConfigScreen extends Screen {
         return field;
     }
 
+    /**
+     * 切换到指定配置类型的标签页，高亮当前标签（绿色加粗），并加载对应阶段的UI数据。
+     */
     private void switchTo(ConfigType type) {
         currentType = type;
         btnEvilEyes.setMessage(currentType == ConfigType.EVIL_EYES ? Text.literal("§l§a千里眼") : Text.literal("千里眼"));
@@ -481,6 +514,10 @@ public class CombinedConfigScreen extends Screen {
         }
     }
 
+    /**
+     * 接收服务器发来的千里眼全局配置并更新缓存。
+     * 如果当前正在查看千里眼或阶段区间标签页，同步刷新界面。
+     */
     public void receiveEvilConfigs(GlobalConfigS2CPacket.StageConfig[] configsArray) {
         if (configsArray == null) return;
         for (int i = 0; i < configsArray.length; i++) {
@@ -529,6 +566,10 @@ public class CombinedConfigScreen extends Screen {
         }
     }
 
+    /**
+     * 接收服务器发来的视线诱导配置并更新缓存。
+     * 仅当当前标签页为视线诱导时才刷新UI，避免干扰其他标签页的编辑。
+     */
     public void receiveGazeConfig(GazeConfig config) {
         if (config == null) return;
         cachedGazeConfig = config;
@@ -578,6 +619,10 @@ public class CombinedConfigScreen extends Screen {
         }
     }
 
+    /**
+     * 接收服务器发来的镜子配置并更新缓存。
+     * 仅当当前标签页为镜子时才刷新UI。
+     */
     public void receiveMirrorConfig(MirrorConfig config) {
         if (config == null) return;
         cachedMirrorConfig = config;
@@ -623,6 +668,10 @@ public class CombinedConfigScreen extends Screen {
         }
     }
 
+    /**
+     * 接收服务器发来的窃密配置并更新缓存。
+     * 仅当当前标签页为窃密时才刷新UI。
+     */
     public void receiveSecrecyConfig(SecrecyConfig config) {
         if (config == null) return;
         cachedSecrecyConfig = config;
@@ -673,9 +722,13 @@ public class CombinedConfigScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        // 半透明黑色遮罩背景
         context.fill(0, 0, width, height, 0xAA000000);
+        // 面板外边框（深灰）
         context.fill(panelX - 1, panelY - 1, panelX + panelWidth + 1, panelY + panelHeight + 1, 0xFF444444);
+        // 左右分栏分隔线
         context.fill(panelX + leftWidth, panelY, panelX + leftWidth + 1, panelY + panelHeight, 0xFF444444);
+        // 左侧阶段列表背景和右侧配置区背景
         context.fill(panelX, panelY, panelX + leftWidth, panelY + panelHeight, 0xAA222222);
         context.fill(panelX + leftWidth + 1, panelY, panelX + panelWidth, panelY + panelHeight, 0xAA222222);
 

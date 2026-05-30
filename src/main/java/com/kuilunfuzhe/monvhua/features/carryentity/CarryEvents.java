@@ -27,7 +27,17 @@ import com.kuilunfuzhe.monvhua.features.block.body.BodyPartManager;
 
 import java.util.Map;
 
+/**
+ * 搬运事件注册中心。
+ * 注册服务端刻搬运更新、摔落伤害共享、断线清理、网络包接收
+ * （搬运请求/放下请求）、以及 /carry-xp-rate 命令。
+ */
 public class CarryEvents {
+	/**
+	 * 注册所有搬运相关的事件监听器和网络包处理器。
+	 * 包括：摔落伤害分摊、服务端刻搬运更新（位置/挣扎/经验消耗/沉重感缓慢效果）、
+	 * 断线清理、搬运/放下网络包、/carry-xp-rate 命令。
+	 */
 	public static void register() {
 		// 搬运者和被搬运者之间的摔落伤害共享
 		ServerLivingEntityEvents.AFTER_DAMAGE.register((entity, source, baseDamageTaken, damageTaken, blocked) -> {

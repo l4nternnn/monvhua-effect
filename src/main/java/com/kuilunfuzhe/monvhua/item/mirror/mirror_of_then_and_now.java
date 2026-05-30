@@ -9,10 +9,19 @@ import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.util.Identifier;
 
+/**
+ * 古今镜物品的注册入口。
+ * 负责创建MirrorOfThenAndNowItem实例，注册到物品注册表，并加入工具栏物品组。
+ */
 public final class mirror_of_then_and_now {
+    /** 物品注册ID字符串 */
     public static final String ITEM_ID = "mirror_of_then_and_now";
+    /** 古今镜物品实例，初始化后赋值 */
     public static Item MIRROR_ITEM;
 
+    /**
+     * 初始化古今镜物品：创建实例、注册到注册表、添加到工具栏物品组。
+     */
     public static void initialize() {
         Identifier id = Identifier.of("monvhua", ITEM_ID);
         RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM, id);
