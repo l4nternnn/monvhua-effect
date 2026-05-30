@@ -145,7 +145,7 @@ public class MirrorCommand {
 
 	public static void toggleViewport(ServerPlayerEntity player) {
 		UUID uuid = player.getUuid();
-            if (player.getCommandTags().contains("Silenced")) { player.sendMessage(net.minecraft.text.Text.literal("§c你难以集中精神"), true); return; }
+		if (player.getCommandTags().contains("Silenced")) { player.sendMessage(net.minecraft.text.Text.literal("§c你难以集中精神"), true); return; }
 		MirrorDataStore.PlayerData data = MirrorDataStore.getOrCreate(uuid);
 
 		if (!hasAnySlot(data)) {
@@ -155,9 +155,7 @@ public class MirrorCommand {
 
 		int stage = Evil_Eyes.getPlayerStage(player, Evil_Eyes.configManager);
 		MirrorConfig config = MirrorConfig.getInstance();
-		int maxUses = config.getViewCount(stage);
-		int storedStage = VIEWPORT_STAGE.getOrDefault(uuid, stage);
-		int usesLeft = storedStage == stage ? Math.min(VIEWPORT_USES_LEFT.getOrDefault(uuid, maxUses), maxUses) : maxUses;
+		int usesLeft = computeUsesLeft(player, uuid);
 
 		if (usesLeft <= 0) {
 			player.sendMessage(Text.literal("§c当前阶段镜子使用次数已用完"), true);
@@ -199,7 +197,7 @@ public class MirrorCommand {
 
 	public static void startCharging(ServerPlayerEntity player) {
 		UUID uuid = player.getUuid();
-        if (player.getCommandTags().contains("Silenced")) { player.sendMessage(net.minecraft.text.Text.literal("§c你难以集中精神"), true); return; }
+		if (player.getCommandTags().contains("Silenced")) { player.sendMessage(net.minecraft.text.Text.literal("§c你难以集中精神"), true); return; }
 
 		// Don't start charging if viewport is already active
 		if (VIEWPORT_ACTIVE.getOrDefault(uuid, false)) return;
@@ -223,9 +221,7 @@ public class MirrorCommand {
 		// Check uses
 		int stage = Evil_Eyes.getPlayerStage(player, Evil_Eyes.configManager);
 		MirrorConfig config = MirrorConfig.getInstance();
-		int maxUses = config.getViewCount(stage);
-		int storedStage = VIEWPORT_STAGE.getOrDefault(uuid, stage);
-		int usesLeft = storedStage == stage ? Math.min(VIEWPORT_USES_LEFT.getOrDefault(uuid, maxUses), maxUses) : maxUses;
+		int usesLeft = computeUsesLeft(player, uuid);
 
 		if (usesLeft <= 0) {
 			player.sendMessage(Text.literal("§c当前阶段镜子使用次数已用完"), true);
@@ -284,9 +280,7 @@ public class MirrorCommand {
 			syncChargeToClient(player, 0, 0);
 
 			// Consume a use and do success check
-			int maxUses = config.getViewCount(stage);
-			int storedStage = VIEWPORT_STAGE.getOrDefault(uuid, stage);
-			int usesLeft = storedStage == stage ? Math.min(VIEWPORT_USES_LEFT.getOrDefault(uuid, maxUses), maxUses) : maxUses;
+			int usesLeft = computeUsesLeft(player, uuid);
 
 			if (usesLeft <= 0) {
 				player.sendMessage(Text.literal("§c今天没有魔力了。。"), true);
@@ -371,6 +365,20 @@ public class MirrorCommand {
 			s2 != null ? s2.radius() : 0,
 			active
 		));
+	}
+
+	/**
+	 * 计算当前玩家剩余的镜面观察次数。
+	 * 如果玩家阶段发生变化，次数重置为当前阶段的最大值。
+	 */
+	private static int computeUsesLeft(ServerPlayerEntity player, UUID uuid) {
+		int stage = Evil_Eyes.getPlayerStage(player, Evil_Eyes.configManager);
+		MirrorConfig config = MirrorConfig.getInstance();
+		int maxUses = config.getViewCount(stage);
+		int storedStage = VIEWPORT_STAGE.getOrDefault(uuid, stage);
+		return storedStage == stage
+			? Math.min(VIEWPORT_USES_LEFT.getOrDefault(uuid, maxUses), maxUses)
+			: maxUses;
 	}
 
 	private static boolean hasAnySlot(MirrorDataStore.PlayerData data) {
