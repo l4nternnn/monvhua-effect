@@ -36,39 +36,65 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 凝视诱导系统。
+ * 通过手持魔法棒右键长按开启诱导（自身/实体/静态点三种模式），
+ * 配合粒子环特效、能量管理、G键标记实体、标记实体被吸引注视焦点等功能。
+ * 系统通过 initialize() 注册命令、网络包处理器和服务端 tick 逻辑。
+ */
 public class Gazeguidance {
 	public static final String MOD_ID = "gazeguidance";
 	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
+	/** 诱导冷却时间（刻），即5秒 */
 	private static final long COOLDOWN_TICKS = 100;
+	/** 玩家UUID -> 上次诱导结束时间（世界刻） */
 	private static final Map<UUID, Long> lastFocusEndTime = new ConcurrentHashMap<>();
 
+	/** 当前诱导焦点实体ID（已确认有效的） */
 	private static UUID currentFocusEntityId = null;
+	/** 临时诱导玩家ID（正在进行诱导的玩家） */
 	private static UUID temporaryFocusPlayerId = null;
+	/** 临时诱导目标实体ID */
 	private static UUID temporaryFocusEntityId = null;
 
+	/** 玩家UUID -> 当前能量值 */
 	private static final Map<UUID, Double> playerEnergy = new ConcurrentHashMap<>();
+	/** 被标记实体UUID -> 过期时间（世界刻） */
 	private static final Map<UUID, Long> markedEntities = new ConcurrentHashMap<>();
 
+	/** 玩家UUID -> 上次发送的阶段值（用于去重，避免重复发送网络包） */
 	private static final Map<UUID, Integer> lastSentStage = new ConcurrentHashMap<>();
+	/** 诱导玩家当前的凝视阶段（1-7） */
 	private static int currentStage = 1;
+	/** 玩家UUID -> 诱导开始时间（世界刻），用于判断是否进入冷却 */
 	private static final Map<UUID, Long> focusStartTime = new ConcurrentHashMap<>();
 
+	/** 全局能量同步计时器（每5刻同步一次） */
 	private static int globalEnergySyncTick = 0;
+	/** 粒子效果计时器（每15刻生成标记实体粒子） */
 	private static int particleTickCounter = 0;
 
-	// 焦点类型枚举
+	/** 焦点类型枚举：SELF=自身、ENTITY=实体、STATIC=静态坐标点 */
 	private enum FocusType { SELF, ENTITY, STATIC }
 	private static FocusType currentFocusType = null;
 
+	/** 特殊玩家名称集合，拥有特殊粒子环效果 */
 	private static final Set<String> SPECIAL_NAMES = Set.of("shushuwonie", "Remio","Ice_in_North");
 
-	// 禁用状态（内存存储，服务器重启后重置）
+	/** 图片显示禁用状态的玩家集合（内存存储，服务器重启后重置） */
 	private static final Set<UUID> IMAGES_DISABLED = ConcurrentHashMap.newKeySet();
+	/** 粒子环显示禁用状态的玩家集合（内存存储，服务器重启后重置） */
 	private static final Set<UUID> PARTICLES_DISABLED = ConcurrentHashMap.newKeySet();
 
 
 	// ========== 阶段计算 ==========
+
+	/**
+	 * 根据 monvhua 计分板的分数映射为凝视阶段（1-7），分数越高阶段越高。
+	 * @param score 分数值（0-100）
+	 * @return 凝视阶段（1-7）
+	 */
 	private static int getStageFromScore(int score) {
 		if (score <= 5) return 1;
 		else if (score <= 20) return 2;
@@ -113,6 +139,12 @@ public class Gazeguidance {
 	}
 
 
+	/**
+	 * 初始化凝视诱导系统。
+	 * 注册命令（/clairvoyance 及其子命令）、网络包处理器
+	 * （右键诱导、G键标记、配置请求/更新）、禁止左键破坏方块、
+	 * 以及服务端 tick 循环（阶段更新、焦点有效性检查、能量管理、粒子同步、吸引逻辑）。
+	 */
 	public static void initialize() {
 
 
@@ -229,15 +261,20 @@ public class Gazeguidance {
 // 客户端更新配置
 		ServerPlayNetworking.registerGlobalReceiver(UpdateConfigC2SPacket.ID, (payload, context) -> {
 			context.server().execute(() -> {
-				GazeConfig newConfig = GazeConfig.fromJson(payload.json());
-				GazeConfig.setInstance(newConfig);
-				// 广播新配置给所有在线玩家（无论模式）
-				for (ServerPlayerEntity player : context.server().getPlayerManager().getPlayerList()) {
-					ServerPlayNetworking.send(player, new SyncConfigS2CPacket(newConfig.toJson()));
+				if (context.player() != null && !context.player().hasPermissionLevel(2)) {
+					context.player().sendMessage(Text.literal("§c你没有权限修改凝视诱导配置"), false);
+					return;
 				}
-				// 仅当发起更新的玩家是创造模式时，显示成功提示（通常已经是创造模式，但二次确认）
-				if (context.player() != null && context.player().isCreative()) {
-					context.player().sendMessage(Text.literal("§a配置已更新并同步至所有玩家"), false);
+				GazeConfig newConfig = GazeConfig.fromJson(payload.json());
+				if (newConfig != null) {
+					GazeConfig.setInstance(newConfig);
+					// 广播新配置给所有在线玩家（无论模式）
+					for (ServerPlayerEntity player : context.server().getPlayerManager().getPlayerList()) {
+						ServerPlayNetworking.send(player, new SyncConfigS2CPacket(newConfig.toJson()));
+					}
+					if (context.player() != null) {
+						context.player().sendMessage(Text.literal("§a配置已更新并同步至所有玩家"), false);
+					}
 				}
 			});
 		});
@@ -503,7 +540,12 @@ public class Gazeguidance {
 
 	}
 
-	// 结束诱导
+	/**
+	 * 结束当前诱导状态。
+	 * 清理焦点实体、标记列表、临时盔甲架（静态点焦点的虚拟实体），
+	 * 若诱导持续时间 >= 40 刻则进入 5 秒冷却。
+	 * @param player 结束诱导的玩家
+	 */
 	private static void endFocus(PlayerEntity player) {
 		if (temporaryFocusPlayerId != null && temporaryFocusPlayerId.equals(player.getUuid())) {
 			Long startTime = focusStartTime.get(player.getUuid());
@@ -539,6 +581,14 @@ public class Gazeguidance {
 		}
 	}
 
+	/**
+	 * 设置临时诱导焦点（右键长按魔法棒时触发）。
+	 * 模式由参数 self 控制：self=true 诱导自身，self=false 先射线检测实体再检测方块。
+	 * 若检测到实体则诱导该实体，否则在方块命中点生成不可见的盔甲架作为静态焦点。
+	 * @param player 发起诱导的玩家
+	 * @param world 世界
+	 * @param self 是否诱导自身（潜行状态为 true）
+	 */
 	private static void setTemporaryFocus(PlayerEntity player, World world, boolean self) {
 		long now = world.getTime();
 		Long lastEnd = lastFocusEndTime.get(player.getUuid());
@@ -625,6 +675,12 @@ public class Gazeguidance {
 		focusStartTime.put(player.getUuid(), world.getTime());
 	}
 
+	/**
+	 * 通过射线检测获取玩家视线中的最近活体实体（排除被方块遮挡的）。
+	 * @param player 玩家
+	 * @param maxRange 最大检测距离
+	 * @return 最近的可见活体实体，没有则返回 null
+	 */
 	private static Entity getTargetEntity(PlayerEntity player, double maxRange) {
 		World world = player.getWorld();
 		Vec3d start = player.getEyePos();
@@ -653,6 +709,12 @@ public class Gazeguidance {
 		return closest;
 	}
 
+	/**
+	 * 获取玩家视线末端方块面的命中坐标。
+	 * @param player 玩家
+	 * @param maxDistance 最大射线距离
+	 * @return 命中方块面的坐标，未命中返回 null
+	 */
 	private static Vec3d getPlayerLookBlockPosition(PlayerEntity player, double maxDistance) {
 		Vec3d start = player.getEyePos();
 		Vec3d direction = player.getRotationVec(1.0f);
@@ -664,9 +726,15 @@ public class Gazeguidance {
 
 
 						//===================粒子效果=======================//
+	/**
+	 * 粒子环配置。
+	 * 定义围绕玩家旋转的粒子环的形状（三叶草曲线）、球面位置、
+	 * 自转速度、颜色、粒子数量、以及显示条件（指定玩家/特殊玩家）。
+	 */
 	public static class ParticleRingConfig {
 		public final String name;
-		public final double radius;            // 三叶草半径（形状大小）
+		/** 三叶草半径（形状大小） */
+		public final double radius;
 		public final double sphereRadius;      // 球面半径（环中心到球心的距离）
 		public final double rotationSpeed;     // 自转速度（度/秒）
 		public final ParticleEffect particleEffect;
@@ -712,6 +780,15 @@ public class Gazeguidance {
 		// 第三环（绿色，半径1.2，头部高度，顺时针45度/秒）
 		PARTICLE_RINGS.add(new ParticleRingConfig("ice", 2, 2, 0.5, ParticleTypes.END_ROD, 60, 0.0, 0.0f, 0, 0.0f, 180,-10,"Ice_in_North",false));
 	}
+	/**
+	 * 根据配置生成三叶草形状的粒子环。
+	 * 环位于球面上（相对玩家腰部+自定义偏移），随 tick 自转。
+	 * 环平面始终垂直于从环中心指向球心的法线方向。
+	 * @param world 服务端世界
+	 * @param player 目标玩家（环围绕此玩家生成）
+	 * @param config 粒子环配置
+	 * @param tick 当前世界刻（用于计算自转角度）
+	 */
 	private static void spawnCustomRingParticle(ServerWorld world, ServerPlayerEntity player, ParticleRingConfig config, long tick) {
 
 

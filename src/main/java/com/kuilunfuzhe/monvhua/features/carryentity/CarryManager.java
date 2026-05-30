@@ -12,6 +12,11 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 实体搬运管理器。
+ * 负责搬运状态的维护（抱起/放下/清理）、挣扎机制、摔落伤害分摊、
+ * 被搬运实体的原始飞行状态记录（用于放下时恢复），以及断线清理。
+ */
 public class CarryManager {
 	// 搬运者 -> 被搬运实体数据
 	public static final Map<ServerPlayerEntity, CarriedEntityData> CARRIED_ENTITIES = new ConcurrentHashMap<>();
@@ -23,10 +28,16 @@ public class CarryManager {
 	public static final Map<Entity, Integer> STRUGGLE_COUNTER = new ConcurrentHashMap<>();
 	// 经验消耗：搬运者 -> 累积刻数
 	public static final Map<ServerPlayerEntity, Integer> CARRY_XP_TICK_COUNTER = new ConcurrentHashMap<>();
+	/** 搬运经验消耗率，可通过命令 /carry-xp-rate 调整，默认为1 */
 	public static int CARRY_XP_DRAIN_RATE = 1;
 
+	/** 防重入标记：正在处理摔落伤害的搬运者UUID集合，防止无限递归 */
 	private static final Set<UUID> FALL_DAMAGE_PROCESSING = ConcurrentHashMap.newKeySet();
 
+	/**
+	 * 被搬运实体的元数据记录，包含实体引用及其原始飞行/无敌状态，
+	 * 用于放下时恢复这些属性。
+	 */
 	public static class CarriedEntityData {
 		public final Entity entity;
 		public final boolean originalFlying;
@@ -45,6 +56,24 @@ public class CarryManager {
 		}
 	}
 
+	/**
+	 * 恢复被搬运实体的原始能力状态（飞行、无敌等）。
+	 */
+	private static void restoreCarriedAbilities(ServerPlayerEntity carried, boolean originalFlying,
+	                                             boolean originalAllowFlying, boolean originalInvulnerable) {
+		carried.getAbilities().flying = originalFlying;
+		carried.getAbilities().allowFlying = originalAllowFlying;
+		carried.getAbilities().invulnerable = originalInvulnerable;
+		carried.setNoGravity(false);
+		carried.sendAbilitiesUpdate();
+	}
+
+	/**
+	 * 根据搬运者和被搬运者的指令标签（qiangzhiai / strong_power）计算挣脱所需潜行次数阈值。
+	 * @param carrier 搬运者
+	 * @param carried 被搬运的实体
+	 * @return 挣脱阈值（1 表示按一次即可挣脱，300 为默认普通玩家挣脱次数）
+	 */
 	public static int getStruggleThreshold(ServerPlayerEntity carrier, Entity carried) {
 		if (!carrier.getCommandTags().contains("qiangzhiai")) return 1;
 		if (carried instanceof ServerPlayerEntity carriedPlayer) {
@@ -54,6 +83,12 @@ public class CarryManager {
 		return 300;
 	}
 
+	/**
+	 * 放下被搬运实体，恢复其原始状态（重力、无敌、AI、飞行能力等），
+	 * 清除挣扎计数和经验消耗记录，设置5秒搬运冷却，并将实体传送到搬运者前方。
+	 * @param carrier 搬运者
+	 * @param carried 被搬运的实体
+	 */
 	public static void releaseCarried(ServerPlayerEntity carrier, Entity carried) {
 		CarriedEntityData data = CARRIED_ENTITIES.get(carrier);
 		CARRIED_ENTITIES.remove(carrier);
@@ -65,10 +100,10 @@ public class CarryManager {
 			mob.setAiDisabled(false);
 		}
 		if (carried instanceof ServerPlayerEntity carriedPlayer) {
-			carriedPlayer.getAbilities().flying = data != null ? data.originalFlying : false;
-			carriedPlayer.getAbilities().allowFlying = data != null ? data.originalAllowFlying : false;
-			carriedPlayer.getAbilities().invulnerable = data != null ? data.originalInvulnerable : false;
-			carriedPlayer.sendAbilitiesUpdate();
+			restoreCarriedAbilities(carriedPlayer,
+				data != null ? data.originalFlying : false,
+				data != null ? data.originalAllowFlying : false,
+				data != null ? data.originalInvulnerable : false);
 		}
 		STRUGGLE_COUNTER.remove(carried);
 		CARRY_XP_TICK_COUNTER.remove(carrier);
@@ -81,6 +116,14 @@ public class CarryManager {
 		}
 	}
 
+	/**
+	 * 处理搬运者摔落时与背上实体的伤害分摊。
+	 * 搬运者承受20%摔倒伤害，背上的实体承受60%（用UUID集合防重入）。
+	 * @param carrier 搬运者
+	 * @param carried 被搬运实体
+	 * @param damageTaken 原始摔落伤害量
+	 * @return 是否成功处理（false 表示已在处理中，跳过）
+	 */
 	public static boolean handleFallDamage(ServerPlayerEntity carrier, Entity carried, float damageTaken) {
 		if (FALL_DAMAGE_PROCESSING.contains(carrier.getUuid())) return false;
 		FALL_DAMAGE_PROCESSING.add(carrier.getUuid());
@@ -101,16 +144,19 @@ public class CarryManager {
 		}
 	}
 
+	/**
+	 * 每服务端刻更新搬运状态：将实体固定在搬运者前方、处理挣扎机制、
+	 * 控制实体AI、以及每20刻消耗经验（非创造/kebao玩家）。
+	 * @param carrier 搬运者
+	 * @param data 被搬运实体数据
+	 */
 	public static void tickCarried(ServerPlayerEntity carrier, CarriedEntityData data) {
 		Entity carried = data.entity;
 		if (!carried.isAlive()) {
 			CARRIED_ENTITIES.remove(carrier);
 			CARRIED_BY.remove(carried);
 			if (carried instanceof ServerPlayerEntity carriedPlayer) {
-				carriedPlayer.getAbilities().flying = data.originalFlying;
-				carriedPlayer.getAbilities().allowFlying = data.originalAllowFlying;
-				carriedPlayer.getAbilities().invulnerable = data.originalInvulnerable;
-				carriedPlayer.sendAbilitiesUpdate();
+				restoreCarriedAbilities(carriedPlayer, data.originalFlying, data.originalAllowFlying, data.originalInvulnerable);
 			}
 			return;
 		}
@@ -179,6 +225,11 @@ public class CarryManager {
 		}
 	}
 
+	/**
+	 * 玩家断线时清理搬运相关状态：恢复被搬运实体的原始属性（重力、无敌、飞行能力），
+	 * 同时清除该玩家在冷却、挣扎计数、经验消耗中的记录。
+	 * @param player 断线的玩家
+	 */
 	public static void cleanupForDisconnect(ServerPlayerEntity player) {
 		CarriedEntityData carriedData = CARRIED_ENTITIES.remove(player);
 		if (carriedData != null) {
@@ -188,10 +239,7 @@ public class CarryManager {
 			carried.setInvulnerable(false);
 			carried.setSilent(false);
 			if (carried instanceof ServerPlayerEntity carriedPlayer) {
-				carriedPlayer.getAbilities().flying = carriedData.originalFlying;
-				carriedPlayer.getAbilities().allowFlying = carriedData.originalAllowFlying;
-				carriedPlayer.getAbilities().invulnerable = carriedData.originalInvulnerable;
-				carriedPlayer.sendAbilitiesUpdate();
+				restoreCarriedAbilities(carriedPlayer, carriedData.originalFlying, carriedData.originalAllowFlying, carriedData.originalInvulnerable);
 			}
 			if (carried instanceof MobEntity mob) {
 				mob.setAiDisabled(false);
@@ -212,6 +260,7 @@ public class CarryManager {
 		CARRY_XP_TICK_COUNTER.remove(player);
 	}
 
+	/** 清除已过期的搬运冷却记录 */
 	public static void cleanupCooldowns() {
 		long now = System.currentTimeMillis();
 		CARRIED_COOLDOWN.values().removeIf(expiry -> expiry <= now);
