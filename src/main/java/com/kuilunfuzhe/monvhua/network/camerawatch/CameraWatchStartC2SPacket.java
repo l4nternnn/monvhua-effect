@@ -9,6 +9,10 @@ import net.minecraft.util.Uuids;
 
 import java.util.UUID;
 
+/**
+ * 客户端 -> 服务端：请求开始摄像头观察。
+ * 客户端发送目标玩家的 UUID，请求观察该玩家视角。
+ */
 public record CameraWatchStartC2SPacket(UUID targetUuid) implements CustomPayload {
     public static final Id<CameraWatchStartC2SPacket> ID =
             new Id<>(Identifier.of("monvhua", "camera_watch_start"));
@@ -18,6 +22,9 @@ public record CameraWatchStartC2SPacket(UUID targetUuid) implements CustomPayloa
 
     private static boolean registered = false;
 
+    /**
+     * 注册此数据包到 C2S 负载类型注册表。
+     */
     public static void register() {
         if (!registered) {
 

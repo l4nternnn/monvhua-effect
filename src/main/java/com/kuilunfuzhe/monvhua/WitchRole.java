@@ -5,6 +5,11 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 魔女角色枚举，定义了服务器中14个可扮演的魔女角色。
+ * 每个角色有唯一的标签ID、三套污浊阶段旁白变体、以及各阶段的对话覆盖文本。
+ * 通过 {@link #fromPlayer(ServerPlayerEntity)} 根据玩家的计分板标签匹配角色。
+ */
 public enum WitchRole {
     EMA("ema",
             List.of(
@@ -606,8 +611,11 @@ public enum WitchRole {
 "做个好孩子，■会一直陪着你的…\""""
             ));
 
+    /** 角色唯一标识标签（与玩家 scoreboard tag 对应） */
     public final String id;
+    /** 污浊阶段的三种旁白变体，随机轮换发送 */
     public final List<String> taintedVariants;
+    /** 各阶段的角色专属对话覆盖，若无覆盖则回退到阶段默认描述 */
     public final Map<WitchStage, String> stageDialogues;
 
     WitchRole(String id, List<String> taintedVariants, Map<WitchStage, String> stageDialogues) {
@@ -616,6 +624,13 @@ public enum WitchRole {
         this.stageDialogues = stageDialogues;
     }
 
+    /**
+     * 根据玩家的计分板标签匹配对应的魔女角色。
+     * 遍历所有角色，检查玩家的 {@code commandTags} 是否包含该角色的 id。
+     *
+     * @param player 服务器玩家实体
+     * @return 匹配到的魔女角色，若没有任何标签匹配则返回 {@code null}
+     */
     public static WitchRole fromPlayer(ServerPlayerEntity player) {
         var tags = player.getCommandTags();
         for (WitchRole role : values()) {
@@ -624,6 +639,13 @@ public enum WitchRole {
         return null;
     }
 
+    /**
+     * 获取指定阶段的角色专属对话文本。
+     * 若该角色在此阶段有覆盖对话则返回之，否则回退到阶段的默认描述。
+     *
+     * @param stage 魔女化阶段
+     * @return 对话文本
+     */
     public String getDialogue(WitchStage stage) {
         String d = stageDialogues.get(stage);
         return d != null ? d : stage.description;

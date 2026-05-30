@@ -16,7 +16,13 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 千里眼已标记实体列表界面。
+ * 左侧显示已标记实体名称（点击可切换第二人称视角），
+ * 右侧显示操作说明，每个实体旁边有删除按钮（✕）可取消标记。
+ */
 public class Evil_eyesScreen extends Screen {
+    /** 当前已标记的实体列表，UUID -> 标记时间戳 */
     private static Map<UUID, Long> currentMarks = new ConcurrentHashMap<>();
     private int panelWidth, panelHeight, panelX, panelY;
     private int leftWidth, rightWidth;
@@ -25,6 +31,10 @@ public class Evil_eyesScreen extends Screen {
         super(Text.empty());
     }
 
+    /**
+     * 用服务器下发的标记列表全量替换本地列表并刷新界面。
+     * @param marks 新的标记实体映射（UUID -> 时间戳）
+     */
     public static void updateMarkedList(Map<UUID, Long> marks) {
         currentMarks.clear();
         currentMarks.putAll(marks);
@@ -49,11 +59,13 @@ public class Evil_eyesScreen extends Screen {
         super.init();
         int sw = this.client.getWindow().getScaledWidth();
         int sh = this.client.getWindow().getScaledHeight();
+        // 面板占屏幕宽度的一半，保持16:9比例
         panelWidth = sw / 2;
         panelHeight = (int) (panelWidth * 9f / 16f);
+        // 面板居中，左右平分
         panelX = (sw - panelWidth) / 2;
         panelY = (sh - panelHeight) / 2;
-        leftWidth = panelWidth / 2;
+        leftWidth = panelWidth / 2;  // 左半边放实体列表
         rightWidth = panelWidth - leftWidth;
 
         addDrawableChild(new TextWidget(panelX + 5, panelY + 10, leftWidth - 10, 20,
@@ -68,6 +80,10 @@ public class Evil_eyesScreen extends Screen {
         refreshEntityButtons();
     }
 
+    /**
+     * 根据 currentMarks 重新生成实体按钮列表。
+     * 先隐藏并移除所有旧按钮，再为每个已标记实体创建名称按钮和删除按钮。
+     */
     private void refreshEntityButtons() {
         // 隐藏旧的按钮并从children移除（drawables无法直接访问，通过visible=false避免渲染）
         java.util.List<Element> oldBtns = new ArrayList<>();
@@ -115,9 +131,13 @@ public class Evil_eyesScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        // 半透明黑色遮罩
         context.fill(0, 0, width, height, 0xAA000000);
+        // 面板外边框
         context.fill(panelX - 1, panelY - 1, panelX + panelWidth + 1, panelY + panelHeight + 1, 0xFF444444);
+        // 左右分栏分隔线
         context.fill(panelX + leftWidth, panelY, panelX + leftWidth + 1, panelY + panelHeight, 0xFF444444);
+        // 左右两侧背景
         context.fill(panelX, panelY, panelX + leftWidth, panelY + panelHeight, 0xAA222222);
         context.fill(panelX + leftWidth + 1, panelY, panelX + panelWidth, panelY + panelHeight, 0xAA222222);
         super.render(context, mouseX, mouseY, delta);

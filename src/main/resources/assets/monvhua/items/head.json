@@ -1,7 +1,7 @@
 {
   "model": {
     "type": "minecraft:special",
-    "base": "monvhua:item/head",
+    "base": "monvhua:block/head",
     "model": {
       "type": "monvhua:head"
     }

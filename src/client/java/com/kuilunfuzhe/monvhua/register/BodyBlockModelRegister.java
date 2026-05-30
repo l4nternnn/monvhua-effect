@@ -29,7 +29,15 @@ import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
 import net.minecraft.client.render.item.model.special.SpecialModelTypes;
 import net.minecraft.util.Identifier;
 
+/**
+ * 身体部件方块模型注册中心。
+ * 注册所有肢体部件（躯干、左右臂/腿、头部）的 ModelLayer、BlockEntityRenderer 和物品栏 SpecialModelRenderer，
+ * 包括普通和 Slim 两种手臂模型变体。
+ */
 public class BodyBlockModelRegister {
+    /**
+     * 注册所有身体部件相关的模型层、方块实体渲染器和物品特殊模型渲染器。
+     */
     public static void register() {
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.COMBINED_BODY, CombinedBodyModelData::getDefaultTexturedModelData);
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.COMBINED_BODY_SLIM, CombinedBodyModelData::getSlimTexturedModelData);
@@ -40,45 +48,46 @@ public class BodyBlockModelRegister {
                 TorsoBlockEntityRenderer::new
         );
 
-        //左手
+        // Left arm
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.LEFT_ARM, LeftArmModel::getTexturedModelData);
         BlockEntityRendererFactories.register(
                 ModBlockEntities.LEFT_ARM_BLOCK_ENTITY,
                 LeftArmBlockEntityRenderer::new
         );
 
-        //右手臂
+        // Right arm
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.RIGHT_ARM, RightArmModel::getTexturedModelData);
         BlockEntityRendererFactories.register(
                 ModBlockEntities.RIGHT_ARM_BLOCK_ENTITY,
                 RightArmBlockEntityRenderer::new
         );
-        // Slim手臂模型
+
+        // Slim arm models
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.LEFT_ARM_SLIM, LeftArmSlimModel::getTexturedModelData);
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.RIGHT_ARM_SLIM, RightArmSlimModel::getTexturedModelData);
 
-        //左腿
+        // Left leg
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.LEFT_LEG, LeftLegModel::getTexturedModelData);
         BlockEntityRendererFactories.register(
                 ModBlockEntities.LEFT_LEG_BLOCK_ENTITY,
                 LeftLegBlockEntityRenderer::new
         );
 
-        //右腿
+        // Right leg
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.RIGHT_LEG, RightLegModel::getTexturedModelData);
         BlockEntityRendererFactories.register(
                 ModBlockEntities.RIGHT_LEG_BLOCK_ENTITY,
                 RightLegBlockEntityRenderer::new
         );
 
-        //头部
+        // Head
         EntityModelLayerRegistry.registerModelLayer(ModModelLayers.HEAD, HeadModel::getTexturedModelData);
         BlockEntityRendererFactories.register(
                 ModBlockEntities.HEAD_BLOCK_ENTITY,
                 HeadBlockEntityRenderer::new
         );
 
-        // 注册 SpecialModelRenderer 类型（物品栏/手持 3D 渲染）
+        // Item inventory/hand special renderers
         SpecialModelTypes.ID_MAPPER.put(Identifier.of("monvhua", "torso"), TorsoSpecialModelRenderer.Unbaked.CODEC);
         SpecialModelTypes.ID_MAPPER.put(Identifier.of("monvhua", "left_arm"), LeftArmSpecialModelRenderer.Unbaked.CODEC);
         SpecialModelTypes.ID_MAPPER.put(Identifier.of("monvhua", "right_arm"), RightArmSpecialModelRenderer.Unbaked.CODEC);

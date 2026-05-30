@@ -1,3 +1,7 @@
+/**
+ * 视线诱导阶段配置界面（已废弃，功能已整合至 CombinedConfigScreen）。
+ * 以下注释代码保留供参考，实际使用请参见 CombinedConfigScreen 的视线诱导标签页。
+ */
 package com.kuilunfuzhe.monvhua.gui.gazeguidance;//package com.shushuwonie.clairvoyance.client.gui.gazeguidance;
 //
 //import com.shushuwonie.clairvoyance.client.gui.CombinedConfigScreen;

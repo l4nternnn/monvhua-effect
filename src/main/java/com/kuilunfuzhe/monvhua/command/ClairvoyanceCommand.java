@@ -20,7 +20,17 @@ import net.minecraft.world.World;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * /clairvoyance 命令，管理千里眼锚点和观看模式切换。
+ * 支持清除锚点（自身/指定玩家/全部）和切换观看模式（旧版客户端盔甲架 / 新版服务端相机）。
+ */
 public class ClairvoyanceCommand {
+    /**
+     * 注册 /clairvoyance 命令及其子命令。
+     * @param dispatcher 命令分发器
+     * @param registryAccess 注册表访问器
+     * @param environment 注册环境
+     */
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher, CommandRegistryAccess registryAccess, CommandManager.RegistrationEnvironment environment) {
         dispatcher.register(CommandManager.literal("clairvoyance")
                 .then(CommandManager.literal("clearanchors_清除千里眼锚点")
@@ -56,6 +66,11 @@ public class ClairvoyanceCommand {
         );
     }
 
+    /**
+     * 切换观看模式并停止当前正在进行的观看。
+     * @param ctx 命令上下文
+     * @param mode 模式标识："legacy" 或 "modern"
+     */
     private static int setViewMode(CommandContext<ServerCommandSource> ctx, String mode) throws CommandSyntaxException {
         ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
         MonvhuaMod.VIEW_MODE_PREFERENCE.put(player.getUuid(), mode);
@@ -73,6 +88,9 @@ public class ClairvoyanceCommand {
         return 1;
     }
 
+    /**
+     * 清除当前玩家自己的所有千里眼锚点。
+     */
     private static int clearOwnAnchors(CommandContext<ServerCommandSource> ctx) throws CommandSyntaxException {
         ServerCommandSource source = ctx.getSource();
         ServerPlayerEntity player = source.getPlayerOrThrow();
@@ -82,6 +100,10 @@ public class ClairvoyanceCommand {
         return count;
     }
 
+    /**
+     * 清除指定名称玩家的所有千里眼锚点（需要 OP 权限）。
+     * @param playerName 目标玩家名
+     */
     private static int clearOtherAnchors(CommandContext<ServerCommandSource> ctx, String playerName) {
         ServerCommandSource source = ctx.getSource();
         MinecraftServer server = source.getServer();
@@ -95,7 +117,10 @@ public class ClairvoyanceCommand {
         return count;
     }
 
-    // 清除所有锚点（通过 armorStandOwner 映射遍历）
+    /**
+     * 清除所有玩家的所有千里眼锚点（需要 OP 权限）。
+     * 通过 armorStandOwner 映射遍历所有盔甲架，移除映射并产生爆炸效果。
+     */
     private static int clearAllAnchors(ServerCommandSource source) {
         MinecraftServer server = source.getServer();
         World world = server.getWorld(World.OVERWORLD);

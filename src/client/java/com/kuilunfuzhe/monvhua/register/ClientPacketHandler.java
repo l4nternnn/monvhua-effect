@@ -32,9 +32,17 @@ import net.minecraft.util.math.Vec3d;
 
 import java.util.UUID;
 
+/**
+ * 客户端网络包处理器注册中心。
+ * 注册所有 S2C 包的回调，涵盖千里眼、视线诱导、镜像、隐秘等系统的客户端状态同步。
+ */
 public class ClientPacketHandler {
     private static volatile int lastNotifiedStage = 1;
 
+    /**
+     * 注册所有 S2C 网络包的客户端处理回调。
+     * 每个回调在客户端主线程执行，对接收到的数据进行解析和状态更新。
+     */
     public static void register() {
         // 1. 千里眼全局配置接收
         ClientPlayNetworking.registerGlobalReceiver(GlobalConfigS2CPacket.ID, (packet, context) -> {
@@ -242,6 +250,10 @@ public class ClientPacketHandler {
         });
     }
 
+    /**
+     * 弹出阶段升级提示 Toast。
+     * @param newStage 新的阶段编号
+     */
     private static void showStageUpgradeToast(int newStage) {
         MinecraftClient client = MinecraftClient.getInstance();
         SystemToast.show(client.getToastManager(), SystemToast.Type.NARRATOR_TOGGLE, Text.literal("§6千里眼"), Text.literal("阶段提升至 §a" + newStage));

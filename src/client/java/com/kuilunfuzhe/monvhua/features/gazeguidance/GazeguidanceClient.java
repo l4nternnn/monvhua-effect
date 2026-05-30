@@ -17,25 +17,49 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
+/**
+ * 诱导法杖客户端。
+ * 管理右键长按检测（发送网络包）、能量HUD渲染、阶段提示Toast，
+ * 并提供射线目标实体获取工具方法。
+ */
 public class GazeguidanceClient {
 	private static KeyBinding stageConfigKey;
+	/** 上一tick右键状态，用于上升沿检测 */
 	private static boolean lastRightClickState = false;
+	/** 当前诱导法杖阶段 */
 	private static int currentStrength = 0;
+	/** 当前能量值 */
 	private static double currentEnergy = 0;
+	/** 最大能量值（100） */
 	private static double maxEnergy = 100;
+	/** 当前标记数量 */
 	private static int currentMarkCount = 0;
+	/** 最大可标记数量 */
 	private static int currentMaxMarks = 0;
 
-	// 供外部调用的设置方法（由网络接收器调用）
+	/**
+	 * 设置能量值（由网络接收器调用）。
+	 * @param current 当前能量
+	 * @param max     最大能量
+	 */
 	public static void setEnergy(double current, double max) {
 		currentEnergy = current;
 		maxEnergy = max;
 	}
 
+	/**
+	 * 设置标记数量（由网络接收器调用）。
+	 * @param count 当前标记数
+	 */
 	public static void setMarkCount(int count) {
 		currentMarkCount = count;
 	}
 
+	/**
+	 * 设置诱导法杖阶段并在阶段变化时显示Toast提示。
+	 * @param stage    新阶段编号
+	 * @param maxMarks 最大标记数
+	 */
 	public static void setStrength(int stage, int maxMarks) {
 		currentMaxMarks = maxMarks;
 		if (stage != currentStrength) {
@@ -55,6 +79,11 @@ public class GazeguidanceClient {
 		);
 	}
 
+	/**
+	 * 初始化诱导法杖客户端。
+	 * 注册tick事件处理（右键长按检测）和HUD能量条渲染。
+	 * 网络包接收器已移至ClairvoyanceClient统一管理。
+	 */
 	public static void initialize() {
 		// 所有接收器已移至 ClairvoyanceClient，此处不再注册
 		// 只保留业务逻辑所需的初始化（如按键绑定）
@@ -92,18 +121,18 @@ public class GazeguidanceClient {
 
 			int screenWidth = drawContext.getScaledWindowWidth();
 			int screenHeight = drawContext.getScaledWindowHeight();
-			int barWidth = 80;
-			int barHeight = 5;
-			int x = (screenWidth - barWidth) / 2;
-			int y = screenHeight - 49;
+			int barWidth = 80;  // 能量条宽度
+			int barHeight = 5;  // 能量条高度
+			int x = (screenWidth - barWidth) / 2; // 屏幕水平居中
+			int y = screenHeight - 49; // 能量条Y坐标，紧贴经验条上方
 
-			drawContext.fill(x, y, x + barWidth, y + barHeight, 0xFF444444);
+			drawContext.fill(x, y, x + barWidth, y + barHeight, 0xFF444444); // 能量条背景（深灰）
 			int fillWidth = (int)(barWidth * (currentEnergy / maxEnergy));
-			drawContext.fill(x, y, x + fillWidth, y + barHeight, 0xFF55AAFF);
+			drawContext.fill(x, y, x + fillWidth, y + barHeight, 0xFF55AAFF); // 能量条前景（蓝色）
 
 			String text = String.format("%.1f/%.0f", currentEnergy, maxEnergy);
-			int textX = x + barWidth + 5;
-			int textY = y - 2;
+			int textX = x + barWidth + 5; // 文字在能量条右侧5像素
+			int textY = y - 2; // 文字在能量条上方2像素
 			drawContext.drawText(client.textRenderer, text, textX, textY, 0xFF5555, true);
 		});
 
@@ -111,8 +140,15 @@ public class GazeguidanceClient {
 //		;
 	}
 
-	// 辅助方法：获取目标实体（保留供其他类使用）
-	public static Entity getTargetEntity(MinecraftClient client, double maxRange) {
+		/**
+		 * 射线检测获取玩家视线方向最近的活体实体。
+		 * 在maxRange范围内沿玩家视线做包围盒射线检测，返回最近的命中实体。
+		 *
+		 * @param client   Minecraft客户端实例
+		 * @param maxRange 最大检测距离
+		 * @return 最近的活体实体，未命中则返回null
+		 */
+		public static Entity getTargetEntity(MinecraftClient client, double maxRange) {
 		if (client.player == null || client.world == null) return null;
 		Vec3d start = client.player.getEyePos();
 		Vec3d direction = client.player.getRotationVec(1.0f);

@@ -9,6 +9,10 @@ import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.util.Identifier;
 
+/**
+ * 实体类型注册中心。
+ * 负责构建和注册模组自定义实体类型（如测试假人），并注册对应的默认属性（生命值、移速等）。
+ */
 public class ModEntities {
 
     // 1. 先用 EntityType.Builder 构建 EntityType 对象

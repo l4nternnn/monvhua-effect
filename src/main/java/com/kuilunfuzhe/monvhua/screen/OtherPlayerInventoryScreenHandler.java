@@ -9,16 +9,33 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.slot.Slot;
 
+/**
+ * 查看其他玩家物品栏的屏幕处理器。
+ * 显示目标玩家完整41格物品栏（快捷栏9格 + 背包27格 + 盔甲4格 + 副手1格），
+ * 底部同时显示查看者自己的快捷栏。快速移动功能被禁用。
+ */
 public class OtherPlayerInventoryScreenHandler extends ScreenHandler {
+    /** 目标玩家的物品栏（服务端为真实PlayerInventory引用，客户端为SimpleInventory占位） */
     private final Inventory otherInventory;
+    /** 查看者（正在查看其他玩家背包的玩家） */
     private final PlayerEntity viewer;
 
-    // 客户端使用的构造器（必须正确初始化槽位）
+    /**
+     * 客户端构造器，使用41格SimpleInventory占位（与服务端目标玩家物品栏数量一致，确保槽位索引正确）。
+     * @param syncId 同步ID
+     * @param viewerInv 查看者的物品栏
+     */
     public OtherPlayerInventoryScreenHandler(int syncId, PlayerInventory viewerInv) {
         this(syncId, viewerInv, new SimpleInventory(41)); // 41 个槽位，与服务端目标玩家物品栏数量一致
     }
 
-    // 服务端使用的构造器
+    /**
+     * 服务端构造器，绑定目标玩家的真实物品栏。
+     * 布局：顶部为目标玩家快捷栏 → 目标背包 → 查看者快捷栏（底部），盔甲栏与副手栏目前被注释禁用。
+     * @param syncId 同步ID
+     * @param viewerInv 查看者的物品栏
+     * @param targetInventory 目标玩家的物品栏
+     */
     public OtherPlayerInventoryScreenHandler(int syncId, PlayerInventory viewerInv, Inventory targetInventory) {
         super(MonvhuaMod.OTHER_INVENTORY_HANDLER, syncId);
         this.otherInventory = targetInventory;
@@ -68,9 +85,12 @@ public class OtherPlayerInventoryScreenHandler extends ScreenHandler {
         }
     }
 
+    /**
+     * 禁止快速移动——查看他人背包时不允许Shift+点击转移物品，防止物品丢失或复制。
+     * @return 始终返回EMPTY
+     */
     @Override
     public ItemStack quickMove(PlayerEntity player, int slot) {
-        // 禁止快速移动（可根据需要实现）
         return ItemStack.EMPTY;
     }
 
@@ -79,6 +99,9 @@ public class OtherPlayerInventoryScreenHandler extends ScreenHandler {
         return otherInventory.canPlayerUse(player);
     }
 
+    /**
+     * 界面关闭时通知目标物品栏，触发onClose回调以正确清理状态。
+     */
     @Override
     public void onClosed(PlayerEntity player) {
         super.onClosed(player);

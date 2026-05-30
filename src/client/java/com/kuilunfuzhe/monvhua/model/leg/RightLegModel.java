@@ -6,22 +6,37 @@ import net.minecraft.client.render.block.entity.SkullBlockEntityModel;
 import net.minecraft.client.render.entity.model.EntityModelPartNames;
 import net.minecraft.client.util.math.MatrixStack;
 
+/**
+ * 右腿模型。
+ *
+ * <p>继承{@link SkullBlockEntityModel}是为了复用头颅方碑的渲染管线——
+ * 通过方块实体渲染器将各部分模型分别渲染到不同颜色通道上。</p>
+ *
+ * <p><b>设计决策：</b>虽然本模型实际代表右腿，但使用{@link EntityModelPartNames#HEAD}
+ * 作为子节点名。这是因为{@link SkullBlockEntityModel#setHeadRotation}通过HEAD常量查找子节点，
+ * 因此所有非头部部位（手臂、腿等）也统一使用HEAD作为节点名来复用父类的旋转逻辑。</p>
+ */
 public class RightLegModel extends SkullBlockEntityModel {
     private final ModelPart right_leg;
 
     public RightLegModel(ModelPart root) {
         super(root);
+        // 用HEAD常量名查找实际代表右腿的模型部件，以复用父类SkullBlockEntityModel的旋转方法
         this.right_leg = root.getChild(EntityModelPartNames.HEAD);
     }
 
+    /** @return 右腿的TexturedModelData */
     public static TexturedModelData getTexturedModelData() {
         ModelData modelData = new ModelData();
         ModelPartData root = modelData.getRoot();
 
+        // 子节点名使用HEAD（而非RIGHT_LEG），使父类setHeadRotation能通过HEAD查找到此部件并旋转
+        // 右腿主体：4x12x4立方体，起始原点比左腿更靠近X轴中心
         ModelPartData rightLeg = root.addChild(EntityModelPartNames.HEAD,
                 ModelPartBuilder.create().uv(0, 16).cuboid(-2.0F, -12.0F, -2.0f, 4.0F, 12.0F, 4.0F),
                 ModelTransform.origin(0.0f, -6.0f, 0.0f));
 
+        // 右腿裤子（Dilation=0.25外层）
         ModelPartData pants = rightLeg.addChild("right_pants",
                 ModelPartBuilder.create().uv(0, 48).cuboid(-2.0F, -12.0F, -2.0F, 4.0F, 12.0F, 4.0F, new Dilation(0.25F)),
                 ModelTransform.origin(-0.0f, -0.0f, 0.0f));
@@ -30,8 +45,15 @@ public class RightLegModel extends SkullBlockEntityModel {
         return TexturedModelData.of(modelData, 64, 64);
     }
 
+    /**
+     * 设置右腿旋转角度，将角度值转换为弧度后应用到Yaw/Pitch。
+     * @param animationProgress 动画进度（未使用，仅用于覆写父类签名）
+     * @param yaw Y轴旋转角度（度）
+     * @param pitch X轴旋转角度（度）
+     */
     @Override
     public void setHeadRotation(float animationProgress, float yaw, float pitch) {
+        // 角度转弧度：Math.PI / 180.0
         this.right_leg.yaw = yaw * (float)(Math.PI / 180.0);
         this.right_leg.pitch = pitch * (float)(Math.PI / 180.0);
     }

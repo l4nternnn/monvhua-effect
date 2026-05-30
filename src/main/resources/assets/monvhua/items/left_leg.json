@@ -1,7 +1,7 @@
 {
   "model": {
     "type": "minecraft:special",
-    "base": "monvhua:item/left_leg",
+    "base": "monvhua:block/left_leg",
     "model": {
       "type": "monvhua:left_leg"
     }

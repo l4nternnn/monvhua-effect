@@ -6,6 +6,10 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+/**
+ * 示例Mixin：注入到MinecraftServer的loadWorld方法头部。
+ * 作为Mixin开发的模板参考，演示@Inject注解的基本用法。
+ */
 @Mixin(MinecraftServer.class)
 public class ExampleMixin {
 	@Inject(at = @At("HEAD"), method = "loadWorld")

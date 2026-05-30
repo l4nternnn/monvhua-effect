@@ -41,24 +41,55 @@ import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 千里眼核心功能模块 —— 玩家标记/盔甲架锚点/观看会话/网络包处理/锚点爆炸粒子
+ * <p>
+ * 负责处理千里眼(Clairvoyance)物品的所有服务端逻辑：
+ * <ul>
+ *   <li>实体标记：手动标记、自动标记（实体注视检测）、过期/超出范围清理</li>
+ *   <li>盔甲架锚点：放置、存活时间扫描、视线方向检测标记、超时爆炸销毁</li>
+ *   <li>观看会话：启动、每日次数消耗判定、超时强制退出</li>
+ *   <li>全局配置：接收客户端配置请求、OP玩家配置更新与广播</li>
+ * </ul>
+ */
 public class Evil_Eyes {
+    /** 每个玩家的绝对标记上限 */
     public static final int MAX_MARKED_ENTITIES = 5;
     public static Item CLAIRVOYANCE_ITEM;
 
+    private static final double ANCHOR_RANGE = 30.0;
+    private static final double ANCHOR_RANGE_SQ = ANCHOR_RANGE * ANCHOR_RANGE;
+    private static final int TICKS_PER_SECOND = 20;
+    private static final int MARK_EXPIRE_TICKS = 400;          // 20 秒
+    private static final int ANCHOR_TIMEOUT_TICKS = 3600;      // 180 秒
+    private static final int INITIAL_MARK_TICKS = 40;           // 2 秒
+    private static final int COOLDOWN_TICKS = 100;              // 5 秒
+    private static final double PARTICLE_BROADCAST_RANGE_SQ = 64.0 * 64.0;
 
-
-
-    // 玩家标记列表：玩家UUID -> (目标UUID -> 过期时间)
+    /** 玩家标记列表：玩家UUID → (目标UUID → 过期tick) */
     private static final Map<UUID, Map<UUID, Long>> playerMarkedEntities = new ConcurrentHashMap<>();
-    // 手动取消标记冷却：被取消的实体在100 tick内不会被锚点/自动标记重新加回
+    /**
+     * 手动取消标记冷却表：被取消的实体在冷却期内不会被锚点/自动标记重新加回。
+     * key=实体UUID, value=冷却结束tick（当前tick+100，即5秒）
+     */
     private static final Map<UUID, Long> recentlyUnmarked = new ConcurrentHashMap<>();
-    // 超出范围追踪：玩家UUID -> (实体UUID -> 首次检测到超出范围的tick)
+    /**
+     * 超出范围追踪表：当标记实体离开标记玩家的30格范围时记录首次检测tick，
+     * 持续超出20tick（1秒）后自动移除标记。key=玩家UUID → (实体UUID → 首次超出tick)
+     */
     private static final Map<UUID, Map<UUID, Long>> outOfRangeSince = new ConcurrentHashMap<>();
     private static final Logger LOGGER = LoggerFactory.getLogger("Clairvoyance");
 
 
 
-    // 正在观看的玩家信息
+    /**
+     * 观看会话内部数据记录
+     * <ul>
+     *   <li>{@code targetUuid} —— 被观看实体的UUID</li>
+     *   <li>{@code startTick} —— 会话开始的游戏刻</li>
+     *   <li>{@code counted} —— 是否已扣除每日次数（防止同一会话重复扣减）</li>
+     * </ul>
+     */
     private static class WatchingInfo {
         UUID targetUuid;
         long startTick;
@@ -69,14 +100,18 @@ public class Evil_Eyes {
             this.counted = false;
         }
     }
+    /** 活跃观看会话：观看者UUID → WatchingInfo */
     private static final Map<UUID, WatchingInfo> watchingPlayers = new ConcurrentHashMap<>();
 
-    // 盔甲架锚点相关映射
-    public static final Map<UUID, UUID> armorStandOwner = new ConcurrentHashMap<>();      // 盔甲架UUID -> 主人UUID
-    public static final Map<UUID, Long> armorStandSpawnTick = new ConcurrentHashMap<>();   // 盔甲架UUID -> 生成时刻(游戏刻)
+    /** 盔甲架锚点归属：盔甲架UUID → 主人UUID */
+    public static final Map<UUID, UUID> armorStandOwner = new ConcurrentHashMap<>();
+    /** 盔甲架锚点生成时刻：盔甲架UUID → 生成时的游戏刻（用于180秒超时判定） */
+    public static final Map<UUID, Long> armorStandSpawnTick = new ConcurrentHashMap<>();
 
+    /** 粒子效果发送计数器，每tick自增，每10tick（0.5秒）触发一次锚点粒子广播 */
     private static int particleTickCounter = 0;
 
+    /** 全局配置管理器引用，由 {@link #initialize} 设置 */
     public static GlobalConfigManager configManager;
 
 //    static {
@@ -95,6 +130,7 @@ public class Evil_Eyes {
 
 
     // ========== 辅助方法 ==========
+    /** 清空信号UUID：发送全零UUID到客户端表示"清除标记列表"，作为批量更新的前置操作 */
     private static final UUID CLEAR_SIGNAL = new UUID(0, 0);
 
     private static void sendMarkedListToClient(ServerPlayerEntity player, Map<UUID, Long> marks, int maxDisplayCount) {
@@ -120,6 +156,13 @@ public class Evil_Eyes {
         return name != null && "clairvoyance_evil_eyes".equals(name.getString());
     }
 
+    /**
+     * 根据玩家的记分板分数计算当前千里眼阶段
+     *
+     * @param player 目标玩家
+     * @param mgr    全局配置管理器，用于将原始分数映射为阶段值
+     * @return 阶段编号（1~N），记分板不存在或无分数时返回1
+     */
     public static int getPlayerStage(ServerPlayerEntity player, GlobalConfigManager mgr) {
         Scoreboard scoreboard = player.getScoreboard();
         ScoreboardObjective objective = scoreboard.getNullableObjective("monvhua");
@@ -144,28 +187,51 @@ public class Evil_Eyes {
                 (result.getType() == HitResult.Type.ENTITY && ((EntityHitResult) result).getEntity() == target);
     }
 
+    /**
+     * 向锚点附近的玩家发送爆炸粒子包（锚点被摧毁时的视觉反馈）
+     *
+     * @param stand  被销毁的盔甲架锚点
+     * @param server 服务端实例
+     */
     public static void sendExplosionToNearbyPlayers(Entity stand, MinecraftServer server) {
         if (stand == null) return;
         Vec3d pos = stand.getPos();
-        // 向半径 64 格内的所有玩家发送爆炸包
+        // 向半径64格（64^2=4096）内的所有玩家发送爆炸包
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            if (player.squaredDistanceTo(pos) < 4096) {
+            if (player.squaredDistanceTo(pos) < PARTICLE_BROADCAST_RANGE_SQ) {
                 ServerPlayNetworking.send(player, new ExplosionParticleS2CPacket(pos));
             }
         }
     }
 
+    /** 玩家锚点位置信息：玩家UUID → 锚点位置与最后观测时间 */
     public static final Map<UUID, AnchorInfo> anchors = new ConcurrentHashMap<>();
 
+    /** 锚点位置信息记录（用于玩家放置的盔甲架锚点追踪） */
     public static class AnchorInfo {
+        /** 锚点世界坐标 */
         public Vec3d pos;
+        /** 最后一次被扫描到的时间戳 */
         public long lastSeenTime;
     }
 
+    /**
+     * 判断玩家是否处于观看模式（通过 watchingPlayers 表判定）
+     *
+     * @param player 目标玩家
+     * @return 是否正在观看某个实体
+     */
     public static boolean isWatching(ServerPlayerEntity player) {
         return watchingPlayers.containsKey(player.getUuid());
     }
 
+    /**
+     * 强制退出观看模式 —— 移除会话记录并发送退出包。
+     * 用于超时、受伤、断线等场景的强制退出。
+     *
+     * @param player 目标玩家
+     * @param server 服务端实例
+     */
     public static void forceStopWatching(ServerPlayerEntity player, MinecraftServer server) {
         watchingPlayers.remove(player.getUuid());
         ServerPlayNetworking.send(player, new ForceExitViewPayload());
@@ -216,7 +282,14 @@ public class Evil_Eyes {
         sendMarkedListToClient(marker, marks, maxMarks);
     }
 
-public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server) {
+    /**
+     * 清除指定玩家的所有锚点盔甲架，并释放对应配额。
+     *
+     * @param playerUuid 玩家UUID
+     * @param server     服务端实例
+     * @return 清除的锚点数量
+     */
+    public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server) {
         int count = 0;
         World world = server.getWorld(World.OVERWORLD);
         if (world == null) return 0;
@@ -241,6 +314,27 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
     }
 
     // ========== 初始化 ==========
+    /**
+     * 千里眼核心系统的初始化入口。
+     * <p>
+     * 依次完成以下注册：
+     * <ol>
+     *   <li>物品注册（ClairvoyanceItem）并添加到创造模式工具物品组</li>
+     *   <li>全局配置的客户端请求与OP更新广播（RequestGlobalConfig / UpdateGlobalConfig）</li>
+     *   <li>手动标记/取消标记（MarkEntity / UnmarkEntity）</li>
+     *   <li>观看时长计时与每日次数消耗（ServerTick）</li>
+     *   <li>退出观看、选择观看实体（ExitView / SelectView）</li>
+     *   <li>受伤强制退出（ALLOW_DAMAGE）</li>
+     *   <li>过期/死亡/超出范围标记清理（ServerTick）</li>
+     *   <li>自动标记：实体注视手持千里眼的玩家（ServerTick，每5tick）</li>
+     *   <li>盔甲架锚点放置（PlaceParrot）</li>
+     *   <li>锚点粒子广播 + 实体扫描标记 + 超时销毁（ServerTick）</li>
+     *   <li>玩家阶段同步（ServerTick，每秒）</li>
+     *   <li>锚点死亡清理（AFTER_DEATH）</li>
+     * </ol>
+     *
+     * @param configManager 全局配置管理器
+     */
     public static void initialize(GlobalConfigManager configManager) {
         Evil_Eyes.configManager = configManager;
 
@@ -322,7 +416,7 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
 
             if (marks.containsKey(targetUuid)) {
                 marks.remove(targetUuid);
-                recentlyUnmarked.put(targetUuid, world.getTime() + 100); // 5秒冷却
+                recentlyUnmarked.put(targetUuid, world.getTime() + COOLDOWN_TICKS); // 5秒冷却
                 player.sendMessage(Text.literal("§e已取消标记 " + target.getName().getString()), true);
                 sendMarkedListToClient(player, marks, maxMarks);
             } else {
@@ -330,7 +424,7 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
                     player.sendMessage(Text.literal("§c标记已达绝对上限 (" + MAX_MARKED_ENTITIES + " 个)"), true);
                     return;
                 }
-                long expire = now + 40; // 2秒
+                long expire = now + INITIAL_MARK_TICKS; // 2秒
                 marks.put(targetUuid, expire);
                 player.sendMessage(Text.literal("§a你感觉 " + target.getName().getString() + " 在§6注视§r你"), true);
                 sendMarkedListToClient(player, marks, maxMarks);
@@ -344,7 +438,7 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
             Map<UUID, Long> marks = playerMarkedEntities.get(player.getUuid());
             if (marks == null || !marks.containsKey(targetUuid)) return;
             marks.remove(targetUuid);
-            recentlyUnmarked.put(targetUuid, player.getWorld().getTime() + 100);
+            recentlyUnmarked.put(targetUuid, player.getWorld().getTime() + COOLDOWN_TICKS);
             int stage = getPlayerStage(player, configManager);
             int maxMarks = configManager.getStageConfig(stage).maxMarks();
             sendMarkedListToClient(player, marks, maxMarks);
@@ -403,12 +497,12 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
             // 检查被观看实体是否在锚点30格范围内或自身30格范围内（自动标记同理）
             Entity targetEntity = player.getWorld().getEntity(selected);
             if (targetEntity == null) return;
-            boolean nearAnchor = targetEntity.squaredDistanceTo(player) < 30 * 30;
+            boolean nearAnchor = targetEntity.squaredDistanceTo(player) < ANCHOR_RANGE_SQ;
             if (!nearAnchor) {
                 for (Map.Entry<UUID, UUID> entry : armorStandOwner.entrySet()) {
                     if (!entry.getValue().equals(player.getUuid())) continue;
                     Entity anchor = player.getWorld().getEntity(entry.getKey());
-                    if (anchor != null && anchor.isAlive() && targetEntity.squaredDistanceTo(anchor) < 30 * 30) {
+                    if (anchor != null && anchor.isAlive() && targetEntity.squaredDistanceTo(anchor) < ANCHOR_RANGE_SQ) {
                         nearAnchor = true;
                         break;
                     }
@@ -476,13 +570,13 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
                     }
                     // 超出范围检测（仅当玩家在线时）
                     if (player != null && entity != null) {
-                        boolean inRange = entity.squaredDistanceTo(player) < 30 * 30;
+                        boolean inRange = entity.squaredDistanceTo(player) < ANCHOR_RANGE_SQ;
                         // 检查是否在锚点30格内
                         if (!inRange) {
                             for (Map.Entry<UUID, UUID> ae : armorStandOwner.entrySet()) {
                                 if (!ae.getValue().equals(playerUuid)) continue;
                                 Entity anchor = server.getWorld(World.OVERWORLD).getEntity(ae.getKey());
-                                if (anchor != null && anchor.isAlive() && entity.squaredDistanceTo(anchor) < 30 * 30) {
+                                if (anchor != null && anchor.isAlive() && entity.squaredDistanceTo(anchor) < ANCHOR_RANGE_SQ) {
                                     inRange = true;
                                     break;
                                 }
@@ -494,7 +588,7 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
                             Long since = outRange.get(entityUuid);
                             if (since == null) {
                                 outRange.put(entityUuid, now);
-                            } else if (now - since >= 20) {
+                            } else if (now - since >= TICKS_PER_SECOND) {
                                 it.remove();
                                 changed = true;
                                 outRange.remove(entityUuid);
@@ -516,9 +610,9 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
             recentlyUnmarked.entrySet().removeIf(e -> e.getValue() <= now);
         });
 
-        // 7. 自动标记原有：实体看向手持千里眼的玩家
+        // 7. 自动标记：实体看向手持千里眼的玩家（注视检测）
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            if (server.getTicks() % 5 != 0) return;
+            if (server.getTicks() % 5 != 0) return; // 每5tick（0.25秒）执行一次，降低开销
             World world = server.getWorld(World.OVERWORLD);
             if (world == null) return;
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
@@ -527,7 +621,7 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
                 int stage = getPlayerStage(player, configManager);
                 int maxMarks = configManager.getStageConfig(stage).maxMarks();
                 Map<UUID, Long> marks = playerMarkedEntities.computeIfAbsent(player.getUuid(), k -> new ConcurrentHashMap<>());
-                double range = 30.0;
+                double range = ANCHOR_RANGE;
                 Box searchBox = player.getBoundingBox().expand(range);
                 for (Entity entity : world.getOtherEntities(player, searchBox, e ->
                         e instanceof LivingEntity && e.isAlive() && !isAnchorStand(e))) {
@@ -537,9 +631,10 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
                     if (!hasLineOfSight(entity, player)) continue;
                     Vec3d toPlayer = player.getPos().subtract(entity.getPos()).normalize();
                     Vec3d entityLook = entity.getRotationVec(1.0f);
+                    // 点积>0.5表示实体视线与玩家方向夹角<60°，即实体大致在看向玩家
                     if (entityLook.dotProduct(toPlayer) < 0.5) continue;
                     long now = world.getTime();
-                    marks.put(entity.getUuid(), now + 400);
+                    marks.put(entity.getUuid(), now + MARK_EXPIRE_TICKS); // 自动标记有效期20秒（400tick）
                     sendMarkedListToClient(player, marks, maxMarks);
                     player.sendMessage(Text.literal( entity.getName().getString()+"在注视着你"), true);
                 }
@@ -625,7 +720,7 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
                     // 发送给附近玩家（以盔甲架为中心半径 64 格内）
                     // 广播给所有附近玩家
                     for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-                        if (player.squaredDistanceTo(stand) < 4096) { // 64格半径
+                        if (player.squaredDistanceTo(stand) < PARTICLE_BROADCAST_RANGE_SQ) { // 64格半径
                             ServerPlayNetworking.send(player, new AnchorParticleS2CPacket(standId, chestPos, 0));
                             ServerPlayNetworking.send(player, new AnchorParticleS2CPacket(standId, chestPos, 1));
                         }
@@ -647,7 +742,7 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
 
                 // 在遍历 armorStandOwner 的循环中，检查超时
                 Long spawnTick = armorStandSpawnTick.get(standId);
-                if (spawnTick != null && world.getTime() - spawnTick >= 3600) { // 180秒 = 36000 ticks
+                if (spawnTick != null && world.getTime() - spawnTick >= ANCHOR_TIMEOUT_TICKS) { // 3600tick=180秒=3分钟，到期销毁锚点
                     sendExplosionToNearbyPlayers(stand, server);
 
                     stand.remove(Entity.RemovalReason.DISCARDED);   // 销毁盔甲架
@@ -670,7 +765,7 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
                 int maxMarks = configManager.getStageConfig(stage).maxMarks();
                 if (marks.size() >= maxMarks) continue;
 
-                double range = 30.0;
+                double range = ANCHOR_RANGE;
                 Box searchBox = stand.getBoundingBox().expand(range);
                 List<LivingEntity> nearby = world.getEntitiesByClass(LivingEntity.class, searchBox,
                         e -> e.isAlive() && e != owner && e != stand && !isAnchorStand(e));
@@ -690,7 +785,7 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
 
                     // 通过检测，标记该实体
                     long now = world.getTime();
-                    long expire = now + 400;  // 20秒
+                    long expire = now + MARK_EXPIRE_TICKS;  // 20秒
                     marks.put(living.getUuid(), expire);
                     sendMarkedListToClient(owner, marks, maxMarks);
                     owner.sendMessage(Text.literal("§a[锚点] " + living.getName().getString() + " 在注视着你"), true);
@@ -700,7 +795,7 @@ public static int clearAnchorsForPlayer(UUID playerUuid, MinecraftServer server)
 
         // 在 Evil_Eyes.initialize 末尾添加
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            if (server.getTicks() % 20 == 0) { // 每秒同步一次阶段
+            if (server.getTicks() % TICKS_PER_SECOND == 0) { // 每秒同步一次阶段
                 for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                     int stage = getPlayerStage(player, configManager);
                     ServerPlayNetworking.send(player, new PlayerStageS2CPacket(stage));
