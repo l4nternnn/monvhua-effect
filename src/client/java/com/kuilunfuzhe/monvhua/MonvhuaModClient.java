@@ -105,5 +105,25 @@ public class MonvhuaModClient implements ClientModInitializer {
         });
 
         HandledScreens.register(ModScreenHandlers.BODY_PART_SCREEN_HANDLER, BodyPartScreen::new);
+
+        // 漂浮魔法按键检测
+        new java.util.Timer(true).scheduleAtFixedRate(new java.util.TimerTask() {
+            private boolean lastJumpPressed = false;
+
+            @Override
+            public void run() {
+                net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+                if (client.player != null) {
+                    // 每 tick 检查无限漂浮状态
+                    com.kuilunfuzhe.monvhua.features.floating.floating.tick(client.player);
+
+                    boolean jumpPressed = client.options.jumpKey.isPressed();
+                    if (jumpPressed && !lastJumpPressed) {
+                        com.kuilunfuzhe.monvhua.features.floating.floating.onPlayerJump(client.player);
+                    }
+                    lastJumpPressed = jumpPressed;
+                }
+            }
+        }, 0, 50);
     }
 }
