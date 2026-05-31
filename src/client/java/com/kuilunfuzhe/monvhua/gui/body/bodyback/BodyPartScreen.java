@@ -1,4 +1,4 @@
-package com.kuilunfuzhe.monvhua.gui.bodyback;
+package com.kuilunfuzhe.monvhua.gui.body.bodyback;
 
 import com.kuilunfuzhe.monvhua.screen.BodyPartScreenHandler;
 import net.minecraft.client.gl.RenderPipelines;

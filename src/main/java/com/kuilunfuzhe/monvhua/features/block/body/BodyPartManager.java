@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.features.block.body;
 
 import com.kuilunfuzhe.monvhua.command.GiveBodyPartCommand;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
+import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.screen.BodyPartScreenHandler;
 import com.kuilunfuzhe.monvhua.util.ImplementedInventory;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
@@ -559,13 +560,45 @@ public class BodyPartManager {
 	}
 
 	public static void createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile) {
+		createCombinedDisplay(world, pos, skinName, torsoInv, profile, false, null, true);
+	}
+
+	public static void createPosedCombinedDisplay(ServerPlayerEntity player, String skinName, boolean slim, float[] poseValues) {
+		ServerWorld world = (ServerWorld) player.getWorld();
+		Vec3d forward = getHorizontalForward(player);
+		Vec3d pos = player.getPos().add(forward.x, 1.5D, forward.z);
+		createCombinedDisplay(world, pos, skinName, DefaultedList.ofSize(9, ItemStack.EMPTY), null, slim, poseValues, false);
+		player.sendMessage(Text.literal("Placed posed body model"), true);
+	}
+
+	public static void createPosedCombinedDisplay(ServerPlayerEntity player, ProfileComponent profile, boolean slim, float[] poseValues) {
+		ServerWorld world = (ServerWorld) player.getWorld();
+		Vec3d forward = getHorizontalForward(player);
+		Vec3d pos = player.getPos().add(forward.x, 1.5D, forward.z);
+		createCombinedDisplay(world, pos, "", DefaultedList.ofSize(9, ItemStack.EMPTY), profile, slim, poseValues, false);
+		player.sendMessage(Text.literal("Placed posed body model"), true);
+	}
+
+	private static void createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile, boolean slim, float[] poseValues, boolean lyingDown) {
 		ItemStack combinedStack = new ItemStack(Items.NETHERITE_SCRAP);
 		combinedStack.set(DataComponentTypes.ITEM_MODEL, Identifier.of("monvhua", "combined_body"));
 		if (profile != null) {
 			combinedStack.set(DataComponentTypes.PROFILE, profile);
+			if (poseValues != null || slim) {
+				NbtCompound nbt = new NbtCompound();
+				if (slim) {
+					nbt.putString("arm_model", "slim");
+				}
+				writePoseValues(nbt, poseValues);
+				combinedStack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
+			}
 		} else {
 			NbtCompound nbt = new NbtCompound();
 			nbt.putString("local_skin", skinName);
+			if (slim) {
+				nbt.putString("arm_model", "slim");
+			}
+			writePoseValues(nbt, poseValues);
 			combinedStack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
 		}
 		combinedStack.set(DataComponentTypes.CUSTOM_NAME, Text.literal("§6§k13§4躯体§r§6§k13§r"));
@@ -575,15 +608,15 @@ public class BodyPartManager {
 		if (display != null) {
 			display.setItemStack(combinedStack);
 			display.setPosition(pos);
-			if (LEFT_ROTATION_KEY != null) {
+			if (LEFT_ROTATION_KEY != null && lyingDown) {
 				display.getDataTracker().set(LEFT_ROTATION_KEY, new Quaternionf().rotateX((float) Math.toRadians(90)));
 			}
 			world.spawnEntity(display);
 
 			InteractionEntity interaction = new InteractionEntity(EntityType.INTERACTION, world);
-			interaction.setPosition(pos.x, pos.y - 0.3, pos.z);
+			interaction.setPosition(pos.x, lyingDown ? pos.y - 0.3 : pos.y - 1.5, pos.z);
 			interaction.setInteractionWidth(0.9f);
-			interaction.setInteractionHeight(0.8f);
+			interaction.setInteractionHeight(lyingDown ? 0.8f : 1.8f);
 			world.spawnEntity(interaction);
 			INTERACTION_TO_DISPLAY.put(interaction.getUuid(), display.getUuid());
 			DISPLAY_TO_INTERACTION.put(display.getUuid(), interaction.getUuid());
@@ -591,5 +624,28 @@ public class BodyPartManager {
 				BODY_PART_DISPLAY_INVENTORIES.put(display.getUuid(), torsoInv);
 			}
 		}
+	}
+
+	private static Vec3d getHorizontalForward(ServerPlayerEntity player) {
+		double rad = Math.toRadians(player.getYaw());
+		return new Vec3d(-Math.sin(rad), 0, Math.cos(rad)).normalize();
+	}
+
+	private static void writePoseValues(NbtCompound nbt, float[] poseValues) {
+		if (poseValues == null || poseValues.length < PlacePosedBodyC2SPacket.POSE_VALUE_COUNT) {
+			return;
+		}
+		writePose(nbt, poseValues, 0, "head");
+		writePose(nbt, poseValues, 3, "torso");
+		writePose(nbt, poseValues, 6, "left_arm");
+		writePose(nbt, poseValues, 9, "right_arm");
+		writePose(nbt, poseValues, 12, "left_leg");
+		writePose(nbt, poseValues, 15, "right_leg");
+	}
+
+	private static void writePose(NbtCompound nbt, float[] values, int offset, String part) {
+		nbt.putFloat("pose_" + part + "_pitch", values[offset]);
+		nbt.putFloat("pose_" + part + "_yaw", values[offset + 1]);
+		nbt.putFloat("pose_" + part + "_roll", values[offset + 2]);
 	}
 }

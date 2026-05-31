@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.kuilunfuzhe.monvhua.features.block.body.BodyModelSelectionCatalog;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import net.minecraft.command.CommandRegistryAccess;
 import net.minecraft.command.CommandSource;
@@ -18,21 +19,10 @@ import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.text.Text;
 
-/**
- * /clairvoyance-肢体获取 命令，向指定玩家给予肢体物品。
- * 支持从在线玩家复制皮肤或使用内置皮肤，可选 slim 手臂模型。
- */
 public class GiveBodyPartCommand {
-    /** 内置皮肤列表（文件名不含扩展名），用于命令补全和皮肤查找 */
-    public static final String[] LOCAL_SKINS = {
-        "anan", "coco", "ema", "hanna", "hiro", "mago", "miria", "mll", "nnk",
-        "noa", "reiya", "sherry", "yalisa", "yuki", "kanshou"
-    };
+    // 内置皮肤列表（文件名不含扩展名）
+    public static final String[] LOCAL_SKINS = BodyModelSelectionCatalog.LOCAL_SKINS;
 
-    /**
-     * 注册 /clairvoyance-肢体获取 命令及其子命令。
-     * 支持从在线玩家或内置皮肤获取肢体，可选 slim 模型。
-     */
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher,
                                 CommandRegistryAccess registryAccess,
                                 CommandManager.RegistrationEnvironment environment) {
@@ -264,11 +254,6 @@ public class GiveBodyPartCommand {
         );
     }
 
-    /**
-     * 给予目标玩家指定来源玩家的单个肢体部位。
-     * @param part 部位标识：head/torso/left_arm/right_arm/left_leg/right_leg
-     * @param slim 是否 slim 模型
-     */
     private static int giveBodyPart(PlayerEntity target, PlayerEntity source, String part, boolean slim) {
         ItemStack stack = createPartStack(source, part, slim);
         if (stack.isEmpty()) return 0;
@@ -279,9 +264,6 @@ public class GiveBodyPartCommand {
         return 1;
     }
 
-    /**
-     * 给予目标玩家来源玩家的全部 6 个肢体部位，并额外给予一个玩家头颅。
-     */
     private static int giveAllParts(PlayerEntity target, PlayerEntity source, boolean slim) {
         String[] parts = {"head", "torso", "left_arm", "right_arm", "left_leg", "right_leg"};
         for (String part : parts) {
@@ -297,12 +279,6 @@ public class GiveBodyPartCommand {
         return 1;
     }
 
-    /**
-     * 给予目标玩家指定内置皮肤的单个肢体部位。
-     * @param skinName 内置皮肤名称
-     * @param part 部位标识
-     * @param slim 是否 slim 模型
-     */
     private static int giveLocalSkinPart(PlayerEntity target, String skinName, String part, boolean slim) {
         ItemStack stack = createLocalSkinPartStack(skinName, part, slim);
         if (stack.isEmpty()) return 0;
@@ -313,9 +289,6 @@ public class GiveBodyPartCommand {
         return 1;
     }
 
-    /**
-     * 给予目标玩家内置皮肤的全部 6 个肢体部位。
-     */
     private static int giveAllLocalSkinParts(PlayerEntity target, String skinName, boolean slim) {
         String[] parts = {"head", "torso", "left_arm", "right_arm", "left_leg", "right_leg"};
         for (String part : parts) {
@@ -325,11 +298,6 @@ public class GiveBodyPartCommand {
         return 1;
     }
 
-    /**
-     * 根据来源玩家创建带有 PROFILE 组件的肢体物品堆。
-     * @param part 部位标识
-     * @param slim 是否 slim 模型
-     */
     private static ItemStack createPartStack(PlayerEntity source, String part, boolean slim) {
         Item item;
         String chineseName;
@@ -374,9 +342,6 @@ public class GiveBodyPartCommand {
         return stack;
     }
 
-    /**
-     * 创建带有内置皮肤 NBT 数据的肢体物品堆，通过 CUSTOM_DATA 组件存储 local_skin 和 arm_model。
-     */
     private static ItemStack createLocalSkinPartStack(String skinName, String part, boolean slim) {
         Item item;
         String chineseName;

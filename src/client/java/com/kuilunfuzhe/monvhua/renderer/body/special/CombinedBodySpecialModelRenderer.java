@@ -10,6 +10,7 @@ import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.model.LoadedEntityModels;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.nbt.NbtCompound;
 import org.joml.Vector3f;
 
 import java.util.Set;
@@ -47,6 +48,8 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         VertexConsumer vertexConsumer = vertexConsumers.getBuffer(renderLayer);
         boolean slim = "slim".equals(data.armModel());
         PlayerEntityModel activeModel = slim ? slimModel : model;
+        resetModel(activeModel);
+        applyPoseData(activeModel, data.customData());
 
         // 保存6个outer层的当前可见性，用于后续恢复
         boolean hatVisible = activeModel.hat.visible;
@@ -117,6 +120,33 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
     /** 体素渲染回调接口：执行体素渲染并返回是否成功 */
     private interface VoxelRenderCall {
         boolean render(MatrixStack matrices, VertexConsumer vertexConsumer);
+    }
+
+    private static void resetModel(PlayerEntityModel model) {
+        for (ModelPart part : model.getRootPart().traverse()) {
+            part.resetTransform();
+            part.visible = true;
+            part.hidden = false;
+        }
+    }
+
+    private static void applyPoseData(PlayerEntityModel model, NbtCompound data) {
+        if (data == null) {
+            return;
+        }
+        applyPose(model.head, data, "head");
+        applyPose(model.body, data, "torso");
+        applyPose(model.leftArm, data, "left_arm");
+        applyPose(model.rightArm, data, "right_arm");
+        applyPose(model.leftLeg, data, "left_leg");
+        applyPose(model.rightLeg, data, "right_leg");
+    }
+
+    private static void applyPose(ModelPart part, NbtCompound data, String partName) {
+        float degreesToRadians = (float) (Math.PI / 180.0);
+        part.pitch += data.getFloat("pose_" + partName + "_pitch", 0.0F) * degreesToRadians;
+        part.yaw += data.getFloat("pose_" + partName + "_yaw", 0.0F) * degreesToRadians;
+        part.roll += data.getFloat("pose_" + partName + "_roll", 0.0F) * degreesToRadians;
     }
 
     @Override

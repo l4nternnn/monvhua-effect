@@ -4,6 +4,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
 import com.kuilunfuzhe.monvhua.features.secrecy.SecrecyClientAudioManager;
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorScreen;
 import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
@@ -16,8 +17,6 @@ import com.kuilunfuzhe.monvhua.renderer.Font_Render;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.AnchorButtonRenderer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
@@ -42,6 +41,9 @@ public class ClientTickHandler {
             if (client.player == null) return;
             if (KeyBindingHandler.configKey.wasPressed() && client.player.isCreative()) {
                 client.setScreen(new CombinedConfigScreen());
+            }
+            if (KeyBindingHandler.bodyPoseEditorKey.wasPressed() && client.player.isCreative()) {
+                client.setScreen(new BodyPoseEditorScreen());
             }
             if (KeyBindingHandler.markKey.wasPressed()) {
                 ItemStack mainHand = client.player.getMainHandStack();

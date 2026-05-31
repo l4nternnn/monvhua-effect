@@ -41,7 +41,11 @@ public abstract class BodyPartSpecialModelRenderer implements SpecialModelRender
      * @param texture 皮肤纹理的Identifier
      * @param armModel 手臂模型类型："default"为标准手臂，"slim"为纤细手臂
      */
-    public record Data(RenderLayer layer, Identifier texture, String armModel) {
+    public record Data(RenderLayer layer, Identifier texture, String armModel, @Nullable NbtCompound customData) {
+        public Data(RenderLayer layer, Identifier texture, String armModel) {
+            this(layer, texture, armModel, null);
+        }
+
         /** 根据SkinTextures构造默认的Data（armModel默认为"default"） */
         static Data of(SkinTextures textures) {
             return new Data(RenderLayer.getEntityCutoutNoCull(textures.texture()), textures.texture(), "default");
@@ -106,7 +110,7 @@ public abstract class BodyPartSpecialModelRenderer implements SpecialModelRender
             if (localSkin.isPresent()) {
                 armModel = nbt.getString("arm_model").orElse("default");
                 Identifier localTexture = Identifier.of("monvhua", "textures/local_skin/" + localSkin.get() + ".png");
-                return new Data(RenderLayer.getEntityCutoutNoCull(localTexture), localTexture, armModel);
+                return new Data(RenderLayer.getEntityCutoutNoCull(localTexture), localTexture, armModel, nbt);
             }
         }
 
@@ -125,7 +129,7 @@ public abstract class BodyPartSpecialModelRenderer implements SpecialModelRender
             }
         }
 
-        return new Data(RenderLayer.getEntityCutoutNoCull(textures.texture()), textures.texture(), armModel);
+        return new Data(RenderLayer.getEntityCutoutNoCull(textures.texture()), textures.texture(), armModel, customData != null ? customData.copyNbt() : null);
     }
 
     @Override

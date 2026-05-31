@@ -8,7 +8,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.ClientCameraWatchReceiver;
 import com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorHudOverlay;
-import com.kuilunfuzhe.monvhua.gui.bodyback.BodyPartScreen;
+import com.kuilunfuzhe.monvhua.gui.body.bodyback.BodyPartScreen;
 import com.kuilunfuzhe.monvhua.gui.mirror.mirrorHUD;
 import com.kuilunfuzhe.monvhua.gui.openback.OtherPlayerInventoryScreen;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
