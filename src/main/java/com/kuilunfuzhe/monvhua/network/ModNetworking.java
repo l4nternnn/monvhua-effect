@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.network;
 
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
+import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeC2SPacket;
@@ -40,6 +41,7 @@ public class ModNetworking {
 		MirrorChargeSyncS2CPacket.register();
 		SecrecyConfigS2CPacket.register();
 		SecrecyStateS2CPacket.register();
+		CarryPoseSyncS2CPacket.register();
 	}
 
 	// 注册所有 C2S 包（只需要服务端）

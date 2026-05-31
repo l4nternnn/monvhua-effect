@@ -80,6 +80,10 @@ public class CarryEvents {
 			CarryManager.cleanupForDisconnect(player);
 		});
 
+		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+			CarryManager.syncAllCarryPosesTo(handler.getPlayer());
+		});
+
 		// 搬运实体请求
 		ServerPlayNetworking.registerGlobalReceiver(CarryEntityPayload.ID, (payload, context) -> {
 			ServerPlayerEntity carrier = context.player();
@@ -149,6 +153,7 @@ public class CarryEvents {
 
 			CarryManager.CARRIED_ENTITIES.put(carrier, new CarryManager.CarriedEntityData(target, savedFlying, savedAllowFlying, savedInvulnerable));
 			CarryManager.CARRIED_BY.put(target, carrier);
+			CarryManager.syncCarryPose(carrier, target, true);
 			carrier.sendMessage(Text.literal("§a你抱起了 " + target.getName().getString()), false);
 		});
 
@@ -158,6 +163,7 @@ public class CarryEvents {
 			CarryManager.CarriedEntityData data = CarryManager.CARRIED_ENTITIES.remove(carrier);
 			if (data == null) return;
 			Entity carried = data.entity;
+			CarryManager.syncCarryPose(carrier, carried, false);
 			CarryManager.CARRIED_BY.remove(carried);
 			if (carried.isAlive()) {
 				carried.setNoGravity(false);

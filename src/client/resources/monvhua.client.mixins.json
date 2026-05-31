@@ -2,12 +2,15 @@
 	"required": true,
 	"package": "com.kuilunfuzhe.monvhua.mixin",
 	"compatibilityLevel": "JAVA_21",
+	"refmap": "monvhua.client.refmap.json",
 	"client": [
 		"ExampleClientMixin",
 		"HideHandMixin",
 		"CameraAccessor",
 		"FramebufferOverrideMixin",
-		"WorldRendererHookMixin"
+		"WorldRendererHookMixin",
+		"carrymodelpose.PlayerEntityModelCarryPoseMixin",
+		"carrymodelpose.PlayerEntityRendererCarryPoseMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
