@@ -7,13 +7,19 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.client.render.entity.model.EntityModelLayers;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.util.SkinTextures;
+import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -27,14 +33,17 @@ public class BodyPoseEditorScreen extends Screen {
 	private static final float MODEL_PART_UNITS_PER_GRID = 16.0F;
 	private static final float MODEL_OFFSET_MIN = -10.0F;
 	private static final float MODEL_OFFSET_MAX = 10.0F;
-	private static final float MOVE_AXIS_LENGTH = 2.0F;
-	private static final float MOVE_AXIS_HIT_RADIUS = 10.0F;
-	private static final float ROTATION_RING_RADIUS = 2.45F;
-	private static final float ROTATION_RING_HIT_RADIUS = 9.0F;
+	private static final float MOVE_AXIS_LENGTH = 2.0F / 3.0F;
+	private static final float MOVE_AXIS_HIT_RADIUS = 3.4F;
+	private static final float ROTATION_RING_RADIUS = 2.45F / 3.0F;
+	private static final float ROTATION_RING_HIT_RADIUS = 3.0F;
 	private static final int ROTATION_RING_SEGMENTS = 48;
 	private static final int PLAYER_LIST_ITEM_HEIGHT = 18;
 	private static final int PLAYER_LIST_VISIBLE_ROWS = 6;
 	private static final int PLAYER_SELECTOR_WIDTH = 152;
+	private static final int ITEM_LIST_ITEM_HEIGHT = 18;
+	private static final int ITEM_LIST_VISIBLE_ROWS = 8;
+	private static final int ITEM_SELECTOR_WIDTH = 150;
 	private static String selectedSkin = BodyModelSelectionCatalog.LOCAL_SKINS[0];
 	private static String selectedPlayerName = "";
 	private static SkinSource selectedSkinSource = SkinSource.LOCAL;
@@ -43,6 +52,7 @@ public class BodyPoseEditorScreen extends Screen {
 	private static float modelOffsetX;
 	private static float modelOffsetY;
 	private static float modelOffsetZ;
+	private static final List<EditorItemModel> EDITOR_ITEMS = new ArrayList<>();
 	private static final Map<String, PartPose> PART_POSES = createPartPoses();
 
 	private final List<ButtonWidget> skinButtons = new ArrayList<>();
@@ -53,6 +63,11 @@ public class BodyPoseEditorScreen extends Screen {
 	private ButtonWidget placeButton;
 	private ButtonWidget showWholeButton;
 	private ButtonWidget playerButton;
+	private ButtonWidget itemButton;
+	private ButtonWidget placeItemsButton;
+	private ButtonWidget clearSelectedItemButton;
+	private ButtonWidget clearAllItemsButton;
+	private ButtonWidget resetTransformButton;
 	private PlayerEntityModel defaultPreviewModel;
 	private PlayerEntityModel slimPreviewModel;
 	private float previewPitch = 24.0F;
@@ -74,6 +89,9 @@ public class BodyPoseEditorScreen extends Screen {
 	private MoveAxis draggingMoveAxis = MoveAxis.NONE;
 	private RotationAxis hoveredRotationAxis = RotationAxis.NONE;
 	private RotationAxis draggingRotationAxis = RotationAxis.NONE;
+	private boolean itemListOpen;
+	private int itemListScroll;
+	private int selectedEditorItemIndex = -1;
 
 	public BodyPoseEditorScreen() {
 		super(Text.literal("Body Pose Editor"));
@@ -155,6 +173,35 @@ public class BodyPoseEditorScreen extends Screen {
 				.position(rightX, poseY + 102)
 				.build());
 
+		this.itemButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> {
+					this.itemListOpen = !this.itemListOpen;
+					clampItemListScroll(getAvailableItemStacks().size());
+					refreshButtonLabels();
+				})
+				.size(ITEM_SELECTOR_WIDTH, 20)
+				.position(rightX, poseY + 126)
+				.build());
+
+		this.placeItemsButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> placeEditorItems())
+				.size(150, 18)
+				.position(rightX, poseY + 150)
+				.build());
+
+		this.clearSelectedItemButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> clearSelectedItemModel())
+				.size(72, 18)
+				.position(rightX, poseY + 172)
+				.build());
+
+		this.clearAllItemsButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> clearAllItemModels())
+				.size(74, 18)
+				.position(rightX + 76, poseY + 172)
+				.build());
+
+		this.resetTransformButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> resetActiveTransform())
+				.size(150, 18)
+				.position(rightX, poseY + 194)
+				.build());
+
 		this.showWholeButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> {
 					this.showWholePreview = !this.showWholePreview;
 					refreshButtonLabels();
@@ -209,6 +256,24 @@ public class BodyPoseEditorScreen extends Screen {
 		if (this.placeButton != null) {
 			this.placeButton.setMessage(Text.literal("放置模型"));
 		}
+		if (this.itemButton != null) {
+			this.itemButton.setMessage(Text.literal("物品: " + getSelectedItemLabel()));
+		}
+		if (this.placeItemsButton != null) {
+			this.placeItemsButton.setMessage(Text.literal("放置物品模型(" + EDITOR_ITEMS.size() + ")"));
+			this.placeItemsButton.active = !EDITOR_ITEMS.isEmpty();
+		}
+		if (this.clearSelectedItemButton != null) {
+			this.clearSelectedItemButton.setMessage(Text.literal("清除选中"));
+			this.clearSelectedItemButton.active = hasSelectedItemModel();
+		}
+		if (this.clearAllItemsButton != null) {
+			this.clearAllItemsButton.setMessage(Text.literal("清除全部"));
+			this.clearAllItemsButton.active = !EDITOR_ITEMS.isEmpty();
+		}
+		if (this.resetTransformButton != null) {
+			this.resetTransformButton.setMessage(Text.literal("重置当前偏移"));
+		}
 		if (this.showWholeButton != null) {
 			this.showWholeButton.setMessage(Text.literal("整体预览 " + (this.showWholePreview ? "开启" : "关闭")));
 		}
@@ -259,6 +324,27 @@ public class BodyPoseEditorScreen extends Screen {
 				this.previewPitch, this.previewYaw, this.previewRoll));
 	}
 
+	private void placeEditorItems() {
+		if (EDITOR_ITEMS.isEmpty()) {
+			return;
+		}
+		List<PlacePoseEditorItemsC2SPacket.ItemPlacement> placements = new ArrayList<>();
+		for (EditorItemModel item : EDITOR_ITEMS) {
+			Identifier itemId = Registries.ITEM.getId(item.stack.getItem());
+			if (itemId != null) {
+				placements.add(new PlacePoseEditorItemsC2SPacket.ItemPlacement(
+						itemId,
+						item.offsetX,
+						item.offsetY,
+						item.offsetZ,
+						item.pitch,
+						item.yaw,
+						item.roll));
+			}
+		}
+		ClientPlayNetworking.send(new PlacePoseEditorItemsC2SPacket(placements));
+	}
+
 	@Override
 	public void render(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
 		int previewLeft = getPreviewLeft();
@@ -280,13 +366,27 @@ public class BodyPoseEditorScreen extends Screen {
 		this.hoveredRotationAxis = this.draggingRotationAxis == RotationAxis.NONE ? findRotationRing(mouseX, mouseY) : this.draggingRotationAxis;
 		renderModelOffsetReadout(context, previewLeft + 8, previewTop + 8);
 		renderPlayerPreview(context, previewLeft + 10, previewTop + 48, previewRight - 10, previewBottom - 10);
+		renderEditorItemPreviews(context);
 
 		super.render(context, mouseX, mouseY, deltaTicks);
 		renderPlayerList(context, mouseX, mouseY);
+		renderItemList(context, mouseX, mouseY);
 	}
 
 	@Override
 	public boolean mouseClicked(double mouseX, double mouseY, int button) {
+		if (button == 0 && this.itemListOpen) {
+			if (selectItemFromList(mouseX, mouseY)) {
+				return true;
+			}
+			if (isInsideItemList(mouseX, mouseY)) {
+				return true;
+			}
+			if (!isInsideItemSelector(mouseX, mouseY)) {
+				this.itemListOpen = false;
+				refreshButtonLabels();
+			}
+		}
 		if (button == 0 && this.playerListOpen) {
 			if (selectPlayerFromList(mouseX, mouseY)) {
 				return true;
@@ -303,6 +403,12 @@ public class BodyPoseEditorScreen extends Screen {
 			return true;
 		}
 		if (button == 0 && isInsidePreview(mouseX, mouseY)) {
+			int itemIndex = findPreviewItem(mouseX, mouseY);
+			if (itemIndex >= 0) {
+				this.selectedEditorItemIndex = itemIndex;
+				refreshButtonLabels();
+				return true;
+			}
 			RotationAxis rotationAxis = findRotationRing(mouseX, mouseY);
 			if (rotationAxis != RotationAxis.NONE) {
 				this.draggingRotationAxis = rotationAxis;
@@ -314,6 +420,10 @@ public class BodyPoseEditorScreen extends Screen {
 				this.draggingMoveAxis = moveAxis;
 				this.hoveredMoveAxis = moveAxis;
 				return true;
+			}
+			if (this.selectedEditorItemIndex != -1) {
+				this.selectedEditorItemIndex = -1;
+				refreshButtonLabels();
 			}
 			this.draggingPreview = true;
 			return true;
@@ -373,6 +483,12 @@ public class BodyPoseEditorScreen extends Screen {
 
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+		if (this.itemListOpen && isInsideItemList(mouseX, mouseY)) {
+			int direction = verticalAmount > 0.0D ? -1 : 1;
+			this.itemListScroll += direction;
+			clampItemListScroll(getAvailableItemStacks().size());
+			return true;
+		}
 		if (this.playerListOpen && isInsidePlayerList(mouseX, mouseY)) {
 			int direction = verticalAmount > 0.0D ? -1 : 1;
 			this.playerListScroll += direction;
@@ -384,6 +500,15 @@ public class BodyPoseEditorScreen extends Screen {
 			return true;
 		}
 		return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+	}
+
+	@Override
+	public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+		if (keyCode == GLFW.GLFW_KEY_DELETE) {
+			clearSelectedItemModel();
+			return true;
+		}
+		return super.keyPressed(keyCode, scanCode, modifiers);
 	}
 
 	@Override
@@ -427,13 +552,13 @@ public class BodyPoseEditorScreen extends Screen {
 	}
 
 	private void renderModelOffsetReadout(DrawContext context, int x, int y) {
-		context.drawTextWithShadow(this.textRenderer, "Offset", x, y, 0xFFE2E8F0);
-		context.drawTextWithShadow(this.textRenderer, "X " + formatOffset(modelOffsetX), x, y + 12, 0xFFFF7777);
-		context.drawTextWithShadow(this.textRenderer, "Y " + formatOffset(modelOffsetY), x, y + 24, 0xFF77FF77);
-		context.drawTextWithShadow(this.textRenderer, "Z " + formatOffset(modelOffsetZ), x, y + 36, 0xFF8CA0FF);
-		context.drawTextWithShadow(this.textRenderer, "Rot P " + formatDegrees(this.previewPitch), x, y + 54, 0xFFFF7777);
-		context.drawTextWithShadow(this.textRenderer, "Rot Y " + formatDegrees(this.previewYaw), x, y + 66, 0xFF77FF77);
-		context.drawTextWithShadow(this.textRenderer, "Rot R " + formatDegrees(this.previewRoll), x, y + 78, 0xFF8CA0FF);
+		context.drawTextWithShadow(this.textRenderer, getActiveModelLabel(), x, y, 0xFFE2E8F0);
+		context.drawTextWithShadow(this.textRenderer, "X " + formatOffset(getActiveOffsetX()), x, y + 12, 0xFFFF7777);
+		context.drawTextWithShadow(this.textRenderer, "Y " + formatOffset(getActiveOffsetY()), x, y + 24, 0xFF77FF77);
+		context.drawTextWithShadow(this.textRenderer, "Z " + formatOffset(getActiveOffsetZ()), x, y + 36, 0xFF8CA0FF);
+		context.drawTextWithShadow(this.textRenderer, "Rot P " + formatDegrees(getActivePitch()), x, y + 54, 0xFFFF7777);
+		context.drawTextWithShadow(this.textRenderer, "Rot Y " + formatDegrees(getActiveYaw()), x, y + 66, 0xFF77FF77);
+		context.drawTextWithShadow(this.textRenderer, "Rot R " + formatDegrees(getActiveRoll()), x, y + 78, 0xFF8CA0FF);
 	}
 
 	public boolean isShowingCoordinateAxes() {
@@ -445,15 +570,15 @@ public class BodyPoseEditorScreen extends Screen {
 	}
 
 	public float getModelOffsetX() {
-		return modelOffsetX;
+		return getActiveOffsetX();
 	}
 
 	public float getModelOffsetY() {
-		return modelOffsetY;
+		return getActiveOffsetY();
 	}
 
 	public float getModelOffsetZ() {
-		return modelOffsetZ;
+		return getActiveOffsetZ();
 	}
 
 	public String getHighlightedMoveAxis() {
@@ -621,20 +746,23 @@ public class BodyPoseEditorScreen extends Screen {
 		if (!isInsidePreview(mouseX, mouseY)) {
 			return MoveAxis.NONE;
 		}
-		ScreenPoint center = projectModelPoint(modelOffsetX, modelOffsetY, modelOffsetZ);
+		float offsetX = getActiveOffsetX();
+		float offsetY = getActiveOffsetY();
+		float offsetZ = getActiveOffsetZ();
+		ScreenPoint center = projectModelPoint(offsetX, offsetY, offsetZ);
 		double bestDistance = MOVE_AXIS_HIT_RADIUS;
 		MoveAxis bestAxis = MoveAxis.NONE;
-		double distance = distanceToSegment(mouseX, mouseY, center, projectModelPoint(modelOffsetX + MOVE_AXIS_LENGTH, modelOffsetY, modelOffsetZ));
+		double distance = distanceToSegment(mouseX, mouseY, center, projectModelPoint(offsetX + MOVE_AXIS_LENGTH, offsetY, offsetZ));
 		if (distance <= bestDistance) {
 			bestDistance = distance;
 			bestAxis = MoveAxis.X;
 		}
-		distance = distanceToSegment(mouseX, mouseY, center, projectModelPoint(modelOffsetX, modelOffsetY + MOVE_AXIS_LENGTH, modelOffsetZ));
+		distance = distanceToSegment(mouseX, mouseY, center, projectModelPoint(offsetX, offsetY + MOVE_AXIS_LENGTH, offsetZ));
 		if (distance <= bestDistance) {
 			bestDistance = distance;
 			bestAxis = MoveAxis.Y;
 		}
-		distance = distanceToSegment(mouseX, mouseY, center, projectModelPoint(modelOffsetX, modelOffsetY, modelOffsetZ + MOVE_AXIS_LENGTH));
+		distance = distanceToSegment(mouseX, mouseY, center, projectModelPoint(offsetX, offsetY, offsetZ + MOVE_AXIS_LENGTH));
 		if (distance <= bestDistance) {
 			bestAxis = MoveAxis.Z;
 		}
@@ -679,20 +807,26 @@ public class BodyPoseEditorScreen extends Screen {
 		float angle = (float) (Math.PI * 2.0D * segment / ROTATION_RING_SEGMENTS);
 		float cos = (float) Math.cos(angle) * ROTATION_RING_RADIUS;
 		float sin = (float) Math.sin(angle) * ROTATION_RING_RADIUS;
+		float offsetX = getActiveOffsetX();
+		float offsetY = getActiveOffsetY();
+		float offsetZ = getActiveOffsetZ();
 		return switch (axis) {
-			case PITCH -> projectModelPoint(modelOffsetX, modelOffsetY + cos, modelOffsetZ + sin);
-			case YAW -> projectModelPoint(modelOffsetX + cos, modelOffsetY, modelOffsetZ + sin);
-			case ROLL -> projectModelPoint(modelOffsetX + cos, modelOffsetY + sin, modelOffsetZ);
-			case NONE -> projectModelPoint(modelOffsetX, modelOffsetY, modelOffsetZ);
+			case PITCH -> projectModelPoint(offsetX, offsetY + cos, offsetZ + sin);
+			case YAW -> projectModelPoint(offsetX + cos, offsetY, offsetZ + sin);
+			case ROLL -> projectModelPoint(offsetX + cos, offsetY + sin, offsetZ);
+			case NONE -> projectModelPoint(offsetX, offsetY, offsetZ);
 		};
 	}
 
 	private void dragModelOffset(MoveAxis axis, double deltaX, double deltaY) {
-		ScreenPoint center = projectModelPoint(modelOffsetX, modelOffsetY, modelOffsetZ);
+		float offsetX = getActiveOffsetX();
+		float offsetY = getActiveOffsetY();
+		float offsetZ = getActiveOffsetZ();
+		ScreenPoint center = projectModelPoint(offsetX, offsetY, offsetZ);
 		ScreenPoint end = switch (axis) {
-			case X -> projectModelPoint(modelOffsetX + MOVE_AXIS_LENGTH, modelOffsetY, modelOffsetZ);
-			case Y -> projectModelPoint(modelOffsetX, modelOffsetY + MOVE_AXIS_LENGTH, modelOffsetZ);
-			case Z -> projectModelPoint(modelOffsetX, modelOffsetY, modelOffsetZ + MOVE_AXIS_LENGTH);
+			case X -> projectModelPoint(offsetX + MOVE_AXIS_LENGTH, offsetY, offsetZ);
+			case Y -> projectModelPoint(offsetX, offsetY + MOVE_AXIS_LENGTH, offsetZ);
+			case Z -> projectModelPoint(offsetX, offsetY, offsetZ + MOVE_AXIS_LENGTH);
 			case NONE -> center;
 		};
 		double axisX = end.x - center.x;
@@ -703,42 +837,42 @@ public class BodyPoseEditorScreen extends Screen {
 		}
 		float deltaUnits = (float) ((deltaX * axisX + deltaY * axisY) / axisLength / getPreviewPixelsPerGrid());
 		switch (axis) {
-			case X -> modelOffsetX = clamp(modelOffsetX + deltaUnits, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
-			case Y -> modelOffsetY = clamp(modelOffsetY + deltaUnits, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
-			case Z -> modelOffsetZ = clamp(modelOffsetZ + deltaUnits, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+			case X -> setActiveOffsetX(clamp(offsetX + deltaUnits, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX));
+			case Y -> setActiveOffsetY(clamp(offsetY + deltaUnits, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX));
+			case Z -> setActiveOffsetZ(clamp(offsetZ + deltaUnits, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX));
 			case NONE -> {
 			}
 		}
 	}
 
 	private void dragModelRotation(RotationAxis axis, double mouseX, double mouseY, double deltaX, double deltaY) {
-		ScreenPoint center = projectModelPoint(modelOffsetX, modelOffsetY, modelOffsetZ);
+		ScreenPoint center = projectModelPoint(getActiveOffsetX(), getActiveOffsetY(), getActiveOffsetZ());
 		double previousAngle = Math.atan2(mouseY - deltaY - center.y, mouseX - deltaX - center.x);
 		double currentAngle = Math.atan2(mouseY - center.y, mouseX - center.x);
 		float degrees = normalizeDegrees((float) Math.toDegrees(currentAngle - previousAngle));
 		switch (axis) {
-			case PITCH -> this.previewPitch = clamp(this.previewPitch + degrees, -180.0F, 180.0F);
-			case YAW -> this.previewYaw = normalizeDegrees(this.previewYaw + degrees);
-			case ROLL -> this.previewRoll = normalizeDegrees(this.previewRoll + degrees);
+			case PITCH -> setActivePitch(clamp(getActivePitch() + degrees, -180.0F, 180.0F));
+			case YAW -> setActiveYaw(normalizeDegrees(getActiveYaw() + degrees));
+			case ROLL -> setActiveRoll(normalizeDegrees(getActiveRoll() + degrees));
 			case NONE -> {
 			}
 		}
 	}
 
 	private ScreenPoint projectModelPoint(float x, float y, float z) {
-		float yawRadians = (float) Math.toRadians(-this.previewYaw);
+		float yawRadians = (float) Math.toRadians(-getActiveYaw());
 		float yawCos = (float) Math.cos(yawRadians);
 		float yawSin = (float) Math.sin(yawRadians);
 		float yawX = x * yawCos + z * yawSin;
 		float yawZ = z * yawCos - x * yawSin;
 
-		float pitchRadians = (float) Math.toRadians(this.previewPitch);
+		float pitchRadians = (float) Math.toRadians(getActivePitch());
 		float pitchCos = (float) Math.cos(pitchRadians);
 		float pitchSin = (float) Math.sin(pitchRadians);
 		float pitchY = y * pitchCos - yawZ * pitchSin;
 		float pitchX = yawX;
 
-		float rollRadians = (float) Math.toRadians(this.previewRoll);
+		float rollRadians = (float) Math.toRadians(getActiveRoll());
 		float rollCos = (float) Math.cos(rollRadians);
 		float rollSin = (float) Math.sin(rollRadians);
 		float rollX = pitchX * rollCos - pitchY * rollSin;
@@ -777,6 +911,292 @@ public class BodyPoseEditorScreen extends Screen {
 
 	private float getPreviewRenderCenterY() {
 		return (getPreviewTop() + 48 + getPreviewBottom() - 10) * 0.5F + this.previewPanY;
+	}
+
+	private void renderEditorItemPreviews(DrawContext context) {
+		for (int i = 0; i < EDITOR_ITEMS.size(); i++) {
+			EditorItemModel item = EDITOR_ITEMS.get(i);
+			ScreenPoint point = projectPreviewPoint(item.offsetX, item.offsetY, item.offsetZ);
+			int x = Math.round(point.x) - 8;
+			int y = Math.round(point.y) - 8;
+			context.drawItem(item.stack, x, y);
+			context.drawBorder(x - 1, y - 1, 18, 18, i == this.selectedEditorItemIndex ? 0xFFFFFF55 : 0x99FFFFFF);
+		}
+	}
+
+	private ScreenPoint projectPreviewPoint(float x, float y, float z) {
+		float yawRadians = (float) Math.toRadians(-this.previewYaw);
+		float yawCos = (float) Math.cos(yawRadians);
+		float yawSin = (float) Math.sin(yawRadians);
+		float yawX = x * yawCos + z * yawSin;
+		float yawZ = z * yawCos - x * yawSin;
+		float pitchRadians = (float) Math.toRadians(this.previewPitch);
+		float pitchCos = (float) Math.cos(pitchRadians);
+		float pitchSin = (float) Math.sin(pitchRadians);
+		float pitchY = y * pitchCos - yawZ * pitchSin;
+		float pitchX = yawX;
+		float rollRadians = (float) Math.toRadians(this.previewRoll);
+		float rollCos = (float) Math.cos(rollRadians);
+		float rollSin = (float) Math.sin(rollRadians);
+		float rollX = pitchX * rollCos - pitchY * rollSin;
+		float rollY = pitchX * rollSin + pitchY * rollCos;
+		return new ScreenPoint(getPreviewRenderCenterX() + rollX * getPreviewPixelsPerGrid(), getPreviewRenderCenterY() + rollY * getPreviewPixelsPerGrid());
+	}
+
+	private int findPreviewItem(double mouseX, double mouseY) {
+		for (int i = EDITOR_ITEMS.size() - 1; i >= 0; i--) {
+			EditorItemModel item = EDITOR_ITEMS.get(i);
+			ScreenPoint point = projectPreviewPoint(item.offsetX, item.offsetY, item.offsetZ);
+			if (mouseX >= point.x - 10 && mouseX <= point.x + 10 && mouseY >= point.y - 10 && mouseY <= point.y + 10) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private void renderItemList(DrawContext context, int mouseX, int mouseY) {
+		if (!this.itemListOpen) {
+			return;
+		}
+		List<ItemStack> stacks = getAvailableItemStacks();
+		clampItemListScroll(stacks.size());
+		int x = getItemSelectorX();
+		int y = getItemListTop();
+		int visibleRows = Math.min(ITEM_LIST_VISIBLE_ROWS, Math.max(1, stacks.size()));
+		int height = visibleRows * ITEM_LIST_ITEM_HEIGHT + 2;
+		context.fill(x, y, x + ITEM_SELECTOR_WIDTH, y + height, 0xF05E6876);
+		context.drawBorder(x, y, ITEM_SELECTOR_WIDTH, height, 0xFFFFFFFF);
+		if (stacks.isEmpty()) {
+			context.drawTextWithShadow(this.textRenderer, "无可选物品", x + 6, y + 6, 0xFFE2E8F0);
+			return;
+		}
+		context.enableScissor(x + 1, y + 1, x + ITEM_SELECTOR_WIDTH - 1, y + height - 1);
+		try {
+			for (int row = 0; row < visibleRows; row++) {
+				int index = this.itemListScroll + row;
+				if (index >= stacks.size()) {
+					break;
+				}
+				ItemStack stack = stacks.get(index);
+				int rowTop = y + 1 + row * ITEM_LIST_ITEM_HEIGHT;
+				boolean hovered = mouseX >= x + 1 && mouseX <= x + ITEM_SELECTOR_WIDTH - 1
+						&& mouseY >= rowTop && mouseY < rowTop + ITEM_LIST_ITEM_HEIGHT;
+				context.fill(x + 1, rowTop, x + ITEM_SELECTOR_WIDTH - 1, rowTop + ITEM_LIST_ITEM_HEIGHT, hovered ? 0xE08796AA : (row % 2 == 0 ? 0xE0727D8C : 0xE0677180));
+				context.drawItem(stack, x + 3, rowTop + 1);
+				context.drawTextWithShadow(this.textRenderer, stack.getName().getString(), x + 23, rowTop + 5, 0xFFE2E8F0);
+			}
+		} finally {
+			context.disableScissor();
+		}
+	}
+
+	private boolean selectItemFromList(double mouseX, double mouseY) {
+		if (!isInsideItemList(mouseX, mouseY)) {
+			return false;
+		}
+		List<ItemStack> stacks = getAvailableItemStacks();
+		if (stacks.isEmpty()) {
+			return true;
+		}
+		int row = (int) ((mouseY - getItemListTop() - 1) / ITEM_LIST_ITEM_HEIGHT);
+		int visibleRows = Math.min(ITEM_LIST_VISIBLE_ROWS, Math.max(1, stacks.size()));
+		if (row < 0 || row >= visibleRows) {
+			return true;
+		}
+		int index = this.itemListScroll + row;
+		if (index >= stacks.size()) {
+			return true;
+		}
+		EditorItemModel model = new EditorItemModel(stacks.get(index).copyWithCount(1));
+		EDITOR_ITEMS.add(model);
+		this.selectedEditorItemIndex = EDITOR_ITEMS.size() - 1;
+		this.itemListOpen = false;
+		refreshButtonLabels();
+		return true;
+	}
+
+	private List<ItemStack> getAvailableItemStacks() {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client == null || client.player == null) {
+			return List.of();
+		}
+		List<ItemStack> stacks = new ArrayList<>();
+		for (int i = 0; i < client.player.getInventory().size(); i++) {
+			ItemStack stack = client.player.getInventory().getStack(i);
+			if (!stack.isEmpty()) {
+				addItemOption(stacks, stack.copyWithCount(1));
+			}
+		}
+		if (client.player.isCreative()) {
+			for (Item item : Registries.ITEM) {
+				if (item != Items.AIR && "minecraft".equals(Registries.ITEM.getId(item).getNamespace())) {
+					addItemOption(stacks, new ItemStack(item));
+				}
+			}
+		}
+		return stacks;
+	}
+
+	private static void addItemOption(List<ItemStack> stacks, ItemStack stack) {
+		for (ItemStack existing : stacks) {
+			if (existing.isOf(stack.getItem())) {
+				return;
+			}
+		}
+		stacks.add(stack);
+	}
+
+	private boolean isInsideItemSelector(double mouseX, double mouseY) {
+		return mouseX >= getItemSelectorX()
+				&& mouseX <= getItemSelectorX() + ITEM_SELECTOR_WIDTH
+				&& mouseY >= getItemSelectorY()
+				&& mouseY <= getItemSelectorY() + 20;
+	}
+
+	private boolean isInsideItemList(double mouseX, double mouseY) {
+		List<ItemStack> stacks = getAvailableItemStacks();
+		int visibleRows = Math.min(ITEM_LIST_VISIBLE_ROWS, Math.max(1, stacks.size()));
+		int height = visibleRows * ITEM_LIST_ITEM_HEIGHT + 2;
+		int x = getItemSelectorX();
+		int y = getItemListTop();
+		return mouseX >= x && mouseX <= x + ITEM_SELECTOR_WIDTH
+				&& mouseY >= y && mouseY <= y + height;
+	}
+
+	private int getItemSelectorX() {
+		return this.width - 178;
+	}
+
+	private int getItemSelectorY() {
+		return getPoseControlsY(38) + 126;
+	}
+
+	private int getItemListTop() {
+		return getItemSelectorY() + 22;
+	}
+
+	private void clampItemListScroll(int itemCount) {
+		int visibleRows = Math.min(ITEM_LIST_VISIBLE_ROWS, Math.max(1, itemCount));
+		int maxScroll = Math.max(0, itemCount - visibleRows);
+		this.itemListScroll = Math.max(0, Math.min(maxScroll, this.itemListScroll));
+	}
+
+	private boolean hasSelectedItemModel() {
+		return this.selectedEditorItemIndex >= 0 && this.selectedEditorItemIndex < EDITOR_ITEMS.size();
+	}
+
+	private String getSelectedItemLabel() {
+		return hasSelectedItemModel() ? EDITOR_ITEMS.get(this.selectedEditorItemIndex).stack.getName().getString() : "玩家模型";
+	}
+
+	private String getActiveModelLabel() {
+		return hasSelectedItemModel() ? "Item " + (this.selectedEditorItemIndex + 1) : "Player";
+	}
+
+	private void clearSelectedItemModel() {
+		if (!hasSelectedItemModel()) {
+			return;
+		}
+		EDITOR_ITEMS.remove(this.selectedEditorItemIndex);
+		this.selectedEditorItemIndex = Math.min(this.selectedEditorItemIndex, EDITOR_ITEMS.size() - 1);
+		refreshButtonLabels();
+	}
+
+	private void clearAllItemModels() {
+		EDITOR_ITEMS.clear();
+		this.selectedEditorItemIndex = -1;
+		refreshButtonLabels();
+	}
+
+	private void resetActiveTransform() {
+		if (hasSelectedItemModel()) {
+			EditorItemModel item = EDITOR_ITEMS.get(this.selectedEditorItemIndex);
+			item.offsetX = 0.0F;
+			item.offsetY = 0.0F;
+			item.offsetZ = 0.0F;
+			item.pitch = 0.0F;
+			item.yaw = 0.0F;
+			item.roll = 0.0F;
+		} else {
+			modelOffsetX = 0.0F;
+			modelOffsetY = 0.0F;
+			modelOffsetZ = 0.0F;
+			this.previewPitch = 0.0F;
+			this.previewYaw = 0.0F;
+			this.previewRoll = 0.0F;
+		}
+	}
+
+	private float getActiveOffsetX() {
+		return hasSelectedItemModel() ? EDITOR_ITEMS.get(this.selectedEditorItemIndex).offsetX : modelOffsetX;
+	}
+
+	private float getActiveOffsetY() {
+		return hasSelectedItemModel() ? EDITOR_ITEMS.get(this.selectedEditorItemIndex).offsetY : modelOffsetY;
+	}
+
+	private float getActiveOffsetZ() {
+		return hasSelectedItemModel() ? EDITOR_ITEMS.get(this.selectedEditorItemIndex).offsetZ : modelOffsetZ;
+	}
+
+	private float getActivePitch() {
+		return hasSelectedItemModel() ? EDITOR_ITEMS.get(this.selectedEditorItemIndex).pitch : this.previewPitch;
+	}
+
+	private float getActiveYaw() {
+		return hasSelectedItemModel() ? EDITOR_ITEMS.get(this.selectedEditorItemIndex).yaw : this.previewYaw;
+	}
+
+	private float getActiveRoll() {
+		return hasSelectedItemModel() ? EDITOR_ITEMS.get(this.selectedEditorItemIndex).roll : this.previewRoll;
+	}
+
+	private void setActiveOffsetX(float value) {
+		if (hasSelectedItemModel()) {
+			EDITOR_ITEMS.get(this.selectedEditorItemIndex).offsetX = value;
+		} else {
+			modelOffsetX = value;
+		}
+	}
+
+	private void setActiveOffsetY(float value) {
+		if (hasSelectedItemModel()) {
+			EDITOR_ITEMS.get(this.selectedEditorItemIndex).offsetY = value;
+		} else {
+			modelOffsetY = value;
+		}
+	}
+
+	private void setActiveOffsetZ(float value) {
+		if (hasSelectedItemModel()) {
+			EDITOR_ITEMS.get(this.selectedEditorItemIndex).offsetZ = value;
+		} else {
+			modelOffsetZ = value;
+		}
+	}
+
+	private void setActivePitch(float value) {
+		if (hasSelectedItemModel()) {
+			EDITOR_ITEMS.get(this.selectedEditorItemIndex).pitch = value;
+		} else {
+			this.previewPitch = value;
+		}
+	}
+
+	private void setActiveYaw(float value) {
+		if (hasSelectedItemModel()) {
+			EDITOR_ITEMS.get(this.selectedEditorItemIndex).yaw = value;
+		} else {
+			this.previewYaw = value;
+		}
+	}
+
+	private void setActiveRoll(float value) {
+		if (hasSelectedItemModel()) {
+			EDITOR_ITEMS.get(this.selectedEditorItemIndex).roll = value;
+		} else {
+			this.previewRoll = value;
+		}
 	}
 
 	private void renderPlayerList(DrawContext context, int mouseX, int mouseY) {
@@ -1061,6 +1481,20 @@ public class BodyPoseEditorScreen extends Screen {
 		private float pitch;
 		private float yaw;
 		private float roll;
+	}
+
+	private static final class EditorItemModel {
+		private final ItemStack stack;
+		private float offsetX;
+		private float offsetY;
+		private float offsetZ;
+		private float pitch;
+		private float yaw;
+		private float roll;
+
+		private EditorItemModel(ItemStack stack) {
+			this.stack = stack;
+		}
 	}
 
 	private static final class ScreenPoint {

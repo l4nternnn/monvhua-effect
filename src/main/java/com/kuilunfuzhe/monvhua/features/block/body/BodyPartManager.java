@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.features.block.body;
 
 import com.kuilunfuzhe.monvhua.command.GiveBodyPartCommand;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
+import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.screen.BodyPartScreenHandler;
 import com.kuilunfuzhe.monvhua.util.ImplementedInventory;
@@ -43,6 +44,7 @@ import net.minecraft.util.collection.DefaultedList;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.registry.Registries;
 import net.minecraft.world.World;
 import org.joml.Quaternionf;
 
@@ -619,6 +621,39 @@ public class BodyPartManager {
 		createCombinedDisplay(world, pos, "", DefaultedList.ofSize(9, ItemStack.EMPTY), profile, slim, poseValues, false,
 				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll);
 		player.sendMessage(Text.literal("Placed posed body model"), true);
+	}
+
+	public static void createPoseEditorItemDisplays(ServerPlayerEntity player, List<PlacePoseEditorItemsC2SPacket.ItemPlacement> placements) {
+		if (placements == null || placements.isEmpty()) {
+			player.sendMessage(Text.literal("No pose editor item models to place"), true);
+			return;
+		}
+		ServerWorld world = (ServerWorld) player.getWorld();
+		Vec3d forward = getHorizontalForward(player);
+		Vec3d basePos = player.getPos().add(forward.x, 1.5D, forward.z);
+		int placed = 0;
+		for (PlacePoseEditorItemsC2SPacket.ItemPlacement placement : placements) {
+			Item item = Registries.ITEM.get(placement.itemId());
+			if (item == Items.AIR) {
+				continue;
+			}
+			ItemDisplayEntity display = EntityType.ITEM_DISPLAY.create(world, SpawnReason.TRIGGERED);
+			if (display == null) {
+				continue;
+			}
+			display.setItemStack(new ItemStack(item));
+			display.setPosition(basePos.x + placement.offsetX(), basePos.y + placement.offsetY(), basePos.z + placement.offsetZ());
+			if (LEFT_ROTATION_KEY != null) {
+				Quaternionf rotation = new Quaternionf()
+						.rotateX((float) Math.toRadians(placement.pitch()))
+						.rotateY((float) Math.toRadians(-placement.yaw()))
+						.rotateZ((float) Math.toRadians(placement.roll()));
+				display.getDataTracker().set(LEFT_ROTATION_KEY, rotation);
+			}
+			world.spawnEntity(display);
+			placed++;
+		}
+		player.sendMessage(Text.literal("Placed " + placed + " pose editor item model(s)"), true);
 	}
 
 	private static void createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile,
