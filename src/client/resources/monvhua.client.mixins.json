@@ -10,7 +10,8 @@
 		"FramebufferOverrideMixin",
 		"WorldRendererHookMixin",
 		"carrymodelpose.PlayerEntityModelCarryPoseMixin",
-		"carrymodelpose.PlayerEntityRendererCarryPoseMixin"
+		"carrymodelpose.PlayerEntityRendererCarryPoseMixin",
+    "PlayerSkinGuiElementRendererMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
