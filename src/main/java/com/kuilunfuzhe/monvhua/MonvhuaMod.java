@@ -230,9 +230,13 @@ public class MonvhuaMod implements ModInitializer {
                         player.sendMessage(Text.literal("Player " + packet.playerName() + " is not online"), true);
                         return;
                     }
-                    BodyPartManager.createPosedCombinedDisplay(player, new ProfileComponent(source.getGameProfile()), packet.slimModel(), packet.poseValues());
+                    BodyPartManager.createPosedCombinedDisplay(player, new ProfileComponent(source.getGameProfile()), packet.slimModel(), packet.poseValues(),
+                            packet.offsetX(), packet.offsetY(), packet.offsetZ(),
+                            packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll());
                 } else {
-                    BodyPartManager.createPosedCombinedDisplay(player, packet.skinName(), packet.slimModel(), packet.poseValues());
+                    BodyPartManager.createPosedCombinedDisplay(player, packet.skinName(), packet.slimModel(), packet.poseValues(),
+                            packet.offsetX(), packet.offsetY(), packet.offsetZ(),
+                            packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll());
                 }
             });
         });

@@ -24,6 +24,14 @@ public class BodyPoseEditorScreen extends Screen {
 	private static final float ROTATION_STEP_DEGREES = 5.0F;
 	private static final float PREVIEW_CHEST_PIVOT_Y = 6.0F;
 	private static final float PREVIEW_Y_PIVOT = 1.601F;
+	private static final float MODEL_PART_UNITS_PER_GRID = 16.0F;
+	private static final float MODEL_OFFSET_MIN = -10.0F;
+	private static final float MODEL_OFFSET_MAX = 10.0F;
+	private static final float MOVE_AXIS_LENGTH = 2.0F;
+	private static final float MOVE_AXIS_HIT_RADIUS = 10.0F;
+	private static final float ROTATION_RING_RADIUS = 2.45F;
+	private static final float ROTATION_RING_HIT_RADIUS = 9.0F;
+	private static final int ROTATION_RING_SEGMENTS = 48;
 	private static final int PLAYER_LIST_ITEM_HEIGHT = 18;
 	private static final int PLAYER_LIST_VISIBLE_ROWS = 6;
 	private static final int PLAYER_SELECTOR_WIDTH = 152;
@@ -32,6 +40,9 @@ public class BodyPoseEditorScreen extends Screen {
 	private static SkinSource selectedSkinSource = SkinSource.LOCAL;
 	private static String selectedPart = BodyModelSelectionCatalog.PARTS[0];
 	private static boolean slimModel = true;
+	private static float modelOffsetX;
+	private static float modelOffsetY;
+	private static float modelOffsetZ;
 	private static final Map<String, PartPose> PART_POSES = createPartPoses();
 
 	private final List<ButtonWidget> skinButtons = new ArrayList<>();
@@ -46,6 +57,7 @@ public class BodyPoseEditorScreen extends Screen {
 	private PlayerEntityModel slimPreviewModel;
 	private float previewPitch = 24.0F;
 	private float previewYaw = 0.0F;
+	private float previewRoll = 0.0F;
 	private float previewZoom = 1.0F;
 	private boolean showWholePreview = true;
 	private boolean draggingPreview;
@@ -58,6 +70,10 @@ public class BodyPoseEditorScreen extends Screen {
 	private ButtonWidget coordMovableButton;
 	private boolean playerListOpen;
 	private int playerListScroll;
+	private MoveAxis hoveredMoveAxis = MoveAxis.NONE;
+	private MoveAxis draggingMoveAxis = MoveAxis.NONE;
+	private RotationAxis hoveredRotationAxis = RotationAxis.NONE;
+	private RotationAxis draggingRotationAxis = RotationAxis.NONE;
 
 	public BodyPoseEditorScreen() {
 		super(Text.literal("Body Pose Editor"));
@@ -237,7 +253,10 @@ public class BodyPoseEditorScreen extends Screen {
 	}
 
 	private void placePosedBody() {
-		ClientPlayNetworking.send(new PlacePosedBodyC2SPacket(selectedSkin, slimModel, createPoseValueArray(), selectedSkinSource == SkinSource.PLAYER, selectedPlayerName));
+		ClientPlayNetworking.send(new PlacePosedBodyC2SPacket(selectedSkin, slimModel, createPoseValueArray(),
+				selectedSkinSource == SkinSource.PLAYER, selectedPlayerName,
+				modelOffsetX, modelOffsetY, modelOffsetZ,
+				this.previewPitch, this.previewYaw, this.previewRoll));
 	}
 
 	@Override
@@ -257,6 +276,9 @@ public class BodyPoseEditorScreen extends Screen {
 		context.drawBorder(previewLeft, previewTop, previewRight - previewLeft, previewBottom - previewTop, 0x88FFFFFF);
 		context.drawCenteredTextWithShadow(this.textRenderer, getSelectedSkinLabel() + " / " + (slimModel ? "slim" : "default"), (previewLeft + previewRight) / 2, previewTop + 16, 0xFFFFFF);
 		context.drawCenteredTextWithShadow(this.textRenderer, selectedPart, (previewLeft + previewRight) / 2, previewTop + 30, 0xB8B8B8);
+		this.hoveredMoveAxis = this.draggingMoveAxis == MoveAxis.NONE ? findMoveAxis(mouseX, mouseY) : this.draggingMoveAxis;
+		this.hoveredRotationAxis = this.draggingRotationAxis == RotationAxis.NONE ? findRotationRing(mouseX, mouseY) : this.draggingRotationAxis;
+		renderModelOffsetReadout(context, previewLeft + 8, previewTop + 8);
 		renderPlayerPreview(context, previewLeft + 10, previewTop + 48, previewRight - 10, previewBottom - 10);
 
 		super.render(context, mouseX, mouseY, deltaTicks);
@@ -281,6 +303,18 @@ public class BodyPoseEditorScreen extends Screen {
 			return true;
 		}
 		if (button == 0 && isInsidePreview(mouseX, mouseY)) {
+			RotationAxis rotationAxis = findRotationRing(mouseX, mouseY);
+			if (rotationAxis != RotationAxis.NONE) {
+				this.draggingRotationAxis = rotationAxis;
+				this.hoveredRotationAxis = rotationAxis;
+				return true;
+			}
+			MoveAxis moveAxis = findMoveAxis(mouseX, mouseY);
+			if (moveAxis != MoveAxis.NONE) {
+				this.draggingMoveAxis = moveAxis;
+				this.hoveredMoveAxis = moveAxis;
+				return true;
+			}
 			this.draggingPreview = true;
 			return true;
 		}
@@ -293,6 +327,16 @@ public class BodyPoseEditorScreen extends Screen {
 
 	@Override
 	public boolean mouseReleased(double mouseX, double mouseY, int button) {
+		if (button == 0 && this.draggingRotationAxis != RotationAxis.NONE) {
+			this.draggingRotationAxis = RotationAxis.NONE;
+			this.hoveredRotationAxis = findRotationRing(mouseX, mouseY);
+			return true;
+		}
+		if (button == 0 && this.draggingMoveAxis != MoveAxis.NONE) {
+			this.draggingMoveAxis = MoveAxis.NONE;
+			this.hoveredMoveAxis = findMoveAxis(mouseX, mouseY);
+			return true;
+		}
 		if (button == 0 && this.draggingPreview) {
 			this.draggingPreview = false;
 			return true;
@@ -306,6 +350,14 @@ public class BodyPoseEditorScreen extends Screen {
 
 	@Override
 	public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+		if (button == 0 && this.draggingRotationAxis != RotationAxis.NONE) {
+			dragModelRotation(this.draggingRotationAxis, mouseX, mouseY, deltaX, deltaY);
+			return true;
+		}
+		if (button == 0 && this.draggingMoveAxis != MoveAxis.NONE) {
+			dragModelOffset(this.draggingMoveAxis, deltaX, deltaY);
+			return true;
+		}
 		if (button == 0 && this.draggingPreview) {
 			this.previewYaw += (float) deltaX * 0.65F;
 			this.previewPitch = clamp(this.previewPitch + (float) deltaY * 0.65F, -60.0F, 60.0F);
@@ -374,12 +426,54 @@ public class BodyPoseEditorScreen extends Screen {
 		}
 	}
 
+	private void renderModelOffsetReadout(DrawContext context, int x, int y) {
+		context.drawTextWithShadow(this.textRenderer, "Offset", x, y, 0xFFE2E8F0);
+		context.drawTextWithShadow(this.textRenderer, "X " + formatOffset(modelOffsetX), x, y + 12, 0xFFFF7777);
+		context.drawTextWithShadow(this.textRenderer, "Y " + formatOffset(modelOffsetY), x, y + 24, 0xFF77FF77);
+		context.drawTextWithShadow(this.textRenderer, "Z " + formatOffset(modelOffsetZ), x, y + 36, 0xFF8CA0FF);
+		context.drawTextWithShadow(this.textRenderer, "Rot P " + formatDegrees(this.previewPitch), x, y + 54, 0xFFFF7777);
+		context.drawTextWithShadow(this.textRenderer, "Rot Y " + formatDegrees(this.previewYaw), x, y + 66, 0xFF77FF77);
+		context.drawTextWithShadow(this.textRenderer, "Rot R " + formatDegrees(this.previewRoll), x, y + 78, 0xFF8CA0FF);
+	}
+
 	public boolean isShowingCoordinateAxes() {
 		return this.showCoordinateAxes;
 	}
 
 	public boolean isCoordinateAxesMovable() {
 		return this.coordinateAxesMovable;
+	}
+
+	public float getModelOffsetX() {
+		return modelOffsetX;
+	}
+
+	public float getModelOffsetY() {
+		return modelOffsetY;
+	}
+
+	public float getModelOffsetZ() {
+		return modelOffsetZ;
+	}
+
+	public String getHighlightedMoveAxis() {
+		MoveAxis axis = this.draggingMoveAxis != MoveAxis.NONE ? this.draggingMoveAxis : this.hoveredMoveAxis;
+		return switch (axis) {
+			case X -> "x";
+			case Y -> "y";
+			case Z -> "z";
+			case NONE -> "";
+		};
+	}
+
+	public String getHighlightedRotationAxis() {
+		RotationAxis axis = this.draggingRotationAxis != RotationAxis.NONE ? this.draggingRotationAxis : this.hoveredRotationAxis;
+		return switch (axis) {
+			case PITCH -> "pitch";
+			case YAW -> "yaw";
+			case ROLL -> "roll";
+			case NONE -> "";
+		};
 	}
 
 	private PlayerEntityModel getPreviewModel() {
@@ -417,6 +511,7 @@ public class BodyPoseEditorScreen extends Screen {
 		root.originY = 0.0F;
 		root.pitch = (float) Math.toRadians(this.previewPitch);
 		root.yaw = (float) Math.toRadians(-this.previewYaw);
+		root.roll = (float) Math.toRadians(this.previewRoll);
 
 		boolean showAll = this.showWholePreview || selectedPart.equals("all");
 		model.head.visible = showAll || selectedPart.equals("head");
@@ -454,23 +549,29 @@ public class BodyPoseEditorScreen extends Screen {
 	}
 
 	private static void centerSelectedPart(PlayerEntityModel model) {
+		float offsetX = modelOffsetX * MODEL_PART_UNITS_PER_GRID;
+		float offsetY = modelOffsetY * MODEL_PART_UNITS_PER_GRID;
+		float offsetZ = modelOffsetZ * MODEL_PART_UNITS_PER_GRID;
 		switch (selectedPart) {
-			case "head" -> movePart(model.head, 0.0F, 12.0F, 0.0F);
-			case "torso" -> movePart(model.body, 0.0F, 2.0F, 0.0F);
-			case "left_arm" -> movePart(model.leftArm, 0.0F, 4.0F, 0.0F);
-			case "right_arm" -> movePart(model.rightArm, 0.0F, 4.0F, 0.0F);
-			case "left_leg" -> movePart(model.leftLeg, 0.0F, 2.0F, 0.0F);
-			case "right_leg" -> movePart(model.rightLeg, 0.0F, 2.0F, 0.0F);
+			case "head" -> movePart(model.head, offsetX, 12.0F + offsetY, offsetZ);
+			case "torso" -> movePart(model.body, offsetX, 2.0F + offsetY, offsetZ);
+			case "left_arm" -> movePart(model.leftArm, offsetX, 4.0F + offsetY, offsetZ);
+			case "right_arm" -> movePart(model.rightArm, offsetX, 4.0F + offsetY, offsetZ);
+			case "left_leg" -> movePart(model.leftLeg, offsetX, 2.0F + offsetY, offsetZ);
+			case "right_leg" -> movePart(model.rightLeg, offsetX, 2.0F + offsetY, offsetZ);
 		}
 	}
 
 	private static void moveWholeModelToChestPivot(PlayerEntityModel model) {
-		movePart(model.head, model.head.originX, model.head.originY - PREVIEW_CHEST_PIVOT_Y, model.head.originZ);
-		movePart(model.body, model.body.originX, model.body.originY - PREVIEW_CHEST_PIVOT_Y, model.body.originZ);
-		movePart(model.leftArm, model.leftArm.originX, model.leftArm.originY - PREVIEW_CHEST_PIVOT_Y, model.leftArm.originZ);
-		movePart(model.rightArm, model.rightArm.originX, model.rightArm.originY - PREVIEW_CHEST_PIVOT_Y, model.rightArm.originZ);
-		movePart(model.leftLeg, model.leftLeg.originX, model.leftLeg.originY - PREVIEW_CHEST_PIVOT_Y, model.leftLeg.originZ);
-		movePart(model.rightLeg, model.rightLeg.originX, model.rightLeg.originY - PREVIEW_CHEST_PIVOT_Y, model.rightLeg.originZ);
+		float offsetX = modelOffsetX * MODEL_PART_UNITS_PER_GRID;
+		float offsetY = modelOffsetY * MODEL_PART_UNITS_PER_GRID;
+		float offsetZ = modelOffsetZ * MODEL_PART_UNITS_PER_GRID;
+		movePart(model.head, model.head.originX + offsetX, model.head.originY - PREVIEW_CHEST_PIVOT_Y + offsetY, model.head.originZ + offsetZ);
+		movePart(model.body, model.body.originX + offsetX, model.body.originY - PREVIEW_CHEST_PIVOT_Y + offsetY, model.body.originZ + offsetZ);
+		movePart(model.leftArm, model.leftArm.originX + offsetX, model.leftArm.originY - PREVIEW_CHEST_PIVOT_Y + offsetY, model.leftArm.originZ + offsetZ);
+		movePart(model.rightArm, model.rightArm.originX + offsetX, model.rightArm.originY - PREVIEW_CHEST_PIVOT_Y + offsetY, model.rightArm.originZ + offsetZ);
+		movePart(model.leftLeg, model.leftLeg.originX + offsetX, model.leftLeg.originY - PREVIEW_CHEST_PIVOT_Y + offsetY, model.leftLeg.originZ + offsetZ);
+		movePart(model.rightLeg, model.rightLeg.originX + offsetX, model.rightLeg.originY - PREVIEW_CHEST_PIVOT_Y + offsetY, model.rightLeg.originZ + offsetZ);
 	}
 
 	private static void movePart(ModelPart part, float x, float y, float z) {
@@ -514,6 +615,168 @@ public class BodyPoseEditorScreen extends Screen {
 				&& mouseX <= getPreviewRight() - 10
 				&& mouseY >= getPreviewTop() + 48
 				&& mouseY <= getPreviewBottom() - 10;
+	}
+
+	private MoveAxis findMoveAxis(double mouseX, double mouseY) {
+		if (!isInsidePreview(mouseX, mouseY)) {
+			return MoveAxis.NONE;
+		}
+		ScreenPoint center = projectModelPoint(modelOffsetX, modelOffsetY, modelOffsetZ);
+		double bestDistance = MOVE_AXIS_HIT_RADIUS;
+		MoveAxis bestAxis = MoveAxis.NONE;
+		double distance = distanceToSegment(mouseX, mouseY, center, projectModelPoint(modelOffsetX + MOVE_AXIS_LENGTH, modelOffsetY, modelOffsetZ));
+		if (distance <= bestDistance) {
+			bestDistance = distance;
+			bestAxis = MoveAxis.X;
+		}
+		distance = distanceToSegment(mouseX, mouseY, center, projectModelPoint(modelOffsetX, modelOffsetY + MOVE_AXIS_LENGTH, modelOffsetZ));
+		if (distance <= bestDistance) {
+			bestDistance = distance;
+			bestAxis = MoveAxis.Y;
+		}
+		distance = distanceToSegment(mouseX, mouseY, center, projectModelPoint(modelOffsetX, modelOffsetY, modelOffsetZ + MOVE_AXIS_LENGTH));
+		if (distance <= bestDistance) {
+			bestAxis = MoveAxis.Z;
+		}
+		return bestAxis;
+	}
+
+	private RotationAxis findRotationRing(double mouseX, double mouseY) {
+		if (!isInsidePreview(mouseX, mouseY)) {
+			return RotationAxis.NONE;
+		}
+		double bestDistance = ROTATION_RING_HIT_RADIUS;
+		RotationAxis bestAxis = RotationAxis.NONE;
+		double distance = distanceToRotationRing(mouseX, mouseY, RotationAxis.PITCH);
+		if (distance <= bestDistance) {
+			bestDistance = distance;
+			bestAxis = RotationAxis.PITCH;
+		}
+		distance = distanceToRotationRing(mouseX, mouseY, RotationAxis.YAW);
+		if (distance <= bestDistance) {
+			bestDistance = distance;
+			bestAxis = RotationAxis.YAW;
+		}
+		distance = distanceToRotationRing(mouseX, mouseY, RotationAxis.ROLL);
+		if (distance <= bestDistance) {
+			bestAxis = RotationAxis.ROLL;
+		}
+		return bestAxis;
+	}
+
+	private double distanceToRotationRing(double mouseX, double mouseY, RotationAxis axis) {
+		double bestDistance = Double.MAX_VALUE;
+		ScreenPoint previous = projectRotationRingPoint(axis, 0);
+		for (int i = 1; i <= ROTATION_RING_SEGMENTS; i++) {
+			ScreenPoint current = projectRotationRingPoint(axis, i);
+			bestDistance = Math.min(bestDistance, distanceToSegment(mouseX, mouseY, previous, current));
+			previous = current;
+		}
+		return bestDistance;
+	}
+
+	private ScreenPoint projectRotationRingPoint(RotationAxis axis, int segment) {
+		float angle = (float) (Math.PI * 2.0D * segment / ROTATION_RING_SEGMENTS);
+		float cos = (float) Math.cos(angle) * ROTATION_RING_RADIUS;
+		float sin = (float) Math.sin(angle) * ROTATION_RING_RADIUS;
+		return switch (axis) {
+			case PITCH -> projectModelPoint(modelOffsetX, modelOffsetY + cos, modelOffsetZ + sin);
+			case YAW -> projectModelPoint(modelOffsetX + cos, modelOffsetY, modelOffsetZ + sin);
+			case ROLL -> projectModelPoint(modelOffsetX + cos, modelOffsetY + sin, modelOffsetZ);
+			case NONE -> projectModelPoint(modelOffsetX, modelOffsetY, modelOffsetZ);
+		};
+	}
+
+	private void dragModelOffset(MoveAxis axis, double deltaX, double deltaY) {
+		ScreenPoint center = projectModelPoint(modelOffsetX, modelOffsetY, modelOffsetZ);
+		ScreenPoint end = switch (axis) {
+			case X -> projectModelPoint(modelOffsetX + MOVE_AXIS_LENGTH, modelOffsetY, modelOffsetZ);
+			case Y -> projectModelPoint(modelOffsetX, modelOffsetY + MOVE_AXIS_LENGTH, modelOffsetZ);
+			case Z -> projectModelPoint(modelOffsetX, modelOffsetY, modelOffsetZ + MOVE_AXIS_LENGTH);
+			case NONE -> center;
+		};
+		double axisX = end.x - center.x;
+		double axisY = end.y - center.y;
+		double axisLength = Math.sqrt(axisX * axisX + axisY * axisY);
+		if (axisLength < 0.001D) {
+			return;
+		}
+		float deltaUnits = (float) ((deltaX * axisX + deltaY * axisY) / axisLength / getPreviewPixelsPerGrid());
+		switch (axis) {
+			case X -> modelOffsetX = clamp(modelOffsetX + deltaUnits, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+			case Y -> modelOffsetY = clamp(modelOffsetY + deltaUnits, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+			case Z -> modelOffsetZ = clamp(modelOffsetZ + deltaUnits, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+			case NONE -> {
+			}
+		}
+	}
+
+	private void dragModelRotation(RotationAxis axis, double mouseX, double mouseY, double deltaX, double deltaY) {
+		ScreenPoint center = projectModelPoint(modelOffsetX, modelOffsetY, modelOffsetZ);
+		double previousAngle = Math.atan2(mouseY - deltaY - center.y, mouseX - deltaX - center.x);
+		double currentAngle = Math.atan2(mouseY - center.y, mouseX - center.x);
+		float degrees = normalizeDegrees((float) Math.toDegrees(currentAngle - previousAngle));
+		switch (axis) {
+			case PITCH -> this.previewPitch = clamp(this.previewPitch + degrees, -180.0F, 180.0F);
+			case YAW -> this.previewYaw = normalizeDegrees(this.previewYaw + degrees);
+			case ROLL -> this.previewRoll = normalizeDegrees(this.previewRoll + degrees);
+			case NONE -> {
+			}
+		}
+	}
+
+	private ScreenPoint projectModelPoint(float x, float y, float z) {
+		float yawRadians = (float) Math.toRadians(-this.previewYaw);
+		float yawCos = (float) Math.cos(yawRadians);
+		float yawSin = (float) Math.sin(yawRadians);
+		float yawX = x * yawCos + z * yawSin;
+		float yawZ = z * yawCos - x * yawSin;
+
+		float pitchRadians = (float) Math.toRadians(this.previewPitch);
+		float pitchCos = (float) Math.cos(pitchRadians);
+		float pitchSin = (float) Math.sin(pitchRadians);
+		float pitchY = y * pitchCos - yawZ * pitchSin;
+		float pitchX = yawX;
+
+		float rollRadians = (float) Math.toRadians(this.previewRoll);
+		float rollCos = (float) Math.cos(rollRadians);
+		float rollSin = (float) Math.sin(rollRadians);
+		float rollX = pitchX * rollCos - pitchY * rollSin;
+		float rollY = pitchX * rollSin + pitchY * rollCos;
+
+		return new ScreenPoint(getPreviewRenderCenterX() + rollX * getPreviewPixelsPerGrid(), getPreviewRenderCenterY() + rollY * getPreviewPixelsPerGrid());
+	}
+
+	private double distanceToSegment(double mouseX, double mouseY, ScreenPoint start, ScreenPoint end) {
+		double lineX = end.x - start.x;
+		double lineY = end.y - start.y;
+		double lengthSquared = lineX * lineX + lineY * lineY;
+		if (lengthSquared < 0.001D) {
+			double dx = mouseX - start.x;
+			double dy = mouseY - start.y;
+			return Math.sqrt(dx * dx + dy * dy);
+		}
+		double t = ((mouseX - start.x) * lineX + (mouseY - start.y) * lineY) / lengthSquared;
+		t = Math.max(0.0D, Math.min(1.0D, t));
+		double closestX = start.x + t * lineX;
+		double closestY = start.y + t * lineY;
+		double dx = mouseX - closestX;
+		double dy = mouseY - closestY;
+		return Math.sqrt(dx * dx + dy * dy);
+	}
+
+	private float getPreviewPixelsPerGrid() {
+		int width = getPreviewRight() - getPreviewLeft() - 20;
+		int height = getPreviewBottom() - getPreviewTop() - 58;
+		return Math.max(24.0F, Math.min(width, height) * 0.42F) * this.previewZoom;
+	}
+
+	private float getPreviewRenderCenterX() {
+		return (getPreviewLeft() + 10 + getPreviewRight() - 10) * 0.5F + this.previewPanX;
+	}
+
+	private float getPreviewRenderCenterY() {
+		return (getPreviewTop() + 48 + getPreviewBottom() - 10) * 0.5F + this.previewPanY;
 	}
 
 	private void renderPlayerList(DrawContext context, int mouseX, int mouseY) {
@@ -731,8 +994,22 @@ public class BodyPoseEditorScreen extends Screen {
 		return String.format("%.0f", value);
 	}
 
+	private static String formatOffset(float value) {
+		return String.format("%.2f", value);
+	}
+
 	private static float clamp(float value, float min, float max) {
 		return Math.max(min, Math.min(max, value));
+	}
+
+	private static float normalizeDegrees(float value) {
+		while (value > 180.0F) {
+			value -= 360.0F;
+		}
+		while (value < -180.0F) {
+			value += 360.0F;
+		}
+		return value;
 	}
 
 	private static float[] createPoseValueArray() {
@@ -761,6 +1038,20 @@ public class BodyPoseEditorScreen extends Screen {
 		ROLL
 	}
 
+	private enum MoveAxis {
+		NONE,
+		X,
+		Y,
+		Z
+	}
+
+	private enum RotationAxis {
+		NONE,
+		PITCH,
+		YAW,
+		ROLL
+	}
+
 	private enum SkinSource {
 		LOCAL,
 		PLAYER
@@ -770,5 +1061,15 @@ public class BodyPoseEditorScreen extends Screen {
 		private float pitch;
 		private float yaw;
 		private float roll;
+	}
+
+	private static final class ScreenPoint {
+		private final float x;
+		private final float y;
+
+		private ScreenPoint(float x, float y) {
+			this.x = x;
+			this.y = y;
+		}
 	}
 }

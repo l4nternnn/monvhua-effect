@@ -11,6 +11,7 @@ import net.minecraft.client.render.entity.model.LoadedEntityModels;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.util.math.RotationAxis;
 import org.joml.Vector3f;
 
 import java.util.Set;
@@ -51,6 +52,9 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         resetModel(activeModel);
         applyPoseData(activeModel, data.customData());
 
+        matrices.push();
+        applyPlacementTransform(matrices, data.customData());
+
         // 保存6个outer层的当前可见性，用于后续恢复
         boolean hatVisible = activeModel.hat.visible;
         boolean jacketVisible = activeModel.jacket.visible;
@@ -90,6 +94,8 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
                 (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerLeftPants(m, v, data.texture(), light, overlay));
         renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.rightLeg, activeModel.rightPants,
                 (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerRightPants(m, v, data.texture(), light, overlay));
+        matrices.pop();
+
         matrices.pop();
     }
 
@@ -147,6 +153,19 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         part.pitch += data.getFloat("pose_" + partName + "_pitch", 0.0F) * degreesToRadians;
         part.yaw += data.getFloat("pose_" + partName + "_yaw", 0.0F) * degreesToRadians;
         part.roll += data.getFloat("pose_" + partName + "_roll", 0.0F) * degreesToRadians;
+    }
+
+    private static void applyPlacementTransform(MatrixStack matrices, NbtCompound data) {
+        if (data == null) {
+            return;
+        }
+        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(data.getFloat("pose_model_pitch", 0.0F)));
+        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-data.getFloat("pose_model_yaw", 0.0F)));
+        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(data.getFloat("pose_model_roll", 0.0F)));
+        matrices.translate(
+                data.getFloat("pose_model_offset_x", 0.0F),
+                data.getFloat("pose_model_offset_y", 0.0F),
+                data.getFloat("pose_model_offset_z", 0.0F));
     }
 
     @Override

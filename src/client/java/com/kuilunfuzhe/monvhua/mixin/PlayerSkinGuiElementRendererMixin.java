@@ -44,6 +44,12 @@ public abstract class PlayerSkinGuiElementRendererMixin {
 	@Unique
 	private static final int ARROW_SEGMENTS = 6;
 
+	@Unique
+	private static final float ROTATION_RING_RADIUS = 2.45F;
+
+	@Unique
+	private static final int ROTATION_RING_SEGMENTS = 48;
+
 	@Inject(method = "render(Lnet/minecraft/client/gui/render/state/special/PlayerSkinGuiElementRenderState;Lnet/minecraft/client/util/math/MatrixStack;)V", at = @At("TAIL"))
 	private void renderCoordinateAxes3D(PlayerSkinGuiElementRenderState state, MatrixStack matrixStack, CallbackInfo ci) {
 		MinecraftClient client = MinecraftClient.getInstance();
@@ -76,6 +82,14 @@ public abstract class PlayerSkinGuiElementRendererMixin {
 		renderGroundGrid(posMatrix, vc);
 		matrixStack.pop();
 
+		matrixStack.push();
+		root.applyTransform(matrixStack);
+		matrixStack.translate(screen.getModelOffsetX(), screen.getModelOffsetY(), screen.getModelOffsetZ());
+		posMatrix = matrixStack.peek().getPositionMatrix();
+		renderMoveAxes(posMatrix, vc, screen.getHighlightedMoveAxis());
+		renderRotationRings(posMatrix, vc, screen.getHighlightedRotationAxis());
+		matrixStack.pop();
+
 		vertexConsumers.draw();
 	}
 
@@ -92,6 +106,64 @@ public abstract class PlayerSkinGuiElementRendererMixin {
 		renderCone(posMatrix, vc, AXIS_LENGTH, 0, 0, 1, 0, 0, 255, 50, 50, 240);
 		renderCone(posMatrix, vc, 0, AXIS_LENGTH, 0, 0, 1, 0, 50, 220, 50, 240);
 		renderCone(posMatrix, vc, 0, 0, AXIS_LENGTH, 0, 0, 1, 60, 80, 255, 240);
+	}
+
+	@Unique
+	private void renderRotationRings(Matrix4f posMatrix, VertexConsumer vc, String highlightedAxis) {
+		renderRotationRing(posMatrix, vc, "pitch".equals(highlightedAxis), 255, 70, 70, RingPlane.YZ);
+		renderRotationRing(posMatrix, vc, "yaw".equals(highlightedAxis), 70, 230, 70, RingPlane.XZ);
+		renderRotationRing(posMatrix, vc, "roll".equals(highlightedAxis), 90, 110, 255, RingPlane.XY);
+	}
+
+	@Unique
+	private void renderRotationRing(Matrix4f posMatrix, VertexConsumer vc,
+			boolean highlighted, int r, int g, int b, RingPlane plane) {
+		int lineR = highlighted ? 255 : r;
+		int lineG = highlighted ? 235 : g;
+		int lineB = highlighted ? 90 : b;
+		int alpha = highlighted ? 255 : 210;
+		float prevX = 0.0F;
+		float prevY = 0.0F;
+		float prevZ = 0.0F;
+		for (int i = 0; i <= ROTATION_RING_SEGMENTS; i++) {
+			float angle = (float) (Math.PI * 2.0D * i / ROTATION_RING_SEGMENTS);
+			float cos = (float) Math.cos(angle) * ROTATION_RING_RADIUS;
+			float sin = (float) Math.sin(angle) * ROTATION_RING_RADIUS;
+			float x = plane == RingPlane.YZ ? 0.0F : cos;
+			float y = plane == RingPlane.XZ ? 0.0F : (plane == RingPlane.YZ ? cos : sin);
+			float z = plane == RingPlane.XY ? 0.0F : sin;
+			if (i > 0) {
+				addLine(vc, posMatrix, prevX, prevY, prevZ, x, y, z, lineR, lineG, lineB, alpha);
+			}
+			prevX = x;
+			prevY = y;
+			prevZ = z;
+		}
+	}
+
+	@Unique
+	private void renderMoveAxes(Matrix4f posMatrix, VertexConsumer vc, String highlightedAxis) {
+		renderMoveAxis(posMatrix, vc, 1, 0, 0, "x".equals(highlightedAxis), 255, 50, 50);
+		renderMoveAxis(posMatrix, vc, 0, 1, 0, "y".equals(highlightedAxis), 50, 220, 50);
+		renderMoveAxis(posMatrix, vc, 0, 0, 1, "z".equals(highlightedAxis), 60, 80, 255);
+	}
+
+	@Unique
+	private void renderMoveAxis(Matrix4f posMatrix, VertexConsumer vc,
+			float dirX, float dirY, float dirZ, boolean highlighted,
+			int r, int g, int b) {
+		int lineR = highlighted ? 255 : r;
+		int lineG = highlighted ? 235 : g;
+		int lineB = highlighted ? 90 : b;
+		int alpha = highlighted ? 255 : 245;
+		addLine(vc, posMatrix,
+				0, 0, 0,
+				AXIS_LENGTH * dirX, AXIS_LENGTH * dirY, AXIS_LENGTH * dirZ,
+				lineR, lineG, lineB, alpha);
+		renderCone(posMatrix, vc,
+				AXIS_LENGTH * dirX, AXIS_LENGTH * dirY, AXIS_LENGTH * dirZ,
+				dirX, dirY, dirZ,
+				lineR, lineG, lineB, alpha);
 	}
 
 	@Unique
@@ -173,5 +245,12 @@ public abstract class PlayerSkinGuiElementRendererMixin {
 			int r, int g, int b, int a) {
 		vc.vertex(posMatrix, x1, y1, z1).color(r, g, b, a).normal(0, 1, 0);
 		vc.vertex(posMatrix, x2, y2, z2).color(r, g, b, a).normal(0, 1, 0);
+	}
+
+	@Unique
+	private enum RingPlane {
+		YZ,
+		XZ,
+		XY
 	}
 }
