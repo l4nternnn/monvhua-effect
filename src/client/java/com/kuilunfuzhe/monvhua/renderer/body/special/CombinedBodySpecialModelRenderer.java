@@ -159,13 +159,13 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         if (data == null) {
             return;
         }
-        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(data.getFloat("pose_model_pitch", 0.0F)));
-        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-data.getFloat("pose_model_yaw", 0.0F)));
-        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(data.getFloat("pose_model_roll", 0.0F)));
         matrices.translate(
                 data.getFloat("pose_model_offset_x", 0.0F),
                 data.getFloat("pose_model_offset_y", 0.0F),
                 data.getFloat("pose_model_offset_z", 0.0F));
+        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(data.getFloat("pose_model_pitch", 0.0F)));
+        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-data.getFloat("pose_model_yaw", 0.0F)));
+        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(data.getFloat("pose_model_roll", 0.0F)));
     }
 
     @Override

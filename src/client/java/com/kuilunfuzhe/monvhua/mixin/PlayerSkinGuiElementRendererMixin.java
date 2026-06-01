@@ -88,12 +88,13 @@ public abstract class PlayerSkinGuiElementRendererMixin {
 		}
 		posMatrix = matrixStack.peek().getPositionMatrix();
 		renderAxes(posMatrix, vc);
-		renderGroundGrid(posMatrix, vc);
 		matrixStack.pop();
 
 		matrixStack.push();
 		root.applyTransform(matrixStack);
-		matrixStack.translate(screen.getModelOffsetX(), screen.getModelOffsetY(), screen.getModelOffsetZ());
+		if (!screen.isEditingPlayerModel()) {
+			matrixStack.translate(screen.getModelOffsetX(), screen.getModelOffsetY(), screen.getModelOffsetZ());
+		}
 		posMatrix = matrixStack.peek().getPositionMatrix();
 		renderMoveAxes(posMatrix, vc, screen.getHighlightedMoveAxis());
 		renderRotationRings(posMatrix, vc, screen.getHighlightedRotationAxis());
