@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.mixin;
 
 import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorScreen;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.gui.render.PlayerSkinGuiElementRenderer;
 import net.minecraft.client.gui.render.state.special.PlayerSkinGuiElementRenderState;
 import net.minecraft.client.render.BufferBuilderStorage;
@@ -23,10 +24,16 @@ public abstract class PlayerSkinGuiElementRendererMixin {
 	private static final int AXIS_LENGTH = 2;
 
 	@Unique
-	private static final float GRID_RANGE = 5.0F;
+	private static final int GROUND_GRID_SIZE = 21;
 
 	@Unique
-	private static final float GRID_CELL = 0.5F;
+	private static final float GROUND_GRID_HALF_SIZE = GROUND_GRID_SIZE * 0.5F;
+
+	@Unique
+	private static final float GROUND_GRID_CELL = 1.0F;
+
+	@Unique
+	private static final float GROUND_Y = 1.05F;
 
 	@Unique
 	private static final float ARROW_RADIUS = 0.15F;
@@ -59,9 +66,15 @@ public abstract class PlayerSkinGuiElementRendererMixin {
 		VertexConsumer vc = vertexConsumers.getBuffer(RenderLayer.getLines());
 		Matrix4f posMatrix = matrixStack.peek().getPositionMatrix();
 
+		matrixStack.push();
+		ModelPart root = state.playerModel().getRootPart();
+		if (screen.isCoordinateAxesMovable()) {
+			root.applyTransform(matrixStack);
+		}
+		posMatrix = matrixStack.peek().getPositionMatrix();
 		renderAxes(posMatrix, vc);
-		renderGrid(posMatrix, vc);
-		renderOrigin(posMatrix, vc);
+		renderGroundGrid(posMatrix, vc);
+		matrixStack.pop();
 
 		vertexConsumers.draw();
 	}
@@ -82,51 +95,25 @@ public abstract class PlayerSkinGuiElementRendererMixin {
 	}
 
 	@Unique
-	private void renderGrid(Matrix4f posMatrix, VertexConsumer vc) {
-		int gridAlpha = 80;
-		int majorAlpha = 140;
+	private void renderGroundGrid(Matrix4f posMatrix, VertexConsumer vc) {
+		int boundaryCount = GROUND_GRID_SIZE;
+		for (int i = 0; i <= boundaryCount; i++) {
+			float coord = -GROUND_GRID_HALF_SIZE + i * GROUND_GRID_CELL;
+			boolean major = i == 0 || i == boundaryCount || Math.abs(coord) < 0.001F || i % 5 == 0;
+			int alpha = major ? 235 : 155;
+			int r = major ? 150 : 105;
+			int g = major ? 235 : 185;
+			int b = major ? 150 : 110;
 
-		int steps = (int) (GRID_RANGE / GRID_CELL);
-		for (int i = -steps; i <= steps; i++) {
-			float coord = i * GRID_CELL;
-			boolean isMajor = Math.abs(i % 2) == 0; // every 1.0 is major
-			int alpha = isMajor ? majorAlpha : gridAlpha;
-			int gray = isMajor ? 190 : 160;
-
-			// Lines parallel to X axis (at this Z position)
-			if (Math.abs(coord) <= GRID_RANGE) {
-				addLine(vc, posMatrix,
-					-GRID_RANGE, 0, coord,
-					GRID_RANGE, 0, coord,
-					gray, gray, gray, alpha);
-			}
-
-			// Lines parallel to Z axis (at this X position)
-			if (Math.abs(coord) <= GRID_RANGE) {
-				addLine(vc, posMatrix,
-					coord, 0, -GRID_RANGE,
-					coord, 0, GRID_RANGE,
-					gray, gray, gray, alpha);
-			}
+			addLine(vc, posMatrix,
+					-GROUND_GRID_HALF_SIZE, GROUND_Y, coord,
+					GROUND_GRID_HALF_SIZE, GROUND_Y, coord,
+					r, g, b, alpha);
+			addLine(vc, posMatrix,
+					coord, GROUND_Y, -GROUND_GRID_HALF_SIZE,
+					coord, GROUND_Y, GROUND_GRID_HALF_SIZE,
+					r, g, b, alpha);
 		}
-	}
-
-	@Unique
-	private void renderOrigin(Matrix4f posMatrix, VertexConsumer vc) {
-		float s = 0.15F;
-		int white = 255;
-
-		// Small cross lines at origin
-		addLine(vc, posMatrix, -s, 0, 0, s, 0, 0, white, white, white, 255);
-		addLine(vc, posMatrix, 0, -s, 0, 0, s, 0, white, white, white, 255);
-		addLine(vc, posMatrix, 0, 0, -s, 0, 0, s, white, white, white, 255);
-
-		// Small diagonal lines for visibility
-		float d = s * 0.7F;
-		addLine(vc, posMatrix, -d, -d, 0, d, d, 0, white, white, white, 200);
-		addLine(vc, posMatrix, d, -d, 0, -d, d, 0, white, white, white, 200);
-		addLine(vc, posMatrix, -d, 0, -d, d, 0, d, white, white, white, 200);
-		addLine(vc, posMatrix, d, 0, -d, -d, 0, d, white, white, white, 200);
 	}
 
 	@Unique

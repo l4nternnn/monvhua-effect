@@ -559,6 +559,35 @@ public class BodyPartManager {
 		return count;
 	}
 
+	public static int clearNearbyBackpackInteractions(ServerPlayerEntity player, double radius) {
+		ServerWorld world = (ServerWorld) player.getWorld();
+		Box box = Box.of(player.getPos(), radius * 2.0D, radius * 2.0D, radius * 2.0D);
+		int removed = 0;
+
+		for (InteractionEntity interaction : world.getEntitiesByClass(InteractionEntity.class, box, entity -> true)) {
+			UUID interactionUuid = interaction.getUuid();
+			UUID displayUuid = INTERACTION_TO_DISPLAY.get(interactionUuid);
+			if (displayUuid == null) {
+				continue;
+			}
+			boolean hasBackpack = BODY_PART_DISPLAY_INVENTORIES.containsKey(displayUuid);
+			boolean missingDisplay = world.getEntity(displayUuid) == null;
+			if (!hasBackpack && !missingDisplay) {
+				continue;
+			}
+
+			INTERACTION_TO_DISPLAY.remove(interactionUuid);
+			DISPLAY_TO_INTERACTION.remove(displayUuid);
+			if (missingDisplay) {
+				BODY_PART_DISPLAY_INVENTORIES.remove(displayUuid);
+			}
+			interaction.remove(Entity.RemovalReason.DISCARDED);
+			removed++;
+		}
+
+		return removed;
+	}
+
 	public static void createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile) {
 		createCombinedDisplay(world, pos, skinName, torsoInv, profile, false, null, true);
 	}

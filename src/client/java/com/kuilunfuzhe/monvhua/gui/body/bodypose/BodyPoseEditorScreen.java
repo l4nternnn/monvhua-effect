@@ -22,8 +22,7 @@ import java.util.Map;
 
 public class BodyPoseEditorScreen extends Screen {
 	private static final float ROTATION_STEP_DEGREES = 5.0F;
-	// Preview-only offsets keep the vanilla player model rotating around its visual center.
-	private static final float PREVIEW_ROOT_Y_OFFSET = -8.0F;
+	private static final float PREVIEW_CHEST_PIVOT_Y = 6.0F;
 	private static final float PREVIEW_Y_PIVOT = 1.601F;
 	private static final int PLAYER_LIST_ITEM_HEIGHT = 18;
 	private static final int PLAYER_LIST_VISIBLE_ROWS = 6;
@@ -45,7 +44,7 @@ public class BodyPoseEditorScreen extends Screen {
 	private ButtonWidget playerButton;
 	private PlayerEntityModel defaultPreviewModel;
 	private PlayerEntityModel slimPreviewModel;
-	private float previewPitch = 8.0F;
+	private float previewPitch = 24.0F;
 	private float previewYaw = 0.0F;
 	private float previewZoom = 1.0F;
 	private boolean showWholePreview = true;
@@ -54,7 +53,9 @@ public class BodyPoseEditorScreen extends Screen {
 	private float previewPanX;
 	private float previewPanY;
 	private boolean showCoordinateAxes = true;
+	private boolean coordinateAxesMovable = true;
 	private ButtonWidget coordToggleButton;
+	private ButtonWidget coordMovableButton;
 	private boolean playerListOpen;
 	private int playerListScroll;
 
@@ -154,6 +155,14 @@ public class BodyPoseEditorScreen extends Screen {
 				.position(getPreviewRight() - 112, getPreviewBottom() - 50)
 				.build());
 
+		this.coordMovableButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> {
+					this.coordinateAxesMovable = !this.coordinateAxesMovable;
+					refreshButtonLabels();
+				})
+				.size(102, 18)
+				.position(getPreviewRight() - 112, getPreviewBottom() - 72)
+				.build());
+
 		this.addDrawableChild(ButtonWidget.builder(Text.literal("Done"), pressed -> this.close())
 				.size(70, 20)
 				.position(this.width - 88, this.height - 26)
@@ -189,6 +198,9 @@ public class BodyPoseEditorScreen extends Screen {
 		}
 		if (this.coordToggleButton != null) {
 			this.coordToggleButton.setMessage(Text.literal("坐标系 " + (this.showCoordinateAxes ? "开启" : "关闭")));
+		}
+		if (this.coordMovableButton != null) {
+			this.coordMovableButton.setMessage(Text.literal("坐标跟随 " + (this.coordinateAxesMovable ? "开启" : "关闭")));
 		}
 		boolean canEditPose = !selectedPart.equals("all");
 		for (ButtonWidget button : this.poseButtons) {
@@ -296,7 +308,7 @@ public class BodyPoseEditorScreen extends Screen {
 	public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
 		if (button == 0 && this.draggingPreview) {
 			this.previewYaw += (float) deltaX * 0.65F;
-			this.previewPitch = clamp(this.previewPitch - (float) deltaY * 0.65F, -60.0F, 60.0F);
+			this.previewPitch = clamp(this.previewPitch + (float) deltaY * 0.65F, -60.0F, 60.0F);
 			return true;
 		}
 		if (button == 1 && this.draggingRightPreview) {
@@ -356,255 +368,18 @@ public class BodyPoseEditorScreen extends Screen {
 		Identifier texture = getPreviewTexture();
 		context.enableScissor(x1, y1, x2, y2);
 		try {
-			renderGroundPlane(context, x1, y1, x2, y2, scale, panX, panY);
-			context.addPlayerSkin(model, texture, scale, this.previewPitch, this.previewYaw, PREVIEW_Y_PIVOT, x1 + panX, y1 + panY, x2 + panX, renderBottom + panY);
+			context.addPlayerSkin(model, texture, scale, 0.0F, 0.0F, PREVIEW_Y_PIVOT, x1 + panX, y1 + panY, x2 + panX, renderBottom + panY);
 		} finally {
 			context.disableScissor();
 		}
 	}
 
-	private void renderGroundPlane(DrawContext context, int x1, int y1, int x2, int y2, float scale, int panX, int panY) {
-		int centerX = (x1 + x2) / 2 + panX;
-		int centerY = (y1 + y2) / 2 + panY;
-		int originY = Math.round(centerY + PREVIEW_Y_PIVOT * scale);
-		if (originY >= y2 - 1 || originY < y1) {
-			return;
-		}
-
-		float pitchRatio = (this.previewPitch + 60.0F) / 120.0F;
-		float gridExtent = scale * 4.5F * Math.max(0.05F, pitchRatio);
-		if (gridExtent < 2.0F) {
-			return;
-		}
-
-		int gridBottomY = Math.min(y2, Math.round(originY + gridExtent));
-		int gridHeight = gridBottomY - originY;
-		if (gridHeight < 2) {
-			return;
-		}
-
-		float vanishX = centerX + this.previewYaw * scale * 0.06F;
-		float maxHalfWidth = (x2 - x1) * 0.48F;
-		float gridUnit = Math.max(18.0F, scale * 0.7F);
-
-		int minorAlpha = 0x22;
-		int majorAlpha = 0x55;
-		int axisAlpha = 0xD0;
-		int minorColor = (minorAlpha << 24) | 0xCCCCCC;
-		int majorColor = (majorAlpha << 24) | 0xFFFFFF;
-		int xAxisColor = (axisAlpha << 24) | 0xFF3333;
-		int zAxisColor = (axisAlpha << 24) | 0x3366FF;
-		int yAxisColor = (axisAlpha << 24) | 0x33CC33;
-
-		// === X-parallel grid lines (lines parallel to world X, drawn horizontally on screen) ===
-		float xGridSpacing = gridUnit * 0.55F;
-		float xPanOffset = ((panY + centerY - originY) % xGridSpacing + xGridSpacing) % xGridSpacing;
-		int majorInterval = 5;
-		for (float gy = originY + xPanOffset; gy < gridBottomY; gy += xGridSpacing) {
-			int gpy = (int) gy;
-			float progress = (gpy - originY) / (float) gridHeight;
-			if (progress < 0.0F) continue;
-			float halfW = maxHalfWidth * progress + 2.0F;
-			int gl = Math.max(x1, Math.round(vanishX - halfW));
-			int gr = Math.min(x2, Math.round(vanishX + halfW));
-			if (gr <= gl) continue;
-
-			int distFromOrigin = Math.round((gy - originY) / xGridSpacing);
-			boolean isXAxis = distFromOrigin == 0;
-			int lineThickness = isXAxis ? 2 : 1;
-			int color = isXAxis ? xAxisColor : (Math.abs(distFromOrigin) % majorInterval == 0 ? majorColor : minorColor);
-			for (int t = 0; t < lineThickness; t++) {
-				context.fill(gl, gpy + t, gr, gpy + t + 1, color);
-			}
-		}
-
-		// === Z-parallel grid lines (converging toward vanishX at originY) ===
-		float zGridSpacing = gridUnit * 0.55F;
-		float zPanOffset = ((panX + vanishX) % zGridSpacing + zGridSpacing) % zGridSpacing;
-		int zLineCount = 20;
-		for (int i = -zLineCount / 2; i <= zLineCount / 2; i++) {
-			float worldX = vanishX + zPanOffset + i * zGridSpacing;
-			boolean isMajor = Math.abs(i) % majorInterval == 0;
-			boolean isZAxis = Math.abs(i * zGridSpacing + zPanOffset) < zGridSpacing * 0.5F;
-			int lineAlpha = isZAxis ? axisAlpha : (isMajor ? majorAlpha : minorAlpha);
-			int baseColor = isZAxis ? 0x3366FF : (isMajor ? 0xFFFFFF : 0xCCCCCC);
-			int color = (lineAlpha << 24) | baseColor;
-			int lineThickness = isZAxis ? 2 : 1;
-
-			int prevX = Math.round(vanishX);
-			for (int row = 0; row < gridHeight; row += 2) {
-				int py = originY + row;
-				float progress = (float) row / gridHeight;
-				float halfW = maxHalfWidth * progress + 2.0F;
-				int leftX = Math.round(vanishX - halfW);
-				int rightX = Math.round(vanishX + halfW);
-				float screenX = vanishX + (worldX - vanishX) * Math.max(0.0F, (float) row / gridHeight);
-				int x = Math.round(screenX);
-				if (x < leftX || x > rightX) continue;
-
-				int segStart = Math.min(prevX, x);
-				int segEnd = Math.max(prevX, x);
-				int sx = Math.max(leftX, segStart);
-				int sw = Math.min(rightX, segEnd) - sx;
-				if (sw > 0) {
-					for (int t = 0; t < lineThickness; t++) {
-						context.fill(sx, py + t, sx + sw, py + t + 1, color);
-					}
-				}
-				prevX = x;
-			}
-		}
-
-		// === Y axis (green) — vertical from origin upward ===
-		int oScreenX = Math.round(vanishX);
-		int yLen = Math.round(scale * 1.8F);
-		int yTop = Math.max(y1, originY - yLen);
-		if (yTop < originY && oScreenX >= x1 && oScreenX < x2) {
-			// Stem
-			for (int py = yTop; py <= originY; py++) {
-				float t = (float) (originY - py) / yLen;
-				int a = (int) (axisAlpha * (1.0F - t * 0.5F));
-				context.fill(oScreenX - 2, py, oScreenX + 3, py + 1, (a << 24) | 0x33CC33);
-			}
-			// Arrow head
-			int ah = Math.min(6, originY - yTop);
-			int ahTop = yTop + ah;
-			context.fill(oScreenX - 3, yTop, oScreenX + 4, ahTop, yAxisColor);
-		}
-
-		// === Axis labels (small colored squares/dots for X, Y, Z) ===
-		// Y label
-		if (yTop > y1 + 8 && oScreenX >= x1 && oScreenX < x2) {
-			context.fill(oScreenX + 4, yTop + 2, oScreenX + 12, yTop + 10, yAxisColor);
-		}
-	}
-
-	private void renderCoordinateAxes(DrawContext context, int x1, int y1, int x2, int y2, float scale, int panX, int panY) {
-		int centerX = (x1 + x2) / 2 + panX;
-		int centerY = (y1 + y2) / 2 + panY;
-		int originY = Math.round(centerY + PREVIEW_Y_PIVOT * scale);
-		float pitchRatio = (this.previewPitch + 60.0F) / 120.0F;
-		float gridExtent = scale * 4.5F * Math.max(0.05F, pitchRatio);
-		if (gridExtent < 2.0F) return;
-		int gridBottomY = Math.min(y2, Math.round(originY + gridExtent));
-		int gridHeight = gridBottomY - originY;
-		if (gridHeight < 4) return;
-
-		float vanishX = centerX + this.previewYaw * scale * 0.06F;
-		float maxHalfWidth = (x2 - x1) * 0.48F;
-		float gridUnit = Math.max(18.0F, scale * 0.7F);
-
-		// Place coordinate origin slightly below the horizon so axes extend into visible screen space
-		int coordY = originY + Math.max(4, gridHeight / 6);
-		int coordScreenX = Math.round(vanishX);
-		float coordProgress = (float)(coordY - originY) / gridHeight;
-
-		int axisAlpha = 0xE0;
-		int xRed = (axisAlpha << 24) | 0xFF2222;
-		int yGreen = (axisAlpha << 24) | 0x22DD22;
-		int zBlue = (axisAlpha << 24) | 0x3355FF;
-
-		// === X axis (red) — horizontal on ground, extending right ===
-		float xLenPx = gridUnit * 2.0F;
-		float xEnd = vanishX + xLenPx * coordProgress;
-		int xEndX = Math.round(xEnd);
-		if (xEndX > coordScreenX + 4 && xEndX < x2) {
-			// Stem
-			context.fill(coordScreenX, coordY - 1, xEndX, coordY + 2, xRed);
-			// Arrow head
-			int ax = xEndX;
-			int ay = coordY;
-			for (int d = 0; d < 5; d++) {
-				int w = 5 - d;
-				context.fill(ax - d, ay - w, ax - d + 1, ay + w + 1, xRed);
-			}
-			// X label
-			int labelX = Math.min(xEndX + 4, x2 - 10);
-			int labelY = coordY - 10;
-			context.drawTextWithShadow(this.textRenderer, "X", labelX, labelY, 0xFFFF4444);
-		}
-
-		// === Y axis (green) — vertical upward ===
-		float yLenPx = scale * 1.5F;
-		int yTop = Math.max(y1, coordY - Math.round(yLenPx));
-		if (yTop < coordY - 6 && coordScreenX >= x1 && coordScreenX < x2) {
-			// Stem
-			context.fill(coordScreenX - 1, yTop, coordScreenX + 2, coordY + 1, yGreen);
-			// Arrow head
-			for (int d = 0; d < 5; d++) {
-				int w = 5 - d;
-				context.fill(coordScreenX - w, yTop + d, coordScreenX + w + 1, yTop + d + 1, yGreen);
-			}
-			// Y label
-			int labelX = Math.min(coordScreenX + 6, x2 - 10);
-			int labelY = Math.max(y1 + 2, yTop - 2);
-			context.drawTextWithShadow(this.textRenderer, "Y", labelX, labelY, 0xFF44FF44);
-		}
-
-		// === Z axis (blue) — converging line on ground toward vanishing point ===
-		float zLenWorld = gridUnit * 2.0F;
-		float zEndWorld = vanishX + zLenWorld * 0.15F * coordProgress;
-		int zEndX = Math.round(zEndWorld);
-		float zEndProgress = coordProgress - (2.0F * coordProgress) / gridHeight;
-		if (zEndProgress < 0.0F) zEndProgress = 0.0F;
-		float zEndScreenY = originY + zEndProgress * gridHeight;
-		int zEndY = Math.round(zEndScreenY);
-		if (zEndY < coordY - 4 && zEndY >= y1 && zEndX >= x1 && zEndX < x2) {
-			// Stem: line from origin toward vanishing point
-			float dx = (float)(zEndX - coordScreenX);
-			float dy = (float)(zEndY - coordY);
-			float dist = (float) Math.sqrt(dx * dx + dy * dy);
-			if (dist > 2.0F) {
-				float nx = dx / dist;
-				float ny = dy / dist;
-				for (int s = 0; s < (int) dist; s++) {
-					int sx = Math.round(coordScreenX + nx * s);
-					int sy = Math.round(coordY + ny * s);
-					if (sx >= x1 && sx < x2 && sy >= y1 && sy < y2) {
-						context.fill(sx - 1, sy, sx + 2, sy + 1, zBlue);
-					}
-				}
-				// Arrow head
-				for (int d = 0; d < 5; d++) {
-					int w = 5 - d;
-					int ax = Math.round(zEndX - nx * d);
-					int ay = Math.round(zEndY - ny * d);
-					int hx1 = Math.round(ax - ny * w);
-					int hy1 = Math.round(ay + nx * w);
-					int hx2 = Math.round(ax + ny * w);
-					int hy2 = Math.round(ay - nx * w);
-					int al = Math.min(hx1, hx2);
-					int ar = Math.max(hx1, hx2);
-					int at = Math.min(hy1, hy2);
-					int ab = Math.max(hy1, hy2);
-					al = Math.max(x1, al);
-					ar = Math.min(x2, ar);
-					if (ar > al && ab > at) {
-						context.fill(al, at, ar, ab, zBlue);
-					}
-				}
-				// Z label
-				int labelX = Math.min(zEndX + 6, x2 - 10);
-				int labelY = Math.max(y1 + 2, zEndY - 8);
-				context.drawTextWithShadow(this.textRenderer, "Z", labelX, labelY, 0xFF4488FF);
-			}
-		}
-
-		// === Origin point ===
-		int originRadius = Math.max(3, Math.round(scale * 0.04F));
-		for (int dy = -originRadius; dy <= originRadius; dy++) {
-			int py = coordY + dy;
-			if (py >= y1 && py < y2) {
-				int dx = (int) Math.round(Math.sqrt(originRadius * originRadius - dy * dy));
-				int sx = Math.max(x1, coordScreenX - dx);
-				int ex = Math.min(x2, coordScreenX + dx + 1);
-				if (ex > sx) context.fill(sx, py, ex, py + 1, 0xFFFFFFFF);
-			}
-		}
-	}
-
 	public boolean isShowingCoordinateAxes() {
 		return this.showCoordinateAxes;
+	}
+
+	public boolean isCoordinateAxesMovable() {
+		return this.coordinateAxesMovable;
 	}
 
 	private PlayerEntityModel getPreviewModel() {
@@ -638,7 +413,10 @@ public class BodyPoseEditorScreen extends Screen {
 			part.visible = true;
 			part.hidden = false;
 		}
-		model.getRootPart().originY = PREVIEW_ROOT_Y_OFFSET;
+		ModelPart root = model.getRootPart();
+		root.originY = 0.0F;
+		root.pitch = (float) Math.toRadians(this.previewPitch);
+		root.yaw = (float) Math.toRadians(-this.previewYaw);
 
 		boolean showAll = this.showWholePreview || selectedPart.equals("all");
 		model.head.visible = showAll || selectedPart.equals("head");
@@ -656,6 +434,8 @@ public class BodyPoseEditorScreen extends Screen {
 
 		if (!showAll) {
 			centerSelectedPart(model);
+		} else {
+			moveWholeModelToChestPivot(model);
 		}
 
 		model.rightArm.pitch = -0.08F;
@@ -675,18 +455,22 @@ public class BodyPoseEditorScreen extends Screen {
 
 	private static void centerSelectedPart(PlayerEntityModel model) {
 		switch (selectedPart) {
-			case "head" -> movePartPair(model.head, model.hat, 0.0F, 12.0F, 0.0F);
-			case "torso" -> movePartPair(model.body, model.jacket, 0.0F, 2.0F, 0.0F);
-			case "left_arm" -> movePartPair(model.leftArm, model.leftSleeve, 0.0F, 4.0F, 0.0F);
-			case "right_arm" -> movePartPair(model.rightArm, model.rightSleeve, 0.0F, 4.0F, 0.0F);
-			case "left_leg" -> movePartPair(model.leftLeg, model.leftPants, 0.0F, 2.0F, 0.0F);
-			case "right_leg" -> movePartPair(model.rightLeg, model.rightPants, 0.0F, 2.0F, 0.0F);
+			case "head" -> movePart(model.head, 0.0F, 12.0F, 0.0F);
+			case "torso" -> movePart(model.body, 0.0F, 2.0F, 0.0F);
+			case "left_arm" -> movePart(model.leftArm, 0.0F, 4.0F, 0.0F);
+			case "right_arm" -> movePart(model.rightArm, 0.0F, 4.0F, 0.0F);
+			case "left_leg" -> movePart(model.leftLeg, 0.0F, 2.0F, 0.0F);
+			case "right_leg" -> movePart(model.rightLeg, 0.0F, 2.0F, 0.0F);
 		}
 	}
 
-	private static void movePartPair(ModelPart base, ModelPart overlay, float x, float y, float z) {
-		movePart(base, x, y, z);
-		movePart(overlay, x, y, z);
+	private static void moveWholeModelToChestPivot(PlayerEntityModel model) {
+		movePart(model.head, model.head.originX, model.head.originY - PREVIEW_CHEST_PIVOT_Y, model.head.originZ);
+		movePart(model.body, model.body.originX, model.body.originY - PREVIEW_CHEST_PIVOT_Y, model.body.originZ);
+		movePart(model.leftArm, model.leftArm.originX, model.leftArm.originY - PREVIEW_CHEST_PIVOT_Y, model.leftArm.originZ);
+		movePart(model.rightArm, model.rightArm.originX, model.rightArm.originY - PREVIEW_CHEST_PIVOT_Y, model.rightArm.originZ);
+		movePart(model.leftLeg, model.leftLeg.originX, model.leftLeg.originY - PREVIEW_CHEST_PIVOT_Y, model.leftLeg.originZ);
+		movePart(model.rightLeg, model.rightLeg.originX, model.rightLeg.originY - PREVIEW_CHEST_PIVOT_Y, model.rightLeg.originZ);
 	}
 
 	private static void movePart(ModelPart part, float x, float y, float z) {

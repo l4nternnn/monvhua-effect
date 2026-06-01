@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua;
 
 import com.google.gson.JsonObject;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.kuilunfuzhe.monvhua.command.*;
 import com.kuilunfuzhe.monvhua.command.mirror.MirrorCommand;
 import com.kuilunfuzhe.monvhua.command.mirror.MirrorDataStore;
@@ -273,6 +274,13 @@ public class MonvhuaMod implements ModInitializer {
                     return BodyPartManager.mergeBodyParts(player);
                 })
             );
+            dispatcher.register(CommandManager.literal("clairvoyance-肢体|清除背包实体")
+                .requires(source -> source.hasPermissionLevel(2))
+                .executes(context -> clearBodyBackpackInteractions(context.getSource(), 4.0D))
+                .then(CommandManager.argument("radius", DoubleArgumentType.doubleArg(0.5D, 64.0D))
+                    .executes(context -> clearBodyBackpackInteractions(context.getSource(), DoubleArgumentType.getDouble(context, "radius")))
+                )
+            );
         });
 
         // ===== 4. 配置系统 =====
@@ -543,6 +551,19 @@ public class MonvhuaMod implements ModInitializer {
         });
         // 注册漂浮魔法能量系统
         ServerTickHandler.register();
+    }
+
+    private static int clearBodyBackpackInteractions(net.minecraft.server.command.ServerCommandSource source, double radius) {
+        ServerPlayerEntity player;
+        try {
+            player = source.getPlayerOrThrow();
+        } catch (Exception e) {
+            source.sendError(Text.literal("此命令只能由玩家执行"));
+            return 0;
+        }
+        int count = BodyPartManager.clearNearbyBackpackInteractions(player, radius);
+        source.sendFeedback(() -> Text.literal("已清除附近 " + count + " 个躯干背包交互实体"), true);
+        return count;
     }
 
     private static void processPendingTainted(ServerPlayerEntity player, UUID uuid) {
