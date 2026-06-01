@@ -80,6 +80,10 @@ public class CarryEvents {
 			CarryManager.cleanupForDisconnect(player);
 		});
 
+		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+			CarryManager.syncAllCarryPosesTo(handler.getPlayer());
+		});
+
 		// 搬运实体请求
 		ServerPlayNetworking.registerGlobalReceiver(CarryEntityPayload.ID, (payload, context) -> {
 			ServerPlayerEntity carrier = context.player();
@@ -126,7 +130,8 @@ public class CarryEvents {
 				carriedPlayer.getAbilities().allowFlying = true;
 				carriedPlayer.getAbilities().invulnerable = true;
 				carriedPlayer.sendAbilitiesUpdate();
-				carriedPlayer.networkHandler.requestTeleport(carrier.getX(), carrier.getY(), carrier.getZ(), carrier.getYaw(), carrier.getPitch());
+				Vec3d initialPos = CarryManager.findSafeCarryPosition(carrier, carriedPlayer);
+				carriedPlayer.requestTeleport(initialPos.x, initialPos.y, initialPos.z);
 
 				if (CarryManager.CARRIED_ENTITIES.containsKey(carriedPlayer)) {
 					carrier.sendMessage(Text.literal("§c§k1§r正在抱起其他存在，无法抱起"), false);
@@ -148,6 +153,7 @@ public class CarryEvents {
 
 			CarryManager.CARRIED_ENTITIES.put(carrier, new CarryManager.CarriedEntityData(target, savedFlying, savedAllowFlying, savedInvulnerable));
 			CarryManager.CARRIED_BY.put(target, carrier);
+			CarryManager.syncCarryPose(carrier, target, true);
 			carrier.sendMessage(Text.literal("§a你抱起了 " + target.getName().getString()), false);
 		});
 
@@ -157,6 +163,7 @@ public class CarryEvents {
 			CarryManager.CarriedEntityData data = CarryManager.CARRIED_ENTITIES.remove(carrier);
 			if (data == null) return;
 			Entity carried = data.entity;
+			CarryManager.syncCarryPose(carrier, carried, false);
 			CarryManager.CARRIED_BY.remove(carried);
 			if (carried.isAlive()) {
 				carried.setNoGravity(false);
@@ -170,9 +177,11 @@ public class CarryEvents {
 				if (carried instanceof MobEntity mob) {
 					mob.setAiDisabled(false);
 				}
-				Vec3d lookVec = carrier.getRotationVec(1.0f);
-				Vec3d pos = carrier.getEyePos().add(lookVec.multiply(1.5)).subtract(0, 0.5, 0);
-				carried.refreshPositionAndAngles(pos.x, pos.y, pos.z, carrier.getYaw(), carrier.getPitch());
+				Vec3d pos = CarryManager.findSafeReleasePosition(carrier, carried, 1.5D);
+				carried.refreshPositionAndAngles(pos.x, pos.y, pos.z, carried.getYaw(), carried.getPitch());
+				if (carried instanceof ServerPlayerEntity carriedPlayer) {
+					carriedPlayer.requestTeleport(pos.x, pos.y, pos.z);
+				}
 				carrier.sendMessage(Text.literal("§a放下了抱起的实体"), false);
 			} else {
 				carrier.sendMessage(Text.literal("§c实体已经死亡，无法放下"), false);

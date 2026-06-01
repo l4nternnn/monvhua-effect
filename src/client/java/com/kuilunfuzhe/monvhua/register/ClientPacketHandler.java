@@ -9,6 +9,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler
 import com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient;
 import com.kuilunfuzhe.monvhua.features.secrecy.SecrecyClientAudioManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
+import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
@@ -20,8 +21,10 @@ import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyStateS2CPacket;
+import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.AnchorButtonRenderer;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.BackTextureRenderer;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.toast.SystemToast;
@@ -248,6 +251,12 @@ public class ClientPacketHandler {
         ClientPlayNetworking.registerGlobalReceiver(MirrorChargeSyncS2CPacket.ID, (packet, context) -> {
             context.client().execute(() -> MirrorClientManager.setCharge(packet.currentTicks(), packet.maxTicks()));
         });
+
+        ClientPlayNetworking.registerGlobalReceiver(CarryPoseSyncS2CPacket.ID, (packet, context) -> {
+            context.client().execute(() -> CarryPoseClientState.apply(packet));
+        });
+
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> CarryPoseClientState.clear());
     }
 
     /**

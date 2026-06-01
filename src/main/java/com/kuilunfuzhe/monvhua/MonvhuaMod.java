@@ -22,6 +22,7 @@ import com.kuilunfuzhe.monvhua.item.secrecy.SecrecyItem;
 import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
+import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
@@ -53,6 +54,7 @@ import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.entity.damage.DamageTypes;
 import net.minecraft.entity.effect.StatusEffect;
 import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.component.type.ProfileComponent;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.entry.RegistryEntry;
@@ -164,6 +166,7 @@ public class MonvhuaMod implements ModInitializer {
         OpenOtherInventoryPayload.register();
         CarryEntityPayload.register();
         PlaceCarriedEntityPayload.register();
+        PlacePosedBodyC2SPacket.register();
         CameraWatchStartC2SPacket.register();
         CameraWatchStopC2SPacket.register();
         MirrorToggleC2SPacket.register();
@@ -211,6 +214,26 @@ public class MonvhuaMod implements ModInitializer {
 
         ServerPlayNetworking.registerGlobalReceiver(RequestSecrecyConfigC2SPacket.ID, (packet, context) -> {
             ServerPlayNetworking.send(context.player(), new SecrecyConfigS2CPacket(SecrecyConfig.getInstance().toJson()));
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(PlacePosedBodyC2SPacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity player = context.player();
+                if (!player.isCreative() && !player.hasPermissionLevel(2)) {
+                    player.sendMessage(Text.literal("No permission to place posed body model"), true);
+                    return;
+                }
+                if (packet.playerSkin()) {
+                    ServerPlayerEntity source = context.server().getPlayerManager().getPlayer(packet.playerName());
+                    if (source == null) {
+                        player.sendMessage(Text.literal("Player " + packet.playerName() + " is not online"), true);
+                        return;
+                    }
+                    BodyPartManager.createPosedCombinedDisplay(player, new ProfileComponent(source.getGameProfile()), packet.slimModel(), packet.poseValues());
+                } else {
+                    BodyPartManager.createPosedCombinedDisplay(player, packet.skinName(), packet.slimModel(), packet.poseValues());
+                }
+            });
         });
 
         ServerPlayNetworking.registerGlobalReceiver(SecrecyConfigUpdateC2SPacket.ID, (packet, context) -> {

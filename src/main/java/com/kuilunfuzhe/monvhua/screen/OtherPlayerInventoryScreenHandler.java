@@ -45,14 +45,14 @@ public class OtherPlayerInventoryScreenHandler extends ScreenHandler {
 
         // 快捷栏 9 格 (索引 0-8)
         for (int col = 0; col < 9; ++col) {
-            this.addSlot(new Slot(targetInventory, col, 8 + col * 18, 81-24));
+            this.addSlot(new Slot(targetInventory, col, 8 + col * 18, 81-23));
         }
 
         // 目标玩家的背包槽位 (41 格)
         // 主背包 27 格 (索引 9-35)
         for (int row = 0; row < 3; ++row) {
             for (int col = 0; col < 9; ++col) {
-                this.addSlot(new Slot(targetInventory, col + row * 9 + 9, 8 + col * 18, 46+33 + row * 19));
+                this.addSlot(new Slot(targetInventory, col + row * 9 + 9, 8 + col * 18, 78 + row * 19));
             }
         }
         // 盔甲栏 4 格 (索引 36-39)
@@ -71,15 +71,16 @@ public class OtherPlayerInventoryScreenHandler extends ScreenHandler {
 //                }
 //            });
 //        }
-        // 副手 (索引 40)
-//        this.addSlot(new Slot(targetInventory, 40, 77, 62));
+//         副手 (索引 40)
+        this.addSlot(new Slot(targetInventory, 40, 8, 58));
 
-//        // 查看者自己的背包 (36 格)
-//        for (int row = 0; row < 3; ++row) {
-//            for (int col = 0; col < 9; ++col) {
-//                this.addSlot(new Slot(viewerInv, col + row * 9 + 9, 8 + col * 18, 166 + row * 18));
-//            }
-//        }
+        // 查看者自己的背包 (36 格)
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 9; ++col) {
+                this.addSlot(new Slot(viewerInv, col + row * 9 + 9, 8 + col * 18, 152 + row * 19));
+            }
+        }
+
         for (int col = 0; col < 9; ++col) {
             this.addSlot(new Slot(viewerInv, col, 8 + col * 18, 176+38));
         }

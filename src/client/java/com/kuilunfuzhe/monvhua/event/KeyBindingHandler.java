@@ -14,6 +14,7 @@ public class KeyBindingHandler {
     public static KeyBinding configKey;
     /** V键 - 标记/交互按键，根据手持物品执行不同操作 */
     public static KeyBinding markKey;
+    public static KeyBinding bodyPoseEditorKey;
 
     /**
      * 注册按键绑定到Minecraft键位系统。
@@ -22,5 +23,6 @@ public class KeyBindingHandler {
     public static void register() {
         configKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.config", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_U, "category.monvhua"));
         markKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.mark", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_V, "category.monvhua"));
+        bodyPoseEditorKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.body_pose_editor", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_B, "category.monvhua"));
     }
 }
