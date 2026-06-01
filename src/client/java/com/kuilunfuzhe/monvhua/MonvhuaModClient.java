@@ -32,6 +32,7 @@ import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
+import com.kuilunfuzhe.monvhua.hud.EnergyHud;
 
 /**
  * 模组客户端入口，负责所有客户端初始化逻辑。
@@ -149,7 +150,6 @@ public class MonvhuaModClient implements ClientModInitializer {
             public void run() {
                 net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
                 if (client.player != null) {
-                    // 每 tick 检查无限漂浮状态
                     com.kuilunfuzhe.monvhua.features.floating.floating.tick(client.player);
 
                     boolean jumpPressed = client.options.jumpKey.isPressed();
@@ -160,5 +160,8 @@ public class MonvhuaModClient implements ClientModInitializer {
                 }
             }
         }, 0, 50);
-    }
-}
+
+        // 注册漂浮魔法能量条 HUD
+        EnergyHud.register();
+    }  // ← onInitializeClient 方法结束
+}  // ← 类结束

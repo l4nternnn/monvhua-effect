@@ -73,6 +73,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import com.kuilunfuzhe.monvhua.event.ServerTickHandler;
 
 public class MonvhuaMod implements ModInitializer {
     public static final String MOD_ID = "monvhua";
@@ -91,6 +92,9 @@ public class MonvhuaMod implements ModInitializer {
 
     // 飘浮飞行能力追踪
     private static final Set<UUID> floatingPlayers = new HashSet<>();
+
+    // ===== 漂浮魔法系统（服务端）=====
+    public static final Set<UUID> floatingPlayersServer = new HashSet<>();
 
     // ===== 千里眼共享状态 =====
     public static ScreenHandlerType<OtherPlayerInventoryScreenHandler> OTHER_INVENTORY_HANDLER =
@@ -513,6 +517,8 @@ public class MonvhuaMod implements ModInitializer {
             }
             return true;
         });
+        // 注册漂浮魔法能量系统
+        ServerTickHandler.register();
     }
 
     private static void processPendingTainted(ServerPlayerEntity player, UUID uuid) {
