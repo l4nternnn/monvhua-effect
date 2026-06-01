@@ -530,11 +530,12 @@ public class MonvhuaMod implements ModInitializer {
             }
         });
 
-        // ===== 14. 飘浮玩家免疫摔落伤害 =====
+        // ===== 14. 漂浮/缓降玩家免疫摔落伤害 =====
         ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> {
             if (entity instanceof ServerPlayerEntity player
-                    && floatingPlayers.contains(player.getUuid())
-                    && source.isOf(DamageTypes.FALL)) {
+                    && source.isOf(DamageTypes.FALL)
+                    && (floatingPlayers.contains(player.getUuid())
+                            || com.kuilunfuzhe.monvhua.features.floating.floating.shouldPreventFallDamage(player))) {
                 player.fallDistance = 0;
                 return false;
             }

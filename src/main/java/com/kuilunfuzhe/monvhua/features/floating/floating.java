@@ -1,12 +1,15 @@
 package com.kuilunfuzhe.monvhua.features.floating;
 
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
 import com.kuilunfuzhe.monvhua.MonvhuaMod;
 
 public class floating {
+
+    private static final String FULL_WITCH_TAG = "MonvhuaFull";
 
     // 双击相关
     private static long lastJumpTime = 0;
@@ -21,20 +24,32 @@ public class floating {
     private static final int MAX_ENERGY = 100;
     private static final double REGEN_RATE = 10.0;
     private static java.util.Map<java.util.UUID, Double> playerEnergy = new java.util.HashMap<>();
+    private static boolean clientHasFullWitchTag = false;
 
     // ==================== 计分板读取 ====================
 
     private static int getMonvhuaScore(PlayerEntity player) {
         Scoreboard scoreboard = player.getScoreboard();
         ScoreboardObjective objective = scoreboard.getNullableObjective("monvhua");
-        if (objective == null) return 0;
+        if (objective == null) return 1;
         var score = scoreboard.getScore(player, objective);
-        if (score == null) return 0;
-        return score.getScore();
+        if (score == null) return 1;
+        return Math.clamp(score.getScore(), 0, 100);
     }
 
     private static boolean hasFullWitchTag(PlayerEntity player) {
-        return player.getCommandTags().contains("MonvhuaFull");
+        if (player instanceof ServerPlayerEntity) {
+            return player.getCommandTags().contains(FULL_WITCH_TAG);
+        }
+        return clientHasFullWitchTag;
+    }
+
+    public static void syncFullWitchTag(boolean hasTag) {
+        clientHasFullWitchTag = hasTag;
+    }
+
+    public static boolean shouldPreventFallDamage(ServerPlayerEntity player) {
+        return isFloatingServer(player.getUuid()) || getMonvhuaScore(player) >= FULL_WITCH_SCORE;
     }
 
     // ==================== 服务端漂浮状态管理 ====================
@@ -78,8 +93,20 @@ public class floating {
     public static void tickEnergy(net.minecraft.server.network.ServerPlayerEntity player) {
         java.util.UUID uuid = player.getUuid();
 
-        // 完全魔女化或缓降模式，不处理能量
-        if (hasFullWitchTag(player) || getMonvhuaScore(player) >= FULL_WITCH_SCORE) {
+        int score = getMonvhuaScore(player);
+        if (score >= FULL_WITCH_SCORE) {
+            player.fallDistance = 0;
+            player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
+                    net.minecraft.entity.effect.StatusEffects.SLOW_FALLING, 40, 0, false, false, true));
+            setEnergy(player, MAX_ENERGY);
+            setServerFloating(uuid, false);
+            return;
+        }
+
+        // 完全魔女化不处理能量
+        if (hasFullWitchTag(player)) {
+            setEnergy(player, MAX_ENERGY);
+            setServerFloating(uuid, false);
             return;
         }
 
@@ -94,6 +121,7 @@ public class floating {
             if (currentEnergy <= 0) {
                 currentEnergy = 0;
                 setEnergy(player, currentEnergy);
+                deactivateFloating(player);
                 // 通知客户端关闭漂浮
                 player.sendMessage(Text.literal("§c[漂浮] §f能量耗尽，漂浮解除"), true);
             } else {
@@ -118,6 +146,7 @@ public class floating {
                 player.getAbilities().flying = false;
                 player.getAbilities().setFlySpeed(0.05f);
                 player.sendAbilitiesUpdate();
+                setServerFloating(player.getUuid(), false);
             }
             return;
         }
@@ -127,7 +156,8 @@ public class floating {
         // 缓降模式（分数 >= 90）
         if (score >= FULL_WITCH_SCORE) {
             player.fallDistance = 0;
-
+            player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
+                    net.minecraft.entity.effect.StatusEffects.SLOW_FALLING, 40, 0, false, false, true));
             if (isFloating) {
                 player.setVelocity(player.getVelocity().x, 0, player.getVelocity().z);
                 deactivateFloating(player);

@@ -169,7 +169,7 @@ public class Evil_Eyes {
         if (objective == null) return 1;
         var score = scoreboard.getScore(player, objective);
         if (score == null) return 1;
-        int rawScore = Math.max(0, Math.min(100, score.getScore()));
+        int rawScore = Math.clamp(score.getScore(), 0, 100);
         return mgr.getStageByScore(rawScore);
     }
 

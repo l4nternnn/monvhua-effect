@@ -4,6 +4,8 @@ import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
+import com.kuilunfuzhe.monvhua.network.floating.FloatingEnergySyncS2CPacket;
+import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeSyncS2CPacket;
@@ -27,6 +29,8 @@ public class ModNetworking {
 		MarkParticleS2CPacket.register();
 		SyncConfigS2CPacket.register();
 		EnergySyncPacket.register();
+		FloatingEnergySyncS2CPacket.register();
+		FullWitchTagSyncS2CPacket.register();
 		MarkCountPacket.register();
 		FocusStatusPacket.register();
 		ParticlePacket.register();

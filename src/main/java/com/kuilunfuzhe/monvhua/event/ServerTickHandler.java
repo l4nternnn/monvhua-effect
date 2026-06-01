@@ -1,7 +1,8 @@
 package com.kuilunfuzhe.monvhua.event;
 
 import com.kuilunfuzhe.monvhua.features.floating.floating;
-import com.kuilunfuzhe.monvhua.network.gazeguidance.EnergySyncPacket;
+import com.kuilunfuzhe.monvhua.network.floating.FloatingEnergySyncS2CPacket;
+import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -24,7 +25,10 @@ public class ServerTickHandler {
                 for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                     double current = floating.getEnergy(player);
                     double max = 100;
-                    ServerPlayNetworking.send(player, new EnergySyncPacket(current, max));
+                    ServerPlayNetworking.send(player, new FloatingEnergySyncS2CPacket(current, max));
+                    ServerPlayNetworking.send(player, new FullWitchTagSyncS2CPacket(
+                            player.getCommandTags().contains("MonvhuaFull")
+                    ));
                 }
             }
         });

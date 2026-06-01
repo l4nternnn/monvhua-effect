@@ -1,7 +1,7 @@
 package com.kuilunfuzhe.monvhua.hud;
 
 import com.kuilunfuzhe.monvhua.features.floating.floating;
-import com.kuilunfuzhe.monvhua.network.gazeguidance.EnergySyncPacket;
+import com.kuilunfuzhe.monvhua.network.floating.FloatingEnergySyncS2CPacket;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
@@ -13,11 +13,12 @@ public class EnergyHud {
     private static double maxEnergy = 100;
 
     public static void register() {
-        // 接收服务端同步的能量数据
-        ClientPlayNetworking.registerGlobalReceiver(EnergySyncPacket.ID, (packet, context) -> {
-            currentEnergy = packet.currentEnergy();
-            maxEnergy = packet.maxEnergy();
-            System.out.println("§e[调试] 客户端收到真实能量: " + currentEnergy + "/" + maxEnergy);
+        // 接收服务端同步的漂浮能量数据
+        ClientPlayNetworking.registerGlobalReceiver(FloatingEnergySyncS2CPacket.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                currentEnergy = packet.currentEnergy();
+                maxEnergy = packet.maxEnergy();
+            });
         });
 
         // HUD 渲染
@@ -40,7 +41,7 @@ public class EnergyHud {
             drawContext.fill(x, y, x + barWidth, y + barHeight, 0xFF444444);
 
             // 颜色根据能量百分比变化
-            double percent = currentEnergy / maxEnergy;
+            double percent = maxEnergy <= 0 ? 0 : currentEnergy / maxEnergy;
             int color;
             if (percent > 0.6) {
                 color = 0xFF55AAFF; // 蓝色

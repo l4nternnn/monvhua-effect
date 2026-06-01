@@ -15,6 +15,7 @@ import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
+import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigS2CPacket;
@@ -164,6 +165,11 @@ public class ClientPacketHandler {
             context.client().execute(() -> GazeguidanceClient.setEnergy(packet.currentEnergy(), packet.maxEnergy()));
         });
 
+        // 漂浮：同步服务端玩家标签状态
+        ClientPlayNetworking.registerGlobalReceiver(FullWitchTagSyncS2CPacket.ID, (packet, context) -> {
+            context.client().execute(() -> com.kuilunfuzhe.monvhua.features.floating.floating.syncFullWitchTag(packet.hasFullWitchTag()));
+        });
+
         // 10. 标记数量同步
         ClientPlayNetworking.registerGlobalReceiver(MarkCountPacket.ID, (packet, context) -> {
             context.client().execute(() -> GazeguidanceClient.setMarkCount(packet.count()));
@@ -256,7 +262,10 @@ public class ClientPacketHandler {
             context.client().execute(() -> CarryPoseClientState.apply(packet));
         });
 
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> CarryPoseClientState.clear());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            CarryPoseClientState.clear();
+            com.kuilunfuzhe.monvhua.features.floating.floating.syncFullWitchTag(false);
+        });
     }
 
     /**
