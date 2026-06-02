@@ -66,14 +66,24 @@ public abstract class FirstPersonCarrierAttachedEntityRenderMixin {
 			return;
 		}
 
+		boolean firstPersonSelfCarried = client.player == carried && client.options.getPerspective().isFirstPerson();
+
 		MatrixStack matrices = CarryAttachedRenderMath.createAttachedViewMatrix(carrier, tickProgress, camera.getPos(), positionMatrix);
 		int light = WorldRenderer.getLightmapCoordinates(client.world, carried.getBlockPos());
 
-		CarryAttachmentRenderState.beginAttachedCarriedEntityRender();
+		if (firstPersonSelfCarried) {
+			CarryAttachmentRenderState.beginFirstPersonSelfCarriedEntityRender();
+		} else {
+			CarryAttachmentRenderState.beginAttachedCarriedEntityRender();
+		}
 		try {
 			dispatcher.render(carried, 0.0D, 0.0D, 0.0D, tickProgress, matrices, vertexConsumers, light);
 		} finally {
-			CarryAttachmentRenderState.endAttachedCarriedEntityRender();
+			if (firstPersonSelfCarried) {
+				CarryAttachmentRenderState.endFirstPersonSelfCarriedEntityRender();
+			} else {
+				CarryAttachmentRenderState.endAttachedCarriedEntityRender();
+			}
 		}
 	}
 }
