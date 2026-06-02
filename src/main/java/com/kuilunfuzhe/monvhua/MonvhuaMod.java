@@ -8,6 +8,10 @@ import com.kuilunfuzhe.monvhua.command.mirror.MirrorDataStore;
 import com.kuilunfuzhe.monvhua.config.GlobalConfigManager;
 import com.kuilunfuzhe.monvhua.effect.DisplayOnlyEffect;
 import com.kuilunfuzhe.monvhua.entity.ModBlockEntities;
+import com.kuilunfuzhe.monvhua.features.action.ActionConfig;
+import com.kuilunfuzhe.monvhua.features.action.ActionEngine;
+import com.kuilunfuzhe.monvhua.features.action.ActionExecutor;
+import com.kuilunfuzhe.monvhua.features.action.TimelineScheduler;
 import com.kuilunfuzhe.monvhua.features.block.body.BodyPartManager;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryEvents;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
@@ -29,6 +33,7 @@ import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
+import com.kuilunfuzhe.monvhua.network.action.*;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigUpdateC2SPacket;
@@ -51,6 +56,7 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.entity.damage.DamageTypes;
@@ -75,6 +81,9 @@ import net.minecraft.world.World;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import com.kuilunfuzhe.monvhua.event.ServerTickHandler;
@@ -280,6 +289,7 @@ public class MonvhuaMod implements ModInitializer {
         CommandRegistrationCallback.EVENT.register(WatchCommand::register);
         CommandRegistrationCallback.EVENT.register(MirrorCommand::register);
         CommandRegistrationCallback.EVENT.register(ClairvoyanceCommand::register);
+        CommandRegistrationCallback.EVENT.register(ActionCommand::register);
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("clairvoyance-肢体|合并")
@@ -301,6 +311,10 @@ public class MonvhuaMod implements ModInitializer {
 
         // ===== 4. 配置系统 =====
         GlobalConfigManager configManager = new GlobalConfigManager();
+        ActionConfig actionConfig = ActionConfig.getInstance();
+        ActionEngine.initialize(actionConfig);
+        TimelineScheduler.initialize(actionConfig);
+        ServerTickEvents.END_SERVER_TICK.register(TimelineScheduler::tick);
 
         ServerPlayNetworking.registerGlobalReceiver(RequestGlobalConfigC2SPacket.ID, (packet, context) -> {
             sendGlobalConfigToPlayer(context.player(), configManager);
@@ -325,6 +339,8 @@ public class MonvhuaMod implements ModInitializer {
                 context.player().sendMessage(Text.literal("§c我做不到"), true);
             }
         });
+
+        registerActionEditorReceivers();
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
@@ -521,6 +537,7 @@ public class MonvhuaMod implements ModInitializer {
             VIEWING_MAP.values().removeIf(v -> v == player);
             VIEW_MODE_PREFERENCE.remove(uuid);
             MirrorCommand.cleanup(uuid);
+            TimelineScheduler.cleanupPlayer(uuid);
             SecrecyItem.exitSecrecy(player);
         });
 
@@ -562,6 +579,169 @@ public class MonvhuaMod implements ModInitializer {
         int count = BodyPartManager.clearNearbyBackpackInteractions(player, radius);
         source.sendFeedback(() -> Text.literal("已清除附近 " + count + " 个躯干背包交互实体"), true);
         return count;
+    }
+
+    private static void registerActionEditorReceivers() {
+        ServerPlayNetworking.registerGlobalReceiver(RequestActionsConfigC2SPacket.ID, (packet, context) ->
+                context.server().execute(() -> sendActionsConfig(context.player())));
+
+        ServerPlayNetworking.registerGlobalReceiver(UpdateActionsConfigC2SPacket.ID, (packet, context) ->
+                context.server().execute(() -> {
+                    ServerPlayerEntity player = context.player();
+                    if (!canEditActions(player)) return;
+                    try {
+                        ActionConfig.setInstance(ActionConfig.fromJson(packet.json()));
+                        ActionEngine.reloadConfig();
+                        TimelineScheduler.reloadConfig();
+                        sendActionsConfig(player);
+                    } catch (Exception e) {
+                        player.sendMessage(Text.literal("Invalid action config json"), true);
+                    }
+                }));
+
+        ServerPlayNetworking.registerGlobalReceiver(PreviewActionC2SPacket.ID, (packet, context) ->
+                context.server().execute(() -> {
+                    try {
+                        ActionConfig.ActionDef def = ActionConfig.actionDefFromJson(packet.actionJson());
+                        String text = ActionExecutor.executePreviewText(def, context.player());
+                        String id = def != null && def.id != null ? def.id : "";
+                        ServerPlayNetworking.send(context.player(), new PreviewResultS2CPacket(id, text));
+                    } catch (Exception e) {
+                        ServerPlayNetworking.send(context.player(), new PreviewResultS2CPacket("", "Preview failed: " + e.getMessage()));
+                    }
+                }));
+
+        ServerPlayNetworking.registerGlobalReceiver(PreviewTimelineC2SPacket.ID, (packet, context) ->
+                context.server().execute(() -> {
+                    ActionConfig cfg = ActionConfig.getInstance();
+                    List<PreviewTimelineResultS2CPacket.PreviewEntry> entries = new ArrayList<>();
+                    List<Integer> seconds = new ArrayList<>(cfg.timelineSchedule.keySet());
+                    Collections.sort(seconds);
+                    for (int second : seconds) {
+                        List<String> ids = cfg.timelineSchedule.get(second);
+                        if (ids == null) continue;
+                        for (String actionId : ids) {
+                            if (actionId == null || actionId.isBlank()) continue;
+                            cfg.findById(actionId).ifPresent(def -> entries.add(
+                                    new PreviewTimelineResultS2CPacket.PreviewEntry(second, actionId,
+                                            ActionExecutor.executePreviewText(def, context.player()), def.actionType)));
+                        }
+                    }
+                    ServerPlayNetworking.send(context.player(), new PreviewTimelineResultS2CPacket(entries));
+                }));
+
+        ServerPlayNetworking.registerGlobalReceiver(TimelineControlC2SPacket.ID, (packet, context) ->
+                context.server().execute(() -> {
+                    ServerPlayerEntity player = context.player();
+                    String action = packet.action() == null ? "" : packet.action().toUpperCase(Locale.ROOT);
+                    boolean changedSchedule = false;
+                    switch (action) {
+                        case "START" -> TimelineScheduler.start(player);
+                        case "STOP" -> TimelineScheduler.stop(player);
+                        case "PAUSE" -> TimelineScheduler.pause(player);
+                        case "RESUME" -> TimelineScheduler.resume(player);
+                        case "SET_LOOP" -> TimelineScheduler.setLoop(player, true);
+                        case "SET_LOOP_OFF" -> TimelineScheduler.setLoop(player, false);
+                        case "JUMP", "SEEK" -> TimelineScheduler.jumpTo(player, packet.second());
+                        case "ADD" -> {
+                            if (!canEditActions(player)) return;
+                            if (packet.actionId() == null || packet.actionId().isBlank()) {
+                                createEmptyTimelineSecond(packet.second());
+                            } else {
+                                TimelineScheduler.addAction(player, Math.max(0, packet.second()), packet.actionId());
+                            }
+                            changedSchedule = true;
+                        }
+                        case "REMOVE" -> {
+                            if (!canEditActions(player)) return;
+                            TimelineScheduler.removeAction(player, packet.second(), packet.actionId());
+                            changedSchedule = true;
+                        }
+                        case "MOVE_UP" -> {
+                            if (!canEditActions(player)) return;
+                            TimelineScheduler.moveUp(player, packet.second(), packet.actionId());
+                            changedSchedule = true;
+                        }
+                        case "MOVE_DOWN" -> {
+                            if (!canEditActions(player)) return;
+                            TimelineScheduler.moveDown(player, packet.second(), packet.actionId());
+                            changedSchedule = true;
+                        }
+                        case "REMOVE_SECOND" -> {
+                            if (!canEditActions(player)) return;
+                            TimelineScheduler.removeSecond(player, packet.second());
+                            changedSchedule = true;
+                        }
+                    }
+                    if (changedSchedule) sendActionsConfig(player);
+                }));
+
+        ServerPlayNetworking.registerGlobalReceiver(ListActionFilesC2SPacket.ID, (packet, context) ->
+                context.server().execute(() ->
+                        ServerPlayNetworking.send(context.player(), new ActionFilesListS2CPacket(listActionFiles()))));
+
+        ServerPlayNetworking.registerGlobalReceiver(LoadActionFileC2SPacket.ID, (packet, context) ->
+                context.server().execute(() -> {
+                    ServerPlayerEntity player = context.player();
+                    if (!canEditActions(player)) return;
+                    Path path = resolveActionFile(packet.filename());
+                    if (path == null || !Files.isRegularFile(path)) {
+                        player.sendMessage(Text.literal("Action file not found: " + packet.filename()), true);
+                        return;
+                    }
+                    try {
+                        ActionConfig.setInstance(ActionConfig.fromJson(Files.readString(path)));
+                        ActionEngine.reloadConfig();
+                        TimelineScheduler.reloadConfig();
+                        sendActionsConfig(player);
+                    } catch (IOException e) {
+                        player.sendMessage(Text.literal("Failed to load action file: " + e.getMessage()), true);
+                    }
+                }));
+    }
+
+    private static boolean canEditActions(ServerPlayerEntity player) {
+        return player != null && (player.hasPermissionLevel(2) || player.isCreative());
+    }
+
+    private static void sendActionsConfig(ServerPlayerEntity player) {
+        ActionConfig cfg = ActionConfig.getInstance();
+        ServerPlayNetworking.send(player, new ActionsConfigS2CPacket(cfg.toJson()));
+        TimelineScheduler.PlayerTimelineState state = TimelineScheduler.getOrCreate(player);
+        ServerPlayNetworking.send(player, new TimelineStateS2CPacket(
+                state.currentTick / 20, state.running, state.paused, state.loop, TimelineScheduler.getMaxSecond()));
+    }
+
+    private static void createEmptyTimelineSecond(int second) {
+        ActionConfig cfg = ActionConfig.getInstance();
+        cfg.timelineSchedule.computeIfAbsent(Math.max(0, second), k -> new ArrayList<>());
+        cfg.save();
+        ActionEngine.reloadConfig();
+        TimelineScheduler.reloadConfig();
+    }
+
+    private static List<String> listActionFiles() {
+        Path base = FabricLoader.getInstance().getConfigDir().resolve("monvhua").normalize();
+        List<String> files = new ArrayList<>();
+        if (Files.isRegularFile(base.resolve("actions.json"))) files.add("actions.json");
+        Path actionDir = base.resolve("actions");
+        if (Files.isDirectory(actionDir)) {
+            try (java.util.stream.Stream<Path> stream = Files.list(actionDir)) {
+                stream.filter(Files::isRegularFile)
+                        .filter(path -> path.getFileName().toString().endsWith(".json"))
+                        .sorted()
+                        .forEach(path -> files.add("actions/" + path.getFileName()));
+            } catch (IOException ignored) {}
+        }
+        return files;
+    }
+
+    private static Path resolveActionFile(String filename) {
+        if (filename == null || filename.isBlank()) return null;
+        Path base = FabricLoader.getInstance().getConfigDir().resolve("monvhua").normalize();
+        Path path = base.resolve(filename).normalize();
+        if (!path.startsWith(base)) return null;
+        return path;
     }
 
     private static void processPendingTainted(ServerPlayerEntity player, UUID uuid) {
