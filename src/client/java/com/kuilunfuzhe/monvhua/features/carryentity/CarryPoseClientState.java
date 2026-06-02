@@ -38,6 +38,11 @@ public final class CarryPoseClientState {
 		return data != null ? data.partnerId : -1;
 	}
 
+	public static int getPartnerId(int entityId) {
+		PoseData data = POSES.get(entityId);
+		return data != null ? data.partnerId : -1;
+	}
+
 	public record PoseData(int pose, int partnerId) {
 	}
 }

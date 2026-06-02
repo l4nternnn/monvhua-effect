@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.mixin.carrymodelpose;
 
+import com.kuilunfuzhe.monvhua.features.carryentity.CarryAttachmentRenderState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.LivingEntityRenderer;
@@ -18,16 +19,53 @@ public abstract class PlayerEntityRendererCarryPoseMixin {
 	@Unique
 	private static final float CARRIED_PIVOT_Y = 0.9F;
 	@Unique
-	private static final float CARRIED_ROTATION_X_DEGREES = 90.0F;
+	private static final float CARRIED_ROTATION_X_DEGREES = -90.0F;
 	@Unique
 	private static final float CARRIED_ROTATION_Y_DEGREES = 0.0F;
 	@Unique
 	private static final float CARRIED_ROTATION_Z_DEGREES = 0.0F;
 
+	@Unique
+	private static boolean lockedAttachedCarriedRotation;
+	@Unique
+	private static float lockedAttachedCarriedBodyYaw;
+	@Unique
+	private static float lockedAttachedCarriedRelativeHeadYaw;
+	@Unique
+	private static float lockedAttachedCarriedPitch;
+
+	@Inject(method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V", at = @At("HEAD"))
+	private void monvhua$lockAttachedCarriedEntityRotation(LivingEntityRenderState state, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
+		if (!CarryAttachmentRenderState.isRenderingAttachedCarriedEntity()) {
+			return;
+		}
+
+		lockedAttachedCarriedRotation = true;
+		lockedAttachedCarriedBodyYaw = state.bodyYaw;
+		lockedAttachedCarriedRelativeHeadYaw = state.relativeHeadYaw;
+		lockedAttachedCarriedPitch = state.pitch;
+
+		state.bodyYaw = 0.0F;
+		state.relativeHeadYaw = 0.0F;
+		state.pitch = 0.0F;
+	}
+
+	@Inject(method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V", at = @At("RETURN"))
+	private void monvhua$restoreAttachedCarriedEntityRotation(LivingEntityRenderState state, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
+		if (!lockedAttachedCarriedRotation) {
+			return;
+		}
+
+		state.bodyYaw = lockedAttachedCarriedBodyYaw;
+		state.relativeHeadYaw = lockedAttachedCarriedRelativeHeadYaw;
+		state.pitch = lockedAttachedCarriedPitch;
+		lockedAttachedCarriedRotation = false;
+	}
+
 	@Inject(method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
 			at = @At(value = "INVOKE", target = "Lnet/minecraft/client/util/math/MatrixStack;translate(FFF)V", ordinal = 1, shift = At.Shift.AFTER))
 	private void monvhua$applyCarriedPlayerTransform(LivingEntityRenderState state, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
-		if (!(state instanceof PlayerEntityRenderState playerState) || !CarryPoseClientState.isCarried(playerState.id)) {
+		if (!monvhua$shouldUseCarriedTransform(state)) {
 			return;
 		}
 
@@ -42,9 +80,17 @@ public abstract class PlayerEntityRendererCarryPoseMixin {
 	@Inject(method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
 			at = @At(value = "INVOKE", target = "Lnet/minecraft/client/util/math/MatrixStack;pop()V"))
 	private void monvhua$restoreCarriedPlayerTransform(LivingEntityRenderState state, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
-		if (state instanceof PlayerEntityRenderState playerState && CarryPoseClientState.isCarried(playerState.id)) {
+		if (monvhua$shouldUseCarriedTransform(state)) {
 			matrices.pop();
 		}
+	}
+
+	@Unique
+	private static boolean monvhua$shouldUseCarriedTransform(LivingEntityRenderState state) {
+		if (CarryAttachmentRenderState.isRenderingAttachedCarriedEntity()) {
+			return true;
+		}
+		return state instanceof PlayerEntityRenderState playerState && CarryPoseClientState.isCarried(playerState.id);
 	}
 
 	@Unique

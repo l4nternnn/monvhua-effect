@@ -11,7 +11,10 @@
 		"WorldRendererHookMixin",
 		"carrymodelpose.PlayerEntityModelCarryPoseMixin",
 		"carrymodelpose.PlayerEntityRendererCarryPoseMixin",
-    "PlayerSkinGuiElementRendererMixin"
+		"carrymodelpose.CarriedEntityDirectRenderCancelMixin",
+		"carrymodelpose.CarriedPlayerCameraMixin",
+		"carrymodelpose.FirstPersonCarrierAttachedEntityRenderMixin",
+		"PlayerSkinGuiElementRendererMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

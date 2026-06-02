@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.mixin;
 
+import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
 import net.minecraft.client.render.item.HeldItemRenderer;
 import net.minecraft.client.util.math.MatrixStack;
@@ -29,7 +30,7 @@ public class HideHandMixin {
      */
     @Inject(method = "renderItem(FLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider$Immediate;Lnet/minecraft/client/network/ClientPlayerEntity;I)V", at = @At("HEAD"), cancellable = true)
     private void onRenderItem(float tickDelta, MatrixStack matrices, VertexConsumerProvider.Immediate vertexConsumers, ClientPlayerEntity player, int light, CallbackInfo ci) {
-        if (CameraWatchClientHandler.isActive()) {
+        if (CameraWatchClientHandler.isActive() || CarryPoseClientState.isCarried(player.getId())) {
             ci.cancel();
         }
     }
