@@ -218,8 +218,8 @@ public class SecrecyItem extends Item {
         EXITING_SECRECY.add(player.getUuid());
         removeSpeedModifier(player);
         player.removeStatusEffect(StatusEffects.INVISIBILITY);
-        player.removeStatusEffect(StatusEffects.BLINDNESS);
-        player.removeStatusEffect(StatusEffects.DARKNESS);
+        //player.removeStatusEffect(StatusEffects.BLINDNESS);
+        //player.removeStatusEffect(StatusEffects.DARKNESS);
         syncSecrecyState(player, false);
     }
 
@@ -234,8 +234,8 @@ public class SecrecyItem extends Item {
         applySpeedMultiplier(player, speedMultiplier);
         playHeartSound(player);
         EXITING_SECRECY.remove(player.getUuid());
-        player.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, INFINITE_DURATION, 0, false, false, false));
-        player.addStatusEffect(new StatusEffectInstance(StatusEffects.DARKNESS, INFINITE_DURATION, 0, false, false, false));
+        //player.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, INFINITE_DURATION, 0, false, false, false));
+        //player.addStatusEffect(new StatusEffectInstance(StatusEffects.DARKNESS, INFINITE_DURATION, 0, false, false, false));
         player.removeStatusEffect(StatusEffects.INVISIBILITY);
         syncSecrecyState(player, false);
         VANISH_PENDING_TICKS.put(player.getUuid(), player.getWorld().getTime() + delayTicks);
