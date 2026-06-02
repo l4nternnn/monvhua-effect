@@ -21,7 +21,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class PlayerSkinGuiElementRendererMixin {
 
 	@Unique
-	private static final float AXIS_LENGTH = 2.0F / 3.0F;
+	private static final float AXIS_LENGTH = 4.0F / 3.0F;
 
 	@Unique
 	private static final int GROUND_GRID_SIZE = 21;

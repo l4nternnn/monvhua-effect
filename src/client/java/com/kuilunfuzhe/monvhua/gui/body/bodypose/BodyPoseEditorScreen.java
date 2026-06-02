@@ -34,7 +34,7 @@ public class BodyPoseEditorScreen extends Screen {
 	private static final float MODEL_PART_UNITS_PER_GRID = 16.0F;
 	private static final float MODEL_OFFSET_MIN = -10.0F;
 	private static final float MODEL_OFFSET_MAX = 10.0F;
-	private static final float MOVE_AXIS_LENGTH = 2.0F / 3.0F;
+	private static final float MOVE_AXIS_LENGTH = 4.0F / 3.0F;
 	private static final float MOVE_AXIS_HIT_RADIUS = 3.4F;
 	private static final float ROTATION_RING_RADIUS = 2.45F / 3.0F;
 	private static final float ROTATION_RING_HIT_RADIUS = 3.0F;
@@ -63,6 +63,17 @@ public class BodyPoseEditorScreen extends Screen {
 	private static final List<EditorItemModel> EDITOR_ITEMS = new ArrayList<>();
 	private static final Map<String, PartPose> PART_POSES = createPartPoses();
 
+	/** 世界3D预览是否启用 */
+	private static boolean worldPreviewEnabled = true;
+	/** 世界预览模式：FOLLOW_PLAYER（跟随玩家）或 FIXED（固定位置） */
+	private static PreviewMode worldPreviewMode = PreviewMode.FOLLOW_PLAYER;
+	/** 放置模式下固定的世界坐标X */
+	private static double fixedWorldX;
+	/** 放置模式下固定的世界坐标Y */
+	private static double fixedWorldY;
+	/** 放置模式下固定的世界坐标Z */
+	private static double fixedWorldZ;
+
 	private final List<ButtonWidget> skinButtons = new ArrayList<>();
 	private final List<ButtonWidget> partButtons = new ArrayList<>();
 	private final List<ButtonWidget> poseButtons = new ArrayList<>();
@@ -78,6 +89,9 @@ public class BodyPoseEditorScreen extends Screen {
 	private ButtonWidget resetTransformButton;
 	private PlayerEntityModel defaultPreviewModel;
 	private PlayerEntityModel slimPreviewModel;
+	private PlayerEntityModel worldPreviewModelDefault;
+	private PlayerEntityModel worldPreviewModelSlim;
+	private ButtonWidget worldPreviewToggleButton;
 	private float previewPitch = 24.0F;
 	private float previewYaw = 0.0F;
 	private float previewRoll = 0.0F;
@@ -234,6 +248,14 @@ public class BodyPoseEditorScreen extends Screen {
 				.position(getPreviewRight() - 112, getPreviewBottom() - 72)
 				.build());
 
+		this.worldPreviewToggleButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> {
+					worldPreviewEnabled = !worldPreviewEnabled;
+					refreshButtonLabels();
+				})
+				.size(102, 18)
+				.position(getPreviewRight() - 112, getPreviewBottom() - 94)
+				.build());
+
 		this.addDrawableChild(ButtonWidget.builder(Text.literal("Done"), pressed -> this.close())
 				.size(70, 20)
 				.position(this.width - 88, this.height - 26)
@@ -290,6 +312,9 @@ public class BodyPoseEditorScreen extends Screen {
 		}
 		if (this.coordMovableButton != null) {
 			this.coordMovableButton.setMessage(Text.literal("坐标跟随 " + (this.coordinateAxesMovable ? "开启" : "关闭")));
+		}
+		if (this.worldPreviewToggleButton != null) {
+			this.worldPreviewToggleButton.setMessage(Text.literal("3D预览 " + (worldPreviewEnabled ? "开启" : "关闭")));
 		}
 		boolean canEditPose = !selectedPart.equals("all");
 		for (ButtonWidget button : this.poseButtons) {
@@ -364,6 +389,8 @@ public class BodyPoseEditorScreen extends Screen {
 		context.drawTextWithShadow(this.textRenderer, "Skin", 18, 26, 0xD8D8D8);
 		context.drawTextWithShadow(this.textRenderer, "Preview", previewLeft, 26, 0xD8D8D8);
 		context.drawTextWithShadow(this.textRenderer, "Selection", this.width - 178, 26, 0xD8D8D8);
+		String modeText = worldPreviewMode == PreviewMode.FOLLOW_PLAYER ? "P: 预览模式" : "P: 放置模式";
+		context.drawTextWithShadow(this.textRenderer, modeText, 18, this.height - 26, 0xFFB8B8FF);
 		renderPoseReadout(context, this.width - 178, getPoseControlsY(38));
 
 		context.fill(previewLeft, previewTop, previewRight, previewBottom, 0x66000000);
@@ -517,11 +544,28 @@ public class BodyPoseEditorScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+		if (keyCode == GLFW.GLFW_KEY_P) {
+			toggleWorldPreviewMode();
+			return true;
+		}
 		if (keyCode == GLFW.GLFW_KEY_DELETE) {
 			clearSelectedItemModel();
 			return true;
 		}
 		return super.keyPressed(keyCode, scanCode, modifiers);
+	}
+
+	private void toggleWorldPreviewMode() {
+		if (worldPreviewMode == PreviewMode.FOLLOW_PLAYER) {
+			worldPreviewMode = PreviewMode.FIXED;
+			if (this.client != null && this.client.player != null) {
+				fixedWorldX = this.client.player.getX();
+				fixedWorldY = this.client.player.getY();
+				fixedWorldZ = this.client.player.getZ();
+			}
+		} else {
+			worldPreviewMode = PreviewMode.FOLLOW_PLAYER;
+		}
 	}
 
 	@Override
@@ -626,6 +670,92 @@ public class BodyPoseEditorScreen extends Screen {
 
 	public boolean isCoordinateAxesMovable() {
 		return this.coordinateAxesMovable;
+	}
+
+	/** @return 世界3D预览是否活跃（启用且当前屏幕是编辑器） */
+	public static boolean isWorldPreviewActive() {
+		return worldPreviewEnabled && MinecraftClient.getInstance().currentScreen instanceof BodyPoseEditorScreen;
+	}
+
+	/** @return 当前世界预览模式 */
+	public static PreviewMode getWorldPreviewMode() { return worldPreviewMode; }
+	public static double getFixedWorldX() { return fixedWorldX; }
+	public static double getFixedWorldY() { return fixedWorldY; }
+	public static double getFixedWorldZ() { return fixedWorldZ; }
+
+	/** @return 是否显示世界坐标轴 */
+	public static boolean isWorldAxesShown() {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.currentScreen instanceof BodyPoseEditorScreen screen) {
+			return screen.showCoordinateAxes;
+		}
+		return false;
+	}
+
+	/** @return 世界坐标轴是否跟随模型偏移 */
+	public static boolean isWorldAxesMovable() {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.currentScreen instanceof BodyPoseEditorScreen screen) {
+			return screen.coordinateAxesMovable;
+		}
+		return false;
+	}
+
+	public static float getWorldModelOffsetX() { return modelOffsetX; }
+	public static float getWorldModelOffsetY() { return modelOffsetY; }
+	public static float getWorldModelOffsetZ() { return modelOffsetZ; }
+	public static float getWorldModelPitch() { return modelPitch; }
+	public static float getWorldModelYaw() { return modelYaw; }
+	public static float getWorldModelRoll() { return modelRoll; }
+
+	public static String getStaticHighlightedMoveAxis() {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.currentScreen instanceof BodyPoseEditorScreen screen) {
+			return screen.getHighlightedMoveAxis();
+		}
+		return "";
+	}
+
+	public static String getStaticHighlightedRotationAxis() {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.currentScreen instanceof BodyPoseEditorScreen screen) {
+			return screen.getHighlightedRotationAxis();
+		}
+		return "";
+	}
+
+	public static Identifier getWorldSkinTexture() {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.currentScreen instanceof BodyPoseEditorScreen screen) {
+			return screen.getPreviewTexture();
+		}
+		return Identifier.of("monvhua", "textures/local_skin/" + selectedSkin + ".png");
+	}
+
+	public static boolean isWorldSlimModel() { return slimModel; }
+
+	public static float getPreviewYaw() {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.currentScreen instanceof BodyPoseEditorScreen screen) {
+			return screen.previewYaw;
+		}
+		return 0;
+	}
+
+	public static float getPreviewPitch() {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.currentScreen instanceof BodyPoseEditorScreen screen) {
+			return screen.previewPitch;
+		}
+		return 0;
+	}
+
+	public static float getPreviewRoll() {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.currentScreen instanceof BodyPoseEditorScreen screen) {
+			return screen.previewRoll;
+		}
+		return 0;
 	}
 
 	public float getModelOffsetX() {
@@ -772,6 +902,62 @@ public class BodyPoseEditorScreen extends Screen {
 		part.pitch += pose.pitch * degreesToRadians;
 		part.yaw += pose.yaw * degreesToRadians;
 		part.roll += pose.roll * degreesToRadians;
+	}
+
+	public PlayerEntityModel getPreparedWorldPreviewModel() {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client == null) return null;
+
+		PlayerEntityModel model;
+		if (slimModel) {
+			if (this.worldPreviewModelSlim == null) {
+				this.worldPreviewModelSlim = new PlayerEntityModel(
+					client.getLoadedEntityModels().getModelPart(EntityModelLayers.PLAYER_SLIM), true);
+			}
+			model = this.worldPreviewModelSlim;
+		} else {
+			if (this.worldPreviewModelDefault == null) {
+				this.worldPreviewModelDefault = new PlayerEntityModel(
+					client.getLoadedEntityModels().getModelPart(EntityModelLayers.PLAYER), false);
+			}
+			model = this.worldPreviewModelDefault;
+		}
+
+		for (ModelPart part : model.getRootPart().traverse()) {
+			part.resetTransform();
+			part.visible = true;
+			part.hidden = false;
+		}
+
+		boolean showAll = this.showWholePreview || selectedPart.equals("all");
+		model.head.visible = showAll || selectedPart.equals("head");
+		model.hat.visible = model.head.visible;
+		model.body.visible = showAll || selectedPart.equals("torso");
+		model.jacket.visible = model.body.visible;
+		model.leftArm.visible = showAll || selectedPart.equals("left_arm");
+		model.leftSleeve.visible = model.leftArm.visible;
+		model.rightArm.visible = showAll || selectedPart.equals("right_arm");
+		model.rightSleeve.visible = model.rightArm.visible;
+		model.leftLeg.visible = showAll || selectedPart.equals("left_leg");
+		model.leftPants.visible = model.leftLeg.visible;
+		model.rightLeg.visible = showAll || selectedPart.equals("right_leg");
+		model.rightPants.visible = model.rightLeg.visible;
+
+		applyPose(model.head, PART_POSES.get("head"));
+		applyPose(model.body, PART_POSES.get("torso"));
+		applyPose(model.leftArm, PART_POSES.get("left_arm"));
+		applyPose(model.rightArm, PART_POSES.get("right_arm"));
+		applyPose(model.leftLeg, PART_POSES.get("left_leg"));
+		applyPose(model.rightLeg, PART_POSES.get("right_leg"));
+
+		model.rightArm.pitch = -0.08F;
+		model.rightArm.roll = 0.08F;
+		model.leftArm.pitch = -0.08F;
+		model.leftArm.roll = -0.08F;
+		model.rightLeg.pitch = 0.04F;
+		model.leftLeg.pitch = -0.04F;
+
+		return model;
 	}
 
 	private static int getPoseControlsY(int panelTop) {
@@ -1543,6 +1729,11 @@ public class BodyPoseEditorScreen extends Screen {
 		PITCH,
 		YAW,
 		ROLL
+	}
+
+	public enum PreviewMode {
+		FOLLOW_PLAYER,
+		FIXED
 	}
 
 	private enum SkinSource {
