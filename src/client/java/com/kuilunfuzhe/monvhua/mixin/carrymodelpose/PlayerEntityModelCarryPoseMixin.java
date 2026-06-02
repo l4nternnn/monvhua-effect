@@ -1,10 +1,13 @@
 package com.kuilunfuzhe.monvhua.mixin.carrymodelpose;
 
+import com.kuilunfuzhe.monvhua.features.carryentity.CarriedPlayerViewState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseTuning;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
+import net.minecraft.entity.Entity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -44,7 +47,7 @@ public abstract class PlayerEntityModelCarryPoseMixin {
 			return;
 		}
 		if (CarryPoseClientState.isCarried(state.id)) {
-			applyCarriedPose();
+			applyCarriedPose(state.id);
 		}
 	}
 
@@ -60,7 +63,7 @@ public abstract class PlayerEntityModelCarryPoseMixin {
 	}
 
 	@Unique
-	private void applyCarriedPose() {
+	private void applyCarriedPose(int entityId) {
 		// 身体
 		monvhua$body.pitch = CarryPoseTuning.BODY_PITCH + CarryPoseTuning.CUSTOM_BODY_PITCH;
 		monvhua$body.yaw = CarryPoseTuning.BODY_YAW + CarryPoseTuning.CUSTOM_BODY_YAW;
@@ -86,5 +89,36 @@ public abstract class PlayerEntityModelCarryPoseMixin {
 		monvhua$head.pitch = CarryPoseTuning.HEAD_PITCH + CarryPoseTuning.CUSTOM_HEAD_PITCH;
 		monvhua$head.yaw = CarryPoseTuning.HEAD_YAW + CarryPoseTuning.CUSTOM_HEAD_YAW;
 		monvhua$head.roll = CarryPoseTuning.HEAD_ROLL + CarryPoseTuning.CUSTOM_HEAD_ROLL;
+		updateCarriedHeadViewRotation(entityId);
+		if (CarriedPlayerViewState.shouldApplyHeadViewRotation(entityId)) {
+			monvhua$head.pitch = CarriedPlayerViewState.getHeadPitchRadians();
+			monvhua$head.yaw = CarriedPlayerViewState.getHeadYawRadians();
+		}
+	}
+
+	@Unique
+	private void updateCarriedHeadViewRotation(int entityId) {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.world == null) {
+			return;
+		}
+
+		Entity carried = client.world.getEntityById(entityId);
+		if (carried == null) {
+			return;
+		}
+
+		int carrierId = CarryPoseClientState.getPartnerId(entityId);
+		if (carrierId < 0) {
+			return;
+		}
+
+		Entity carrier = client.world.getEntityById(carrierId);
+		if (carrier == null) {
+			return;
+		}
+
+		float tickProgress = client.getRenderTickCounter().getTickProgress(true);
+		CarriedPlayerViewState.updateHeadViewRotation(carried, carrier, tickProgress);
 	}
 }

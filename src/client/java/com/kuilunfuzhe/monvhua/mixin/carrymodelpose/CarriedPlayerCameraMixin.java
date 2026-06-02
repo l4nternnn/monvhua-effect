@@ -18,6 +18,7 @@ public abstract class CarriedPlayerCameraMixin {
 	@Shadow
 	protected abstract void setPos(Vec3d pos);
 
+
 	@Inject(method = "update", at = @At("RETURN"))
 	private void monvhua$moveCarriedPlayerCameraToAttachedHead(BlockView area, Entity focusedEntity, boolean thirdPerson, boolean inverseView, float tickProgress, CallbackInfo ci) {
 		MinecraftClient client = MinecraftClient.getInstance();

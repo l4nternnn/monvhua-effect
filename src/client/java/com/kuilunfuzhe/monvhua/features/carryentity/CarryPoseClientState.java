@@ -14,6 +14,7 @@ public final class CarryPoseClientState {
 	public static void apply(CarryPoseSyncS2CPacket packet) {
 		if (packet.pose() == CarryPoseSyncS2CPacket.POSE_NONE) {
 			POSES.remove(packet.entityId());
+			CarriedPlayerViewState.resetIfCarriedEntity(packet.entityId());
 			return;
 		}
 		POSES.put(packet.entityId(), new PoseData(packet.pose(), packet.partnerId()));
@@ -21,6 +22,7 @@ public final class CarryPoseClientState {
 
 	public static void clear() {
 		POSES.clear();
+		CarriedPlayerViewState.reset();
 	}
 
 	public static boolean isCarrier(int entityId) {

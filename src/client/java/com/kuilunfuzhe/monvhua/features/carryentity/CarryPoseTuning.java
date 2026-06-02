@@ -99,6 +99,18 @@ public final class CarryPoseTuning {
 	// 被抱者头部 roll 附加偏移。
 	public static float CUSTOM_HEAD_ROLL = 0.0F;
 
+	// ========== 被抱者第一人称视角限制/头部同步参数 ==========
+	// 被抱者第一人称视角相对“被抱模型头部基础朝向”的左右可转范围，单位：度。
+	public static float CARRIED_VIEW_YAW_LIMIT_DEGREES = 70.0F;
+	// 被抱者第一人称视角相对“被抱模型头部基础朝向”的向上可转范围，单位：度。
+	public static float CARRIED_VIEW_PITCH_UP_LIMIT_DEGREES = 45.0F;
+	// 被抱者第一人称视角相对“被抱模型头部基础朝向”的向下可转范围，单位：度。
+	public static float CARRIED_VIEW_PITCH_DOWN_LIMIT_DEGREES = 45.0F;
+	// 被抱者视角左右转动同步到额外模型头部 yaw 的比例；1.0 = 完全同步，0.5 = 只同步一半。
+	public static float CARRIED_HEAD_VIEW_YAW_SCALE = 1.0F;
+	// 被抱者视角上下转动同步到额外模型头部 pitch 的比例；1.0 = 完全同步，0.5 = 只同步一半。
+	public static float CARRIED_HEAD_VIEW_PITCH_SCALE = 1.0F;
+
 	// ========== 抱人者模型部件姿态参数，单位：弧度 ==========
 	// 抱人者身体上下俯仰；略微正值可表现为身体前倾用力抱人。
 	public static float CARRIER_BODY_PITCH = 0.08F;
