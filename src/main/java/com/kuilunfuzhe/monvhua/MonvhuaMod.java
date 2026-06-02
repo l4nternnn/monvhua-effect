@@ -24,6 +24,7 @@ import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
+import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
@@ -238,6 +239,17 @@ public class MonvhuaMod implements ModInitializer {
                             packet.offsetX(), packet.offsetY(), packet.offsetZ(),
                             packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll());
                 }
+            });
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(PlacePoseEditorItemsC2SPacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity player = context.player();
+                if (!player.isCreative() && !player.hasPermissionLevel(2)) {
+                    player.sendMessage(Text.literal("No permission to place pose editor items"), true);
+                    return;
+                }
+                BodyPartManager.createPoseEditorItemDisplays(player, packet.items());
             });
         });
 

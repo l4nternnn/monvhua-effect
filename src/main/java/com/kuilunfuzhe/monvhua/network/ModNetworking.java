@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.network;
 
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
+import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
@@ -66,6 +67,7 @@ public class ModNetworking {
 		OpenOtherInventoryPayload.register();
 		CarryEntityPayload.register();
 		PlaceCarriedEntityPayload.register();
+		PlacePoseEditorItemsC2SPacket.register();
 		PlacePosedBodyC2SPacket.register();
 		CameraWatchStartC2SPacket.register();
 		CameraWatchStopC2SPacket.register();

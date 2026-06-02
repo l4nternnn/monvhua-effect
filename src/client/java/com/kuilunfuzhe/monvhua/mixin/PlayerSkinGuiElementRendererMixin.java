@@ -21,7 +21,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class PlayerSkinGuiElementRendererMixin {
 
 	@Unique
-	private static final int AXIS_LENGTH = 2;
+	private static final float AXIS_LENGTH = 4.0F / 3.0F;
 
 	@Unique
 	private static final int GROUND_GRID_SIZE = 21;
@@ -45,10 +45,19 @@ public abstract class PlayerSkinGuiElementRendererMixin {
 	private static final int ARROW_SEGMENTS = 6;
 
 	@Unique
-	private static final float ROTATION_RING_RADIUS = 2.45F;
+	private static final float ROTATION_RING_RADIUS = 2.45F / 3.0F;
 
 	@Unique
 	private static final int ROTATION_RING_SEGMENTS = 48;
+
+	@Unique
+	private static final int RING_PLANE_YZ = 0;
+
+	@Unique
+	private static final int RING_PLANE_XZ = 1;
+
+	@Unique
+	private static final int RING_PLANE_XY = 2;
 
 	@Inject(method = "render(Lnet/minecraft/client/gui/render/state/special/PlayerSkinGuiElementRenderState;Lnet/minecraft/client/util/math/MatrixStack;)V", at = @At("TAIL"))
 	private void renderCoordinateAxes3D(PlayerSkinGuiElementRenderState state, MatrixStack matrixStack, CallbackInfo ci) {
@@ -79,12 +88,13 @@ public abstract class PlayerSkinGuiElementRendererMixin {
 		}
 		posMatrix = matrixStack.peek().getPositionMatrix();
 		renderAxes(posMatrix, vc);
-		renderGroundGrid(posMatrix, vc);
 		matrixStack.pop();
 
 		matrixStack.push();
 		root.applyTransform(matrixStack);
-		matrixStack.translate(screen.getModelOffsetX(), screen.getModelOffsetY(), screen.getModelOffsetZ());
+		if (!screen.isEditingPlayerModel()) {
+			matrixStack.translate(screen.getModelOffsetX(), screen.getModelOffsetY(), screen.getModelOffsetZ());
+		}
 		posMatrix = matrixStack.peek().getPositionMatrix();
 		renderMoveAxes(posMatrix, vc, screen.getHighlightedMoveAxis());
 		renderRotationRings(posMatrix, vc, screen.getHighlightedRotationAxis());
@@ -110,14 +120,14 @@ public abstract class PlayerSkinGuiElementRendererMixin {
 
 	@Unique
 	private void renderRotationRings(Matrix4f posMatrix, VertexConsumer vc, String highlightedAxis) {
-		renderRotationRing(posMatrix, vc, "pitch".equals(highlightedAxis), 255, 70, 70, RingPlane.YZ);
-		renderRotationRing(posMatrix, vc, "yaw".equals(highlightedAxis), 70, 230, 70, RingPlane.XZ);
-		renderRotationRing(posMatrix, vc, "roll".equals(highlightedAxis), 90, 110, 255, RingPlane.XY);
+		renderRotationRing(posMatrix, vc, "pitch".equals(highlightedAxis), 255, 70, 70, RING_PLANE_YZ);
+		renderRotationRing(posMatrix, vc, "yaw".equals(highlightedAxis), 70, 230, 70, RING_PLANE_XZ);
+		renderRotationRing(posMatrix, vc, "roll".equals(highlightedAxis), 90, 110, 255, RING_PLANE_XY);
 	}
 
 	@Unique
 	private void renderRotationRing(Matrix4f posMatrix, VertexConsumer vc,
-			boolean highlighted, int r, int g, int b, RingPlane plane) {
+			boolean highlighted, int r, int g, int b, int plane) {
 		int lineR = highlighted ? 255 : r;
 		int lineG = highlighted ? 235 : g;
 		int lineB = highlighted ? 90 : b;
@@ -129,9 +139,9 @@ public abstract class PlayerSkinGuiElementRendererMixin {
 			float angle = (float) (Math.PI * 2.0D * i / ROTATION_RING_SEGMENTS);
 			float cos = (float) Math.cos(angle) * ROTATION_RING_RADIUS;
 			float sin = (float) Math.sin(angle) * ROTATION_RING_RADIUS;
-			float x = plane == RingPlane.YZ ? 0.0F : cos;
-			float y = plane == RingPlane.XZ ? 0.0F : (plane == RingPlane.YZ ? cos : sin);
-			float z = plane == RingPlane.XY ? 0.0F : sin;
+			float x = plane == RING_PLANE_YZ ? 0.0F : cos;
+			float y = plane == RING_PLANE_XZ ? 0.0F : (plane == RING_PLANE_YZ ? cos : sin);
+			float z = plane == RING_PLANE_XY ? 0.0F : sin;
 			if (i > 0) {
 				addLine(vc, posMatrix, prevX, prevY, prevZ, x, y, z, lineR, lineG, lineB, alpha);
 			}
@@ -247,10 +257,4 @@ public abstract class PlayerSkinGuiElementRendererMixin {
 		vc.vertex(posMatrix, x2, y2, z2).color(r, g, b, a).normal(0, 1, 0);
 	}
 
-	@Unique
-	private enum RingPlane {
-		YZ,
-		XZ,
-		XY
-	}
 }

@@ -4,6 +4,7 @@ import com.kuilunfuzhe.monvhua.MonvhuaModClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.secrecy.SecrecyItem;
+import com.kuilunfuzhe.monvhua.renderer.bodypose.BodyPoseWorldPreviewRenderer;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.AnchorButtonRenderer;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.BackTextureRenderer;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.OrbitRenderer;
@@ -30,6 +31,8 @@ public class WorldRenderHandler {
             }
             // 锚点按钮始终渲染（不受手持物品限制）
             AnchorButtonRenderer.render(context.matrixStack(), context.consumers());
+            // 身体姿势编辑器世界3D预览
+            BodyPoseWorldPreviewRenderer.render(context.matrixStack(), context.consumers());
         });
     }
 }
