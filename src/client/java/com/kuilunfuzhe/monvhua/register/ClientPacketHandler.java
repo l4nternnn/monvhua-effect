@@ -10,7 +10,10 @@ import com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient;
 import com.kuilunfuzhe.monvhua.features.secrecy.SecrecyClientAudioManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
+import com.kuilunfuzhe.monvhua.features.action.ActionConfig;
+import com.kuilunfuzhe.monvhua.features.action.TimelineClientState;
 import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
+import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
@@ -23,6 +26,7 @@ import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
+import com.kuilunfuzhe.monvhua.network.action.*;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.AnchorButtonRenderer;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.BackTextureRenderer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -260,6 +264,45 @@ public class ClientPacketHandler {
 
         ClientPlayNetworking.registerGlobalReceiver(CarryPoseSyncS2CPacket.ID, (packet, context) -> {
             context.client().execute(() -> CarryPoseClientState.apply(packet));
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(ActionsConfigS2CPacket.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                ActionEditorFragment inst = ActionEditorFragment.activeInstance;
+                if (inst != null) inst.receiveConfig(ActionConfig.fromJson(packet.json()));
+            });
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(ActionFilesListS2CPacket.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                ActionEditorFragment inst = ActionEditorFragment.activeInstance;
+                if (inst != null) inst.receiveFileList(packet.files());
+            });
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(PreviewResultS2CPacket.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                ActionEditorFragment inst = ActionEditorFragment.activeInstance;
+                if (inst != null) inst.receivePreviewResult(packet.actionId(), packet.previewText());
+            });
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(PreviewTimelineResultS2CPacket.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                ActionEditorFragment inst = ActionEditorFragment.activeInstance;
+                if (inst != null) inst.receiveTimelinePreviewResult(packet.entries());
+            });
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(TimelineStateS2CPacket.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                TimelineClientState.currentSecond = packet.currentSecond();
+                TimelineClientState.running = packet.running();
+                TimelineClientState.paused = packet.paused();
+                TimelineClientState.loop = packet.loop();
+                TimelineClientState.totalSeconds = packet.totalSeconds();
+                ActionEditorFragment.tickActive();
+            });
         });
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {

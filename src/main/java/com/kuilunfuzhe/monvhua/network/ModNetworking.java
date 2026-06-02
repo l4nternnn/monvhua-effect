@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.network;
 
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
+import com.kuilunfuzhe.monvhua.network.action.*;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
@@ -48,6 +49,11 @@ public class ModNetworking {
 		SecrecyConfigS2CPacket.register();
 		SecrecyStateS2CPacket.register();
 		CarryPoseSyncS2CPacket.register();
+		ActionsConfigS2CPacket.register();
+		ActionFilesListS2CPacket.register();
+		PreviewResultS2CPacket.register();
+		PreviewTimelineResultS2CPacket.register();
+		TimelineStateS2CPacket.register();
 	}
 
 	// 注册所有 C2S 包（只需要服务端）
@@ -75,5 +81,12 @@ public class ModNetworking {
 		MirrorChargeC2SPacket.register();
 		RequestSecrecyConfigC2SPacket.register();
 		SecrecyConfigUpdateC2SPacket.register();
+		RequestActionsConfigC2SPacket.register();
+		UpdateActionsConfigC2SPacket.register();
+		PreviewActionC2SPacket.register();
+		PreviewTimelineC2SPacket.register();
+		TimelineControlC2SPacket.register();
+		ListActionFilesC2SPacket.register();
+		LoadActionFileC2SPacket.register();
 	}
 }

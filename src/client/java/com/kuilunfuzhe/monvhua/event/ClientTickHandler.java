@@ -4,6 +4,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
 import com.kuilunfuzhe.monvhua.features.secrecy.SecrecyClientAudioManager;
+import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorScreen;
 import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
@@ -44,6 +45,9 @@ public class ClientTickHandler {
             }
             if (KeyBindingHandler.bodyPoseEditorKey.wasPressed() && client.player.isCreative()) {
                 client.setScreen(new BodyPoseEditorScreen());
+            }
+            if (KeyBindingHandler.actionEditorKey.wasPressed() && client.player.isCreative()) {
+                ActionEditorFragment.open();
             }
             if (KeyBindingHandler.markKey.wasPressed()) {
                 ItemStack mainHand = client.player.getMainHandStack();

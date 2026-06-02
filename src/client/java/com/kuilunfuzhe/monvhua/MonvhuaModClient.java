@@ -8,6 +8,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.ClientCameraWatchReceiver;
 import com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorHudOverlay;
+import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.body.bodyback.BodyPartScreen;
 import com.kuilunfuzhe.monvhua.gui.mirror.mirrorHUD;
 import com.kuilunfuzhe.monvhua.gui.openback.OtherPlayerInventoryScreen;
@@ -137,6 +138,7 @@ public class MonvhuaModClient implements ClientModInitializer {
             if (screen instanceof net.minecraft.client.gui.screen.ingame.InventoryScreen) {
                 ClientPlayNetworking.send(new PlaceCarriedEntityPayload());
             }
+            ScreenEvents.afterRender(screen).register(ActionEditorFragment::renderVanillaPreview);
         });
 
         // 肢体部件屏幕

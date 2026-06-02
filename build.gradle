@@ -11,6 +11,16 @@ repositories {
 		name = "ALiyun"
 		url = "https://maven.aliyun.com/repository/public"
 	}
+	mavenCentral()
+
+	maven {
+		name = "Modrinth"
+		url = "https://api.modrinth.com/maven"
+	}
+	maven {
+		name = "Curse Maven"
+		url = "https://cursemaven.com/"
+	}
 	// Add repositories to retrieve artifacts from in here.
 	// You should only use this when depending on other mods because
 	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
@@ -36,6 +46,16 @@ dependencies {
 	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
+	modImplementation "curse.maven:modern-ui-352491:7025818"
+	modImplementation "curse.maven:forge-config-api-port-547434:6941149"
+
+	modImplementation "com.electronwill.night-config:core:3.8.2"
+	modImplementation "com.electronwill.night-config:toml:3.8.2"
+	implementation "org.commonmark:commonmark:${project.commonmark_version}"
+
+	include "com.electronwill.night-config:core:3.8.2"
+	include "com.electronwill.night-config:toml:3.8.2"
+	include "org.commonmark:commonmark:${project.commonmark_version}"
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 	
