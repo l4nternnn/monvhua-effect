@@ -428,24 +428,6 @@ public class MonvhuaMod implements ModInitializer {
                 // 先处理待发送的腐化消息
                 processPendingTainted(player, uuid);
 
-                // 飘浮飞行能力
-                boolean canFloat = player.getCommandTags().contains("Floating")
-                        && player.getCommandTags().contains("MonvhuaFull");
-                if (canFloat && !floatingPlayers.contains(uuid)) {
-                    player.getAbilities().allowFlying = true;
-                    player.sendAbilitiesUpdate();
-                    floatingPlayers.add(uuid);
-                    player.sendMessage(
-                            Text.literal("您已获得飞行能力，尽情杀戮吧！")
-                                    .formatted(Formatting.DARK_RED)
-                    );
-                } else if (!canFloat && floatingPlayers.remove(uuid)) {
-                    player.getAbilities().allowFlying = false;
-                    player.getAbilities().flying = false;
-                    player.sendAbilitiesUpdate();
-                    player.fallDistance = 0;
-                }
-
                 if (role == null) {
                     RegistryEntry<StatusEffect> prev = lastEffect.remove(uuid);
                     if (prev != null) player.removeStatusEffect(prev);
@@ -547,7 +529,7 @@ public class MonvhuaMod implements ModInitializer {
             if (entity instanceof ServerPlayerEntity player
                     && source.isOf(DamageTypes.FALL)
                     && (floatingPlayers.contains(player.getUuid())
-                            || com.kuilunfuzhe.monvhua.features.floating.floating.shouldPreventFallDamage(player))) {
+                    || com.kuilunfuzhe.monvhua.features.floating.floating.shouldPreventFallDamage(player))) {
                 player.fallDistance = 0;
                 return false;
             }

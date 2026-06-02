@@ -17,8 +17,8 @@ public class floating {
     private static final long DOUBLE_JUMP_INTERVAL = 300;
     private static final int FULL_WITCH_SCORE = 90;
 
-    // 缓降标记
-    private static boolean hasGivenSlowFalling = false;
+    // 缓降计时器（用于分数>=90时持续给缓降）
+    private static java.util.Map<java.util.UUID, Integer> slowFallingTimer = new java.util.HashMap<>();
 
     // 能量系统
     private static final int MAX_ENERGY = 100;
@@ -49,7 +49,11 @@ public class floating {
     }
 
     public static boolean shouldPreventFallDamage(ServerPlayerEntity player) {
-        return isFloatingServer(player.getUuid()) || getMonvhuaScore(player) >= FULL_WITCH_SCORE;
+        int score = getMonvhuaScore(player);
+        if (score >= FULL_WITCH_SCORE) {
+            return true;
+        }
+        return isFloatingServer(player.getUuid());
     }
 
     // ==================== 服务端漂浮状态管理 ====================
@@ -80,34 +84,49 @@ public class floating {
 
     private static double getEnergyDrainRate(PlayerEntity player) {
         int score = getMonvhuaScore(player);
-        if (score < 10) return 10.0;
-        if (score < 25) return 8.0;
-        if (score < 45) return 6.0;
-        if (score < 60) return 4.0;
-        if (score < 70) return 2.0;
-        if (score < 80) return 1.0;
-        if (score < 90) return 0.5;
+
+        // 分数 >= 90 时，能量消耗为 0
+        if (score >= FULL_WITCH_SCORE) {
+            return 0;
+        }
+
+        if (score < 10) return 30.0;
+        if (score < 25) return 24.0;
+        if (score < 45) return 18.0;
+        if (score < 60) return 12.0;
+        if (score < 70) return 6.0;
+        if (score < 80) return 4.0;
+        if (score < 90) return 1.5;
         return 0;
     }
 
     public static void tickEnergy(net.minecraft.server.network.ServerPlayerEntity player) {
         java.util.UUID uuid = player.getUuid();
-
         int score = getMonvhuaScore(player);
+        boolean hasTag = hasFullWitchTag(player);
+
+        // 分数 >= 90 时免疫摔落伤害
         if (score >= FULL_WITCH_SCORE) {
             player.fallDistance = 0;
-            player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
-                    net.minecraft.entity.effect.StatusEffects.SLOW_FALLING, 40, 0, false, false, true));
-            setEnergy(player, MAX_ENERGY);
-            setServerFloating(uuid, false);
-            return;
         }
 
-        // 完全魔女化不处理能量
-        if (hasFullWitchTag(player)) {
-            setEnergy(player, MAX_ENERGY);
-            setServerFloating(uuid, false);
-            return;
+        // 分数 >= 90 的缓降处理
+        if (score >= FULL_WITCH_SCORE) {
+            if (hasTag) {
+                // 有标签：移除缓降，停止计时器
+                slowFallingTimer.remove(uuid);
+                player.removeStatusEffect(net.minecraft.entity.effect.StatusEffects.SLOW_FALLING);
+            } else {
+                // 无标签：每 20 tick 给一次缓降 II（1秒，等级1）
+                int timer = slowFallingTimer.getOrDefault(uuid, 0);
+                timer++;
+                if (timer >= 20) {
+                    timer = 0;
+                    player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
+                            net.minecraft.entity.effect.StatusEffects.SLOW_FALLING, 20, 1, false, false, true));
+                }
+                slowFallingTimer.put(uuid, timer);
+            }
         }
 
         boolean isServerFloating = isFloatingServer(uuid);
@@ -121,8 +140,7 @@ public class floating {
             if (currentEnergy <= 0) {
                 currentEnergy = 0;
                 setEnergy(player, currentEnergy);
-                deactivateFloating(player);
-                // 通知客户端关闭漂浮
+                setServerFloating(uuid, false);
                 player.sendMessage(Text.literal("§c[漂浮] §f能量耗尽，漂浮解除"), true);
             } else {
                 setEnergy(player, currentEnergy);
@@ -138,46 +156,39 @@ public class floating {
     // ==================== 核心逻辑（客户端）====================
 
     public static void tick(PlayerEntity player) {
-        // 完全魔女化：完全不干预
-        if (hasFullWitchTag(player)) {
-            if (isFloating) {
-                isFloating = false;
-                player.getAbilities().allowFlying = false;
-                player.getAbilities().flying = false;
-                player.getAbilities().setFlySpeed(0.05f);
-                player.sendAbilitiesUpdate();
-                setServerFloating(player.getUuid(), false);
-            }
-            return;
-        }
-
         int score = getMonvhuaScore(player);
+        boolean hasTag = hasFullWitchTag(player);
 
-        // 缓降模式（分数 >= 90）
+        // 分数 >= 90 时重置摔落距离（免疫摔落）
         if (score >= FULL_WITCH_SCORE) {
             player.fallDistance = 0;
-            player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
-                    net.minecraft.entity.effect.StatusEffects.SLOW_FALLING, 40, 0, false, false, true));
-            if (isFloating) {
-                player.setVelocity(player.getVelocity().x, 0, player.getVelocity().z);
-                deactivateFloating(player);
-            }
+        }
 
-            if (!hasGivenSlowFalling) {
-                player.addStatusEffect(new net.minecraft.entity.effect.StatusEffectInstance(
-                        net.minecraft.entity.effect.StatusEffects.SLOW_FALLING, 600, 0, false, false, true));
-                player.sendMessage(Text.literal("§a[缓降] §f已激活 (30秒)"), true);
-                hasGivenSlowFalling = true;
+        // 分数 >= 90 且无标签时，强制关闭飞行
+        if (score >= FULL_WITCH_SCORE && !hasTag) {
+            if (isFloating) {
+                deactivateFloating(player);
+                setServerFloating(player.getUuid(), false);
+                player.sendMessage(Text.literal("§c[漂浮] §f无法使用（需要完全魔女化）"), true);
             }
             return;
         }
 
-        // 重置缓降标记
-        if (hasGivenSlowFalling) {
-            hasGivenSlowFalling = false;
+        // 检查服务端漂浮状态，如果不一致则同步关闭
+        boolean serverFloating = isFloatingServer(player.getUuid());
+        if (isFloating && !serverFloating) {
+            isFloating = false;
+            player.setVelocity(player.getVelocity().x, 0, player.getVelocity().z);
+            player.fallDistance = 0;
+            player.getAbilities().allowFlying = false;
+            player.getAbilities().flying = false;
+            player.getAbilities().setFlySpeed(0.05f);
+            player.sendAbilitiesUpdate();
+            player.sendMessage(Text.literal("§c[漂浮] §f已关闭"), true);
+            return;
         }
 
-        // 手动飞行模式（分数 < 90）
+        // 手动飞行模式
         if (isFloating) {
             player.fallDistance = 0;
 
@@ -197,16 +208,17 @@ public class floating {
             System.out.println("§e[调试] 创造或旁观模式，跳过");
             return;
         }
-        if (hasFullWitchTag(player)) {
-            System.out.println("§e[调试] 有 MonvhuaFull 标签，跳过");
-            return;
-        }
 
         int score = getMonvhuaScore(player);
-        System.out.println("§e[调试] 玩家分数：" + score);
+        boolean hasTag = hasFullWitchTag(player);
 
-        if (score >= FULL_WITCH_SCORE) {
-            System.out.println("§e[调试] 分数 >= 90，缓降模式，跳过");
+        // 分数 >= 90 且没有 MonvhuaFull 标签时，无法使用飞行
+        if (score >= FULL_WITCH_SCORE && !hasTag) {
+            System.out.println("§e[调试] 分数 >= 90 且无 MonvhuaFull 标签，禁止飞行");
+            if (isFloating) {
+                deactivateFloating(player);
+                setServerFloating(player.getUuid(), false);
+            }
             return;
         }
 
@@ -217,6 +229,7 @@ public class floating {
             System.out.println("§e[调试] 检测到双击！");
             if (isFloating) {
                 deactivateFloating(player);
+                setServerFloating(player.getUuid(), false);
             } else {
                 // 检查能量是否足够
                 double currentEnergy = getEnergy(player);
@@ -227,7 +240,6 @@ public class floating {
                     return;
                 }
                 activateFloating(player);
-                // 通知服务端玩家已开始漂浮
                 setServerFloating(player.getUuid(), true);
             }
             lastJumpTime = 0;
@@ -239,13 +251,20 @@ public class floating {
 
     private static float getFlySpeedMultiplier(PlayerEntity player) {
         int score = getMonvhuaScore(player);
-        if (score <= 0) return 0.3f;
-        if (score < 25) return 0.4f;
-        if (score < 45) return 0.6f;
-        if (score < 60) return 0.8f;
-        if (score < 70) return 1.0f;
-        if (score < 80) return 1.2f;
-        return 1.5f;
+        boolean hasTag = hasFullWitchTag(player);
+
+        // 拥有 MonvhuaFull 标签且分数 >= 90 时，创造级飞行速度（2倍原版）
+        if (score >= FULL_WITCH_SCORE && hasTag) {
+            return 1.0f;
+        }
+
+        if (score < 10) return 0.05f;
+        if (score < 25) return 0.1f;
+        if (score < 45) return 0.15f;
+        if (score < 60) return 0.20f;
+        if (score < 70) return 0.25f;
+        if (score < 80) return 0.30f;
+        return 0.35f;
     }
 
     public static void activateFloating(PlayerEntity player) {
@@ -278,7 +297,6 @@ public class floating {
         player.getAbilities().setFlySpeed(0.05f);
         player.sendAbilitiesUpdate();
 
-        // 通知服务端玩家已停止漂浮
         setServerFloating(player.getUuid(), false);
 
         player.sendMessage(Text.literal("§c[漂浮] §f已关闭"), true);
