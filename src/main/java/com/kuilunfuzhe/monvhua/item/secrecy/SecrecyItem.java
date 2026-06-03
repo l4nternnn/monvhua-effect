@@ -179,7 +179,7 @@ public class SecrecyItem extends Item {
                 Map.Entry<UUID, Long> entry = iterator.next();
                 if (entry.getValue() > now) continue;
                 ServerPlayerEntity player = server.getPlayerManager().getPlayer(entry.getKey());
-                if (player != null && hasPreparationEffects(player) && shouldContinueSecrecy(player)) {
+                if (player != null && shouldContinueSecrecy(player)) {
                     player.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, INFINITE_DURATION, 0, false, false, true));
                     syncSecrecyState(player, true);
                     player.sendMessage(Text.literal("§b精神集中..."), true);
@@ -236,7 +236,7 @@ public class SecrecyItem extends Item {
         EXITING_SECRECY.remove(player.getUuid());
         //player.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, INFINITE_DURATION, 0, false, false, false));
         //player.addStatusEffect(new StatusEffectInstance(StatusEffects.DARKNESS, INFINITE_DURATION, 0, false, false, false));
-        player.removeStatusEffect(StatusEffects.INVISIBILITY);
+        //player.removeStatusEffect(StatusEffects.INVISIBILITY);
         syncSecrecyState(player, false);
         VANISH_PENDING_TICKS.put(player.getUuid(), player.getWorld().getTime() + delayTicks);
     }
