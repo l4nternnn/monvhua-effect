@@ -8,6 +8,8 @@ import icyllis.modernui.fragment.Fragment;
 import icyllis.modernui.graphics.drawable.ColorDrawable;
 import icyllis.modernui.mc.MinecraftSurfaceView;
 import icyllis.modernui.mc.MuiModApi;
+import icyllis.modernui.text.Editable;
+import icyllis.modernui.text.TextWatcher;
 import icyllis.modernui.view.MotionEvent;
 import icyllis.modernui.view.View;
 import icyllis.modernui.view.ViewGroup;
@@ -29,6 +31,8 @@ import net.minecraft.util.Identifier;
 import org.joml.Matrix3x2fStack;
 
 import java.util.*;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * Modern UI 身体姿势编辑器 Fragment。
@@ -41,12 +45,20 @@ public class BodyPoseEditorFragment extends Fragment {
     // ═══════════════════════════════════════════════════════
 
     private static final float ROTATION_STEP_DEGREES = 5.0F;
-    private static final float PREVIEW_CHEST_PIVOT_Y = 6.0F;
+    private static final float PREVIEW_CHEST_PIVOT_Y = 8.0F;
     private static final float PREVIEW_Y_PIVOT = 1.601F;
     private static final float MODEL_PART_UNITS_PER_GRID = 16.0F;
     private static final float MODEL_OFFSET_MIN = -10.0F;
     private static final float MODEL_OFFSET_MAX = 10.0F;
     private static final float TRANSFORM_OFFSET_STEP = 0.25F;
+    private static final float DEFAULT_PREVIEW_PAN_X = 32.0F;
+    private static final float DEFAULT_PREVIEW_ZOOM = 1.15F;
+    private static final float PREVIEW_SCALE_FACTOR = 0.52F;
+    private static final float PREVIEW_ZOOM_MIN = 0.35F;
+    private static final float PREVIEW_ZOOM_MAX = 4.2F;
+    private static final float PREVIEW_ZOOM_STEP = 0.22F;
+    private static final long TRANSFORM_REPEAT_DELAY_MS = 320L;
+    private static final long TRANSFORM_REPEAT_INTERVAL_MS = 65L;
     private static final float MOVE_AXIS_LENGTH = 4.0F / 3.0F;
     private static final float MOVE_AXIS_HIT_RADIUS = 3.4F;
     private static final float ROTATION_RING_RADIUS = 2.45F / 3.0F;
@@ -97,9 +109,9 @@ public class BodyPoseEditorFragment extends Fragment {
     private float previewPitch = 24.0F;
     private float previewYaw;
     private float previewRoll;
-    private float previewZoom = 1.0F;
+    private float previewZoom = DEFAULT_PREVIEW_ZOOM;
     private boolean showWholePreview = true;
-    private float previewPanX;
+    private float previewPanX = DEFAULT_PREVIEW_PAN_X;
     private float previewPanY;
     private boolean showCoordinateAxes = true;
     private boolean coordinateAxesMovable = true;
@@ -111,6 +123,18 @@ public class BodyPoseEditorFragment extends Fragment {
     private RotationAxis draggingRotationAxis = RotationAxis.NONE;
     private boolean draggingPreview;
     private boolean draggingRightPreview;
+    private int activePreviewButton;
+    private View repeatingTransformView;
+    private Runnable repeatingTransformAction;
+    private final Runnable repeatingTransformTick = new Runnable() {
+        @Override
+        public void run() {
+            if (repeatingTransformView == null || repeatingTransformAction == null) return;
+            repeatingTransformAction.run();
+            if (surfaceView != null) surfaceView.invalidate();
+            repeatingTransformView.postDelayed(this, TRANSFORM_REPEAT_INTERVAL_MS);
+        }
+    };
 
     // 列表状态
     private boolean playerListOpen;
@@ -156,6 +180,8 @@ public class BodyPoseEditorFragment extends Fragment {
     private List<Button> partButtons = new ArrayList<>();
     private List<Button> poseButtons = new ArrayList<>();
     private List<Button> skinButtons = new ArrayList<>();
+    private final List<NumericValueBinding> transformValueBindings = new ArrayList<>();
+    private final List<NumericValueBinding> poseValueBindings = new ArrayList<>();
 
     // ═══════════════════════════════════════════════════════
     //  静态方法 — 打开编辑器
@@ -183,7 +209,7 @@ public class BodyPoseEditorFragment extends Fragment {
 
         // 左栏：皮肤/玩家选择
         View left = createLeftPanel(ctx);
-        root.addView(left, new LinearLayout.LayoutParams(170, -1));
+        root.addView(left, new LinearLayout.LayoutParams(255, -1));
 
         // 中栏：3D 预览 + 控制
         View center = createCenterPanel(ctx);
@@ -191,7 +217,7 @@ public class BodyPoseEditorFragment extends Fragment {
 
         // 右栏：部位/姿势/物品控制
         View right = createRightPanel(ctx);
-        root.addView(right, new LinearLayout.LayoutParams(200, -1));
+        root.addView(right, new LinearLayout.LayoutParams(300, -1));
 
         rootView = root;
         return root;
@@ -217,6 +243,7 @@ public class BodyPoseEditorFragment extends Fragment {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        stopRepeatingTransform();
         rootView = null;
         surfaceView = null;
         previewSurfaceWidth = 0;
@@ -238,7 +265,8 @@ public class BodyPoseEditorFragment extends Fragment {
 
         // 标题
         TextView title = new TextView(ctx);
-        title.setText("§l模型编辑器");
+        title.setText("模型编辑器");
+        title.setTextColor(0xFFE8E8E8);
         title.setTextSize(18);
         title.setPadding(0, 0, 0, 8);
         panel.addView(title, new LinearLayout.LayoutParams(-1, -2));
@@ -311,7 +339,8 @@ public class BodyPoseEditorFragment extends Fragment {
             boolean selected = selectedSkinSource == SkinSource.PLAYER && name.equals(selectedPlayerName);
 
             Button b = new Button(ctx);
-            b.setText((selected ? "§e▸ " : "  ") + name);
+            b.setText((selected ? "> " : "  ") + name);
+            b.setTextColor(selected ? 0xFFFFDD66 : 0xFFE8E8E8);
             int bgColor = selected ? 0x334466AA : 0x22000000;
             b.setBackground(new ColorDrawable(bgColor));
             b.setOnClickListener(v -> {
@@ -349,8 +378,9 @@ public class BodyPoseEditorFragment extends Fragment {
 
             String skin = localSkins.get(i);
             Button button = new Button(ctx);
-            String prefix = (selectedSkinSource == SkinSource.LOCAL && skin.equals(selectedSkin)) ? "§e" : "";
-            button.setText(prefix + truncate(skin, 10));
+            boolean selected = selectedSkinSource == SkinSource.LOCAL && skin.equals(selectedSkin);
+            button.setText(truncate(skin, 10));
+            button.setTextColor(selected ? 0xFFFFDD66 : 0xFFE8E8E8);
             button.setOnClickListener(v -> {
                 selectedSkin = skin;
                 selectedSkinSource = SkinSource.LOCAL;
@@ -383,6 +413,7 @@ public class BodyPoseEditorFragment extends Fragment {
         surfaceView = new MinecraftSurfaceView(ctx);
         surfaceView.setRenderer(new PreviewRenderer());
         surfaceView.setOnTouchListener(new PreviewTouchListener());
+        surfaceView.setOnGenericMotionListener(this::handlePreviewGenericMotion);
         panel.addView(surfaceView, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         // 预览控制按钮栏
@@ -496,7 +527,7 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private void addSectionLabel(LinearLayout parent, Context ctx, String text) {
         TextView label = new TextView(ctx);
-        label.setText("§l" + text);
+        label.setText(text);
         label.setTextSize(13);
         label.setTextColor(0xFFCCCCCC);
         label.setPadding(0, 10, 0, 2);
@@ -504,6 +535,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void addTransformControls(LinearLayout parent, Context ctx) {
+        transformValueBindings.clear();
         parent.addView(createMoveRow(ctx, "X", MoveAxis.X));
         parent.addView(createMoveRow(ctx, "Y", MoveAxis.Y));
         parent.addView(createMoveRow(ctx, "Z", MoveAxis.Z));
@@ -513,18 +545,29 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private LinearLayout createMoveRow(Context ctx, String label, MoveAxis axis) {
-        return createTransformRow(ctx, label,
-                () -> adjustActiveOffset(axis, -TRANSFORM_OFFSET_STEP),
-                () -> adjustActiveOffset(axis, TRANSFORM_OFFSET_STEP));
+        return createNumericRow(ctx, label,
+                () -> getActiveOffset(axis),
+                value -> setActiveOffset(axis, value),
+                TRANSFORM_OFFSET_STEP, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX, false,
+                transformValueBindings);
     }
 
     private LinearLayout createRotationRow(Context ctx, String label, Axis axis) {
-        return createTransformRow(ctx, label,
-                () -> adjustActiveRotation(axis, -ROTATION_STEP_DEGREES),
-                () -> adjustActiveRotation(axis, ROTATION_STEP_DEGREES));
+        return createNumericRow(ctx, label,
+                () -> getActiveRotation(axis),
+                value -> setActiveRotation(axis, value),
+                ROTATION_STEP_DEGREES, -180.0F, 180.0F, axis != Axis.PITCH,
+                transformValueBindings);
     }
 
-    private LinearLayout createTransformRow(Context ctx, String label, Runnable onMinus, Runnable onPlus) {
+    private LinearLayout createNumericRow(Context ctx, String label,
+                                          Supplier<Float> getter,
+                                          Consumer<Float> setter,
+                                          float step,
+                                          float min,
+                                          float max,
+                                          boolean wrap,
+                                          List<NumericValueBinding> bindings) {
         LinearLayout row = new LinearLayout(ctx);
         row.setOrientation(LinearLayout.HORIZONTAL);
 
@@ -534,33 +577,134 @@ public class BodyPoseEditorFragment extends Fragment {
         labelView.setWidth(58);
         row.addView(labelView, new LinearLayout.LayoutParams(-2, -2));
 
+        NumericValueBinding binding = new NumericValueBinding(getter, setter, min, max, wrap);
+
         Button minusBtn = new Button(ctx);
         minusBtn.setText("-");
-        minusBtn.setOnClickListener(v -> onMinus.run());
+        installRepeatingTransformButton(minusBtn, () -> binding.add(-step));
         row.addView(minusBtn, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        EditText valueField = new EditText(ctx);
+        valueField.setTextColor(0xFFE8E8E8);
+        valueField.setTextSize(12);
+        binding.attach(valueField);
+        installNumericFieldScroll(valueField, binding, step);
+        row.addView(valueField, new LinearLayout.LayoutParams(0, -2, 1.25f));
+        bindings.add(binding);
 
         Button plusBtn = new Button(ctx);
         plusBtn.setText("+");
-        plusBtn.setOnClickListener(v -> onPlus.run());
+        installRepeatingTransformButton(plusBtn, () -> binding.add(step));
         row.addView(plusBtn, new LinearLayout.LayoutParams(0, -2, 1f));
         return row;
     }
 
+    private void installNumericFieldScroll(EditText field, NumericValueBinding binding, float step) {
+        field.setOnGenericMotionListener((view, event) -> {
+            if (event.getActionMasked() != MotionEvent.ACTION_SCROLL) return false;
+            float scroll = getScrollAmount(event);
+            if (Math.abs(scroll) < 0.001F) return false;
+            binding.add(scroll > 0.0F ? step : -step);
+            return true;
+        });
+    }
+
+    private void installRepeatingTransformButton(Button button, Runnable action) {
+        button.setOnClickListener(v -> {
+            action.run();
+            invalidatePreview();
+        });
+        button.setOnTouchListener((view, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN, MotionEvent.ACTION_BUTTON_PRESS -> {
+                    startRepeatingTransform(view, action);
+                    return true;
+                }
+                case MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_BUTTON_RELEASE -> {
+                    stopRepeatingTransform();
+                    return true;
+                }
+                default -> {
+                    return false;
+                }
+            }
+        });
+    }
+
+    private void startRepeatingTransform(View view, Runnable action) {
+        stopRepeatingTransform();
+        repeatingTransformView = view;
+        repeatingTransformAction = action;
+        action.run();
+        invalidatePreview();
+        view.postDelayed(repeatingTransformTick, TRANSFORM_REPEAT_DELAY_MS);
+    }
+
+    private void stopRepeatingTransform() {
+        if (repeatingTransformView != null) {
+            repeatingTransformView.removeCallbacks(repeatingTransformTick);
+        }
+        repeatingTransformView = null;
+        repeatingTransformAction = null;
+    }
+
+    private void invalidatePreview() {
+        if (surfaceView != null) surfaceView.invalidate();
+    }
+
     private void adjustActiveOffset(MoveAxis axis, float amount) {
+        setActiveOffset(axis, getActiveOffset(axis) + amount);
+        invalidatePreview();
+        refreshNumericValueBindings();
+    }
+
+    private void adjustActiveRotation(Axis axis, float amount) {
+        setActiveRotation(axis, getActiveRotation(axis) + amount);
+        invalidatePreview();
+        refreshNumericValueBindings();
+    }
+
+    private float getActiveOffset(MoveAxis axis) {
         switch (axis) {
-            case X -> setActiveOffsetX(clampPreview(getActiveOffsetX() + amount, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX));
-            case Y -> setActiveOffsetY(clampPreview(getActiveOffsetY() + amount, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX));
-            case Z -> setActiveOffsetZ(clampPreview(getActiveOffsetZ() + amount, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX));
+            case X -> { return getActiveOffsetX(); }
+            case Y -> { return getActiveOffsetY(); }
+            case Z -> { return getActiveOffsetZ(); }
+            default -> { return 0.0F; }
+        }
+    }
+
+    private void setActiveOffset(MoveAxis axis, float value) {
+        switch (axis) {
+            case X -> setActiveOffsetX(clampPreview(value, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX));
+            case Y -> setActiveOffsetY(clampPreview(value, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX));
+            case Z -> setActiveOffsetZ(clampPreview(value, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX));
             default -> {
             }
         }
     }
 
-    private void adjustActiveRotation(Axis axis, float amount) {
+    private float getActiveRotation(Axis axis) {
+        return switch (axis) {
+            case PITCH -> getActivePitch();
+            case YAW -> getActiveYaw();
+            case ROLL -> getActiveRoll();
+        };
+    }
+
+    private void setActiveRotation(Axis axis, float value) {
         switch (axis) {
-            case PITCH -> setActivePitch(clampPreview(getActivePitch() + amount, -180.0F, 180.0F));
-            case YAW -> setActiveYaw(normalizeDegrees(getActiveYaw() + amount));
-            case ROLL -> setActiveRoll(normalizeDegrees(getActiveRoll() + amount));
+            case PITCH -> setActivePitch(clampPreview(value, -180.0F, 180.0F));
+            case YAW -> setActiveYaw(normalizeDegrees(value));
+            case ROLL -> setActiveRoll(normalizeDegrees(value));
+        }
+    }
+
+    private void refreshNumericValueBindings() {
+        for (NumericValueBinding binding : transformValueBindings) {
+            binding.sync();
+        }
+        for (NumericValueBinding binding : poseValueBindings) {
+            binding.sync();
         }
     }
 
@@ -572,11 +716,15 @@ public class BodyPoseEditorFragment extends Fragment {
 
         for (String part : BodyModelSelectionCatalog.PARTS) {
             Button button = new Button(ctx);
-            String prefix = part.equals(selectedPart) ? "§e▸ " : "  ";
+            boolean selected = part.equals(selectedPart);
+            String prefix = selected ? "> " : "  ";
             button.setText(prefix + part);
+            button.setTextColor(selected ? 0xFFFFDD66 : 0xFFE8E8E8);
             button.setOnClickListener(v -> {
                 selectedPart = part;
                 refreshButtonLabels();
+                refreshNumericValueBindings();
+                invalidatePreview();
             });
             partButtonsContainer.addView(button, new LinearLayout.LayoutParams(-1, -2));
             partButtons.add(button);
@@ -588,32 +736,30 @@ public class BodyPoseEditorFragment extends Fragment {
         Context ctx = getContext();
         poseControlsContainer.removeAllViews();
         poseButtons.clear();
+        poseValueBindings.clear();
 
         // 俯仰 (Pitch)
-        poseControlsContainer.addView(createPoseRow(ctx, "俯仰",
-                () -> adjustSelectedPose(Axis.PITCH, -ROTATION_STEP_DEGREES),
-                () -> adjustSelectedPose(Axis.PITCH, ROTATION_STEP_DEGREES)));
+        poseControlsContainer.addView(createPoseRow(ctx, "俯仰", Axis.PITCH));
 
         // 偏转 (Yaw)
-        poseControlsContainer.addView(createPoseRow(ctx, "偏转",
-                () -> adjustSelectedPose(Axis.YAW, -ROTATION_STEP_DEGREES),
-                () -> adjustSelectedPose(Axis.YAW, ROTATION_STEP_DEGREES)));
+        poseControlsContainer.addView(createPoseRow(ctx, "偏转", Axis.YAW));
 
         // 翻滚 (Roll)
-        poseControlsContainer.addView(createPoseRow(ctx, "翻滚",
-                () -> adjustSelectedPose(Axis.ROLL, -ROTATION_STEP_DEGREES),
-                () -> adjustSelectedPose(Axis.ROLL, ROTATION_STEP_DEGREES)));
+        poseControlsContainer.addView(createPoseRow(ctx, "翻滚", Axis.ROLL));
 
         // 重置
         Button resetBtn = new Button(ctx);
         resetBtn.setText("重置姿势");
-        resetBtn.setOnClickListener(v -> resetSelectedPose());
+        resetBtn.setOnClickListener(v -> {
+            resetSelectedPose();
+            refreshNumericValueBindings();
+            invalidatePreview();
+        });
         poseControlsContainer.addView(resetBtn, new LinearLayout.LayoutParams(-1, -2));
         poseButtons.add(resetBtn);
     }
 
-    private LinearLayout createPoseRow(Context ctx, String label,
-                                        Runnable onMinus, Runnable onPlus) {
+    private LinearLayout createPoseRow(Context ctx, String label, Axis axis) {
         LinearLayout row = new LinearLayout(ctx);
         row.setOrientation(LinearLayout.HORIZONTAL);
 
@@ -623,15 +769,28 @@ public class BodyPoseEditorFragment extends Fragment {
         labelView.setWidth(50);
         row.addView(labelView, new LinearLayout.LayoutParams(-2, -2));
 
+        NumericValueBinding binding = new NumericValueBinding(
+                () -> getSelectedPoseValue(axis),
+                value -> setSelectedPoseValue(axis, value),
+                -180.0F, 180.0F, axis != Axis.PITCH);
+
         Button minusBtn = new Button(ctx);
         minusBtn.setText("-");
-        minusBtn.setOnClickListener(v -> onMinus.run());
+        installRepeatingTransformButton(minusBtn, () -> binding.add(-ROTATION_STEP_DEGREES));
         row.addView(minusBtn, new LinearLayout.LayoutParams(0, -2, 1f));
         poseButtons.add(minusBtn);
 
+        EditText valueField = new EditText(ctx);
+        valueField.setTextColor(0xFFE8E8E8);
+        valueField.setTextSize(12);
+        binding.attach(valueField);
+        installNumericFieldScroll(valueField, binding, ROTATION_STEP_DEGREES);
+        row.addView(valueField, new LinearLayout.LayoutParams(0, -2, 1.25f));
+        poseValueBindings.add(binding);
+
         Button plusBtn = new Button(ctx);
         plusBtn.setText("+");
-        plusBtn.setOnClickListener(v -> onPlus.run());
+        installRepeatingTransformButton(plusBtn, () -> binding.add(ROTATION_STEP_DEGREES));
         row.addView(plusBtn, new LinearLayout.LayoutParams(0, -2, 1f));
         poseButtons.add(plusBtn);
 
@@ -676,6 +835,7 @@ public class BodyPoseEditorFragment extends Fragment {
                 itemListOpen = false;
                 itemListContainer.setVisibility(View.GONE);
                 refreshButtonLabels();
+                refreshNumericValueBindings();
             });
             itemListContainer.addView(b, new LinearLayout.LayoutParams(-1, -2));
         }
@@ -718,7 +878,7 @@ public class BodyPoseEditorFragment extends Fragment {
                     selectedPart, (previewAreaLeft + previewAreaRight) / 2, previewAreaTop + 18, 0xB8B8B8);
 
             // 缩放与中心
-            previewScale = Math.max(24.0F, Math.min(pWidth, pHeight) * 0.42F) * previewZoom;
+            previewScale = getPreviewBaseScale(pWidth, pHeight) * previewZoom;
             previewCenterX = (previewAreaLeft + previewAreaRight) * 0.5F + previewPanX;
             previewCenterY = (previewAreaTop + previewAreaBottom) * 0.5F + previewPanY;
 
@@ -739,12 +899,37 @@ public class BodyPoseEditorFragment extends Fragment {
 
             // 物品预览
             renderEditorItemPreviews(dCtx);
+
+            if (showCoordinateAxes) {
+                renderModelTransformGizmos(dCtx);
+            }
         }
     }
 
     // ═══════════════════════════════════════════════════════
     //  预览触摸事件处理
     // ═══════════════════════════════════════════════════════
+
+    private boolean handlePreviewGenericMotion(View view, MotionEvent event) {
+        if (event.getActionMasked() != MotionEvent.ACTION_SCROLL) return false;
+        return handlePreviewScroll(event);
+    }
+
+    private boolean handlePreviewScroll(MotionEvent event) {
+        float scroll = getScrollAmount(event);
+        if (Math.abs(scroll) < 0.001F) return false;
+        previewZoom = clampPreview(previewZoom + scroll * PREVIEW_ZOOM_STEP, PREVIEW_ZOOM_MIN, PREVIEW_ZOOM_MAX);
+        invalidatePreview();
+        return true;
+    }
+
+    private static float getScrollAmount(MotionEvent event) {
+        float scroll = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+        if (Math.abs(scroll) < 0.001F) {
+            scroll = -event.getAxisValue(MotionEvent.AXIS_Y);
+        }
+        return scroll;
+    }
 
     private class PreviewTouchListener implements View.OnTouchListener {
         private float lastX;
@@ -757,17 +942,24 @@ public class BodyPoseEditorFragment extends Fragment {
 
             int action = event.getActionMasked();
             switch (action) {
+                case MotionEvent.ACTION_SCROLL -> {
+                    return handlePreviewScroll(event);
+                }
                 case MotionEvent.ACTION_DOWN, MotionEvent.ACTION_BUTTON_PRESS -> {
                     lastX = x;
                     lastY = y;
 
                     int button = getPreviewButton(event, action);
+                    activePreviewButton = button;
                     if (button == MotionEvent.BUTTON_SECONDARY) {
                         draggingPreview = false;
+                        draggingRotationAxis = RotationAxis.NONE;
+                        draggingMoveAxis = MoveAxis.NONE;
                         draggingRightPreview = true;
                         return true;
                     }
                     if (button != MotionEvent.BUTTON_PRIMARY) {
+                        activePreviewButton = 0;
                         return true;
                     }
                     draggingPreview = false;
@@ -777,16 +969,23 @@ public class BodyPoseEditorFragment extends Fragment {
                     if (itemIndex >= 0) {
                         selectedEditorItemIndex = itemIndex;
                         refreshButtonLabels();
+                        refreshNumericValueBindings();
                         return true;
                     }
                     RotationAxis rotAxis = findRotationRing(x, y);
                     if (rotAxis != RotationAxis.NONE) {
+                        draggingPreview = false;
+                        draggingRightPreview = false;
+                        draggingMoveAxis = MoveAxis.NONE;
                         draggingRotationAxis = rotAxis;
                         hoveredRotationAxis = rotAxis;
                         return true;
                     }
                     MoveAxis mvAxis = findMoveAxis(x, y);
                     if (mvAxis != MoveAxis.NONE) {
+                        draggingPreview = false;
+                        draggingRightPreview = false;
+                        draggingRotationAxis = RotationAxis.NONE;
                         draggingMoveAxis = mvAxis;
                         hoveredMoveAxis = mvAxis;
                         return true;
@@ -794,6 +993,7 @@ public class BodyPoseEditorFragment extends Fragment {
                     if (selectedEditorItemIndex != -1) {
                         selectedEditorItemIndex = -1;
                         refreshButtonLabels();
+                        refreshNumericValueBindings();
                     }
                     draggingPreview = true;
                     draggingRightPreview = false;
@@ -802,8 +1002,10 @@ public class BodyPoseEditorFragment extends Fragment {
                 case MotionEvent.ACTION_MOVE -> {
                     float dX = x - lastX;
                     float dY = y - lastY;
-                    boolean primaryDown = event.isButtonPressed(MotionEvent.BUTTON_PRIMARY);
-                    boolean secondaryDown = event.isButtonPressed(MotionEvent.BUTTON_SECONDARY);
+                    boolean primaryDown = activePreviewButton == MotionEvent.BUTTON_PRIMARY
+                            || event.isButtonPressed(MotionEvent.BUTTON_PRIMARY);
+                    boolean secondaryDown = activePreviewButton == MotionEvent.BUTTON_SECONDARY
+                            || event.isButtonPressed(MotionEvent.BUTTON_SECONDARY);
 
                     if (!primaryDown && !secondaryDown) {
                         draggingRotationAxis = RotationAxis.NONE;
@@ -819,9 +1021,13 @@ public class BodyPoseEditorFragment extends Fragment {
 
                     // Left button → rotate / drag axis (matching original button==0 behavior)
                     if (primaryDown && draggingRotationAxis != RotationAxis.NONE) {
+                        draggingPreview = false;
                         dragModelRotation(draggingRotationAxis, x, y, dX, dY);
+                        refreshNumericValueBindings();
                     } else if (primaryDown && draggingMoveAxis != MoveAxis.NONE) {
+                        draggingPreview = false;
                         dragModelOffset(draggingMoveAxis, dX, dY);
+                        refreshNumericValueBindings();
                     } else if (primaryDown && draggingPreview) {
                         previewYaw += dX * 0.65F;
                         previewPitch = clampPreview(previewPitch + dY * 0.65F, -60.0F, 60.0F);
@@ -855,6 +1061,7 @@ public class BodyPoseEditorFragment extends Fragment {
                     }
                     draggingPreview = false;
                     draggingRightPreview = false;
+                    activePreviewButton = 0;
                     return true;
                 }
                 default -> {
@@ -888,9 +1095,9 @@ public class BodyPoseEditorFragment extends Fragment {
         if (model == null) return;
 
         preparePreviewModel(model);
-        float scale = Math.max(24.0F, Math.min(
+        float scale = getPreviewBaseScale(
                 previewAreaRight - previewAreaLeft,
-                previewAreaBottom - previewAreaTop) * 0.42F) * previewZoom;
+                previewAreaBottom - previewAreaTop) * previewZoom;
         int renderBottom = Math.max(previewAreaTop + 1,
                 Math.min(previewAreaBottom,
                         Math.round((previewAreaTop + previewAreaBottom) * 0.5F + scale * PREVIEW_Y_PIVOT)));
@@ -949,6 +1156,76 @@ public class BodyPoseEditorFragment extends Fragment {
             context.drawBorder(ix - 1, iy - 1, 18, 18,
                     i == selectedEditorItemIndex ? 0xFFFFFF55 : 0x99FFFFFF);
         }
+    }
+
+    private void renderModelTransformGizmos(DrawContext context) {
+        renderRotationRing(context, RotationAxis.PITCH, 0xD0FF4646);
+        renderRotationRing(context, RotationAxis.YAW, 0xD046E646);
+        renderRotationRing(context, RotationAxis.ROLL, 0xD05A6EFF);
+
+        renderMoveAxis(context, MoveAxis.X, 0xF5FF3232);
+        renderMoveAxis(context, MoveAxis.Y, 0xF532DC32);
+        renderMoveAxis(context, MoveAxis.Z, 0xF53C50FF);
+
+        ScreenPoint center = projectModelPoint(getActiveOffsetX(), getActiveOffsetY(), getActiveOffsetZ());
+        drawHandle(context, center, 3, 0xFFFFFFFF);
+    }
+
+    private void renderMoveAxis(DrawContext context, MoveAxis axis, int color) {
+        float ox = getActiveOffsetX();
+        float oy = getActiveOffsetY();
+        float oz = getActiveOffsetZ();
+        ScreenPoint center = projectModelPoint(ox, oy, oz);
+        ScreenPoint end = switch (axis) {
+            case X -> projectModelPoint(ox + MOVE_AXIS_LENGTH, oy, oz);
+            case Y -> projectModelPoint(ox, oy + MOVE_AXIS_LENGTH, oz);
+            case Z -> projectModelPoint(ox, oy, oz + MOVE_AXIS_LENGTH);
+            default -> center;
+        };
+
+        boolean highlighted = axis == draggingMoveAxis || (draggingMoveAxis == MoveAxis.NONE && axis == hoveredMoveAxis);
+        int drawColor = highlighted ? 0xFFFFFF5A : color;
+        drawProjectedLine(context, center, end, drawColor);
+        if (highlighted) {
+            drawProjectedLineOffset(context, center, end, drawColor, 1.0F);
+            drawProjectedLineOffset(context, center, end, drawColor, -1.0F);
+        }
+        drawHandle(context, end, highlighted ? 4 : 3, drawColor);
+    }
+
+    private void renderRotationRing(DrawContext context, RotationAxis axis, int color) {
+        boolean highlighted = axis == draggingRotationAxis
+                || (draggingRotationAxis == RotationAxis.NONE && axis == hoveredRotationAxis);
+        int drawColor = highlighted ? 0xFFFFFF5A : color;
+        ScreenPoint previous = projectRotationRingPoint(axis, 0);
+        for (int i = 1; i <= ROTATION_RING_SEGMENTS; i++) {
+            ScreenPoint current = projectRotationRingPoint(axis, i);
+            drawProjectedLine(context, previous, current, drawColor);
+            if (highlighted) {
+                drawProjectedLineOffset(context, previous, current, drawColor, 1.0F);
+            }
+            previous = current;
+        }
+    }
+
+    private static void drawProjectedLineOffset(DrawContext context, ScreenPoint start, ScreenPoint end, int color, float offset) {
+        double dx = end.x - start.x;
+        double dy = end.y - start.y;
+        double length = Math.sqrt(dx * dx + dy * dy);
+        if (length < 0.5D) return;
+        float nx = (float) (-dy / length * offset);
+        float ny = (float) (dx / length * offset);
+        drawProjectedLine(context,
+                new ScreenPoint(start.x + nx, start.y + ny),
+                new ScreenPoint(end.x + nx, end.y + ny),
+                color);
+    }
+
+    private static void drawHandle(DrawContext context, ScreenPoint point, int radius, int color) {
+        int x = Math.round(point.x);
+        int y = Math.round(point.y);
+        context.fill(x - radius, y - radius, x + radius + 1, y + radius + 1, color);
+        context.drawBorder(x - radius, y - radius, radius * 2 + 1, radius * 2 + 1, 0xCC000000);
     }
 
     private static void drawProjectedLine(DrawContext context, ScreenPoint start, ScreenPoint end, int color) {
@@ -1036,6 +1313,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private MoveAxis findMoveAxis(double px, double py) {
+        if (!showCoordinateAxes) return MoveAxis.NONE;
         if (!isInsidePreviewArea((float) px, (float) py)) return MoveAxis.NONE;
         float ox = getActiveOffsetX();
         float oy = getActiveOffsetY();
@@ -1054,6 +1332,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private RotationAxis findRotationRing(double px, double py) {
+        if (!showCoordinateAxes) return RotationAxis.NONE;
         if (!isInsidePreviewArea((float) px, (float) py)) return RotationAxis.NONE;
         double bestDist = ROTATION_RING_HIT_RADIUS;
         RotationAxis best = RotationAxis.NONE;
@@ -1158,7 +1437,11 @@ public class BodyPoseEditorFragment extends Fragment {
         int w = previewAreaRight - previewAreaLeft - 20;
         int h = previewAreaBottom - previewAreaTop - 58;
         if (w <= 0 || h <= 0) return 24.0F;
-        return Math.max(24.0F, Math.min(w, h) * 0.42F) * previewZoom;
+        return getPreviewBaseScale(w, h) * previewZoom;
+    }
+
+    private static float getPreviewBaseScale(int width, int height) {
+        return Math.max(24.0F, Math.min(width, height) * PREVIEW_SCALE_FACTOR);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -1200,8 +1483,8 @@ public class BodyPoseEditorFragment extends Fragment {
         root.originX = modelOffsetX * MODEL_PART_UNITS_PER_GRID;
         root.originY = modelOffsetY * MODEL_PART_UNITS_PER_GRID;
         root.originZ = modelOffsetZ * MODEL_PART_UNITS_PER_GRID;
-        root.pitch = (float) Math.toRadians(modelPitch);
-        root.yaw = (float) Math.toRadians(-modelYaw);
+        root.pitch = (float) Math.toRadians(previewPitch + modelPitch);
+        root.yaw = (float) Math.toRadians(-(previewYaw + modelYaw));
         root.roll = (float) Math.toRadians(modelRoll);
 
         boolean showAll = showWholePreview || selectedPart.equals("all");
@@ -1278,6 +1561,12 @@ public class BodyPoseEditorFragment extends Fragment {
         model.rightLeg.visible = showAll || selectedPart.equals("right_leg");
         model.rightPants.visible = model.rightLeg.visible;
 
+        if (!showAll) {
+            centerSelectedPart(model);
+        } else {
+            moveWholeModelToChestPivot(model);
+        }
+
         applyPose(model.head, PART_POSES.get("head"));
         applyPose(model.body, PART_POSES.get("torso"));
         applyPose(model.leftArm, PART_POSES.get("left_arm"));
@@ -1336,14 +1625,17 @@ public class BodyPoseEditorFragment extends Fragment {
     private void refreshButtonLabels() {
         // 皮肤按钮
         for (Button btn : skinButtons) {
-            String text = btn.getText().toString().replace("§e", "").trim();
+            String text = btn.getText().toString().replace("> ", "").trim();
             boolean isSelected = selectedSkinSource == SkinSource.LOCAL && text.equals(selectedSkin);
-            btn.setText((isSelected ? "§e" : "") + truncate(text, 10));
+            btn.setText(truncate(text, 10));
+            btn.setTextColor(isSelected ? 0xFFFFDD66 : 0xFFE8E8E8);
         }
         // 部位按钮
         for (Button btn : partButtons) {
-            String text = btn.getText().toString().replace("§e▸ ", "").replace("  ", "").trim();
-            btn.setText((text.equals(selectedPart) ? "§e▸ " : "  ") + text);
+            String text = btn.getText().toString().replace("> ", "").replace("  ", "").trim();
+            boolean isSelected = text.equals(selectedPart);
+            btn.setText((isSelected ? "> " : "  ") + text);
+            btn.setTextColor(isSelected ? 0xFFFFDD66 : 0xFFE8E8E8);
         }
         // 姿势按钮启用状态
         boolean canEditPose = !selectedPart.equals("all");
@@ -1612,12 +1904,14 @@ public class BodyPoseEditorFragment extends Fragment {
         EDITOR_ITEMS.remove(selectedEditorItemIndex);
         selectedEditorItemIndex = Math.min(selectedEditorItemIndex, EDITOR_ITEMS.size() - 1);
         refreshButtonLabels();
+        refreshNumericValueBindings();
     }
 
     private void clearAllItemModels() {
         EDITOR_ITEMS.clear();
         selectedEditorItemIndex = -1;
         refreshButtonLabels();
+        refreshNumericValueBindings();
     }
 
     private void resetActiveTransform() {
@@ -1629,6 +1923,8 @@ public class BodyPoseEditorFragment extends Fragment {
             modelOffsetX = 0.0F; modelOffsetY = 0.0F; modelOffsetZ = 0.0F;
             modelPitch = 0.0F; modelYaw = 0.0F; modelRoll = 0.0F;
         }
+        refreshNumericValueBindings();
+        invalidatePreview();
     }
 
     // ── 活动偏移/旋转（根据是否选中物品而不同） ──
@@ -1665,11 +1961,27 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private static void adjustSelectedPose(Axis axis, float amount) {
         if (selectedPart.equals("all")) return;
+        setSelectedPoseValue(axis, getSelectedPoseValue(axis) + amount);
+    }
+
+    private static float getSelectedPoseValue(Axis axis) {
+        if (selectedPart.equals("all")) return 0.0F;
         PartPose pose = getSelectedPose();
         switch (axis) {
-            case PITCH -> pose.pitch += amount;
-            case YAW -> pose.yaw += amount;
-            case ROLL -> pose.roll += amount;
+            case PITCH -> { return pose.pitch; }
+            case YAW -> { return pose.yaw; }
+            case ROLL -> { return pose.roll; }
+        }
+        return 0.0F;
+    }
+
+    private static void setSelectedPoseValue(Axis axis, float value) {
+        if (selectedPart.equals("all")) return;
+        PartPose pose = getSelectedPose();
+        switch (axis) {
+            case PITCH -> pose.pitch = clampPreview(value, -180.0F, 180.0F);
+            case YAW -> pose.yaw = normalizeDegrees(value);
+            case ROLL -> pose.roll = normalizeDegrees(value);
         }
     }
 
@@ -1792,6 +2104,23 @@ public class BodyPoseEditorFragment extends Fragment {
         return String.format("%.2f", value);
     }
 
+    private static String formatNumericValue(float value) {
+        return String.format(Locale.ROOT, "%.2f", value);
+    }
+
+    private static Float parseFloatOrNull(CharSequence text) {
+        if (text == null) return null;
+        String value = text.toString().trim();
+        if (value.isEmpty() || value.equals("-") || value.equals(".") || value.equals("-.")) {
+            return null;
+        }
+        try {
+            return Float.parseFloat(value);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
     private static float clampPreview(float value, float min, float max) {
         return Math.max(min, Math.min(max, value));
     }
@@ -1832,6 +2161,84 @@ public class BodyPoseEditorFragment extends Fragment {
     // ═══════════════════════════════════════════════════════
     //  内部数据类
     // ═══════════════════════════════════════════════════════
+
+    private final class NumericValueBinding {
+        private final Supplier<Float> getter;
+        private final Consumer<Float> setter;
+        private final float min;
+        private final float max;
+        private final boolean wrap;
+        private EditText field;
+        private boolean syncing;
+
+        private NumericValueBinding(Supplier<Float> getter, Consumer<Float> setter, float min, float max, boolean wrap) {
+            this.getter = getter;
+            this.setter = setter;
+            this.min = min;
+            this.max = max;
+            this.wrap = wrap;
+        }
+
+        private void attach(EditText field) {
+            this.field = field;
+            sync();
+            field.addTextChangedListener(new STWatcher(text -> {
+                if (syncing) return;
+                Float value = parseFloatOrNull(text);
+                if (value != null) {
+                    apply(value, false);
+                }
+            }));
+        }
+
+        private void add(float amount) {
+            apply(getter.get() + amount, true);
+        }
+
+        private void apply(float value, boolean syncField) {
+            float next = wrap ? normalizeDegrees(value) : clampPreview(value, min, max);
+            setter.accept(next);
+            if (syncField) {
+                sync();
+            }
+            invalidatePreview();
+        }
+
+        private void sync() {
+            if (field == null) return;
+            String next = formatNumericValue(getter.get());
+            CharSequence current = field.getText();
+            if (current != null && next.contentEquals(current)) return;
+            syncing = true;
+            field.setText(next);
+            syncing = false;
+        }
+    }
+
+    private interface STListener {
+        void onChange(CharSequence text);
+    }
+
+    private static final class STWatcher implements TextWatcher {
+        private final STListener listener;
+
+        private STWatcher(STListener listener) {
+            this.listener = listener;
+        }
+
+        @Override
+        public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+        }
+
+        @Override
+        public void onTextChanged(CharSequence s, int start, int before, int count) {
+        }
+
+        @Override
+        public void afterTextChanged(Editable s) {
+            listener.onChange(s);
+        }
+    }
 
     private static final class PartPose {
         private float pitch;

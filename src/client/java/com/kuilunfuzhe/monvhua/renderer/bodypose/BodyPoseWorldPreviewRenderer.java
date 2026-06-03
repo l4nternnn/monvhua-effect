@@ -1,6 +1,6 @@
 package com.kuilunfuzhe.monvhua.renderer.bodypose;
 
-import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorScreen;
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorFragment;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.*;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
@@ -32,7 +32,7 @@ public class BodyPoseWorldPreviewRenderer {
 	public static void render(MatrixStack matrices, VertexConsumerProvider consumers) {
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (client.world == null || client.player == null) return;
-		if (!BodyPoseEditorScreen.isWorldPreviewActive()) return;
+		if (!BodyPoseEditorFragment.isWorldPreviewActive()) return;
 
 		Camera camera = client.gameRenderer.getCamera();
 		Vec3d cameraPos = camera.getPos();
@@ -43,19 +43,19 @@ public class BodyPoseWorldPreviewRenderer {
 		VertexConsumerProvider.Immediate vertexConsumers = bufferBuilders.getEntityVertexConsumers();
 		if (vertexConsumers == null) return;
 
-		boolean showAxes = BodyPoseEditorScreen.isWorldAxesShown();
-		boolean axesMovable = BodyPoseEditorScreen.isWorldAxesMovable();
-		String highlightedMove = BodyPoseEditorScreen.getStaticHighlightedMoveAxis();
-		String highlightedRot = BodyPoseEditorScreen.getStaticHighlightedRotationAxis();
-		float offsetX = BodyPoseEditorScreen.getWorldModelOffsetX();
-		float offsetY = BodyPoseEditorScreen.getWorldModelOffsetY();
-		float offsetZ = BodyPoseEditorScreen.getWorldModelOffsetZ();
-		float modelPitch = BodyPoseEditorScreen.getWorldModelPitch();
-		float modelYaw = BodyPoseEditorScreen.getWorldModelYaw();
-		float modelRoll = BodyPoseEditorScreen.getWorldModelRoll();
-		float previewYaw = BodyPoseEditorScreen.getPreviewYaw();
-		float previewPitch = BodyPoseEditorScreen.getPreviewPitch();
-		float previewRoll = BodyPoseEditorScreen.getPreviewRoll();
+		boolean showAxes = BodyPoseEditorFragment.isWorldAxesShown();
+		boolean axesMovable = BodyPoseEditorFragment.isWorldAxesMovable();
+		String highlightedMove = BodyPoseEditorFragment.getStaticHighlightedMoveAxis();
+		String highlightedRot = BodyPoseEditorFragment.getStaticHighlightedRotationAxis();
+		float offsetX = BodyPoseEditorFragment.getWorldModelOffsetX();
+		float offsetY = BodyPoseEditorFragment.getWorldModelOffsetY();
+		float offsetZ = BodyPoseEditorFragment.getWorldModelOffsetZ();
+		float modelPitch = BodyPoseEditorFragment.getWorldModelPitch();
+		float modelYaw = BodyPoseEditorFragment.getWorldModelYaw();
+		float modelRoll = BodyPoseEditorFragment.getWorldModelRoll();
+		float previewYaw = BodyPoseEditorFragment.getPreviewYaw();
+		float previewPitch = BodyPoseEditorFragment.getPreviewPitch();
+		float previewRoll = BodyPoseEditorFragment.getPreviewRoll();
 
 		// Combined rotation matching GUI model: Z(roll) → Y(yaw) → X(pitch)
 		// GUI: root.roll=+totalRoll, root.yaw=-totalYaw, root.pitch=+totalPitch
@@ -113,7 +113,7 @@ public class BodyPoseWorldPreviewRenderer {
 		// 5. Player model (with combined preview+model rotation)
 		PlayerEntityModel model = getWorldModelInstance(client);
 		if (model != null) {
-			Identifier skinTexture = BodyPoseEditorScreen.getWorldSkinTexture();
+			Identifier skinTexture = BodyPoseEditorFragment.getWorldSkinTexture();
 			RenderLayer modelLayer = RenderLayer.getEntityTranslucent(skinTexture);
 			VertexConsumer modelVc = vertexConsumers.getBuffer(modelLayer);
 			BlockPos lightPos = BlockPos.ofFloored(worldPos.x, worldPos.y + 1, worldPos.z);
@@ -133,22 +133,20 @@ public class BodyPoseWorldPreviewRenderer {
 	}
 
 	private static Vec3d getWorldPreviewPosition(MinecraftClient client) {
-		BodyPoseEditorScreen.PreviewMode mode = BodyPoseEditorScreen.getWorldPreviewMode();
-		if (mode == BodyPoseEditorScreen.PreviewMode.FIXED) {
+		BodyPoseEditorFragment.PreviewMode mode = BodyPoseEditorFragment.getWorldPreviewMode();
+		if (mode == BodyPoseEditorFragment.PreviewMode.FIXED) {
 			return new Vec3d(
-				BodyPoseEditorScreen.getFixedWorldX(),
-				BodyPoseEditorScreen.getFixedWorldY(),
-				BodyPoseEditorScreen.getFixedWorldZ()
+				BodyPoseEditorFragment.getFixedWorldX(),
+				BodyPoseEditorFragment.getFixedWorldY(),
+				BodyPoseEditorFragment.getFixedWorldZ()
 			);
 		}
 		return client.player.getPos();
 	}
 
 	private static PlayerEntityModel getWorldModelInstance(MinecraftClient client) {
-		if (client.currentScreen instanceof BodyPoseEditorScreen screen) {
-			return screen.getPreparedWorldPreviewModel();
-		}
-		return null;
+		BodyPoseEditorFragment inst = BodyPoseEditorFragment.activeInstance;
+		return inst != null ? inst.getPreparedWorldPreviewModel() : null;
 	}
 
 	private static void renderPlayerModelParts(PlayerEntityModel model, MatrixStack matrices,

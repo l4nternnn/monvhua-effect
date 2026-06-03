@@ -29,11 +29,18 @@ import java.util.Map;
 
 public class BodyPoseEditorScreen extends Screen {
 	private static final float ROTATION_STEP_DEGREES = 5.0F;
-	private static final float PREVIEW_CHEST_PIVOT_Y = 6.0F;
+	private static final float PREVIEW_CHEST_PIVOT_Y = 8.0F;
 	private static final float PREVIEW_Y_PIVOT = 1.601F;
 	private static final float MODEL_PART_UNITS_PER_GRID = 16.0F;
 	private static final float MODEL_OFFSET_MIN = -10.0F;
 	private static final float MODEL_OFFSET_MAX = 10.0F;
+	private static final float TRANSFORM_OFFSET_STEP = 0.25F;
+	private static final float DEFAULT_PREVIEW_PAN_X = 32.0F;
+	private static final float DEFAULT_PREVIEW_ZOOM = 1.15F;
+	private static final float PREVIEW_SCALE_FACTOR = 0.52F;
+	private static final float PREVIEW_ZOOM_MIN = 0.35F;
+	private static final float PREVIEW_ZOOM_MAX = 4.2F;
+	private static final float PREVIEW_ZOOM_STEP = 0.22F;
 	private static final float MOVE_AXIS_LENGTH = 4.0F / 3.0F;
 	private static final float MOVE_AXIS_HIT_RADIUS = 3.4F;
 	private static final float ROTATION_RING_RADIUS = 2.45F / 3.0F;
@@ -95,11 +102,11 @@ public class BodyPoseEditorScreen extends Screen {
 	private float previewPitch = 24.0F;
 	private float previewYaw = 0.0F;
 	private float previewRoll = 0.0F;
-	private float previewZoom = 1.0F;
+	private float previewZoom = DEFAULT_PREVIEW_ZOOM;
 	private boolean showWholePreview = true;
 	private boolean draggingPreview;
 	private boolean draggingRightPreview;
-	private float previewPanX;
+	private float previewPanX = DEFAULT_PREVIEW_PAN_X;
 	private float previewPanY;
 	private boolean showCoordinateAxes = true;
 	private boolean coordinateAxesMovable = true;
@@ -536,7 +543,7 @@ public class BodyPoseEditorScreen extends Screen {
 			return true;
 		}
 		if (isInsidePreview(mouseX, mouseY)) {
-			this.previewZoom = clamp(this.previewZoom + (float) verticalAmount * 0.1F, 0.45F, 2.25F);
+			this.previewZoom = clamp(this.previewZoom + (float) verticalAmount * PREVIEW_ZOOM_STEP, PREVIEW_ZOOM_MIN, PREVIEW_ZOOM_MAX);
 			return true;
 		}
 		return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
@@ -595,7 +602,7 @@ public class BodyPoseEditorScreen extends Screen {
 		preparePreviewModel(model);
 		int width = x2 - x1;
 		int height = y2 - y1;
-		float scale = Math.max(24.0F, Math.min(width, height) * 0.42F) * this.previewZoom;
+		float scale = getPreviewBaseScale(width, height) * this.previewZoom;
 		int renderBottom = Math.max(y1 + 1, Math.round((y1 + y2) * 0.5F + scale * PREVIEW_Y_PIVOT));
 		int panX = (int) this.previewPanX;
 		int panY = (int) this.previewPanY;
@@ -943,6 +950,12 @@ public class BodyPoseEditorScreen extends Screen {
 		model.rightLeg.visible = showAll || selectedPart.equals("right_leg");
 		model.rightPants.visible = model.rightLeg.visible;
 
+		if (!showAll) {
+			centerSelectedPart(model);
+		} else {
+			moveWholeModelToChestPivot(model);
+		}
+
 		applyPose(model.head, PART_POSES.get("head"));
 		applyPose(model.body, PART_POSES.get("torso"));
 		applyPose(model.leftArm, PART_POSES.get("left_arm"));
@@ -988,6 +1001,9 @@ public class BodyPoseEditorScreen extends Screen {
 	}
 
 	private MoveAxis findMoveAxis(double mouseX, double mouseY) {
+		if (!this.showCoordinateAxes) {
+			return MoveAxis.NONE;
+		}
 		if (!isInsidePreview(mouseX, mouseY)) {
 			return MoveAxis.NONE;
 		}
@@ -1015,6 +1031,9 @@ public class BodyPoseEditorScreen extends Screen {
 	}
 
 	private RotationAxis findRotationRing(double mouseX, double mouseY) {
+		if (!this.showCoordinateAxes) {
+			return RotationAxis.NONE;
+		}
 		if (!isInsidePreview(mouseX, mouseY)) {
 			return RotationAxis.NONE;
 		}
@@ -1156,7 +1175,11 @@ public class BodyPoseEditorScreen extends Screen {
 	private float getPreviewPixelsPerGrid() {
 		int width = getPreviewRight() - getPreviewLeft() - 20;
 		int height = getPreviewBottom() - getPreviewTop() - 58;
-		return Math.max(24.0F, Math.min(width, height) * 0.42F) * this.previewZoom;
+		return getPreviewBaseScale(width, height) * this.previewZoom;
+	}
+
+	private static float getPreviewBaseScale(int width, int height) {
+		return Math.max(24.0F, Math.min(width, height) * PREVIEW_SCALE_FACTOR);
 	}
 
 	private float getPreviewRenderCenterX() {
@@ -1384,6 +1407,33 @@ public class BodyPoseEditorScreen extends Screen {
 			modelYaw = 0.0F;
 			modelRoll = 0.0F;
 		}
+	}
+
+	private void adjustActiveOffset(MoveAxis axis, float amount) {
+		switch (axis) {
+			case X -> setActiveOffsetX(clamp(getActiveOffsetX() + amount, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX));
+			case Y -> setActiveOffsetY(clamp(getActiveOffsetY() + amount, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX));
+			case Z -> setActiveOffsetZ(clamp(getActiveOffsetZ() + amount, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX));
+			case NONE -> {
+			}
+		}
+	}
+
+	private void adjustActiveRotation(Axis axis, float amount) {
+		switch (axis) {
+			case PITCH -> setActivePitch(clamp(getActivePitch() + amount, -180.0F, 180.0F));
+			case YAW -> setActiveYaw(normalizeDegrees(getActiveYaw() + amount));
+			case ROLL -> setActiveRoll(normalizeDegrees(getActiveRoll() + amount));
+		}
+	}
+
+	private static Axis toPoseAxis(RotationAxis axis) {
+		return switch (axis) {
+			case PITCH -> Axis.PITCH;
+			case YAW -> Axis.YAW;
+			case ROLL -> Axis.ROLL;
+			case NONE -> Axis.YAW;
+		};
 	}
 
 	private float getActiveOffsetX() {
