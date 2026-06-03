@@ -7,6 +7,7 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
+import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
 
@@ -57,6 +58,46 @@ public final class CarryAttachedRenderMath {
 		applyAttachedTransform(matrices);
 		applyCarriedModelHorizontalTransform(matrices, 1.0F);
 		return transformLocalPoint(matrices, CARRIED_CAMERA_HEAD_LOCAL_X, CARRIED_CAMERA_HEAD_LOCAL_Y, CARRIED_CAMERA_HEAD_LOCAL_Z);
+	}
+
+	public static WorldViewRotation getCarriedLocalViewWorldRotation(Entity carrier, float tickProgress, float localYawDegrees, float localPitchDegrees) {
+		CarriedCameraOrientation orientation = getCarriedLocalViewCameraOrientation(carrier, tickProgress, localYawDegrees, localPitchDegrees);
+		return new WorldViewRotation(orientation.yawDegrees(), orientation.pitchDegrees());
+	}
+
+	public static CarriedCameraOrientation getCarriedLocalViewCameraOrientation(Entity carrier, float tickProgress, float localYawDegrees, float localPitchDegrees) {
+		MatrixStack matrices = createConfiguredCarriedViewMatrix(carrier, tickProgress, localYawDegrees, localPitchDegrees);
+		Vector3f modelRight = transformLocalDirection(matrices, 1.0F, 0.0F, 0.0F);
+		Vector3f modelUp = transformLocalDirection(matrices, 0.0F, 1.0F, 0.0F);
+		Vector3f modelForward = transformLocalDirection(matrices, 0.0F, 0.0F, 1.0F);
+
+		Quaternionf rotation = new Matrix4f(matrices.peek().getPositionMatrix()).getUnnormalizedRotation(new Quaternionf());
+		rotation.rotateY((float) Math.PI);
+
+		float yaw = (float) Math.toDegrees(Math.atan2(-modelForward.x, modelForward.z));
+		float horizontalLength = MathHelper.sqrt(modelForward.x * modelForward.x + modelForward.z * modelForward.z);
+		float pitch = (float) Math.toDegrees(Math.atan2(-modelForward.y, horizontalLength));
+		Vector3f horizontalPlane = new Vector3f(modelForward);
+		Vector3f verticalPlane = new Vector3f(modelUp);
+		Vector3f diagonalPlane = new Vector3f(modelRight);
+		return new CarriedCameraOrientation(yaw, pitch, rotation, horizontalPlane, verticalPlane, diagonalPlane);
+	}
+
+	private static MatrixStack createConfiguredCarriedViewMatrix(Entity carrier, float tickProgress, float localYawDegrees, float localPitchDegrees) {
+		float baseHeadYaw = CarryPoseTuning.HEAD_YAW + CarryPoseTuning.CUSTOM_HEAD_YAW;
+		float baseHeadPitch = CarryPoseTuning.HEAD_PITCH + CarryPoseTuning.CUSTOM_HEAD_PITCH;
+		float baseHeadRoll = CarryPoseTuning.HEAD_ROLL + CarryPoseTuning.CUSTOM_HEAD_ROLL;
+		return createCarriedViewMatrix(
+				carrier,
+				tickProgress,
+				baseHeadYaw,
+				baseHeadPitch,
+				baseHeadRoll,
+				CarryPoseTuning.CARRIED_VIEW_CENTER_YAW_OFFSET_DEGREES,
+				CarryPoseTuning.CARRIED_VIEW_CENTER_PITCH_OFFSET_DEGREES,
+				localYawDegrees,
+				localPitchDegrees
+		);
 	}
 
 	public static CarriedHeadWorldRotation getCarriedHeadWorldRotation(Entity carrier, float tickProgress, float headYawRadians, float headPitchRadians, float headRollRadians) {
@@ -131,8 +172,23 @@ public final class CarryAttachedRenderMath {
 		Vector3f localForward = new Vector3f(localForward4.x, localForward4.y, localForward4.z).normalize();
 		float headYawRadians = (float) Math.atan2(localForward.x, localForward.z);
 		float localHorizontalLength = MathHelper.sqrt(localForward.x * localForward.x + localForward.z * localForward.z);
-		float headPitchRadians = (float) Math.atan2(localForward.y, localHorizontalLength);
+		float headPitchRadians = (float) Math.atan2(-localForward.y, localHorizontalLength);
 		return new HeadModelRotation(headYawRadians, headPitchRadians);
+	}
+
+	private static MatrixStack createCarriedViewMatrix(Entity carrier, float tickProgress, float baseHeadYawRadians, float baseHeadPitchRadians, float baseHeadRollRadians, float centerYawDegrees, float centerPitchDegrees, float localYawDegrees, float localPitchDegrees) {
+		MatrixStack matrices = createCarriedBaseHeadMatrix(
+				carrier,
+				tickProgress,
+				baseHeadYawRadians,
+				baseHeadPitchRadians,
+				baseHeadRollRadians
+		);
+		matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(centerYawDegrees));
+		matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(centerPitchDegrees));
+		matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(localYawDegrees));
+		matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(localPitchDegrees));
+		return matrices;
 	}
 
 	private static MatrixStack createCarriedBaseHeadMatrix(Entity carrier, float tickProgress, float headYawRadians, float headPitchRadians, float headRollRadians) {
@@ -242,6 +298,9 @@ public final class CarryAttachedRenderMath {
 	}
 
 	public record WorldViewRotation(float yawDegrees, float pitchDegrees) {
+	}
+
+	public record CarriedCameraOrientation(float yawDegrees, float pitchDegrees, Quaternionf rotation, Vector3f horizontalPlane, Vector3f verticalPlane, Vector3f diagonalPlane) {
 	}
 
 	public record HeadModelRotation(float yawRadians, float pitchRadians) {

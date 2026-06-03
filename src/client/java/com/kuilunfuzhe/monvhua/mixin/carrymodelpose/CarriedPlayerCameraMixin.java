@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.mixin.carrymodelpose;
 
+import com.kuilunfuzhe.monvhua.features.carryentity.CarriedPlayerViewState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryAttachedRenderMath;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import net.minecraft.client.MinecraftClient;
@@ -7,6 +8,9 @@ import net.minecraft.client.render.Camera;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.BlockView;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -18,6 +22,24 @@ public abstract class CarriedPlayerCameraMixin {
 	@Shadow
 	protected abstract void setPos(Vec3d pos);
 
+	@Shadow
+	@Final
+	private Quaternionf rotation;
+
+	@Shadow
+	@Final
+	private Vector3f horizontalPlane;
+
+	@Shadow
+	@Final
+	private Vector3f verticalPlane;
+
+	@Shadow
+	@Final
+	private Vector3f diagonalPlane;
+
+	@Shadow
+	protected abstract void setRotation(float yaw, float pitch);
 
 	@Inject(method = "update", at = @At("RETURN"))
 	private void monvhua$moveCarriedPlayerCameraToAttachedHead(BlockView area, Entity focusedEntity, boolean thirdPerson, boolean inverseView, float tickProgress, CallbackInfo ci) {
@@ -36,6 +58,18 @@ public abstract class CarriedPlayerCameraMixin {
 			return;
 		}
 
+		CarriedPlayerViewState.updateLocalViewRotation(focusedEntity, carrier, tickProgress);
 		setPos(CarryAttachedRenderMath.getCarriedCameraHeadWorldPos(carrier, tickProgress));
+		CarryAttachedRenderMath.CarriedCameraOrientation orientation = CarryAttachedRenderMath.getCarriedLocalViewCameraOrientation(
+				carrier,
+				tickProgress,
+				CarriedPlayerViewState.getLocalViewYawDegrees(),
+				CarriedPlayerViewState.getLocalViewPitchDegrees()
+		);
+		setRotation(orientation.yawDegrees(), orientation.pitchDegrees());
+		rotation.set(orientation.rotation());
+		horizontalPlane.set(orientation.horizontalPlane());
+		verticalPlane.set(orientation.verticalPlane());
+		diagonalPlane.set(orientation.diagonalPlane());
 	}
 }

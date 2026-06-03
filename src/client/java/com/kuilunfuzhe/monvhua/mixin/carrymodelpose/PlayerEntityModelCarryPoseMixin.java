@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.mixin.carrymodelpose;
 
 import com.kuilunfuzhe.monvhua.features.carryentity.CarriedPlayerViewState;
+import com.kuilunfuzhe.monvhua.features.carryentity.CarryAttachmentRenderState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseTuning;
 import net.minecraft.client.MinecraftClient;
@@ -119,6 +120,10 @@ public abstract class PlayerEntityModelCarryPoseMixin {
 		}
 
 		float tickProgress = client.getRenderTickCounter().getTickProgress(true);
-		CarriedPlayerViewState.updateHeadViewRotation(carried, carrier, tickProgress);
+		if (CarryAttachmentRenderState.isRenderingAttachedCarriedEntity()) {
+			CarriedPlayerViewState.updateHeadViewRotationFromWorldView(carried, carrier, tickProgress);
+			return;
+		}
+		CarriedPlayerViewState.updateLocalViewRotation(carried, carrier, tickProgress);
 	}
 }

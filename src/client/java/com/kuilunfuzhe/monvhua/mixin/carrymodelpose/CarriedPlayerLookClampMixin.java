@@ -1,8 +1,7 @@
 package com.kuilunfuzhe.monvhua.mixin.carrymodelpose;
 
-import com.kuilunfuzhe.monvhua.features.carryentity.CarryAttachedRenderMath;
+import com.kuilunfuzhe.monvhua.features.carryentity.CarriedPlayerViewState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
-import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseTuning;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.util.math.MathHelper;
@@ -14,10 +13,29 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Entity.class)
 public abstract class CarriedPlayerLookClampMixin {
-	@Inject(method = "changeLookDirection", at = @At("RETURN"))
-	private void monvhua$clampCarriedPlayerLook(double cursorDeltaX, double cursorDeltaY, CallbackInfo ci) {
+	@Unique
+	private static boolean monvhua$capturedCarriedLook;
+	@Unique
+	private static float monvhua$capturedYaw;
+	@Unique
+	private static float monvhua$capturedPitch;
+
+	@Inject(method = "changeLookDirection", at = @At("HEAD"))
+	private void monvhua$captureCarriedPlayerLook(double cursorDeltaX, double cursorDeltaY, CallbackInfo ci) {
 		Entity self = (Entity) (Object) this;
-		if (!monvhua$isLocalCarriedPlayer(self)) {
+		monvhua$capturedCarriedLook = monvhua$isLocalCarriedPlayer(self);
+		if (!monvhua$capturedCarriedLook) {
+			return;
+		}
+
+		monvhua$capturedYaw = self.getYaw();
+		monvhua$capturedPitch = self.getPitch();
+	}
+
+	@Inject(method = "changeLookDirection", at = @At("RETURN"))
+	private void monvhua$applyCarriedPlayerLocalLook(double cursorDeltaX, double cursorDeltaY, CallbackInfo ci) {
+		Entity self = (Entity) (Object) this;
+		if (!monvhua$capturedCarriedLook || !monvhua$isLocalCarriedPlayer(self)) {
 			return;
 		}
 
@@ -27,35 +45,10 @@ public abstract class CarriedPlayerLookClampMixin {
 			return;
 		}
 
+		float yawDelta = MathHelper.wrapDegrees(self.getYaw() - monvhua$capturedYaw);
+		float pitchDelta = self.getPitch() - monvhua$capturedPitch;
 		float tickProgress = client.getRenderTickCounter().getTickProgress(true);
-		float baseHeadYaw = CarryPoseTuning.HEAD_YAW + CarryPoseTuning.CUSTOM_HEAD_YAW;
-		float baseHeadPitch = CarryPoseTuning.HEAD_PITCH + CarryPoseTuning.CUSTOM_HEAD_PITCH;
-		float baseHeadRoll = CarryPoseTuning.HEAD_ROLL + CarryPoseTuning.CUSTOM_HEAD_ROLL;
-		CarryAttachedRenderMath.CarriedHeadWorldRotation baseRotation = CarryAttachedRenderMath.getCarriedHeadWorldRotation(
-				carrier,
-				tickProgress,
-				baseHeadYaw,
-				baseHeadPitch,
-				baseHeadRoll
-		);
-
-		float centerYawDegrees = baseRotation.yawDegrees() + CarryPoseTuning.CARRIED_VIEW_CENTER_YAW_OFFSET_DEGREES;
-		float centerPitchDegrees = baseRotation.pitchDegrees() + CarryPoseTuning.CARRIED_VIEW_CENTER_PITCH_OFFSET_DEGREES;
-		float yawOffset = MathHelper.wrapDegrees(self.getYaw() - centerYawDegrees);
-		float pitchOffset = self.getPitch() - centerPitchDegrees;
-		float clampedYawOffset = MathHelper.clamp(
-				yawOffset,
-				-CarryPoseTuning.CARRIED_VIEW_YAW_LIMIT_DEGREES,
-				CarryPoseTuning.CARRIED_VIEW_YAW_LIMIT_DEGREES
-		);
-		float clampedPitchOffset = MathHelper.clamp(
-				pitchOffset,
-				-CarryPoseTuning.CARRIED_VIEW_PITCH_UP_LIMIT_DEGREES,
-				CarryPoseTuning.CARRIED_VIEW_PITCH_DOWN_LIMIT_DEGREES
-		);
-
-		self.setYaw(centerYawDegrees + clampedYawOffset);
-		self.setPitch(centerPitchDegrees + clampedPitchOffset);
+		CarriedPlayerViewState.changeLocalViewRotation(self, carrier, tickProgress, yawDelta, pitchDelta);
 	}
 
 	@Unique
