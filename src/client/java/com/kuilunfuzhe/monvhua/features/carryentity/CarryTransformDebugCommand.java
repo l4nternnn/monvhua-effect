@@ -60,24 +60,21 @@ public final class CarryTransformDebugCommand {
 
 		CarryAttachedRenderMath.DebugTransform baseHeadTransform = CarryAttachedRenderMath.getCarriedBaseHeadDebugTransform(
 				carrier,
-				carried,
 				tickProgress
 		);
 		CarryAttachedRenderMath.DebugTransform localViewTransform = CarryAttachedRenderMath.getCarriedLocalViewDebugTransform(
 				carrier,
-				carried,
 				tickProgress,
 				localYaw,
 				localPitch
 		);
 		CarryAttachedRenderMath.CarriedCameraOrientation expectedOrientation = CarryAttachedRenderMath.getCarriedLocalViewCameraOrientation(
 				carrier,
-				carried,
 				tickProgress,
 				localYaw,
 				localPitch
 		);
-		Vec3d expectedCameraPos = CarryAttachedRenderMath.getCarriedCameraHeadWorldPos(carrier, carried, tickProgress);
+		Vec3d expectedCameraPos = CarryAttachedRenderMath.getCarriedCameraHeadWorldPos(carrier, tickProgress);
 
 		Camera camera = client.gameRenderer.getCamera();
 		String output = formatDebugOutput(
