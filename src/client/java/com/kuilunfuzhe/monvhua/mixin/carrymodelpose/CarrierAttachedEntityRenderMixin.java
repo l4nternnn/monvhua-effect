@@ -12,7 +12,6 @@ import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -42,11 +41,16 @@ public abstract class CarrierAttachedEntityRenderMixin {
 			return;
 		}
 
+		Entity carrier = client.world.getEntityById(playerState.id);
+		if (carrier == null) {
+			return;
+		}
+
 		float tickProgress = client.getRenderTickCounter().getTickProgress(true);
 		EntityRenderDispatcher dispatcher = client.getEntityRenderDispatcher();
 
 		matrices.push();
-		CarryAttachedRenderMath.applyAttachedTransform(matrices);
+		CarryAttachedRenderMath.applyAttachedTransform(matrices, carrier, carried);
 
 		CarryAttachmentRenderState.beginAttachedCarriedEntityRender();
 		try {

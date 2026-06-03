@@ -60,21 +60,24 @@ public final class CarryTransformDebugCommand {
 
 		CarryAttachedRenderMath.DebugTransform baseHeadTransform = CarryAttachedRenderMath.getCarriedBaseHeadDebugTransform(
 				carrier,
+				carried,
 				tickProgress
 		);
 		CarryAttachedRenderMath.DebugTransform localViewTransform = CarryAttachedRenderMath.getCarriedLocalViewDebugTransform(
 				carrier,
+				carried,
 				tickProgress,
 				localYaw,
 				localPitch
 		);
 		CarryAttachedRenderMath.CarriedCameraOrientation expectedOrientation = CarryAttachedRenderMath.getCarriedLocalViewCameraOrientation(
 				carrier,
+				carried,
 				tickProgress,
 				localYaw,
 				localPitch
 		);
-		Vec3d expectedCameraPos = CarryAttachedRenderMath.getCarriedCameraHeadWorldPos(carrier, tickProgress);
+		Vec3d expectedCameraPos = CarryAttachedRenderMath.getCarriedCameraHeadWorldPos(carrier, carried, tickProgress);
 
 		Camera camera = client.gameRenderer.getCamera();
 		String output = formatDebugOutput(
@@ -114,14 +117,18 @@ public final class CarryTransformDebugCommand {
 		StringBuilder builder = new StringBuilder();
 		builder.append("\n[MONVHUA_CARRY_TRANSFORM_DEBUG]\n");
 		builder.append("tickProgress=").append(f(tickProgress)).append('\n');
-		builder.append("carried.id=").append(carried.getId()).append(" carried.yaw=").append(f(carried.getYaw())).append(" carried.pitch=").append(f(carried.getPitch())).append('\n');
-		builder.append("carrier.id=").append(carrier.getId()).append(" carrier.yaw=").append(f(carrier.getYaw())).append(" carrier.pitch=").append(f(carrier.getPitch())).append('\n');
+		builder.append("carried.id=").append(carried.getId()).append(" carried.yaw=").append(f(carried.getYaw())).append(" carried.pitch=").append(f(carried.getPitch())).append(" carried.height=").append(f(carried.getHeight())).append('\n');
+		builder.append("carrier.id=").append(carrier.getId()).append(" carrier.yaw=").append(f(carrier.getYaw())).append(" carrier.pitch=").append(f(carrier.getPitch())).append(" carrier.height=").append(f(carrier.getHeight())).append('\n');
 		builder.append("localViewYawDegrees=").append(f(localYaw)).append(" localViewPitchDegrees=").append(f(localPitch)).append('\n');
 		builder.append('\n');
 		builder.append("tuning.attached=(x=").append(f(CarryAttachedRenderMath.ATTACHED_CARRIED_X))
-				.append(", y=").append(f(CarryAttachedRenderMath.ATTACHED_CARRIED_Y))
+				.append(", baseY=").append(f(CarryAttachedRenderMath.ATTACHED_CARRIED_Y))
+				.append(", scaledY=").append(f(CarryAttachedRenderMath.getAttachedCarriedY(carrier, carried)))
 				.append(", z=").append(f(CarryAttachedRenderMath.ATTACHED_CARRIED_Z))
 				.append(", yawDeg=").append(f(CarryAttachedRenderMath.ATTACHED_CARRIED_YAW_DEGREES)).append(")\n");
+		builder.append("tuning.scaleCompensation=(referencePlayerHeight=").append(f(CarryAttachedRenderMath.REFERENCE_PLAYER_HEIGHT))
+				.append(", carrierY=").append(f(CarryAttachedRenderMath.CARRIER_SCALE_HEIGHT_COMPENSATION))
+				.append(", carriedY=").append(f(CarryAttachedRenderMath.CARRIED_SCALE_HEIGHT_COMPENSATION)).append(")\n");
 		builder.append("tuning.modelRotation=(xDeg=").append(f(CarryAttachedRenderMath.CARRIED_MODEL_ROTATION_X_DEGREES))
 				.append(", yDeg=").append(f(CarryAttachedRenderMath.CARRIED_MODEL_ROTATION_Y_DEGREES))
 				.append(", zDeg=").append(f(CarryAttachedRenderMath.CARRIED_MODEL_ROTATION_Z_DEGREES)).append(")\n");

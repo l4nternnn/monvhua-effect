@@ -68,7 +68,7 @@ public abstract class FirstPersonCarrierAttachedEntityRenderMixin {
 
 		boolean firstPersonSelfCarried = client.player == carried && client.options.getPerspective().isFirstPerson();
 
-		MatrixStack matrices = CarryAttachedRenderMath.createAttachedViewMatrix(carrier, tickProgress, camera.getPos(), positionMatrix);
+		MatrixStack matrices = CarryAttachedRenderMath.createAttachedViewMatrix(carrier, carried, tickProgress, camera.getPos(), positionMatrix);
 		int light = WorldRenderer.getLightmapCoordinates(client.world, carried.getBlockPos());
 
 		if (firstPersonSelfCarried) {

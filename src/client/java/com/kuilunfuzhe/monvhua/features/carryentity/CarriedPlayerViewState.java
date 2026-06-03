@@ -77,6 +77,7 @@ public final class CarriedPlayerViewState {
 		float baseHeadRoll = CarryPoseTuning.HEAD_ROLL + CarryPoseTuning.CUSTOM_HEAD_ROLL;
 		CarryAttachedRenderMath.HeadViewOffset viewOffset = CarryAttachedRenderMath.getCarriedHeadViewOffsetForWorldView(
 				carrier,
+				carried,
 				tickProgress,
 				carried.getYaw(),
 				carried.getPitch(),
@@ -112,6 +113,7 @@ public final class CarriedPlayerViewState {
 	private static void applyLocalViewRotation(Entity carried, Entity carrier, float tickProgress) {
 		CarryAttachedRenderMath.WorldViewRotation worldRotation = CarryAttachedRenderMath.getCarriedLocalViewWorldRotation(
 				carrier,
+				carried,
 				tickProgress,
 				localViewYawDegrees,
 				localViewPitchDegrees
