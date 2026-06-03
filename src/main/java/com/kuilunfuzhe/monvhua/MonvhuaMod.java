@@ -430,6 +430,7 @@ public class MonvhuaMod implements ModInitializer {
 
         // ===== 7. 模块初始化 =====
         Evil_Eyes.initialize(configManager);
+        com.kuilunfuzhe.monvhua.features.floating.floating.initialize(configManager);
         Gazeguidance.initialize();
         ModItems.initialize();
         SecrecyItem.initialize(configManager);
@@ -688,6 +689,10 @@ public class MonvhuaMod implements ModInitializer {
                                     new PreviewTimelineResultS2CPacket.PreviewEntry(second, actionId,
                                             ActionExecutor.executePreviewText(def, context.player()), def.actionType)));
                         }
+                    }
+                    if (entries.isEmpty()) {
+                        entries.add(new PreviewTimelineResultS2CPacket.PreviewEntry(0, "timeline",
+                                "No timeline actions. Add actions to the timeline first, or check action ids.", "INFO"));
                     }
                     ServerPlayNetworking.send(context.player(), new PreviewTimelineResultS2CPacket(entries));
                 }));

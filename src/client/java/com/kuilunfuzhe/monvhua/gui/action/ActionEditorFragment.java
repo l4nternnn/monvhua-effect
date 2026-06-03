@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import icyllis.modernui.graphics.drawable.ColorDrawable;
 import com.kuilunfuzhe.monvhua.features.action.ActionConfig;
 import com.kuilunfuzhe.monvhua.features.action.TimelineClientState;
+import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.network.action.*;
 import icyllis.modernui.core.Context;
 import icyllis.modernui.fragment.Fragment;
@@ -54,6 +55,7 @@ public class ActionEditorFragment extends Fragment {
     private final List<String> availableFiles = new ArrayList<>();
     private final List<String> previewLog = new ArrayList<>();
     private int timelineAssignSecond = 0;
+    private int selectedTimelineSecond = 0;
     private boolean dirty = false;
     private long lastChangeTime = 0;
     private static final long SAVE_DEBOUNCE = 1200;
@@ -64,6 +66,9 @@ public class ActionEditorFragment extends Fragment {
     private boolean previewSlimModel = false;
     private boolean timelineDragging = false;
     private int lastTimelineSeekSecond = -1;
+    private long timelineClientLastSecondAt = 0L;
+    private int timelineClientBaseSecond = 0;
+    private int lastRenderedTimelineSecond = -1;
     private final float[] previewAngles = new float[18]; // 6 parts × pitch,yaw,roll
 
     // ── 视图引用 ──
@@ -76,6 +81,7 @@ public class ActionEditorFragment extends Fragment {
     private Button pauseBtn;
     private Button loopBtn;
     private Button previewBtn;
+    private EditText timelineAssignSecondField;
     private LinearLayout fileListContainer;
     private View previewSurfaceView;
     private View timelineScrubberView;
@@ -85,7 +91,6 @@ public class ActionEditorFragment extends Fragment {
     // ── 自动保存 ──
     private final Runnable autoSaveRunnable = () -> {
         if (dirty && System.currentTimeMillis() - lastChangeTime >= SAVE_DEBOUNCE) {
-            dirty = false;
             ClientPlayNetworking.send(new UpdateActionsConfigC2SPacket(localConfig.toJson()));
         }
     };
@@ -123,7 +128,7 @@ public class ActionEditorFragment extends Fragment {
 
         // 右栏：编辑表单
         View right = createRightPanel(ctx);
-        root.addView(right, new LinearLayout.LayoutParams(200, -1));
+        root.addView(right, new LinearLayout.LayoutParams(400, -1));
 
         rootView = root;
         return root;
@@ -140,7 +145,7 @@ public class ActionEditorFragment extends Fragment {
             boolean slim = skinTextures.model() == net.minecraft.client.util.SkinTextures.Model.SLIM;
             previewSlimModel = slim;
             ModelPart rootPart = mc.getLoadedEntityModels().getModelPart(
-                    slim ? EntityModelLayers.PLAYER_SLIM : EntityModelLayers.PLAYER);
+                    slim ? ModModelLayers.COMBINED_BODY_SLIM : ModModelLayers.COMBINED_BODY);
             previewModel = new PlayerEntityModel(rootPart, slim);
         }
         // 初始重建（空状态）
@@ -281,7 +286,7 @@ public class ActionEditorFragment extends Fragment {
         FrameLayout previewHost = new FrameLayout(ctx);
         previewHost.setBackground(new ColorDrawable(0x33000000));
         previewSurfaceView = previewHost;
-        panel.addView(previewHost, new LinearLayout.LayoutParams(-1, 220));
+        panel.addView(previewHost, new LinearLayout.LayoutParams(-1, 200));
         panel.removeView(timelineScroll);
         panel.removeView(timelineScrubberView);
         panel.addView(timelineScroll, new LinearLayout.LayoutParams(-1, 0, 0.85f));
@@ -337,7 +342,10 @@ public class ActionEditorFragment extends Fragment {
 
         Button timelinePreviewBtn = new Button(ctx);
         timelinePreviewBtn.setText("▶ 预览时间轴");
-        timelinePreviewBtn.setOnClickListener(v -> ClientPlayNetworking.send(new PreviewTimelineC2SPacket()));
+        timelinePreviewBtn.setOnClickListener(v -> {
+            appendLog("Timeline preview requested...");
+            ClientPlayNetworking.send(new PreviewTimelineC2SPacket());
+        });
         previewBar.addView(timelinePreviewBtn, new LinearLayout.LayoutParams(0, -2, 1f));
 
         panel.addView(previewBar, new LinearLayout.LayoutParams(-1, -2));
@@ -359,42 +367,40 @@ public class ActionEditorFragment extends Fragment {
     // ══════════════════════════════════════════════════
 
     private View createTimelineScrubber(Context ctx) {
-        var scrubber = new icyllis.modernui.mc.MinecraftSurfaceView(ctx);
-        scrubber.setRenderer(new icyllis.modernui.mc.MinecraftSurfaceView.Renderer() {
-            @Override public void onSurfaceChanged(int w, int h) {
-                timelineSurfaceWidth = w;
-                timelineSurfaceHeight = h;
-            }
-            @Override public void onDraw(DrawContext dCtx, int mouseX, int mouseY, float tick, double guiScale, float alpha) {
-                renderTimelineScrubber(dCtx, timelineSurfaceWidth, timelineSurfaceHeight);
-            }
-        });
+        View scrubber = new View(ctx);
+        scrubber.setBackground(new ColorDrawable(0x33111118));
+        scrubber.setFocusable(true);
+        scrubber.setClickable(true);
         scrubber.setOnTouchListener(this::handleTimelineTouch);
         return scrubber;
     }
 
     private void renderTimelineScrubber(DrawContext dCtx, int w, int h) {
+        renderTimelineScrubber(dCtx, 0, 0, w, h);
+    }
+
+    private void renderTimelineScrubber(DrawContext dCtx, int x, int y, int w, int h) {
         if (w <= 0 || h <= 0) return;
-        dCtx.fill(0, 0, w, h, 0x66111118);
-        dCtx.drawBorder(0, 0, w, h, 0x554466AA);
+        dCtx.fill(x, y, x + w, y + h, 0x66111118);
+        dCtx.drawBorder(x, y, w, h, 0x554466AA);
 
         MinecraftClient client = MinecraftClient.getInstance();
         int maxSecond = getTimelineMaxSecond();
-        int left = 12;
-        int right = Math.max(left + 1, w - 12);
-        int y = Math.max(24, h - 16);
-        dCtx.fill(left, y - 2, right, y + 2, 0xFF3A3A46);
+        int left = x + 12;
+        int right = Math.max(left + 1, x + w - 12);
+        int railY = y + Math.max(24, h - 16);
+        dCtx.fill(left, railY - 2, right, railY + 2, 0xFF3A3A46);
 
         for (Integer second : localConfig.timelineSchedule.keySet()) {
             if (second == null || second < 0) continue;
-            int x = left + Math.round((right - left) * (Math.min(second, maxSecond) / (float) maxSecond));
-            dCtx.fill(x - 1, y - 7, x + 1, y + 7, 0xFF77AAFF);
+            int markX = left + Math.round((right - left) * (Math.min(second, maxSecond) / (float) maxSecond));
+            dCtx.fill(markX - 1, railY - 7, markX + 1, railY + 7, 0xFF77AAFF);
         }
 
         int current = Math.max(0, Math.min(TimelineClientState.currentSecond, maxSecond));
         int thumbX = left + Math.round((right - left) * (current / (float) maxSecond));
-        dCtx.fill(thumbX - 3, y - 10, thumbX + 3, y + 10, 0xFFFFDD55);
-        dCtx.drawTextWithShadow(client.textRenderer, "Timeline " + current + " / " + maxSecond + "s", 8, 6, 0xFFE8E8E8);
+        dCtx.fill(thumbX - 3, railY - 10, thumbX + 3, railY + 10, 0xFFFFDD55);
+        dCtx.drawTextWithShadow(client.textRenderer, "Timeline " + current + " / " + maxSecond + "s", x + 8, y + 6, 0xFFE8E8E8);
     }
 
     private boolean handleTimelineTouch(View view, MotionEvent event) {
@@ -431,6 +437,7 @@ public class ActionEditorFragment extends Fragment {
         int second = Math.round(progress * maxSecond);
         if (second == lastTimelineSeekSecond) return;
         lastTimelineSeekSecond = second;
+        selectTimelineSecond(second, false);
         TimelineClientState.currentSecond = second;
         TimelineClientState.totalSeconds = Math.max(TimelineClientState.totalSeconds, maxSecond);
         ClientPlayNetworking.send(new TimelineControlC2SPacket("JUMP", second, ""));
@@ -449,18 +456,35 @@ public class ActionEditorFragment extends Fragment {
         ActionEditorFragment inst = activeInstance;
         MinecraftClient client = MinecraftClient.getInstance();
         if (inst == null || client.currentScreen != screen) return;
+        inst.renderTimelineScrubber(screen, dCtx);
         inst.renderVanillaPreview(screen, dCtx);
+    }
+
+    private void renderTimelineScrubber(Screen screen, DrawContext dCtx) {
+        if (timelineScrubberView == null || !timelineScrubberView.isShown()) return;
+        int[] location = new int[2];
+        timelineScrubberView.getLocationInWindow(location);
+        double guiScale = Math.max(1.0D, MinecraftClient.getInstance().getWindow().getScaleFactor());
+        int w = Math.max(1, (int) Math.round(timelineScrubberView.getWidth() / guiScale));
+        int h = Math.max(1, (int) Math.round(timelineScrubberView.getHeight() / guiScale));
+        if (w <= 0 || h <= 0) return;
+        int x = (int) Math.round(location[0] / guiScale);
+        int y = (int) Math.round(location[1] / guiScale);
+        if (x < 0 || y < 0 || x >= screen.width || y >= screen.height) return;
+
+        int drawW = Math.max(1, Math.min(w, screen.width - x));
+        int drawH = Math.max(1, Math.min(h, screen.height - y));
+        renderTimelineScrubber(dCtx, x, y, drawW, drawH);
     }
 
     private void renderVanillaPreview(Screen screen, DrawContext dCtx) {
         if (previewSurfaceView == null || !previewSurfaceView.isShown()) return;
-        int w = previewSurfaceView.getWidth();
-        int h = previewSurfaceView.getHeight();
-        if (w <= 0 || h <= 0) return;
-
         int[] location = new int[2];
         previewSurfaceView.getLocationInWindow(location);
         double guiScale = Math.max(1.0D, MinecraftClient.getInstance().getWindow().getScaleFactor());
+        int w = Math.max(1, (int) Math.round(previewSurfaceView.getWidth() / guiScale));
+        int h = Math.max(1, (int) Math.round(previewSurfaceView.getHeight() / guiScale));
+        if (w <= 0 || h <= 0) return;
         int x = (int) Math.round(location[0] / guiScale);
         int y = (int) Math.round(location[1] / guiScale);
         if (x < 0 || y < 0 || x >= screen.width || y >= screen.height) {
@@ -584,25 +608,41 @@ public class ActionEditorFragment extends Fragment {
         LinearLayout assignBar = new LinearLayout(ctx);
         assignBar.setOrientation(LinearLayout.HORIZONTAL);
         EditText secField = new EditText(ctx);
+        timelineAssignSecondField = secField;
         secField.setText(String.valueOf(timelineAssignSecond));
         secField.addTextChangedListener(new STWatcher(s -> {
-            try { timelineAssignSecond = Math.max(0, Integer.parseInt(s.toString())); } catch (Exception ignored) {}
+            try {
+                timelineAssignSecond = Math.max(0, Integer.parseInt(s.toString()));
+                selectedTimelineSecond = timelineAssignSecond;
+                rebuildTimelineRows();
+            } catch (Exception ignored) {}
         }));
         assignBar.addView(secField, new LinearLayout.LayoutParams(0, -2, 1f));
         Button addTimelineBtn = new Button(ctx);
         addTimelineBtn.setText("+ 时间轴");
         addTimelineBtn.setOnClickListener(v -> {
-            if (def.id != null && !def.id.isEmpty())
+            if (def.id != null && !def.id.isEmpty()) {
+                applyLocalTimelineAdd(timelineAssignSecond, def.id);
                 ClientPlayNetworking.send(new TimelineControlC2SPacket("ADD", timelineAssignSecond, def.id));
+            }
         });
         assignBar.addView(addTimelineBtn, new LinearLayout.LayoutParams(0, -2, 1f));
+        Button saveTimelineSecondBtn = new Button(ctx);
+        saveTimelineSecondBtn.setText("\u4fdd\u5b58\u5230\u79d2\u8282\u70b9");
+        saveTimelineSecondBtn.setOnClickListener(v -> saveCurrentActionToSelectedTimelineSecond());
+        assignBar.addView(saveTimelineSecondBtn, new LinearLayout.LayoutParams(0, -2, 1f));
         rightPanelContainer.addView(assignBar, new LinearLayout.LayoutParams(-1, -2));
 
         // 出现在哪些秒
         List<String> secs = new ArrayList<>();
         if (def.id != null) {
             for (Map.Entry<Integer, List<String>> e : localConfig.timelineSchedule.entrySet()) {
-                if (e.getValue().contains(def.id)) secs.add(String.valueOf(e.getKey()));
+                for (String timelineId : e.getValue()) {
+                    if (def.id.equals(timelineId) || def.id.equals(getTimelineSourceActionId(timelineId))) {
+                        secs.add(String.valueOf(e.getKey()));
+                        break;
+                    }
+                }
             }
         }
         addLabel(ctx, "出现在: " + (secs.isEmpty() ? "无" : String.join("s, ", secs) + "s"));
@@ -742,6 +782,28 @@ public class ActionEditorFragment extends Fragment {
         });
         rightPanelContainer.addView(slimBtn, new LinearLayout.LayoutParams(-1, -2));
 
+        addLabel(ctx, "持续Tick");
+        EditText durationField = new EditText(ctx);
+        durationField.setText(formatFloat(def.actionParams.getOrDefault("durationTicks", 40)));
+        durationField.addTextChangedListener(new STWatcher(s -> {
+            String txt = s.toString();
+            if (txt.isEmpty()) def.actionParams.remove("durationTicks");
+            else { try { def.actionParams.put("durationTicks", Double.parseDouble(txt)); } catch (Exception ignored) {} }
+            markDirty();
+        }));
+        rightPanelContainer.addView(durationField, new LinearLayout.LayoutParams(-1, -2));
+
+        boolean spawnModel = "true".equals(String.valueOf(def.actionParams.getOrDefault("spawn_model", false)));
+        Button spawnModelBtn = new Button(ctx);
+        spawnModelBtn.setText("生成模型: " + (spawnModel ? "开" : "关"));
+        spawnModelBtn.setOnClickListener(v -> {
+            boolean newVal = !"true".equals(String.valueOf(def.actionParams.getOrDefault("spawn_model", false)));
+            def.actionParams.put("spawn_model", newVal);
+            spawnModelBtn.setText("生成模型: " + (newVal ? "开" : "关"));
+            markDirty();
+        });
+        rightPanelContainer.addView(spawnModelBtn, new LinearLayout.LayoutParams(-1, -2));
+
         for (int i = 0; i < 6; i++) {
             LinearLayout row = new LinearLayout(ctx);
             row.setOrientation(LinearLayout.HORIZONTAL);
@@ -763,6 +825,7 @@ public class ActionEditorFragment extends Fragment {
                     else { try { def.actionParams.put(key, Double.parseDouble(txt)); } catch (Exception ignored) {} }
                     markDirty();
                 }));
+                installPoseFieldScroll(f, def, key, 1.0);
                 row.addView(f, new LinearLayout.LayoutParams(0, -2, 1f));
             }
             rightPanelContainer.addView(row, new LinearLayout.LayoutParams(-1, -2));
@@ -832,6 +895,10 @@ public class ActionEditorFragment extends Fragment {
     // ══════════════════════════════════════════════════
 
     private void rebuildTimelineRows() {
+        if (useCompactTimelineRows()) {
+            rebuildTimelineRowsCompact();
+            return;
+        }
         if (timelineRowsContainer == null || getContext() == null) return;
         Context ctx = getContext();
         timelineRowsContainer.removeAllViews();
@@ -840,7 +907,7 @@ public class ActionEditorFragment extends Fragment {
         List<Integer> sorted = new ArrayList<>(schedule.keySet());
         Collections.sort(sorted);
 
-        int curSec = TimelineClientState.running ? TimelineClientState.currentSecond : -1;
+        int curSec = TimelineClientState.currentSecond;
 
         if (sorted.isEmpty()) {
             TextView empty = new TextView(ctx);
@@ -884,6 +951,7 @@ public class ActionEditorFragment extends Fragment {
                 Button rmBtn = new Button(ctx);
                 rmBtn.setText("×");
                 rmBtn.setOnClickListener(v -> {
+                    applyLocalTimelineRemove(sec, aid);
                     ClientPlayNetworking.send(new TimelineControlC2SPacket("REMOVE", sec, aid));
                 });
                 row.addView(rmBtn, new LinearLayout.LayoutParams(-2, -2));
@@ -892,11 +960,17 @@ public class ActionEditorFragment extends Fragment {
                 if (ids.size() > 1) {
                     Button upBtn = new Button(ctx);
                     upBtn.setText("↑");
-                    upBtn.setOnClickListener(v -> ClientPlayNetworking.send(new TimelineControlC2SPacket("MOVE_UP", sec, aid)));
+                    upBtn.setOnClickListener(v -> {
+                        applyLocalTimelineMove(sec, aid, -1);
+                        ClientPlayNetworking.send(new TimelineControlC2SPacket("MOVE_UP", sec, aid));
+                    });
                     row.addView(upBtn, new LinearLayout.LayoutParams(-2, -2));
                     Button downBtn = new Button(ctx);
                     downBtn.setText("↓");
-                    downBtn.setOnClickListener(v -> ClientPlayNetworking.send(new TimelineControlC2SPacket("MOVE_DOWN", sec, aid)));
+                    downBtn.setOnClickListener(v -> {
+                        applyLocalTimelineMove(sec, aid, 1);
+                        ClientPlayNetworking.send(new TimelineControlC2SPacket("MOVE_DOWN", sec, aid));
+                    });
                     row.addView(downBtn, new LinearLayout.LayoutParams(-2, -2));
                 }
             }
@@ -904,7 +978,10 @@ public class ActionEditorFragment extends Fragment {
             // 删除整秒
             Button delSecBtn = new Button(ctx);
             delSecBtn.setText("⊗");
-            delSecBtn.setOnClickListener(v -> ClientPlayNetworking.send(new TimelineControlC2SPacket("REMOVE_SECOND", sec, "")));
+            delSecBtn.setOnClickListener(v -> {
+                applyLocalTimelineRemoveSecond(sec);
+                ClientPlayNetworking.send(new TimelineControlC2SPacket("REMOVE_SECOND", sec, ""));
+            });
             row.addView(delSecBtn, new LinearLayout.LayoutParams(-2, -2));
 
             timelineRowsContainer.addView(row, new LinearLayout.LayoutParams(-1, -2));
@@ -925,6 +1002,7 @@ public class ActionEditorFragment extends Fragment {
         addBtn.setOnClickListener(v -> {
             try {
                 int sec = Integer.parseInt(addSecField.getText().toString());
+                applyLocalTimelineAdd(sec, "");
                 ClientPlayNetworking.send(new TimelineControlC2SPacket("ADD", sec, ""));
                 addSecField.getText().clear();
                 addSecField.getText().append("0");
@@ -935,9 +1013,315 @@ public class ActionEditorFragment extends Fragment {
         timelineRowsContainer.addView(addBar, new LinearLayout.LayoutParams(-1, -2));
     }
 
+    private void applyLocalTimelineAdd(int second, String actionId) {
+        int sec = Math.max(0, second);
+        List<String> ids = localConfig.timelineSchedule.computeIfAbsent(sec, k -> new ArrayList<>());
+        if (actionId != null && !actionId.isBlank()) {
+            ids.add(actionId);
+        }
+        refreshTimelineUi();
+    }
+
+    private void applyLocalTimelineRemove(int second, String actionId) {
+        List<String> ids = localConfig.timelineSchedule.get(second);
+        if (ids != null) {
+            ids.remove(actionId);
+            if (ids.isEmpty()) localConfig.timelineSchedule.remove(second);
+        }
+        refreshTimelineUi();
+    }
+
+    private void applyLocalTimelineMove(int second, String actionId, int direction) {
+        List<String> ids = localConfig.timelineSchedule.get(second);
+        if (ids != null) {
+            int idx = ids.indexOf(actionId);
+            int next = idx + direction;
+            if (idx >= 0 && next >= 0 && next < ids.size()) {
+                Collections.swap(ids, idx, next);
+            }
+        }
+        refreshTimelineUi();
+    }
+
+    private void applyLocalTimelineRemoveSecond(int second) {
+        localConfig.timelineSchedule.remove(second);
+        refreshTimelineUi();
+    }
+
+    private void refreshTimelineUi() {
+        TimelineClientState.totalSeconds = Math.max(TimelineClientState.totalSeconds, getTimelineMaxSecond());
+        rebuildTimelineRows();
+        updateTimelineStatus();
+    }
+
     // ══════════════════════════════════════════════════
     //  列表适配器
     // ══════════════════════════════════════════════════
+
+    private void saveCurrentActionToSelectedTimelineSecond() {
+        if (selectedIndex < 0 || selectedIndex >= localConfig.actions.size()) return;
+
+        int sec = Math.max(0, selectedTimelineSecond);
+        ActionConfig.ActionDef current = localConfig.actions.get(selectedIndex);
+        ActionConfig.ActionDef snapshot = ActionConfig.copyActionDef(current);
+        if (snapshot == null) return;
+
+        String sourceId = getTimelineSourceActionId(current);
+        if (sourceId == null || sourceId.isBlank()) {
+            sourceId = current.id == null ? "" : current.id;
+        }
+
+        List<String> ids = localConfig.timelineSchedule.computeIfAbsent(sec, k -> new ArrayList<>());
+        String targetId = null;
+        int legacySourceIndex = -1;
+        for (int i = 0; i < ids.size(); i++) {
+            String id = ids.get(i);
+            ActionConfig.ActionDef item = localConfig.findById(id).orElse(null);
+            if (item == null) continue;
+
+            String itemSourceId = getTimelineSourceActionId(item);
+            if (ActionConfig.isTimelineInstance(item)) {
+                if (id.equals(current.id) || (!sourceId.isBlank() && sourceId.equals(itemSourceId))) {
+                    targetId = id;
+                    break;
+                }
+            } else if (!sourceId.isBlank() && sourceId.equals(id)) {
+                legacySourceIndex = i;
+            }
+        }
+
+        ActionConfig.ActionDef target;
+        if (targetId == null) {
+            target = ActionConfig.copyActionDef(snapshot);
+            if (target == null) return;
+            target.id = nextLocalTimelineInstanceId(sourceId, sec);
+            target.name = (snapshot.name == null || snapshot.name.isBlank() ? sourceId : snapshot.name)
+                    + " @ " + sec + "s";
+            target.triggers = new ArrayList<>();
+            markTimelineInstance(target, sourceId, sec);
+            localConfig.actions.add(target);
+            if (legacySourceIndex >= 0) {
+                ids.set(legacySourceIndex, target.id);
+            } else if (!ids.contains(target.id)) {
+                ids.add(target.id);
+            }
+        } else {
+            target = localConfig.findById(targetId).orElse(null);
+            if (target == null) return;
+            String keepId = target.id;
+            String keepName = target.name;
+            copyTimelineEditableFields(snapshot, target);
+            target.id = keepId;
+            if (keepName != null && !keepName.isBlank()) {
+                target.name = keepName;
+            }
+            markTimelineInstance(target, sourceId, sec);
+        }
+
+        selectedIndex = localConfig.actions.indexOf(target);
+        selectedTrigger = -1;
+        forceSave();
+        refreshTimelineUi();
+        rebuildRightPanel();
+        if (actionListAdapter != null) actionListAdapter.notifyDataSetChanged();
+        updatePreviewFromDef();
+        invalidatePreview();
+    }
+
+    private void copyTimelineEditableFields(ActionConfig.ActionDef source, ActionConfig.ActionDef target) {
+        target.name = source.name;
+        target.enabled = source.enabled;
+        target.requiredPermissionLevel = source.requiredPermissionLevel;
+        target.actionType = source.actionType;
+        target.actionParams = source.actionParams == null ? new LinkedHashMap<>() : new LinkedHashMap<>(source.actionParams);
+        target.triggers = new ArrayList<>();
+    }
+
+    private void markTimelineInstance(ActionConfig.ActionDef target, String sourceId, int second) {
+        if (target.actionParams == null) target.actionParams = new LinkedHashMap<>();
+        target.actionParams.put("_timeline_instance", true);
+        target.actionParams.put("_source_action_id", sourceId == null ? "" : sourceId);
+        target.actionParams.put("_timeline_second", Math.max(0, second));
+    }
+
+    private String nextLocalTimelineInstanceId(String sourceId, int second) {
+        String safeSource = sourceId == null || sourceId.isBlank()
+                ? "action"
+                : sourceId.replaceAll("[^A-Za-z0-9_\\-]", "_");
+        String base = "__tl_" + Math.max(0, second) + "_" + safeSource;
+        String id = base;
+        int suffix = 1;
+        while (localConfig.findById(id).isPresent()) {
+            id = base + "_" + suffix++;
+        }
+        return id;
+    }
+
+    private boolean useCompactTimelineRows() {
+        return true;
+    }
+
+    private void selectTimelineSecond(int second, boolean refresh) {
+        int sec = Math.max(0, second);
+        selectedTimelineSecond = sec;
+        timelineAssignSecond = sec;
+        if (timelineAssignSecondField != null) {
+            timelineAssignSecondField.setText(String.valueOf(sec));
+        }
+        if (refresh) {
+            rebuildTimelineRows();
+            updateTimelineStatus();
+        }
+    }
+
+    private int getDefaultNewTimelineSecond() {
+        int sec = Math.max(0, selectedTimelineSecond);
+        if (!localConfig.timelineSchedule.containsKey(sec)) return sec;
+        do {
+            sec++;
+        } while (localConfig.timelineSchedule.containsKey(sec));
+        return sec;
+    }
+
+    private TextView compactTimelineText(Context ctx, String text, int color) {
+        TextView view = new TextView(ctx);
+        view.setText(text);
+        view.setTextColor(color);
+        view.setTextSize(12);
+        view.setPadding(3, 0, 3, 0);
+        return view;
+    }
+
+    private String getTimelineActionLabel(String actionId) {
+        ActionConfig.ActionDef def = localConfig.findById(actionId).orElse(null);
+        if (def == null) return actionId;
+        String sourceId = getTimelineSourceActionId(def);
+        String label = def.name != null && !def.name.isBlank() ? def.name : def.id;
+        if (sourceId != null && !sourceId.isBlank()) {
+            return label + " [" + sourceId + "]";
+        }
+        return label;
+    }
+
+    private String getTimelineSourceActionId(String actionId) {
+        return localConfig.findById(actionId).map(this::getTimelineSourceActionId).orElse("");
+    }
+
+    private String getTimelineSourceActionId(ActionConfig.ActionDef def) {
+        Object source = def.actionParams == null ? null : def.actionParams.get("_source_action_id");
+        return source == null ? "" : source.toString();
+    }
+
+    private void rebuildTimelineRowsCompact() {
+        if (timelineRowsContainer == null || getContext() == null) return;
+        Context ctx = getContext();
+        timelineRowsContainer.removeAllViews();
+
+        Map<Integer, List<String>> schedule = localConfig.timelineSchedule;
+        List<Integer> sorted = new ArrayList<>(schedule.keySet());
+        Collections.sort(sorted);
+        int curSec = TimelineClientState.currentSecond;
+
+        if (sorted.isEmpty()) {
+            TextView empty = compactTimelineText(ctx, "Timeline empty", 0xFF777777);
+            empty.setPadding(6, 4, 6, 4);
+            timelineRowsContainer.addView(empty, new LinearLayout.LayoutParams(-1, -2));
+        }
+
+        for (int sec : sorted) {
+            final int rowSec = sec;
+            List<String> ids = schedule.get(sec);
+            if (ids == null) ids = Collections.emptyList();
+
+            LinearLayout block = new LinearLayout(ctx);
+            block.setOrientation(LinearLayout.VERTICAL);
+            block.setPadding(4, 1, 4, 1);
+            if (sec == selectedTimelineSecond) {
+                block.setBackground(new ColorDrawable(0x334466AA));
+            } else if (sec == curSec) {
+                block.setBackground(new ColorDrawable(0x22336644));
+            } else {
+                block.setBackground(null);
+            }
+            block.setOnClickListener(v -> selectTimelineSecond(rowSec, true));
+
+            LinearLayout header = new LinearLayout(ctx);
+            header.setOrientation(LinearLayout.HORIZONTAL);
+            TextView secLabel = compactTimelineText(ctx,
+                    (sec == selectedTimelineSecond ? "> " : "  ") + sec + "s",
+                    sec == selectedTimelineSecond ? 0xFFFFFFAA : (sec == curSec ? 0xFF55FF55 : 0xFFAAAAAA));
+            secLabel.setOnClickListener(v -> selectTimelineSecond(rowSec, true));
+            header.addView(secLabel, new LinearLayout.LayoutParams(0, -2, 1f));
+
+            TextView delSec = compactTimelineText(ctx, "x", 0xFFFF7777);
+            delSec.setOnClickListener(v -> {
+                applyLocalTimelineRemoveSecond(rowSec);
+                ClientPlayNetworking.send(new TimelineControlC2SPacket("REMOVE_SECOND", rowSec, ""));
+            });
+            header.addView(delSec, new LinearLayout.LayoutParams(-2, -2));
+            block.addView(header, new LinearLayout.LayoutParams(-1, -2));
+
+            if (ids.isEmpty()) {
+                TextView emptyLabel = compactTimelineText(ctx, "(empty)", 0xFF666666);
+                emptyLabel.setPadding(14, 0, 3, 0);
+                block.addView(emptyLabel, new LinearLayout.LayoutParams(-1, -2));
+            }
+
+            for (String aid : ids) {
+                final String actionId = aid;
+                LinearLayout actionRow = new LinearLayout(ctx);
+                actionRow.setOrientation(LinearLayout.HORIZONTAL);
+                actionRow.setPadding(14, 0, 0, 0);
+
+                TextView actionLabel = compactTimelineText(ctx, trunc(getTimelineActionLabel(actionId), 18), 0xFFE0E0E0);
+                actionLabel.setOnClickListener(v -> {
+                    selectTimelineSecond(rowSec, false);
+                    selectActionById(actionId);
+                    rebuildTimelineRows();
+                });
+                actionRow.addView(actionLabel, new LinearLayout.LayoutParams(0, -2, 1f));
+
+                if (ids.size() > 1) {
+                    TextView up = compactTimelineText(ctx, "^", 0xFFB8D0FF);
+                    up.setOnClickListener(v -> {
+                        selectTimelineSecond(rowSec, false);
+                        applyLocalTimelineMove(rowSec, actionId, -1);
+                        ClientPlayNetworking.send(new TimelineControlC2SPacket("MOVE_UP", rowSec, actionId));
+                    });
+                    actionRow.addView(up, new LinearLayout.LayoutParams(-2, -2));
+
+                    TextView down = compactTimelineText(ctx, "v", 0xFFB8D0FF);
+                    down.setOnClickListener(v -> {
+                        selectTimelineSecond(rowSec, false);
+                        applyLocalTimelineMove(rowSec, actionId, 1);
+                        ClientPlayNetworking.send(new TimelineControlC2SPacket("MOVE_DOWN", rowSec, actionId));
+                    });
+                    actionRow.addView(down, new LinearLayout.LayoutParams(-2, -2));
+                }
+
+                TextView remove = compactTimelineText(ctx, "x", 0xFFFF7777);
+                remove.setOnClickListener(v -> {
+                    selectTimelineSecond(rowSec, false);
+                    applyLocalTimelineRemove(rowSec, actionId);
+                    ClientPlayNetworking.send(new TimelineControlC2SPacket("REMOVE", rowSec, actionId));
+                });
+                actionRow.addView(remove, new LinearLayout.LayoutParams(-2, -2));
+                block.addView(actionRow, new LinearLayout.LayoutParams(-1, -2));
+            }
+
+            timelineRowsContainer.addView(block, new LinearLayout.LayoutParams(-1, -2));
+        }
+
+        Button addBtn = new Button(ctx);
+        addBtn.setText("+ 秒节点");
+        addBtn.setOnClickListener(v -> {
+            int sec = getDefaultNewTimelineSecond();
+            selectTimelineSecond(sec, false);
+            applyLocalTimelineAdd(sec, "");
+            ClientPlayNetworking.send(new TimelineControlC2SPacket("ADD", sec, ""));
+        });
+        timelineRowsContainer.addView(addBtn, new LinearLayout.LayoutParams(-1, -2));
+    }
 
     private class ActionListAdapter extends BaseAdapter {
         private final Context ctx;
@@ -1052,6 +1436,7 @@ public class ActionEditorFragment extends Fragment {
 
     public void receiveConfig(ActionConfig config) {
         if (config == null) return;
+        if (dirty) return;
         this.localConfig = config;
         if (!config.actions.isEmpty() && selectedIndex < 0) selectedIndex = 0;
         if (selectedIndex >= config.actions.size()) selectedIndex = config.actions.isEmpty() ? -1 : config.actions.size() - 1;
@@ -1083,6 +1468,25 @@ public class ActionEditorFragment extends Fragment {
                 (System.currentTimeMillis() / 1000) % 60);
         StringBuilder sb = new StringBuilder(logTextView.getText());
         sb.append("§8[").append(timestamp).append("] §e").append(actionId).append("\n");
+        for (String line : text.split("\n")) {
+            sb.append("  §7").append(line).append("\n");
+        }
+        sb.append("\n");
+        if (rootView != null) {
+            rootView.post(() -> {
+                logTextView.setText(sb.toString());
+                logScrollView.fullScroll(View.FOCUS_DOWN);
+            });
+        }
+    }
+
+    private void appendLog(String text) {
+        String timestamp = String.format("%02d:%02d:%02d",
+                (System.currentTimeMillis() / 3600000 + 8) % 24,
+                (System.currentTimeMillis() / 60000) % 60,
+                (System.currentTimeMillis() / 1000) % 60);
+        StringBuilder sb = new StringBuilder(logTextView == null ? "" : logTextView.getText());
+        sb.append("§8[").append(timestamp).append("]§r\n");
         for (String line : text.split("\n")) {
             sb.append("  §7").append(line).append("\n");
         }
@@ -1149,6 +1553,8 @@ public class ActionEditorFragment extends Fragment {
         ActionEditorFragment inst = activeInstance;
         if (inst == null || inst.rootView == null) return;
         inst.rootView.post(() -> {
+            int beforeSecond = TimelineClientState.currentSecond;
+            inst.advanceTimelineClientClock();
             inst.updateTimelineStatus();
             if (inst.loopBtn != null) {
                 inst.loopBtn.setText(TimelineClientState.loop ? "Loop:on" : "Loop:off");
@@ -1156,8 +1562,32 @@ public class ActionEditorFragment extends Fragment {
             if (inst.pauseBtn != null) {
                 inst.pauseBtn.setText(TimelineClientState.paused ? "Resume" : "Pause");
             }
-            inst.rebuildTimelineRows();
+            if (inst.lastRenderedTimelineSecond != TimelineClientState.currentSecond
+                    || beforeSecond != TimelineClientState.currentSecond) {
+                inst.lastRenderedTimelineSecond = TimelineClientState.currentSecond;
+                inst.rebuildTimelineRows();
+            }
         });
+    }
+
+    public void syncTimelineClock() {
+        timelineClientBaseSecond = TimelineClientState.currentSecond;
+        timelineClientLastSecondAt = System.currentTimeMillis();
+    }
+
+    private void advanceTimelineClientClock() {
+        if (!TimelineClientState.running || TimelineClientState.paused || timelineClientLastSecondAt <= 0L) return;
+        int maxSecond = getTimelineMaxSecond();
+        long elapsedSeconds = Math.max(0L, (System.currentTimeMillis() - timelineClientLastSecondAt) / 1000L);
+        int projected = timelineClientBaseSecond + (int) elapsedSeconds;
+        if (TimelineClientState.loop && maxSecond > 0) {
+            projected = projected % (maxSecond + 1);
+        } else {
+            projected = Math.min(projected, maxSecond);
+        }
+        if (projected != TimelineClientState.currentSecond) {
+            TimelineClientState.currentSecond = projected;
+        }
     }
 
     private void setModelAngles(PlayerEntityModel model) {
@@ -1216,7 +1646,7 @@ public class ActionEditorFragment extends Fragment {
     private void recreatePreviewModel(boolean slim) {
         MinecraftClient client = MinecraftClient.getInstance();
         ModelPart rootPart = client.getLoadedEntityModels().getModelPart(
-                slim ? EntityModelLayers.PLAYER_SLIM : EntityModelLayers.PLAYER);
+                slim ? ModModelLayers.COMBINED_BODY_SLIM : ModModelLayers.COMBINED_BODY);
         previewModel = new PlayerEntityModel(rootPart, slim);
         previewSlimModel = slim;
     }
@@ -1251,6 +1681,42 @@ public class ActionEditorFragment extends Fragment {
             return String.valueOf(d);
         }
         return val.toString();
+    }
+
+    private void installPoseFieldScroll(EditText field, ActionConfig.ActionDef def, String key, double step) {
+        field.setOnGenericMotionListener((view, event) -> {
+            if (event.getActionMasked() != MotionEvent.ACTION_SCROLL) return false;
+            float scroll = getScrollAmount(event);
+            if (Math.abs(scroll) < 0.001F) return false;
+            double current = getDoubleFieldValue(field, def, key);
+            double next = current + (scroll > 0.0F ? step : -step);
+            if (Math.abs(next) < 0.0001D) {
+                def.actionParams.remove(key);
+            } else {
+                def.actionParams.put(key, next);
+            }
+            field.setText(formatFloat(next));
+            markDirty();
+            return true;
+        });
+    }
+
+    private static float getScrollAmount(MotionEvent event) {
+        float scroll = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+        if (Math.abs(scroll) < 0.001F) {
+            scroll = -event.getAxisValue(MotionEvent.AXIS_Y);
+        }
+        return scroll;
+    }
+
+    private static double getDoubleFieldValue(EditText field, ActionConfig.ActionDef def, String key) {
+        try {
+            return Double.parseDouble(field.getText().toString());
+        } catch (Exception ignored) {
+            Object val = def.actionParams.get(key);
+            if (val instanceof Number n) return n.doubleValue();
+            return 0.0D;
+        }
     }
 
     private static int indexOf(String[] arr, String val) {

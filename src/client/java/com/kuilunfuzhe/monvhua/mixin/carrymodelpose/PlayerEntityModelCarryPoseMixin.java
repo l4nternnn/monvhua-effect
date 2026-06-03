@@ -1,7 +1,7 @@
 package com.kuilunfuzhe.monvhua.mixin.carrymodelpose;
 
 import com.kuilunfuzhe.monvhua.features.carryentity.CarriedPlayerViewState;
-import com.kuilunfuzhe.monvhua.features.carryentity.CarryAttachmentRenderState;
+import com.kuilunfuzhe.monvhua.features.action.ActionPoseClientState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseTuning;
 import net.minecraft.client.MinecraftClient;
@@ -50,6 +50,32 @@ public abstract class PlayerEntityModelCarryPoseMixin {
 		if (CarryPoseClientState.isCarried(state.id)) {
 			applyCarriedPose(state.id);
 		}
+		float[] actionPose = ActionPoseClientState.getRadians(state.id);
+		if (actionPose != null) {
+			applyActionPose(actionPose);
+		}
+	}
+
+	@Unique
+	private void applyActionPose(float[] pose) {
+		monvhua$head.pitch = pose[0];
+		monvhua$head.yaw = pose[1];
+		monvhua$head.roll = pose[2];
+		monvhua$body.pitch = pose[3];
+		monvhua$body.yaw = pose[4];
+		monvhua$body.roll = pose[5];
+		monvhua$leftArm.pitch = pose[6];
+		monvhua$leftArm.yaw = pose[7];
+		monvhua$leftArm.roll = pose[8];
+		monvhua$rightArm.pitch = pose[9];
+		monvhua$rightArm.yaw = pose[10];
+		monvhua$rightArm.roll = pose[11];
+		monvhua$leftLeg.pitch = pose[12];
+		monvhua$leftLeg.yaw = pose[13];
+		monvhua$leftLeg.roll = pose[14];
+		monvhua$rightLeg.pitch = pose[15];
+		monvhua$rightLeg.yaw = pose[16];
+		monvhua$rightLeg.roll = pose[17];
 	}
 
 	@Unique
@@ -120,10 +146,6 @@ public abstract class PlayerEntityModelCarryPoseMixin {
 		}
 
 		float tickProgress = client.getRenderTickCounter().getTickProgress(true);
-		if (CarryAttachmentRenderState.isRenderingAttachedCarriedEntity()) {
-			CarriedPlayerViewState.updateHeadViewRotationFromWorldView(carried, carrier, tickProgress);
-			return;
-		}
-		CarriedPlayerViewState.updateLocalViewRotation(carried, carrier, tickProgress);
+		CarriedPlayerViewState.updateHeadViewRotationFromWorldView(carried, carrier, tickProgress);
 	}
 }

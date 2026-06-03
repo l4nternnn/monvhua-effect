@@ -39,7 +39,7 @@ import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
-import com.kuilunfuzhe.monvhua.hud.EnergyHud;
+import com.kuilunfuzhe.monvhua.gui.hud.EnergyHud;
 
 /**
  * 模组客户端入口，负责所有客户端初始化逻辑。

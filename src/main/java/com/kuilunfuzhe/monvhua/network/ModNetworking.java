@@ -63,6 +63,7 @@ public class ModNetworking {
         PreviewResultS2CPacket.register();
         PreviewTimelineResultS2CPacket.register();
         TimelineStateS2CPacket.register();
+        ActionPoseS2CPacket.register();
         ImitateOpenUIPacket.register();
         SoundWaveStartS2CPacket.register();
         ImitateConfigS2CPacket.register();
