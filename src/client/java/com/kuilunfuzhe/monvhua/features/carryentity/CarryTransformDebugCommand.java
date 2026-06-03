@@ -121,12 +121,15 @@ public final class CarryTransformDebugCommand {
 		builder.append("carrier.id=").append(carrier.getId()).append(" carrier.yaw=").append(f(carrier.getYaw())).append(" carrier.pitch=").append(f(carrier.getPitch())).append(" carrier.height=").append(f(carrier.getHeight())).append('\n');
 		builder.append("localViewYawDegrees=").append(f(localYaw)).append(" localViewPitchDegrees=").append(f(localPitch)).append('\n');
 		builder.append('\n');
-		builder.append("tuning.attached=(x=").append(f(CarryAttachedRenderMath.ATTACHED_CARRIED_X))
+		builder.append("tuning.attached=(baseX=").append(f(CarryAttachedRenderMath.ATTACHED_CARRIED_X))
+				.append(", scaledX=").append(f(CarryAttachedRenderMath.getAttachedCarriedX(carrier, carried)))
 				.append(", baseY=").append(f(CarryAttachedRenderMath.ATTACHED_CARRIED_Y))
 				.append(", scaledY=").append(f(CarryAttachedRenderMath.getAttachedCarriedY(carrier, carried)))
 				.append(", z=").append(f(CarryAttachedRenderMath.ATTACHED_CARRIED_Z))
 				.append(", yawDeg=").append(f(CarryAttachedRenderMath.ATTACHED_CARRIED_YAW_DEGREES)).append(")\n");
 		builder.append("tuning.scaleCompensation=(referencePlayerHeight=").append(f(CarryAttachedRenderMath.REFERENCE_PLAYER_HEIGHT))
+				.append(", carrierX=").append(f(CarryAttachedRenderMath.CARRIER_SCALE_SIDE_COMPENSATION))
+				.append(", carriedX=").append(f(CarryAttachedRenderMath.CARRIED_SCALE_SIDE_COMPENSATION))
 				.append(", carrierY=").append(f(CarryAttachedRenderMath.CARRIER_SCALE_HEIGHT_COMPENSATION))
 				.append(", carriedY=").append(f(CarryAttachedRenderMath.CARRIED_SCALE_HEIGHT_COMPENSATION)).append(")\n");
 		builder.append("tuning.modelRotation=(xDeg=").append(f(CarryAttachedRenderMath.CARRIED_MODEL_ROTATION_X_DEGREES))

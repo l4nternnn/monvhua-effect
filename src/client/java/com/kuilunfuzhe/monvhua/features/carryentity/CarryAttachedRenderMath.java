@@ -13,12 +13,17 @@ import org.joml.Vector4f;
 
 public final class CarryAttachedRenderMath {
 	// 被抱者整体挂载点的左右偏移；正值通常偏向抱人者的左/右侧之一，负值相反，需要按游戏内效果微调。
+	// 注意：这是普通 1 倍玩家尺寸下的基础手调偏移，实际渲染会再按抱人/被抱双方高度 scale 动态补偿。
 	public static final float ATTACHED_CARRIED_X = 0.5F;
 	// 被抱者整体挂载点的高度；增大 = 被抱者整体更高，减小 = 更低。
 	// 注意：这是普通 1 倍玩家尺寸下的基础手调偏移，实际渲染会再按抱人/被抱双方高度 scale 动态补偿。
 	public static final float ATTACHED_CARRIED_Y = -0.05F;
 	// 计算 scale 的基准玩家高度；当前玩家标准站立碰撞箱高度约为 1.8 方块。
 	public static final float REFERENCE_PLAYER_HEIGHT = 1.8F;
+	// 抱人者变高/变大时，左右挂载点随体型外扩的补偿比例；1.0 = 左右偏移完全跟随抱人者 scale。
+	public static final float CARRIER_SCALE_SIDE_COMPENSATION = 1.0F;
+	// 被抱者变高/变大时，为避免大体型被抱者贴进抱人者身体，额外向当前左右偏移方向外推的补偿比例。
+	public static final float CARRIED_SCALE_SIDE_COMPENSATION = 0.35F;
 	// 抱人者变高时，怀抱锚点随身高上移的补偿系数；增大 = 大体型抱人者怀里模型更高。
 	public static final float CARRIER_SCALE_HEIGHT_COMPENSATION = 1.0F;
 	// 被抱者变高时，为保持身体锚点落在怀抱位置，需要把被抱者脚底渲染原点下移的补偿系数；增大 = 大体型被抱者整体更低。
@@ -59,8 +64,20 @@ public final class CarryAttachedRenderMath {
 	}
 
 	public static void applyAttachedTransform(MatrixStack matrices, Entity carrier, Entity carried) {
-		matrices.translate(ATTACHED_CARRIED_X, getAttachedCarriedY(carrier, carried), ATTACHED_CARRIED_Z);
+		matrices.translate(getAttachedCarriedX(carrier, carried), getAttachedCarriedY(carrier, carried), ATTACHED_CARRIED_Z);
 		matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(ATTACHED_CARRIED_YAW_DEGREES));
+	}
+
+	public static float getAttachedCarriedX(Entity carrier, Entity carried) {
+		if (carrier == null || carried == null) {
+			return ATTACHED_CARRIED_X;
+		}
+
+		float carrierScale = getEntityHeightScale(carrier);
+		float carriedScale = getEntityHeightScale(carried);
+		return ATTACHED_CARRIED_X
+				+ ATTACHED_CARRIED_X * CARRIER_SCALE_SIDE_COMPENSATION * (carrierScale - 1.0F)
+				+ ATTACHED_CARRIED_X * CARRIED_SCALE_SIDE_COMPENSATION * (carriedScale - 1.0F);
 	}
 
 	public static float getAttachedCarriedY(Entity carrier, Entity carried) {
