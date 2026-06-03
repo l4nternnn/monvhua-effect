@@ -1078,8 +1078,8 @@ public class BodyPoseEditorFragment extends Fragment {
                         dragModelOffset(draggingMoveAxis, dX, dY);
                         refreshNumericValueBindings();
                     } else if (primaryDown && draggingPreview) {
-                        previewYaw += dX * 0.65F;
-                        previewPitch = clampPreview(previewPitch + dY * 0.65F, -60.0F, 60.0F);
+                        previewYaw -= dX * 0.65F;
+                        previewPitch = clampPreview(previewPitch - dY * 0.65F, -60.0F, 60.0F);
                     }
                     // Right button → pan (matching original button==1 behavior)
                     else if (secondaryDown && draggingRightPreview) {
@@ -1158,7 +1158,7 @@ public class BodyPoseEditorFragment extends Fragment {
 
         context.enableScissor(previewAreaLeft, previewAreaTop, previewAreaRight, previewAreaBottom);
         try {
-            context.addPlayerSkin(model, texture, scale, previewPitch, previewYaw, PREVIEW_Y_PIVOT,
+            context.addPlayerSkin(model, texture, scale, previewPitch, -previewYaw, PREVIEW_Y_PIVOT,
                     previewScreenLeft + x1, previewScreenTop + y1,
                     previewScreenLeft + x2, previewScreenTop + y2);
         } finally {
