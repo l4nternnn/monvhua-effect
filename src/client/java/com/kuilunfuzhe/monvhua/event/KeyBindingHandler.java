@@ -15,6 +15,7 @@ public class KeyBindingHandler {
     /** V键 - 标记/交互按键，根据手持物品执行不同操作 */
     public static KeyBinding markKey;
     public static KeyBinding bodyPoseEditorKey;
+    public static KeyBinding bodyPoseWorldPreviewKey;
     public static KeyBinding actionEditorKey;
 
     /**
@@ -25,6 +26,7 @@ public class KeyBindingHandler {
         configKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.config", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_U, "category.monvhua"));
         markKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.mark", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_V, "category.monvhua"));
         bodyPoseEditorKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.body_pose_editor", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_B, "category.monvhua"));
+        bodyPoseWorldPreviewKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.body_pose_world_preview", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_P, "category.monvhua"));
         actionEditorKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.action_editor", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_J, "category.monvhua"));
     }
 }

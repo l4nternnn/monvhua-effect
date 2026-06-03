@@ -242,11 +242,11 @@ public class MonvhuaMod implements ModInitializer {
                     }
                     BodyPartManager.createPosedCombinedDisplay(player, new ProfileComponent(source.getGameProfile()), packet.slimModel(), packet.poseValues(),
                             packet.offsetX(), packet.offsetY(), packet.offsetZ(),
-                            packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll());
+                            packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
                 } else {
                     BodyPartManager.createPosedCombinedDisplay(player, packet.skinName(), packet.slimModel(), packet.poseValues(),
                             packet.offsetX(), packet.offsetY(), packet.offsetZ(),
-                            packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll());
+                            packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
                 }
             });
         });

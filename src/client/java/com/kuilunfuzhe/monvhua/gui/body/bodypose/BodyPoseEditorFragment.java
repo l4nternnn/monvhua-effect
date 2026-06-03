@@ -10,6 +10,7 @@ import icyllis.modernui.mc.MinecraftSurfaceView;
 import icyllis.modernui.mc.MuiModApi;
 import icyllis.modernui.text.Editable;
 import icyllis.modernui.text.TextWatcher;
+import icyllis.modernui.view.KeyEvent;
 import icyllis.modernui.view.MotionEvent;
 import icyllis.modernui.view.View;
 import icyllis.modernui.view.ViewGroup;
@@ -51,14 +52,18 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final float MODEL_OFFSET_MIN = -10.0F;
     private static final float MODEL_OFFSET_MAX = 10.0F;
     private static final float TRANSFORM_OFFSET_STEP = 0.25F;
-    private static final float DEFAULT_PREVIEW_PAN_X = 32.0F;
-    private static final float DEFAULT_PREVIEW_ZOOM = 1.15F;
-    private static final float PREVIEW_SCALE_FACTOR = 0.52F;
-    private static final float PREVIEW_ZOOM_MIN = 0.35F;
-    private static final float PREVIEW_ZOOM_MAX = 4.2F;
-    private static final float PREVIEW_ZOOM_STEP = 0.22F;
+    private static final float MODEL_SCALE_MIN = 0.02F;
+    private static final float MODEL_SCALE_MAX = 12.0F;
+    private static final float MODEL_SCALE_STEP = 0.05F;
+    private static final float DEFAULT_PREVIEW_PAN_X = 0.0F;
+    private static final float DEFAULT_PREVIEW_ZOOM = 0.65F;
+    private static final float PREVIEW_SCALE_FACTOR = 0.36F;
+    private static final float PREVIEW_ZOOM_MIN = 0.08F;
+    private static final float PREVIEW_ZOOM_MAX = 10.0F;
+    private static final float PREVIEW_ZOOM_STEP = 0.16F;
     private static final long TRANSFORM_REPEAT_DELAY_MS = 320L;
     private static final long TRANSFORM_REPEAT_INTERVAL_MS = 65L;
+    private static final long WORLD_PREVIEW_KEY_DEBOUNCE_MS = 200L;
     private static final float MOVE_AXIS_LENGTH = 4.0F / 3.0F;
     private static final float MOVE_AXIS_HIT_RADIUS = 3.4F;
     private static final float ROTATION_RING_RADIUS = 2.45F / 3.0F;
@@ -86,6 +91,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private static float modelPitch;
     private static float modelYaw;
     private static float modelRoll;
+    private static float wholeBodyScale = 1.0F;
     private static final List<EditorItemModel> EDITOR_ITEMS = new ArrayList<>();
     private static final Map<String, PartPose> PART_POSES = createPartPoses();
 
@@ -94,6 +100,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private static double fixedWorldX;
     private static double fixedWorldY;
     private static double fixedWorldZ;
+    private static long lastWorldPreviewModeToggleTimeMs;
 
     /** 当前活跃实例，供外部类（mixin、world renderer）访问 */
     public static BodyPoseEditorFragment activeInstance;
@@ -110,11 +117,11 @@ public class BodyPoseEditorFragment extends Fragment {
     private float previewYaw;
     private float previewRoll;
     private float previewZoom = DEFAULT_PREVIEW_ZOOM;
-    private boolean showWholePreview = true;
+    private static boolean showWholePreview = true;
     private float previewPanX = DEFAULT_PREVIEW_PAN_X;
     private float previewPanY;
-    private boolean showCoordinateAxes = true;
-    private boolean coordinateAxesMovable = true;
+    private static boolean showCoordinateAxes = true;
+    private static boolean coordinateAxesMovable = true;
 
     // 鼠标交互
     private MoveAxis hoveredMoveAxis = MoveAxis.NONE;
@@ -144,8 +151,8 @@ public class BodyPoseEditorFragment extends Fragment {
     // 模型实例（延迟创建）
     private PlayerEntityModel defaultPreviewModel;
     private PlayerEntityModel slimPreviewModel;
-    private PlayerEntityModel worldPreviewModelDefault;
-    private PlayerEntityModel worldPreviewModelSlim;
+    private static PlayerEntityModel worldPreviewModelDefault;
+    private static PlayerEntityModel worldPreviewModelSlim;
 
     // 渲染尺寸缓存（由 onDraw 更新）
     private float previewScale;
@@ -157,6 +164,10 @@ public class BodyPoseEditorFragment extends Fragment {
     private int previewAreaRight;
     private int previewAreaTop;
     private int previewAreaBottom;
+    private double previewGuiScale = 1.0D;
+    private int previewScreenLeft;
+    private int previewScreenTop;
+    private final int[] previewSurfaceLocation = new int[2];
 
     // UI 引用
     private LinearLayout skinButtonsContainer;
@@ -190,6 +201,7 @@ public class BodyPoseEditorFragment extends Fragment {
     public static void open() {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) return;
+        worldPreviewEnabled = true;
         Screen screen = MuiModApi.get().createScreen(new BodyPoseEditorFragment());
         client.setScreen(screen);
     }
@@ -206,6 +218,17 @@ public class BodyPoseEditorFragment extends Fragment {
         LinearLayout root = new LinearLayout(ctx);
         root.setOrientation(LinearLayout.HORIZONTAL);
         root.setBackground(new ColorDrawable(0xCC000000));
+        root.setFocusable(true);
+        root.setFocusableInTouchMode(true);
+        root.setOnKeyListener((view, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEY_P
+                    && event.getAction() == KeyEvent.ACTION_DOWN
+                    && event.getRepeatCount() == 0) {
+                toggleWorldPreviewMode();
+                return true;
+            }
+            return false;
+        });
 
         // 左栏：皮肤/玩家选择
         View left = createLeftPanel(ctx);
@@ -226,6 +249,7 @@ public class BodyPoseEditorFragment extends Fragment {
     @Override
     public void onViewCreated(View view, icyllis.modernui.util.DataSet savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+        view.requestFocus();
     }
 
     @Override
@@ -437,7 +461,7 @@ public class BodyPoseEditorFragment extends Fragment {
 
         // 关闭按钮
         Button doneBtn = new Button(ctx);
-        doneBtn.setText("Done");
+        doneBtn.setText("关闭-一般直接按esc");
         doneBtn.setOnClickListener(v -> {
             MinecraftClient client = MinecraftClient.getInstance();
             if (client != null) client.execute(() -> client.setScreen(null));
@@ -473,7 +497,7 @@ public class BodyPoseEditorFragment extends Fragment {
         rebuildPartButtons();
 
         // ── 姿势控制 ──
-        addSectionLabel(panel, ctx, "姿势");
+        addSectionLabel(panel, ctx, "姿态");
         poseControlsContainer = new LinearLayout(ctx);
         poseControlsContainer.setOrientation(LinearLayout.VERTICAL);
         panel.addView(poseControlsContainer, new LinearLayout.LayoutParams(-1, -2));
@@ -738,6 +762,18 @@ public class BodyPoseEditorFragment extends Fragment {
         poseButtons.clear();
         poseValueBindings.clear();
 
+        poseControlsContainer.addView(createNumericRow(ctx, "整体大小",
+                () -> wholeBodyScale,
+                BodyPoseEditorFragment::setWholeBodyScale,
+                MODEL_SCALE_STEP, MODEL_SCALE_MIN, MODEL_SCALE_MAX, false,
+                poseValueBindings));
+
+        poseControlsContainer.addView(createNumericRow(ctx, "部位大小",
+                BodyPoseEditorFragment::getSelectedPartScale,
+                BodyPoseEditorFragment::setSelectedPartScale,
+                MODEL_SCALE_STEP, MODEL_SCALE_MIN, MODEL_SCALE_MAX, false,
+                poseValueBindings));
+
         // 俯仰 (Pitch)
         poseControlsContainer.addView(createPoseRow(ctx, "俯仰", Axis.PITCH));
 
@@ -757,6 +793,15 @@ public class BodyPoseEditorFragment extends Fragment {
         });
         poseControlsContainer.addView(resetBtn, new LinearLayout.LayoutParams(-1, -2));
         poseButtons.add(resetBtn);
+
+        Button resetAllBtn = new Button(ctx);
+        resetAllBtn.setText("重置全部肢体");
+        resetAllBtn.setOnClickListener(v -> {
+            resetAllPartPoses();
+            refreshNumericValueBindings();
+            invalidatePreview();
+        });
+        poseControlsContainer.addView(resetAllBtn, new LinearLayout.LayoutParams(-1, -2));
     }
 
     private LinearLayout createPoseRow(Context ctx, String label, Axis axis) {
@@ -854,9 +899,11 @@ public class BodyPoseEditorFragment extends Fragment {
 
         @Override
         public void onDraw(DrawContext dCtx, int mouseX, int mouseY, float tick, double guiScale, float alpha) {
-            int w = previewSurfaceWidth;
-            int h = previewSurfaceHeight;
+            previewGuiScale = Math.max(1.0D, guiScale);
+            int w = Math.max(1, (int) Math.round(previewSurfaceWidth / previewGuiScale));
+            int h = Math.max(1, (int) Math.round(previewSurfaceHeight / previewGuiScale));
             if (w <= 0 || h <= 0) return;
+            updatePreviewScreenOrigin();
             // 计算预览区域（填充整个视图带边距）
             int pad = 4;
             previewAreaLeft = pad;
@@ -883,8 +930,10 @@ public class BodyPoseEditorFragment extends Fragment {
             previewCenterY = (previewAreaTop + previewAreaBottom) * 0.5F + previewPanY;
 
             // 更新 hover 状态
-            hoveredMoveAxis = draggingMoveAxis == MoveAxis.NONE ? findMoveAxis(mouseX, mouseY) : draggingMoveAxis;
-            hoveredRotationAxis = draggingRotationAxis == RotationAxis.NONE ? findRotationRing(mouseX, mouseY) : draggingRotationAxis;
+            float localMouseX = mouseX - previewScreenLeft;
+            float localMouseY = mouseY - previewScreenTop;
+            hoveredMoveAxis = draggingMoveAxis == MoveAxis.NONE ? findMoveAxis(localMouseX, localMouseY) : draggingMoveAxis;
+            hoveredRotationAxis = draggingRotationAxis == RotationAxis.NONE ? findRotationRing(localMouseX, localMouseY) : draggingRotationAxis;
 
             // 地面网格
             if (showCoordinateAxes) {
@@ -937,8 +986,8 @@ public class BodyPoseEditorFragment extends Fragment {
 
         @Override
         public boolean onTouch(View v, MotionEvent event) {
-            float x = event.getX();
-            float y = event.getY();
+            float x = toPreviewGuiCoord(event.getX());
+            float y = toPreviewGuiCoord(event.getY());
 
             int action = event.getActionMasked();
             switch (action) {
@@ -1095,19 +1144,26 @@ public class BodyPoseEditorFragment extends Fragment {
         if (model == null) return;
 
         preparePreviewModel(model);
-        float scale = getPreviewBaseScale(
-                previewAreaRight - previewAreaLeft,
-                previewAreaBottom - previewAreaTop) * previewZoom;
-        int renderBottom = Math.max(previewAreaTop + 1,
-                Math.min(previewAreaBottom,
-                        Math.round((previewAreaTop + previewAreaBottom) * 0.5F + scale * PREVIEW_Y_PIVOT)));
-        int panX = (int) previewPanX;
-        int panY = (int) previewPanY;
+        float scale = previewScale > 0.0F
+                ? previewScale
+                : getPreviewBaseScale(previewAreaRight - previewAreaLeft, previewAreaBottom - previewAreaTop) * previewZoom;
+        ScreenPoint modelCenter = projectPreviewPoint(modelOffsetX, modelOffsetY, modelOffsetZ);
+        int modelWidth = Math.max(previewAreaRight - previewAreaLeft, Math.round(scale * 5.2F));
+        int x1 = Math.round(modelCenter.x - modelWidth * 0.5F);
+        int x2 = x1 + modelWidth;
+        int y2 = Math.round(modelCenter.y + scale * PREVIEW_Y_PIVOT);
+        int y1 = Math.min(previewAreaTop,
+                Math.round(y2 - Math.max(previewAreaBottom - previewAreaTop, scale * 5.8F)));
         Identifier texture = getPreviewTexture();
 
-        context.addPlayerSkin(model, texture, scale, 0.0F, 0.0F, PREVIEW_Y_PIVOT,
-                previewAreaLeft + panX, previewAreaTop + panY,
-                previewAreaRight + panX, renderBottom + panY);
+        context.enableScissor(previewAreaLeft, previewAreaTop, previewAreaRight, previewAreaBottom);
+        try {
+            context.addPlayerSkin(model, texture, scale, previewPitch, previewYaw, PREVIEW_Y_PIVOT,
+                    previewScreenLeft + x1, previewScreenTop + y1,
+                    previewScreenLeft + x2, previewScreenTop + y2);
+        } finally {
+            context.disableScissor();
+        }
     }
 
     private void renderPreviewGroundGrid(DrawContext context) {
@@ -1434,6 +1490,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private float getPreviewPixelsPerGrid() {
+        if (previewScale > 0.0F) return previewScale;
         int w = previewAreaRight - previewAreaLeft - 20;
         int h = previewAreaBottom - previewAreaTop - 58;
         if (w <= 0 || h <= 0) return 24.0F;
@@ -1442,6 +1499,21 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private static float getPreviewBaseScale(int width, int height) {
         return Math.max(24.0F, Math.min(width, height) * PREVIEW_SCALE_FACTOR);
+    }
+
+    private void updatePreviewScreenOrigin() {
+        if (surfaceView == null) {
+            previewScreenLeft = 0;
+            previewScreenTop = 0;
+            return;
+        }
+        surfaceView.getLocationInWindow(previewSurfaceLocation);
+        previewScreenLeft = (int) Math.round(previewSurfaceLocation[0] / previewGuiScale);
+        previewScreenTop = (int) Math.round(previewSurfaceLocation[1] / previewGuiScale);
+    }
+
+    private float toPreviewGuiCoord(float value) {
+        return (float) (value / previewGuiScale);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -1480,12 +1552,13 @@ public class BodyPoseEditorFragment extends Fragment {
             part.hidden = false;
         }
         ModelPart root = model.getRootPart();
-        root.originX = modelOffsetX * MODEL_PART_UNITS_PER_GRID;
-        root.originY = modelOffsetY * MODEL_PART_UNITS_PER_GRID;
-        root.originZ = modelOffsetZ * MODEL_PART_UNITS_PER_GRID;
-        root.pitch = (float) Math.toRadians(previewPitch + modelPitch);
-        root.yaw = (float) Math.toRadians(-(previewYaw + modelYaw));
+        root.originX = 0.0F;
+        root.originY = 0.0F;
+        root.originZ = 0.0F;
+        root.pitch = (float) Math.toRadians(modelPitch);
+        root.yaw = (float) Math.toRadians(-modelYaw);
         root.roll = (float) Math.toRadians(modelRoll);
+        setUniformScale(root, wholeBodyScale);
 
         boolean showAll = showWholePreview || selectedPart.equals("all");
         model.head.visible = showAll || selectedPart.equals("head");
@@ -1507,13 +1580,6 @@ public class BodyPoseEditorFragment extends Fragment {
             moveWholeModelToChestPivot(model);
         }
 
-        model.rightArm.pitch = -0.08F;
-        model.rightArm.roll = 0.08F;
-        model.leftArm.pitch = -0.08F;
-        model.leftArm.roll = -0.08F;
-        model.rightLeg.pitch = 0.04F;
-        model.leftLeg.pitch = -0.04F;
-
         applyPose(model.head, PART_POSES.get("head"));
         applyPose(model.body, PART_POSES.get("torso"));
         applyPose(model.leftArm, PART_POSES.get("left_arm"));
@@ -1522,7 +1588,7 @@ public class BodyPoseEditorFragment extends Fragment {
         applyPose(model.rightLeg, PART_POSES.get("right_leg"));
     }
 
-    public PlayerEntityModel getPreparedWorldPreviewModel() {
+    public static PlayerEntityModel getPreparedWorldPreviewModel() {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) return null;
 
@@ -1546,7 +1612,6 @@ public class BodyPoseEditorFragment extends Fragment {
             part.visible = true;
             part.hidden = false;
         }
-
         boolean showAll = showWholePreview || selectedPart.equals("all");
         model.head.visible = showAll || selectedPart.equals("head");
         model.hat.visible = model.head.visible;
@@ -1573,13 +1638,6 @@ public class BodyPoseEditorFragment extends Fragment {
         applyPose(model.rightArm, PART_POSES.get("right_arm"));
         applyPose(model.leftLeg, PART_POSES.get("left_leg"));
         applyPose(model.rightLeg, PART_POSES.get("right_leg"));
-
-        model.rightArm.pitch = -0.08F;
-        model.rightArm.roll = 0.08F;
-        model.leftArm.pitch = -0.08F;
-        model.leftArm.roll = -0.08F;
-        model.rightLeg.pitch = 0.04F;
-        model.leftLeg.pitch = -0.04F;
 
         return model;
     }
@@ -1616,6 +1674,13 @@ public class BodyPoseEditorFragment extends Fragment {
         part.pitch += pose.pitch * r;
         part.yaw += pose.yaw * r;
         part.roll += pose.roll * r;
+        setUniformScale(part, pose.scale);
+    }
+
+    private static void setUniformScale(ModelPart part, float scale) {
+        part.xScale *= scale;
+        part.yScale *= scale;
+        part.zScale *= scale;
     }
 
     // ═══════════════════════════════════════════════════════
@@ -1737,7 +1802,7 @@ public class BodyPoseEditorFragment extends Fragment {
         ClientPlayNetworking.send(new PlacePosedBodyC2SPacket(selectedSkin, slimModel, createPoseValueArray(),
                 selectedSkinSource == SkinSource.PLAYER, selectedPlayerName,
                 modelOffsetX, modelOffsetY, modelOffsetZ,
-                modelPitch, modelYaw, modelRoll));
+                modelPitch, modelYaw, modelRoll, wholeBodyScale));
     }
 
     private void placeEditorItems() {
@@ -1755,24 +1820,44 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void toggleWorldPreviewMode() {
+        toggleWorldPreviewModeStatic(true);
+        refreshButtonLabels();
+    }
+
+    private static void toggleWorldPreviewModeStatic(boolean closeScreenOnFixed) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        lastWorldPreviewModeToggleTimeMs = System.currentTimeMillis();
         if (worldPreviewMode == PreviewMode.FOLLOW_PLAYER) {
             worldPreviewMode = PreviewMode.FIXED;
-            MinecraftClient client = MinecraftClient.getInstance();
             if (client != null && client.player != null) {
                 fixedWorldX = client.player.getX();
                 fixedWorldY = client.player.getY();
                 fixedWorldZ = client.player.getZ();
             }
+            worldPreviewEnabled = true;
+            if (closeScreenOnFixed && client != null && client.currentScreen != null) {
+                client.execute(() -> client.setScreen(null));
+            }
         } else {
             worldPreviewMode = PreviewMode.FOLLOW_PLAYER;
+            if (activeInstance == null) {
+                worldPreviewEnabled = false;
+            }
         }
-        refreshButtonLabels();
     }
 
     public static void toggleWorldPreviewModeFromKey() {
+        long now = System.currentTimeMillis();
+        if (now - lastWorldPreviewModeToggleTimeMs < WORLD_PREVIEW_KEY_DEBOUNCE_MS) {
+            return;
+        }
         BodyPoseEditorFragment inst = activeInstance;
-        if (inst != null) {
-            inst.toggleWorldPreviewMode();
+        if (inst == null && worldPreviewMode != PreviewMode.FIXED) {
+            return;
+        }
+        toggleWorldPreviewModeStatic(true);
+        if (inst != null && inst.rootView != null) {
+            inst.refreshButtonLabels();
         }
     }
 
@@ -1781,7 +1866,7 @@ public class BodyPoseEditorFragment extends Fragment {
     // ═══════════════════════════════════════════════════════
 
     public static boolean isWorldPreviewActive() {
-        return worldPreviewEnabled && activeInstance != null;
+        return worldPreviewEnabled && (activeInstance != null || worldPreviewMode == PreviewMode.FIXED);
     }
 
     public static PreviewMode getWorldPreviewMode() { return worldPreviewMode; }
@@ -1790,13 +1875,11 @@ public class BodyPoseEditorFragment extends Fragment {
     public static double getFixedWorldZ() { return fixedWorldZ; }
 
     public static boolean isWorldAxesShown() {
-        BodyPoseEditorFragment inst = activeInstance;
-        return inst != null && inst.showCoordinateAxes;
+        return isWorldPreviewActive() && showCoordinateAxes;
     }
 
     public static boolean isWorldAxesMovable() {
-        BodyPoseEditorFragment inst = activeInstance;
-        return inst != null && inst.coordinateAxesMovable;
+        return coordinateAxesMovable;
     }
 
     public static float getWorldModelOffsetX() { return modelOffsetX; }
@@ -1805,6 +1888,7 @@ public class BodyPoseEditorFragment extends Fragment {
     public static float getWorldModelPitch() { return modelPitch; }
     public static float getWorldModelYaw() { return modelYaw; }
     public static float getWorldModelRoll() { return modelRoll; }
+    public static float getWorldBodyScale() { return wholeBodyScale; }
 
     public static String getStaticHighlightedMoveAxis() {
         BodyPoseEditorFragment inst = activeInstance;
@@ -1831,8 +1915,10 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     public static Identifier getWorldSkinTexture() {
-        BodyPoseEditorFragment inst = activeInstance;
-        if (inst != null) return inst.getPreviewTexture();
+        PlayerListEntry entry = getSelectedPlayerEntry();
+        if (selectedSkinSource == SkinSource.PLAYER && entry != null) {
+            return entry.getSkinTextures().texture();
+        }
         return Identifier.of("monvhua", "textures/local_skin/" + selectedSkin + ".png");
     }
 
@@ -1985,28 +2071,58 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
+    private static float getSelectedPartScale() {
+        if (selectedPart.equals("all")) return 1.0F;
+        return getSelectedPose().scale;
+    }
+
+    private static void setSelectedPartScale(float value) {
+        if (selectedPart.equals("all")) return;
+        getSelectedPose().scale = clampPreview(value, MODEL_SCALE_MIN, MODEL_SCALE_MAX);
+    }
+
+    private static void setWholeBodyScale(float value) {
+        wholeBodyScale = clampPreview(value, MODEL_SCALE_MIN, MODEL_SCALE_MAX);
+    }
+
     private static void resetSelectedPose() {
         if (selectedPart.equals("all")) return;
         PartPose pose = getSelectedPose();
-        pose.pitch = 0.0F; pose.yaw = 0.0F; pose.roll = 0.0F;
+        resetPartPose(pose);
+    }
+
+    private static void resetAllPartPoses() {
+        wholeBodyScale = 1.0F;
+        for (PartPose pose : PART_POSES.values()) {
+            resetPartPose(pose);
+        }
+    }
+
+    private static void resetPartPose(PartPose pose) {
+        pose.pitch = 0.0F;
+        pose.yaw = 0.0F;
+        pose.roll = 0.0F;
+        pose.scale = 1.0F;
     }
 
     private static float[] createPoseValueArray() {
         float[] values = new float[PlacePosedBodyC2SPacket.POSE_VALUE_COUNT];
         writePose(values, 0, PART_POSES.get("head"));
-        writePose(values, 3, PART_POSES.get("torso"));
-        writePose(values, 6, PART_POSES.get("left_arm"));
-        writePose(values, 9, PART_POSES.get("right_arm"));
-        writePose(values, 12, PART_POSES.get("left_leg"));
-        writePose(values, 15, PART_POSES.get("right_leg"));
+        writePose(values, 4, PART_POSES.get("torso"));
+        writePose(values, 8, PART_POSES.get("left_arm"));
+        writePose(values, 12, PART_POSES.get("right_arm"));
+        writePose(values, 16, PART_POSES.get("left_leg"));
+        writePose(values, 20, PART_POSES.get("right_leg"));
         return values;
     }
 
     private static void writePose(float[] values, int offset, PartPose pose) {
+        values[offset + 3] = 1.0F;
         if (pose == null) return;
         values[offset] = pose.pitch;
         values[offset + 1] = pose.yaw;
         values[offset + 2] = pose.roll;
+        values[offset + 3] = pose.scale;
     }
 
     // ═══════════════════════════════════════════════════════
@@ -2040,7 +2156,7 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
-    private PlayerListEntry getSelectedPlayerEntry() {
+    private static PlayerListEntry getSelectedPlayerEntry() {
         if (selectedSkinSource != SkinSource.PLAYER || selectedPlayerName.isBlank()) return null;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.getNetworkHandler() == null) return null;
@@ -2244,6 +2360,7 @@ public class BodyPoseEditorFragment extends Fragment {
         private float pitch;
         private float yaw;
         private float roll;
+        private float scale = 1.0F;
     }
 
     private static final class EditorItemModel {

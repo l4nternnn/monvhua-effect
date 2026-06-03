@@ -36,11 +36,11 @@ public class BodyPoseEditorScreen extends Screen {
 	private static final float MODEL_OFFSET_MAX = 10.0F;
 	private static final float TRANSFORM_OFFSET_STEP = 0.25F;
 	private static final float DEFAULT_PREVIEW_PAN_X = 32.0F;
-	private static final float DEFAULT_PREVIEW_ZOOM = 1.15F;
-	private static final float PREVIEW_SCALE_FACTOR = 0.52F;
-	private static final float PREVIEW_ZOOM_MIN = 0.35F;
-	private static final float PREVIEW_ZOOM_MAX = 4.2F;
-	private static final float PREVIEW_ZOOM_STEP = 0.22F;
+	private static final float DEFAULT_PREVIEW_ZOOM = 0.82F;
+	private static final float PREVIEW_SCALE_FACTOR = 0.44F;
+	private static final float PREVIEW_ZOOM_MIN = 0.15F;
+	private static final float PREVIEW_ZOOM_MAX = 8.0F;
+	private static final float PREVIEW_ZOOM_STEP = 0.18F;
 	private static final float MOVE_AXIS_LENGTH = 4.0F / 3.0F;
 	private static final float MOVE_AXIS_HIT_RADIUS = 3.4F;
 	private static final float ROTATION_RING_RADIUS = 2.45F / 3.0F;
@@ -67,6 +67,7 @@ public class BodyPoseEditorScreen extends Screen {
 	private static float modelPitch;
 	private static float modelYaw;
 	private static float modelRoll;
+	private static float wholeBodyScale = 1.0F;
 	private static final List<EditorItemModel> EDITOR_ITEMS = new ArrayList<>();
 	private static final Map<String, PartPose> PART_POSES = createPartPoses();
 
@@ -606,10 +607,15 @@ public class BodyPoseEditorScreen extends Screen {
 		int renderBottom = Math.max(y1 + 1, Math.round((y1 + y2) * 0.5F + scale * PREVIEW_Y_PIVOT));
 		int panX = (int) this.previewPanX;
 		int panY = (int) this.previewPanY;
+		ScreenPoint offset = getPlayerModelScreenOffset();
+		int offsetX = Math.round(offset.x);
+		int offsetY = Math.round(offset.y);
 		Identifier texture = getPreviewTexture();
 		context.enableScissor(x1, y1, x2, y2);
 		try {
-			context.addPlayerSkin(model, texture, scale, 0.0F, 0.0F, PREVIEW_Y_PIVOT, x1 + panX, y1 + panY, x2 + panX, renderBottom + panY);
+			context.addPlayerSkin(model, texture, scale, this.previewPitch, this.previewYaw, PREVIEW_Y_PIVOT,
+					x1 + panX + offsetX, y1 + panY + offsetY,
+					x2 + panX + offsetX, renderBottom + panY + offsetY);
 		} finally {
 			context.disableScissor();
 		}
@@ -833,12 +839,13 @@ public class BodyPoseEditorScreen extends Screen {
 			part.hidden = false;
 		}
 		ModelPart root = model.getRootPart();
-		root.originX = modelOffsetX * MODEL_PART_UNITS_PER_GRID;
-		root.originY = modelOffsetY * MODEL_PART_UNITS_PER_GRID;
-		root.originZ = modelOffsetZ * MODEL_PART_UNITS_PER_GRID;
-		root.pitch = (float) Math.toRadians(this.previewPitch + modelPitch);
-		root.yaw = (float) Math.toRadians(-(this.previewYaw + modelYaw));
-		root.roll = (float) Math.toRadians(this.previewRoll + modelRoll);
+		root.originX = 0.0F;
+		root.originY = 0.0F;
+		root.originZ = 0.0F;
+		root.pitch = (float) Math.toRadians(modelPitch);
+		root.yaw = (float) Math.toRadians(-modelYaw);
+		root.roll = (float) Math.toRadians(modelRoll);
+		setUniformScale(root, wholeBodyScale);
 
 		boolean showAll = this.showWholePreview || selectedPart.equals("all");
 		model.head.visible = showAll || selectedPart.equals("head");
@@ -859,13 +866,6 @@ public class BodyPoseEditorScreen extends Screen {
 		} else {
 			moveWholeModelToChestPivot(model);
 		}
-
-		model.rightArm.pitch = -0.08F;
-		model.rightArm.roll = 0.08F;
-		model.leftArm.pitch = -0.08F;
-		model.leftArm.roll = -0.08F;
-		model.rightLeg.pitch = 0.04F;
-		model.leftLeg.pitch = -0.04F;
 
 		applyPose(model.head, PART_POSES.get("head"));
 		applyPose(model.body, PART_POSES.get("torso"));
@@ -909,6 +909,13 @@ public class BodyPoseEditorScreen extends Screen {
 		part.pitch += pose.pitch * degreesToRadians;
 		part.yaw += pose.yaw * degreesToRadians;
 		part.roll += pose.roll * degreesToRadians;
+		setUniformScale(part, pose.scale);
+	}
+
+	private static void setUniformScale(ModelPart part, float scale) {
+		part.xScale *= scale;
+		part.yScale *= scale;
+		part.zScale *= scale;
 	}
 
 	public PlayerEntityModel getPreparedWorldPreviewModel() {
@@ -962,13 +969,6 @@ public class BodyPoseEditorScreen extends Screen {
 		applyPose(model.rightArm, PART_POSES.get("right_arm"));
 		applyPose(model.leftLeg, PART_POSES.get("left_leg"));
 		applyPose(model.rightLeg, PART_POSES.get("right_leg"));
-
-		model.rightArm.pitch = -0.08F;
-		model.rightArm.roll = 0.08F;
-		model.leftArm.pitch = -0.08F;
-		model.leftArm.roll = -0.08F;
-		model.rightLeg.pitch = 0.04F;
-		model.leftLeg.pitch = -0.04F;
 
 		return model;
 	}
@@ -1218,6 +1218,12 @@ public class BodyPoseEditorScreen extends Screen {
 		float rollX = pitchX * rollCos - pitchY * rollSin;
 		float rollY = pitchX * rollSin + pitchY * rollCos;
 		return new ScreenPoint(getPreviewRenderCenterX() + rollX * getPreviewPixelsPerGrid(), getPreviewRenderCenterY() + rollY * getPreviewPixelsPerGrid());
+	}
+
+	private ScreenPoint getPlayerModelScreenOffset() {
+		ScreenPoint origin = projectPreviewPoint(0.0F, 0.0F, 0.0F);
+		ScreenPoint modelPoint = projectPreviewPoint(modelOffsetX, modelOffsetY, modelOffsetZ);
+		return new ScreenPoint(modelPoint.x - origin.x, modelPoint.y - origin.y);
 	}
 
 	private int findPreviewItem(double mouseX, double mouseY) {
@@ -1717,6 +1723,7 @@ public class BodyPoseEditorScreen extends Screen {
 		pose.pitch = 0.0F;
 		pose.yaw = 0.0F;
 		pose.roll = 0.0F;
+		pose.scale = 1.0F;
 	}
 
 	private static String formatDegrees(float value) {
@@ -1744,21 +1751,23 @@ public class BodyPoseEditorScreen extends Screen {
 	private static float[] createPoseValueArray() {
 		float[] values = new float[PlacePosedBodyC2SPacket.POSE_VALUE_COUNT];
 		writePose(values, 0, PART_POSES.get("head"));
-		writePose(values, 3, PART_POSES.get("torso"));
-		writePose(values, 6, PART_POSES.get("left_arm"));
-		writePose(values, 9, PART_POSES.get("right_arm"));
-		writePose(values, 12, PART_POSES.get("left_leg"));
-		writePose(values, 15, PART_POSES.get("right_leg"));
+		writePose(values, 4, PART_POSES.get("torso"));
+		writePose(values, 8, PART_POSES.get("left_arm"));
+		writePose(values, 12, PART_POSES.get("right_arm"));
+		writePose(values, 16, PART_POSES.get("left_leg"));
+		writePose(values, 20, PART_POSES.get("right_leg"));
 		return values;
 	}
 
 	private static void writePose(float[] values, int offset, PartPose pose) {
+		values[offset + 3] = 1.0F;
 		if (pose == null) {
 			return;
 		}
 		values[offset] = pose.pitch;
 		values[offset + 1] = pose.yaw;
 		values[offset + 2] = pose.roll;
+		values[offset + 3] = pose.scale;
 	}
 
 	private enum Axis {
@@ -1795,6 +1804,7 @@ public class BodyPoseEditorScreen extends Screen {
 		private float pitch;
 		private float yaw;
 		private float roll;
+		private float scale = 1.0F;
 	}
 
 	private static final class EditorItemModel {

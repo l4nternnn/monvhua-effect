@@ -46,6 +46,9 @@ public class ClientTickHandler {
             if (KeyBindingHandler.bodyPoseEditorKey.wasPressed() && client.player.isCreative()) {
                 BodyPoseEditorFragment.open();
             }
+            if (KeyBindingHandler.bodyPoseWorldPreviewKey.wasPressed() && client.player.isCreative()) {
+                BodyPoseEditorFragment.toggleWorldPreviewModeFromKey();
+            }
             if (KeyBindingHandler.actionEditorKey.wasPressed() && client.player.isCreative()) {
                 ActionEditorFragment.open();
             }

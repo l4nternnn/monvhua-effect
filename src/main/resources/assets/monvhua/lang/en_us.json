@@ -1,6 +1,10 @@
 {
   "item.monvhua.secrecy": "|Magic: Secrecy|",
   "key.monvhua.body_pose_editor": "Body Pose Editor",
+  "key.monvhua.body_pose_world_preview": "Body Pose World Preview",
+  "key.monvhua.action_editor": "Action",
+
+
   "effect.monvhua.ema_1": "Sane",
   "effect.monvhua.ema_2": "Tainted",
   "effect.monvhua.ema_3": "Light Witchification",

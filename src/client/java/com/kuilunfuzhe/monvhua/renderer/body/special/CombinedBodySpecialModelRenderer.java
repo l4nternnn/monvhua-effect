@@ -153,6 +153,10 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         part.pitch += data.getFloat("pose_" + partName + "_pitch", 0.0F) * degreesToRadians;
         part.yaw += data.getFloat("pose_" + partName + "_yaw", 0.0F) * degreesToRadians;
         part.roll += data.getFloat("pose_" + partName + "_roll", 0.0F) * degreesToRadians;
+        float scale = Math.max(0.1F, data.getFloat("pose_" + partName + "_scale", 1.0F));
+        part.xScale *= scale;
+        part.yScale *= scale;
+        part.zScale *= scale;
     }
 
     private static void applyPlacementTransform(MatrixStack matrices, NbtCompound data) {
@@ -166,6 +170,8 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(data.getFloat("pose_model_pitch", 0.0F)));
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-data.getFloat("pose_model_yaw", 0.0F)));
         matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(data.getFloat("pose_model_roll", 0.0F)));
+        float scale = Math.max(0.1F, data.getFloat("pose_model_scale", 1.0F));
+        matrices.scale(scale, scale, scale);
     }
 
     @Override
