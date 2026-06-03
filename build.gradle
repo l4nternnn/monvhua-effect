@@ -21,6 +21,11 @@ repositories {
 		name = "Curse Maven"
 		url = "https://cursemaven.com/"
 	}
+
+	maven {
+		name = "GeckoLib"
+		url = "https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/"
+	}
 	// Add repositories to retrieve artifacts from in here.
 	// You should only use this when depending on other mods because
 	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
@@ -52,6 +57,9 @@ dependencies {
 	modImplementation "com.electronwill.night-config:core:3.8.2"
 	modImplementation "com.electronwill.night-config:toml:3.8.2"
 	implementation "org.commonmark:commonmark:${project.commonmark_version}"
+
+	modImplementation "software.bernie.geckolib:geckolib-fabric-${minecraft_version}:${geckolib_version}"
+	include "software.bernie.geckolib:geckolib-fabric-${minecraft_version}:${geckolib_version}"
 
 	include "com.electronwill.night-config:core:3.8.2"
 	include "com.electronwill.night-config:toml:3.8.2"

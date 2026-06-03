@@ -6,6 +6,12 @@ import com.kuilunfuzhe.monvhua.features.block.body.leg.LeftLegBlock;
 import com.kuilunfuzhe.monvhua.features.block.body.head.HeadBlock;
 import com.kuilunfuzhe.monvhua.features.block.body.leg.RightLegBlock;
 import com.kuilunfuzhe.monvhua.features.block.body.torso.TorsoBlock;
+import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalHeadBlock;
+import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalLeftArmBlock;
+import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalLeftLegBlock;
+import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalRightArmBlock;
+import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalRightLegBlock;
+import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalTorsoBlock;
 import net.minecraft.block.AbstractBlock;
 import net.minecraft.block.Block;
 import net.minecraft.block.MapColor;
@@ -48,6 +54,30 @@ public class ModBlocks {
     public static final Block HEAD = register("head",
             HeadBlock::new,
             AbstractBlock.Settings.create().mapColor(MapColor.OAK_TAN).strength(1.0F, 1.0F).pistonBehavior(PistonBehavior.DESTROY));
+
+    public static final Block SKELETAL_TORSO = register("skeletal_torso",
+            SkeletalTorsoBlock::new,
+            AbstractBlock.Settings.create().mapColor(MapColor.OAK_TAN).strength(1.0F, 1.0F).nonOpaque().pistonBehavior(PistonBehavior.DESTROY));
+
+    public static final Block SKELETAL_HEAD = register("skeletal_head",
+            SkeletalHeadBlock::new,
+            AbstractBlock.Settings.create().mapColor(MapColor.OAK_TAN).strength(1.0F, 1.0F).nonOpaque().pistonBehavior(PistonBehavior.DESTROY));
+
+    public static final Block SKELETAL_LEFT_ARM = register("skeletal_left_arm",
+            SkeletalLeftArmBlock::new,
+            AbstractBlock.Settings.create().mapColor(MapColor.OAK_TAN).strength(1.0F, 1.0F).nonOpaque().pistonBehavior(PistonBehavior.DESTROY));
+
+    public static final Block SKELETAL_RIGHT_ARM = register("skeletal_right_arm",
+            SkeletalRightArmBlock::new,
+            AbstractBlock.Settings.create().mapColor(MapColor.OAK_TAN).strength(1.0F, 1.0F).nonOpaque().pistonBehavior(PistonBehavior.DESTROY));
+
+    public static final Block SKELETAL_LEFT_LEG = register("skeletal_left_leg",
+            SkeletalLeftLegBlock::new,
+            AbstractBlock.Settings.create().mapColor(MapColor.OAK_TAN).strength(1.0F, 1.0F).nonOpaque().pistonBehavior(PistonBehavior.DESTROY));
+
+    public static final Block SKELETAL_RIGHT_LEG = register("skeletal_right_leg",
+            SkeletalRightLegBlock::new,
+            AbstractBlock.Settings.create().mapColor(MapColor.OAK_TAN).strength(1.0F, 1.0F).nonOpaque().pistonBehavior(PistonBehavior.DESTROY));
 
     // 通用注册方法（模仿原版 Blocks 中的 register）
     private static Block register(String path, Function<AbstractBlock.Settings, Block> factory, AbstractBlock.Settings settings) {

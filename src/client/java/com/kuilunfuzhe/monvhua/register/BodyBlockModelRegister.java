@@ -24,6 +24,7 @@ import com.kuilunfuzhe.monvhua.renderer.body.leg.RightLegSpecialModelRenderer;
 import com.kuilunfuzhe.monvhua.renderer.body.special.CombinedBodySpecialModelRenderer;
 import com.kuilunfuzhe.monvhua.renderer.body.torso.TorsoBlockEntityRenderer;
 import com.kuilunfuzhe.monvhua.renderer.body.torso.TorsoSpecialModelRenderer;
+import com.kuilunfuzhe.monvhua.renderer.body_skeletal.SkeletalBodyPartGeoRenderer;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityModelLayerRegistry;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
 import net.minecraft.client.render.item.model.special.SpecialModelTypes;
@@ -85,6 +86,31 @@ public class BodyBlockModelRegister {
         BlockEntityRendererFactories.register(
                 ModBlockEntities.HEAD_BLOCK_ENTITY,
                 HeadBlockEntityRenderer::new
+        );
+
+        BlockEntityRendererFactories.register(
+                ModBlockEntities.SKELETAL_TORSO_BLOCK_ENTITY,
+                ctx -> new SkeletalBodyPartGeoRenderer<>()
+        );
+        BlockEntityRendererFactories.register(
+                ModBlockEntities.SKELETAL_HEAD_BLOCK_ENTITY,
+                ctx -> new SkeletalBodyPartGeoRenderer<>()
+        );
+        BlockEntityRendererFactories.register(
+                ModBlockEntities.SKELETAL_LEFT_ARM_BLOCK_ENTITY,
+                ctx -> new SkeletalBodyPartGeoRenderer<>()
+        );
+        BlockEntityRendererFactories.register(
+                ModBlockEntities.SKELETAL_RIGHT_ARM_BLOCK_ENTITY,
+                ctx -> new SkeletalBodyPartGeoRenderer<>()
+        );
+        BlockEntityRendererFactories.register(
+                ModBlockEntities.SKELETAL_LEFT_LEG_BLOCK_ENTITY,
+                ctx -> new SkeletalBodyPartGeoRenderer<>()
+        );
+        BlockEntityRendererFactories.register(
+                ModBlockEntities.SKELETAL_RIGHT_LEG_BLOCK_ENTITY,
+                ctx -> new SkeletalBodyPartGeoRenderer<>()
         );
 
         // Item inventory/hand special renderers

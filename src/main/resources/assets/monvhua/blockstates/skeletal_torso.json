@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "monvhua:block/torso" },
+    "facing=east": { "model": "monvhua:block/torso", "y": 90 },
+    "facing=south": { "model": "monvhua:block/torso", "y": 180 },
+    "facing=west": { "model": "monvhua:block/torso", "y": 270 }
+  }
+}

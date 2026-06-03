@@ -40,6 +40,14 @@ public class ModItemGroups {
                     entries.add(Assembly_ModItems.LEFT_LEG_ITEM);
                     entries.add(Assembly_ModItems.RIGHT_LEG_ITEM);
                     entries.add(Assembly_ModItems.HEAD_ITEM);
+                    entries.add(Assembly_ModItems.SKELETAL_HEAD_ITEM);
+                    entries.add(Assembly_ModItems.SKELETAL_TORSO_ITEM);
+                    entries.add(Assembly_ModItems.SKELETAL_LEFT_ARM_ITEM);
+                    entries.add(Assembly_ModItems.SKELETAL_RIGHT_ARM_ITEM);
+                    entries.add(Assembly_ModItems.SKELETAL_LEFT_LEG_ITEM);
+                    entries.add(Assembly_ModItems.SKELETAL_RIGHT_LEG_ITEM);
+
+
                 })
                 .build()
         );
