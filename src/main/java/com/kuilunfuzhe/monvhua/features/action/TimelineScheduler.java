@@ -41,6 +41,9 @@ public class TimelineScheduler {
 
             state.currentTick++;
             int second = state.currentTick / 20;
+            if (state.currentTick % 20 == 0) {
+                sendState(player, state, maxSecond);
+            }
 
             List<String> actionIds = schedule.get(second);
             if (actionIds != null) {
@@ -105,7 +108,15 @@ public class TimelineScheduler {
     }
 
     public static void addAction(ServerPlayerEntity player, int second, String actionId) {
-        config.timelineSchedule.computeIfAbsent(second, k -> new ArrayList<>()).add(actionId);
+        String idToSchedule = actionId;
+        if (actionId != null && !actionId.isBlank()) {
+            Optional<ActionConfig.ActionDef> source = config.findById(actionId);
+            if (source.isPresent() && !ActionConfig.isTimelineInstance(source.get())) {
+                ActionConfig.ActionDef instance = ActionConfig.createTimelineInstance(config, source.get(), second);
+                if (instance != null) idToSchedule = instance.id;
+            }
+        }
+        config.timelineSchedule.computeIfAbsent(second, k -> new ArrayList<>()).add(idToSchedule);
         config.save();
         ActionEngine.reloadConfig();
         sendState(player, getOrCreate(player), getMaxSecond());
@@ -117,6 +128,7 @@ public class TimelineScheduler {
             ids.remove(actionId);
             if (ids.isEmpty()) config.timelineSchedule.remove(second);
         }
+        removeUnusedTimelineInstance(actionId);
         config.save();
         ActionEngine.reloadConfig();
         sendState(player, getOrCreate(player), getMaxSecond());
@@ -145,7 +157,12 @@ public class TimelineScheduler {
     }
 
     public static void removeSecond(ServerPlayerEntity player, int second) {
-        config.timelineSchedule.remove(second);
+        List<String> removed = config.timelineSchedule.remove(second);
+        if (removed != null) {
+            for (String actionId : removed) {
+                removeUnusedTimelineInstance(actionId);
+            }
+        }
         config.save();
         ActionEngine.reloadConfig();
         sendState(player, getOrCreate(player), getMaxSecond());
@@ -169,5 +186,16 @@ public class TimelineScheduler {
             ServerPlayNetworking.send(player, new TimelineStateS2CPacket(
                     state.currentTick / 20, state.running, state.paused, state.loop, maxSecond));
         } catch (Exception ignored) {}
+    }
+
+    private static void removeUnusedTimelineInstance(String actionId) {
+        if (actionId == null || actionId.isBlank()) return;
+        boolean stillScheduled = config.timelineSchedule.values().stream()
+                .filter(Objects::nonNull)
+                .anyMatch(ids -> ids.contains(actionId));
+        if (stillScheduled) return;
+        config.findById(actionId)
+                .filter(ActionConfig::isTimelineInstance)
+                .ifPresent(def -> config.actions.remove(def));
     }
 }
