@@ -15,7 +15,9 @@
 		"carrymodelpose.CarriedPlayerCameraMixin",
 		"carrymodelpose.CarriedPlayerLookClampMixin",
 		"carrymodelpose.FirstPersonCarrierAttachedEntityRenderMixin",
-		"PlayerSkinGuiElementRendererMixin"
+		"PlayerSkinGuiElementRendererMixin",
+		"SoundManagerMixin",
+		"ChatHudMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

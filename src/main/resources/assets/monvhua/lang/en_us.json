@@ -1,6 +1,22 @@
 {
   "item.monvhua.secrecy": "|Magic: Secrecy|",
   "key.monvhua.body_pose_editor": "Body Pose Editor",
+  "key.monvhua.body_pose_world_preview": "Body Pose World Preview",
+  "key.monvhua.action_editor": "Action",
+  "item.monvhua.skeletal_torso": "Skeletal Torso",
+  "item.monvhua.skeletal_head": "Skeletal Head",
+  "item.monvhua.skeletal_left_arm": "Skeletal Left Arm",
+  "item.monvhua.skeletal_right_arm": "Skeletal Right Arm",
+  "item.monvhua.skeletal_left_leg": "Skeletal Left Leg",
+  "item.monvhua.skeletal_right_leg": "Skeletal Right Leg",
+  "block.monvhua.skeletal_torso": "Skeletal Torso",
+  "block.monvhua.skeletal_head": "Skeletal Head",
+  "block.monvhua.skeletal_left_arm": "Skeletal Left Arm",
+  "block.monvhua.skeletal_right_arm": "Skeletal Right Arm",
+  "block.monvhua.skeletal_left_leg": "Skeletal Left Leg",
+  "block.monvhua.skeletal_right_leg": "Skeletal Right Leg",
+
+
   "effect.monvhua.ema_1": "Sane",
   "effect.monvhua.ema_2": "Tainted",
   "effect.monvhua.ema_3": "Light Witchification",

@@ -1,0 +1,11 @@
+{
+	"required": false,
+	"package": "com.kuilunfuzhe.monvhua.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"client": [
+		"compat.axiom.AxiomEditorUIFontMixin"
+	],
+	"injectors": {
+		"defaultRequire": 0
+	}
+}

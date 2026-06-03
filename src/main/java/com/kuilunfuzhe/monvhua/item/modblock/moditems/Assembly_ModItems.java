@@ -22,6 +22,12 @@ public class Assembly_ModItems {
     public static final BlockItem LEFT_LEG_ITEM;
     public static final BlockItem RIGHT_LEG_ITEM;
     public static final BlockItem HEAD_ITEM;
+    public static final BlockItem SKELETAL_TORSO_ITEM;
+    public static final BlockItem SKELETAL_HEAD_ITEM;
+    public static final BlockItem SKELETAL_LEFT_ARM_ITEM;
+    public static final BlockItem SKELETAL_RIGHT_ARM_ITEM;
+    public static final BlockItem SKELETAL_LEFT_LEG_ITEM;
+    public static final BlockItem SKELETAL_RIGHT_LEG_ITEM;
 
     // 静态初始化块：在类加载时创建所有身体部件 BlockItem，确保字段定义在注册之前
     static {
@@ -31,6 +37,12 @@ public class Assembly_ModItems {
         LEFT_LEG_ITEM = createBlockItem("left_leg", ModBlocks.LEFT_LEG);
         RIGHT_LEG_ITEM = createBlockItem("right_leg", ModBlocks.RIGHT_LEG);
         HEAD_ITEM = createBlockItem("head", ModBlocks.HEAD);
+        SKELETAL_TORSO_ITEM = createBlockItem("skeletal_torso", ModBlocks.SKELETAL_TORSO);
+        SKELETAL_HEAD_ITEM = createBlockItem("skeletal_head", ModBlocks.SKELETAL_HEAD);
+        SKELETAL_LEFT_ARM_ITEM = createBlockItem("skeletal_left_arm", ModBlocks.SKELETAL_LEFT_ARM);
+        SKELETAL_RIGHT_ARM_ITEM = createBlockItem("skeletal_right_arm", ModBlocks.SKELETAL_RIGHT_ARM);
+        SKELETAL_LEFT_LEG_ITEM = createBlockItem("skeletal_left_leg", ModBlocks.SKELETAL_LEFT_LEG);
+        SKELETAL_RIGHT_LEG_ITEM = createBlockItem("skeletal_right_leg", ModBlocks.SKELETAL_RIGHT_LEG);
     }
 
     /**
@@ -61,6 +73,12 @@ public class Assembly_ModItems {
         register(LEFT_LEG_ITEM, "left_leg");
         register(RIGHT_LEG_ITEM, "right_leg");
         register(HEAD_ITEM, "head");
+        register(SKELETAL_TORSO_ITEM, "skeletal_torso");
+        register(SKELETAL_HEAD_ITEM, "skeletal_head");
+        register(SKELETAL_LEFT_ARM_ITEM, "skeletal_left_arm");
+        register(SKELETAL_RIGHT_ARM_ITEM, "skeletal_right_arm");
+        register(SKELETAL_LEFT_LEG_ITEM, "skeletal_left_leg");
+        register(SKELETAL_RIGHT_LEG_ITEM, "skeletal_right_leg");
 
 
         ItemGroupEvents.modifyEntriesEvent(ItemGroups.BUILDING_BLOCKS)
@@ -71,6 +89,12 @@ public class Assembly_ModItems {
                     entries.add(LEFT_LEG_ITEM);
                     entries.add(RIGHT_LEG_ITEM);
                     entries.add(HEAD_ITEM);
+                    entries.add(SKELETAL_TORSO_ITEM);
+                    entries.add(SKELETAL_HEAD_ITEM);
+                    entries.add(SKELETAL_LEFT_ARM_ITEM);
+                    entries.add(SKELETAL_RIGHT_ARM_ITEM);
+                    entries.add(SKELETAL_LEFT_LEG_ITEM);
+                    entries.add(SKELETAL_RIGHT_LEG_ITEM);
                 });
     }
 

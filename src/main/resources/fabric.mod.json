@@ -22,7 +22,8 @@
 	},
 	"mixins": [
 		"monvhua.mixins.json",
-		"monvhua.client.mixins.json"
+		"monvhua.client.mixins.json",
+		"monvhua.axiom_compat.mixins.json"
 	],
 	"depends": {
 		"fabricloader": ">=0.16.0",

@@ -1,6 +1,6 @@
 package com.kuilunfuzhe.monvhua.renderer.bodypose;
 
-import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorScreen;
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorFragment;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.*;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
@@ -32,7 +32,7 @@ public class BodyPoseWorldPreviewRenderer {
 	public static void render(MatrixStack matrices, VertexConsumerProvider consumers) {
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (client.world == null || client.player == null) return;
-		if (!BodyPoseEditorScreen.isWorldPreviewActive()) return;
+		if (!BodyPoseEditorFragment.isWorldPreviewActive()) return;
 
 		Camera camera = client.gameRenderer.getCamera();
 		Vec3d cameraPos = camera.getPos();
@@ -43,25 +43,23 @@ public class BodyPoseWorldPreviewRenderer {
 		VertexConsumerProvider.Immediate vertexConsumers = bufferBuilders.getEntityVertexConsumers();
 		if (vertexConsumers == null) return;
 
-		boolean showAxes = BodyPoseEditorScreen.isWorldAxesShown();
-		boolean axesMovable = BodyPoseEditorScreen.isWorldAxesMovable();
-		String highlightedMove = BodyPoseEditorScreen.getStaticHighlightedMoveAxis();
-		String highlightedRot = BodyPoseEditorScreen.getStaticHighlightedRotationAxis();
-		float offsetX = BodyPoseEditorScreen.getWorldModelOffsetX();
-		float offsetY = BodyPoseEditorScreen.getWorldModelOffsetY();
-		float offsetZ = BodyPoseEditorScreen.getWorldModelOffsetZ();
-		float modelPitch = BodyPoseEditorScreen.getWorldModelPitch();
-		float modelYaw = BodyPoseEditorScreen.getWorldModelYaw();
-		float modelRoll = BodyPoseEditorScreen.getWorldModelRoll();
-		float previewYaw = BodyPoseEditorScreen.getPreviewYaw();
-		float previewPitch = BodyPoseEditorScreen.getPreviewPitch();
-		float previewRoll = BodyPoseEditorScreen.getPreviewRoll();
-
+		boolean showAxes = BodyPoseEditorFragment.isWorldAxesShown();
+		boolean axesMovable = BodyPoseEditorFragment.isWorldAxesMovable();
+		boolean fixedMode = BodyPoseEditorFragment.getWorldPreviewMode() == BodyPoseEditorFragment.PreviewMode.FIXED;
+		String highlightedMove = BodyPoseEditorFragment.getStaticHighlightedMoveAxis();
+		String highlightedRot = BodyPoseEditorFragment.getStaticHighlightedRotationAxis();
+		float offsetX = BodyPoseEditorFragment.getWorldModelOffsetX();
+		float offsetY = BodyPoseEditorFragment.getWorldModelOffsetY();
+		float offsetZ = BodyPoseEditorFragment.getWorldModelOffsetZ();
+		float modelPitch = BodyPoseEditorFragment.getWorldModelPitch();
+		float modelYaw = BodyPoseEditorFragment.getWorldModelYaw();
+		float modelRoll = BodyPoseEditorFragment.getWorldModelRoll();
+		float bodyScale = BodyPoseEditorFragment.getWorldBodyScale();
 		// Combined rotation matching GUI model: Z(roll) → Y(yaw) → X(pitch)
 		// GUI: root.roll=+totalRoll, root.yaw=-totalYaw, root.pitch=+totalPitch
-		float totalPitch = previewPitch + modelPitch;
-		float totalYaw = previewYaw + modelYaw;
-		float totalRoll = previewRoll + modelRoll;
+		float totalPitch = modelPitch;
+		float totalYaw = modelYaw;
+		float totalRoll = modelRoll;
 
 		double dx = worldPos.x - cameraPos.x;
 		double dy = worldPos.y - cameraPos.y;
@@ -73,6 +71,7 @@ public class BodyPoseWorldPreviewRenderer {
 		if (showAxes) {
 			matrices.push();
 			matrices.translate(dx, dy, dz);
+			applyFixedModeFlip(matrices, fixedMode);
 			renderGroundGrid(matrices.peek().getPositionMatrix(), lineVc);
 			matrices.pop();
 		}
@@ -81,6 +80,7 @@ public class BodyPoseWorldPreviewRenderer {
 		if (showAxes) {
 			matrices.push();
 			matrices.translate(dx, dy, dz);
+			applyFixedModeFlip(matrices, fixedMode);
 			if (axesMovable) {
 				matrices.translate(offsetX, offsetY, offsetZ);
 			}
@@ -92,6 +92,7 @@ public class BodyPoseWorldPreviewRenderer {
 		if (showAxes) {
 			matrices.push();
 			matrices.translate(dx, dy, dz);
+			applyFixedModeFlip(matrices, fixedMode);
 			matrices.translate(offsetX, offsetY, offsetZ);
 			renderMoveAxes(matrices.peek().getPositionMatrix(), lineVc, highlightedMove);
 			matrices.pop();
@@ -101,11 +102,12 @@ public class BodyPoseWorldPreviewRenderer {
 		if (showAxes) {
 			matrices.push();
 			matrices.translate(dx, dy, dz);
+			applyFixedModeFlip(matrices, fixedMode);
 			matrices.translate(offsetX, offsetY, offsetZ);
 			// Same rotation order as GUI ModelPart.applyTransform: Z→Y→X
-			matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(totalRoll));
-			matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-totalYaw));
 			matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(totalPitch));
+			matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-totalYaw));
+			matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(totalRoll));
 			renderRotationRings(matrices.peek().getPositionMatrix(), lineVc, highlightedRot);
 			matrices.pop();
 		}
@@ -113,7 +115,7 @@ public class BodyPoseWorldPreviewRenderer {
 		// 5. Player model (with combined preview+model rotation)
 		PlayerEntityModel model = getWorldModelInstance(client);
 		if (model != null) {
-			Identifier skinTexture = BodyPoseEditorScreen.getWorldSkinTexture();
+			Identifier skinTexture = BodyPoseEditorFragment.getWorldSkinTexture();
 			RenderLayer modelLayer = RenderLayer.getEntityTranslucent(skinTexture);
 			VertexConsumer modelVc = vertexConsumers.getBuffer(modelLayer);
 			BlockPos lightPos = BlockPos.ofFloored(worldPos.x, worldPos.y + 1, worldPos.z);
@@ -121,10 +123,12 @@ public class BodyPoseWorldPreviewRenderer {
 
 			matrices.push();
 			matrices.translate(dx, dy, dz);
+			applyFixedModeFlip(matrices, fixedMode);
 			matrices.translate(offsetX, offsetY, offsetZ);
-			matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(totalRoll));
-			matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-totalYaw));
 			matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(totalPitch));
+			matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-totalYaw));
+			matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(totalRoll));
+			matrices.scale(bodyScale, bodyScale, bodyScale);
 			renderPlayerModelParts(model, matrices, modelVc, light);
 			matrices.pop();
 		}
@@ -133,39 +137,36 @@ public class BodyPoseWorldPreviewRenderer {
 	}
 
 	private static Vec3d getWorldPreviewPosition(MinecraftClient client) {
-		BodyPoseEditorScreen.PreviewMode mode = BodyPoseEditorScreen.getWorldPreviewMode();
-		if (mode == BodyPoseEditorScreen.PreviewMode.FIXED) {
+		BodyPoseEditorFragment.PreviewMode mode = BodyPoseEditorFragment.getWorldPreviewMode();
+		if (mode == BodyPoseEditorFragment.PreviewMode.FIXED) {
 			return new Vec3d(
-				BodyPoseEditorScreen.getFixedWorldX(),
-				BodyPoseEditorScreen.getFixedWorldY(),
-				BodyPoseEditorScreen.getFixedWorldZ()
+				BodyPoseEditorFragment.getFixedWorldX(),
+				BodyPoseEditorFragment.getFixedWorldY(),
+				BodyPoseEditorFragment.getFixedWorldZ()
 			);
 		}
 		return client.player.getPos();
 	}
 
 	private static PlayerEntityModel getWorldModelInstance(MinecraftClient client) {
-		if (client.currentScreen instanceof BodyPoseEditorScreen screen) {
-			return screen.getPreparedWorldPreviewModel();
+		return BodyPoseEditorFragment.getPreparedWorldPreviewModel();
+	}
+
+	private static void applyFixedModeFlip(MatrixStack matrices, boolean fixedMode) {
+		if (fixedMode) {
+			matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(180.0F));
 		}
-		return null;
 	}
 
 	private static void renderPlayerModelParts(PlayerEntityModel model, MatrixStack matrices,
 			VertexConsumer vertexConsumer, int light) {
 		int overlay = OverlayTexture.DEFAULT_UV;
 		if (model.head.visible) model.head.render(matrices, vertexConsumer, light, overlay);
-		if (model.hat.visible) model.hat.render(matrices, vertexConsumer, light, overlay);
 		if (model.body.visible) model.body.render(matrices, vertexConsumer, light, overlay);
-		if (model.jacket.visible) model.jacket.render(matrices, vertexConsumer, light, overlay);
 		if (model.leftArm.visible) model.leftArm.render(matrices, vertexConsumer, light, overlay);
-		if (model.leftSleeve.visible) model.leftSleeve.render(matrices, vertexConsumer, light, overlay);
 		if (model.rightArm.visible) model.rightArm.render(matrices, vertexConsumer, light, overlay);
-		if (model.rightSleeve.visible) model.rightSleeve.render(matrices, vertexConsumer, light, overlay);
 		if (model.leftLeg.visible) model.leftLeg.render(matrices, vertexConsumer, light, overlay);
-		if (model.leftPants.visible) model.leftPants.render(matrices, vertexConsumer, light, overlay);
 		if (model.rightLeg.visible) model.rightLeg.render(matrices, vertexConsumer, light, overlay);
-		if (model.rightPants.visible) model.rightPants.render(matrices, vertexConsumer, light, overlay);
 	}
 
 	// ===== 3D line primitives =====

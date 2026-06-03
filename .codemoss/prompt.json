@@ -1,0 +1,10 @@
+{
+  "prompts": {
+    "840cb144-e2da-4075-ab4c-ed862573a19d": {
+      "id": "840cb144-e2da-4075-ab4c-ed862573a19d",
+      "name": "警告",
+      "content": "仅能对movhua-effect这个项目进行文件编辑，如要使用其它文件，告知我",
+      "createdAt": 1780485342135
+    }
+  }
+}

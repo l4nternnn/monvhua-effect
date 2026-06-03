@@ -1,7 +1,19 @@
-﻿{
+{
   "heart": {
     "sounds": [
       "monvhua:heart"
+    ]
+  },
+  "sound_wave": {
+    "subtitle": "sound.monvhua.sound_wave",
+    "sounds": [
+      "monvhua:sound_wave"
+    ]
+  },
+  "tinnitus": {
+    "subtitle": "sound.monvhua.tinnitus",
+    "sounds": [
+      "monvhua:tinnitus"
     ]
   }
 }

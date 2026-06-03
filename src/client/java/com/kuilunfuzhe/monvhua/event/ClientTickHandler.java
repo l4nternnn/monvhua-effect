@@ -5,7 +5,7 @@ import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
 import com.kuilunfuzhe.monvhua.features.secrecy.SecrecyClientAudioManager;
 import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
-import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorScreen;
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
@@ -44,7 +44,10 @@ public class ClientTickHandler {
                 client.setScreen(new CombinedConfigScreen());
             }
             if (KeyBindingHandler.bodyPoseEditorKey.wasPressed() && client.player.isCreative()) {
-                client.setScreen(new BodyPoseEditorScreen());
+                BodyPoseEditorFragment.open();
+            }
+            if (KeyBindingHandler.bodyPoseWorldPreviewKey.wasPressed() && client.player.isCreative()) {
+                BodyPoseEditorFragment.toggleWorldPreviewModeFromKey();
             }
             if (KeyBindingHandler.actionEditorKey.wasPressed() && client.player.isCreative()) {
                 ActionEditorFragment.open();

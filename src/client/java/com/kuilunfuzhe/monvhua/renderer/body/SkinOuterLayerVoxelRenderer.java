@@ -56,6 +56,16 @@ public final class SkinOuterLayerVoxelRenderer {
         return renderCuboid(matrices, vertices, texture, light, overlay, 16, 32, -4.0F, 0.0F, -2.0F, 8, 12, 4);
     }
 
+    public static boolean renderPlayerUpperJacket(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
+        return renderCuboidSegment(matrices, vertices, texture, light, overlay, 16, 32,
+                0, -4.0F, 0.0F, -2.0F, 8, 6, 4, true, false);
+    }
+
+    public static boolean renderPlayerLowerJacket(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
+        return renderCuboidSegment(matrices, vertices, texture, light, overlay, 16, 32,
+                6, -4.0F, 0.0F, -2.0F, 8, 6, 4, false, true);
+    }
+
     /** 渲染右手sleeve层（独立物品上下文，纹理坐标：x=40, y=32，slim时宽度为3否则为4） */
     public static boolean renderRightSleeve(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay, boolean slim) {
         return renderCuboid(matrices, vertices, texture, light, overlay, 40, 32, -4.0F, -12.0F, -4.0F, slim ? 3 : 4, 12, 4);
@@ -64,6 +74,16 @@ public final class SkinOuterLayerVoxelRenderer {
     /** 渲染右手sleeve层（PlayerEntityModel上下文，纹理坐标：x=40, y=32，位置微调） */
     public static boolean renderPlayerRightSleeve(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay, boolean slim) {
         return renderCuboid(matrices, vertices, texture, light, overlay, 40, 32, slim ? -2.0F : -3.0F, -2.0F, -2.0F, slim ? 3 : 4, 12, 4);
+    }
+
+    public static boolean renderPlayerUpperRightSleeve(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay, boolean slim) {
+        return renderCuboidSegment(matrices, vertices, texture, light, overlay, 40, 32,
+                0, slim ? -2.0F : -3.0F, -2.0F, -2.0F, slim ? 3 : 4, 6, 4, true, false);
+    }
+
+    public static boolean renderPlayerLowerRightSleeve(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay, boolean slim) {
+        return renderCuboidSegment(matrices, vertices, texture, light, overlay, 40, 32,
+                6, slim ? -2.0F : -3.0F, 0.0F, -2.0F, slim ? 3 : 4, 6, 4, false, true);
     }
 
     /** 渲染左手sleeve层（独立物品上下文，纹理坐标：x=48, y=48，slim时宽度为3否则为4） */
@@ -76,6 +96,16 @@ public final class SkinOuterLayerVoxelRenderer {
         return renderCuboid(matrices, vertices, texture, light, overlay, 48, 48, -1.0F, -2.0F, -2.0F, slim ? 3 : 4, 12, 4);
     }
 
+    public static boolean renderPlayerUpperLeftSleeve(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay, boolean slim) {
+        return renderCuboidSegment(matrices, vertices, texture, light, overlay, 48, 48,
+                0, -1.0F, -2.0F, -2.0F, slim ? 3 : 4, 6, 4, true, false);
+    }
+
+    public static boolean renderPlayerLowerLeftSleeve(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay, boolean slim) {
+        return renderCuboidSegment(matrices, vertices, texture, light, overlay, 48, 48,
+                6, -1.0F, 0.0F, -2.0F, slim ? 3 : 4, 6, 4, false, true);
+    }
+
     /** 渲染右腿pants层（独立物品上下文，纹理坐标：x=0, y=48） */
     public static boolean renderRightPants(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
         return renderCuboid(matrices, vertices, texture, light, overlay, 0, 48, -2.0F, -12.0F, -2.0F, 4, 12, 4);
@@ -86,6 +116,16 @@ public final class SkinOuterLayerVoxelRenderer {
         return renderCuboid(matrices, vertices, texture, light, overlay, 0, 32, -2.0F, 0.0F, -2.0F, 4, 12, 4);
     }
 
+    public static boolean renderPlayerUpperRightPants(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
+        return renderCuboidSegment(matrices, vertices, texture, light, overlay, 0, 32,
+                0, -2.0F, 0.0F, -2.0F, 4, 6, 4, true, false);
+    }
+
+    public static boolean renderPlayerLowerRightPants(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
+        return renderCuboidSegment(matrices, vertices, texture, light, overlay, 0, 32,
+                6, -2.0F, 0.0F, -2.0F, 4, 6, 4, false, true);
+    }
+
     /** 渲染左腿pants层（独立物品上下文，纹理坐标：x=0, y=32） */
     public static boolean renderLeftPants(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
         return renderCuboid(matrices, vertices, texture, light, overlay, 0, 32, -4.0F, -12.0F, -4.0F, 4, 12, 4);
@@ -94,6 +134,16 @@ public final class SkinOuterLayerVoxelRenderer {
     /** 渲染左腿pants层（PlayerEntityModel上下文，纹理坐标：x=0, y=48，Y偏移归零） */
     public static boolean renderPlayerLeftPants(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
         return renderCuboid(matrices, vertices, texture, light, overlay, 0, 48, -2.0F, 0.0F, -2.0F, 4, 12, 4);
+    }
+
+    public static boolean renderPlayerUpperLeftPants(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
+        return renderCuboidSegment(matrices, vertices, texture, light, overlay, 0, 48,
+                0, -2.0F, 0.0F, -2.0F, 4, 6, 4, true, false);
+    }
+
+    public static boolean renderPlayerLowerLeftPants(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay) {
+        return renderCuboidSegment(matrices, vertices, texture, light, overlay, 0, 48,
+                6, -2.0F, 0.0F, -2.0F, 4, 6, 4, false, true);
     }
 
     /**
@@ -131,6 +181,36 @@ public final class SkinOuterLayerVoxelRenderer {
                 depth, height, new Point(x + width, y, z), new Point(0.0F, 0.0F, 1.0F), new Point(0.0F, 1.0F, 0.0F), new Point(1.0F, 0.0F, 0.0F));
         // 后面 — 法线向后
         renderFace(matrices, vertices, pixels, light, overlay, textureX + depth + width + depth, textureY + depth,
+                width, height, new Point(x + width, y, z + depth), new Point(-1.0F, 0.0F, 0.0F), new Point(0.0F, 1.0F, 0.0F), new Point(0.0F, 0.0F, 1.0F));
+        return true;
+    }
+
+    private static boolean renderCuboidSegment(MatrixStack matrices, VertexConsumer vertices, Identifier texture, int light, int overlay,
+                                               int textureX, int textureY, int textureYSegment,
+                                               float x, float y, float z, int width, int height, int depth,
+                                               boolean renderStartCap, boolean renderEndCap) {
+        SkinPixels pixels = getPixels(texture);
+        if (pixels == null) {
+            return false;
+        }
+
+        if (renderStartCap) {
+            renderFace(matrices, vertices, pixels, light, overlay, textureX + depth, textureY,
+                    width, depth, new Point(x, y, z + depth), new Point(1.0F, 0.0F, 0.0F), new Point(0.0F, 0.0F, -1.0F), new Point(0.0F, -1.0F, 0.0F));
+        }
+        if (renderEndCap) {
+            renderFace(matrices, vertices, pixels, light, overlay, textureX + depth + width, textureY,
+                    width, depth, new Point(x, y + height, z + depth), new Point(1.0F, 0.0F, 0.0F), new Point(0.0F, 0.0F, -1.0F), new Point(0.0F, 1.0F, 0.0F));
+        }
+
+        int sideTextureY = textureY + depth + textureYSegment;
+        renderFace(matrices, vertices, pixels, light, overlay, textureX, sideTextureY,
+                depth, height, new Point(x, y, z + depth), new Point(0.0F, 0.0F, -1.0F), new Point(0.0F, 1.0F, 0.0F), new Point(-1.0F, 0.0F, 0.0F));
+        renderFace(matrices, vertices, pixels, light, overlay, textureX + depth, sideTextureY,
+                width, height, new Point(x, y, z), new Point(1.0F, 0.0F, 0.0F), new Point(0.0F, 1.0F, 0.0F), new Point(0.0F, 0.0F, -1.0F));
+        renderFace(matrices, vertices, pixels, light, overlay, textureX + depth + width, sideTextureY,
+                depth, height, new Point(x + width, y, z), new Point(0.0F, 0.0F, 1.0F), new Point(0.0F, 1.0F, 0.0F), new Point(1.0F, 0.0F, 0.0F));
+        renderFace(matrices, vertices, pixels, light, overlay, textureX + depth + width + depth, sideTextureY,
                 width, height, new Point(x + width, y, z + depth), new Point(-1.0F, 0.0F, 0.0F), new Point(0.0F, 1.0F, 0.0F), new Point(0.0F, 0.0F, 1.0F));
         return true;
     }

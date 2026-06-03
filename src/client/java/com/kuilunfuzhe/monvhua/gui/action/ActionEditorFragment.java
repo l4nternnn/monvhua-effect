@@ -18,11 +18,10 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
-import net.minecraft.client.model.Dilation;
-import net.minecraft.client.model.ModelData;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.DiffuseLighting;
 import net.minecraft.client.render.OverlayTexture;
+import net.minecraft.client.render.entity.model.EntityModelLayers;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
@@ -140,8 +139,8 @@ public class ActionEditorFragment extends Fragment {
             previewTexture = skinTextures.texture();
             boolean slim = skinTextures.model() == net.minecraft.client.util.SkinTextures.Model.SLIM;
             previewSlimModel = slim;
-            ModelData data = PlayerEntityModel.getTexturedModelData(Dilation.NONE, slim);
-            ModelPart rootPart = data.getRoot().createPart(64, 64);
+            ModelPart rootPart = mc.getLoadedEntityModels().getModelPart(
+                    slim ? EntityModelLayers.PLAYER_SLIM : EntityModelLayers.PLAYER);
             previewModel = new PlayerEntityModel(rootPart, slim);
         }
         // 初始重建（空状态）
@@ -1162,6 +1161,11 @@ public class ActionEditorFragment extends Fragment {
     }
 
     private void setModelAngles(PlayerEntityModel model) {
+        for (ModelPart part : model.getRootPart().traverse()) {
+            part.resetTransform();
+            part.visible = true;
+            part.hidden = false;
+        }
         model.head.pitch = previewAngles[0];  model.head.yaw = previewAngles[1];  model.head.roll = previewAngles[2];
         model.body.pitch = previewAngles[3];  model.body.yaw = previewAngles[4];  model.body.roll = previewAngles[5];
         model.leftArm.pitch = previewAngles[6];  model.leftArm.yaw = previewAngles[7];  model.leftArm.roll = previewAngles[8];
@@ -1169,12 +1173,12 @@ public class ActionEditorFragment extends Fragment {
         model.leftLeg.pitch = previewAngles[12];  model.leftLeg.yaw = previewAngles[13];  model.leftLeg.roll = previewAngles[14];
         model.rightLeg.pitch = previewAngles[15];  model.rightLeg.yaw = previewAngles[16];  model.rightLeg.roll = previewAngles[17];
         // 外套部分跟随
-        if (model.jacket != null) { model.jacket.pitch = model.body.pitch; model.jacket.yaw = model.body.yaw; model.jacket.roll = model.body.roll; }
-        if (model.leftSleeve != null) { model.leftSleeve.pitch = model.leftArm.pitch; model.leftSleeve.yaw = model.leftArm.yaw; model.leftSleeve.roll = model.leftArm.roll; }
-        if (model.rightSleeve != null) { model.rightSleeve.pitch = model.rightArm.pitch; model.rightSleeve.yaw = model.rightArm.yaw; model.rightSleeve.roll = model.rightArm.roll; }
-        if (model.leftPants != null) { model.leftPants.pitch = model.leftLeg.pitch; model.leftPants.yaw = model.leftLeg.yaw; model.leftPants.roll = model.leftLeg.roll; }
-        if (model.rightPants != null) { model.rightPants.pitch = model.rightLeg.pitch; model.rightPants.yaw = model.rightLeg.yaw; model.rightPants.roll = model.rightLeg.roll; }
-        if (model.hat != null) { model.hat.pitch = model.head.pitch; model.hat.yaw = model.head.yaw; model.hat.roll = model.head.roll; }
+        if (model.hat != null) model.hat.visible = model.head.visible;
+        if (model.jacket != null) model.jacket.visible = model.body.visible;
+        if (model.leftSleeve != null) model.leftSleeve.visible = model.leftArm.visible;
+        if (model.rightSleeve != null) model.rightSleeve.visible = model.rightArm.visible;
+        if (model.leftPants != null) model.leftPants.visible = model.leftLeg.visible;
+        if (model.rightPants != null) model.rightPants.visible = model.rightLeg.visible;
     }
 
     /** 从当前选中的动作定义更新预览角度 */
@@ -1210,8 +1214,9 @@ public class ActionEditorFragment extends Fragment {
     }
 
     private void recreatePreviewModel(boolean slim) {
-        ModelData data = PlayerEntityModel.getTexturedModelData(Dilation.NONE, slim);
-        ModelPart rootPart = data.getRoot().createPart(64, 64);
+        MinecraftClient client = MinecraftClient.getInstance();
+        ModelPart rootPart = client.getLoadedEntityModels().getModelPart(
+                slim ? EntityModelLayers.PLAYER_SLIM : EntityModelLayers.PLAYER);
         previewModel = new PlayerEntityModel(rootPart, slim);
         previewSlimModel = slim;
     }
