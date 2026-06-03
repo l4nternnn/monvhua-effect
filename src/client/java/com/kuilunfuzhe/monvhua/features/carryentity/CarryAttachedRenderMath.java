@@ -31,13 +31,18 @@ public final class CarryAttachedRenderMath {
 
 	// 沿被抱者“头 -> 脚 / 脚 -> 头”身体长轴的摄像机偏移，单位：方块；用于把第一人称原点推到头部附近。
 	// 注意：这里不直接放到局部 Y，因为当前渲染矩阵里局部 Y 的移动轨迹会垂直于身体长轴。
-	private static final float PLAYER_EYE_HEIGHT = 1.6F;
+	public static final float PLAYER_EYE_HEIGHT = 1.6F;
 	// 被抱者第一人称摄像机在“被抱者模型自身局部坐标”里的左右偏移；正负方向按游戏内效果微调。
-	private static final float CARRIED_CAMERA_HEAD_LOCAL_X = -0.15F;
+	public static final float CARRIED_CAMERA_HEAD_LOCAL_X = -0.15F;
 	// 被抱者第一人称摄像机在“被抱者模型自身局部坐标”里的身体厚度/贴脸高度偏移；不是头脚方向，通常只做小幅微调。
-	private static final float CARRIED_CAMERA_HEAD_LOCAL_Y = 0.6F;
+	public static final float CARRIED_CAMERA_HEAD_LOCAL_Y = 0.8F;
 	// 被抱者第一人称摄像机在“被抱者模型自身局部坐标”里的头脚方向偏移；调 PLAYER_EYE_HEIGHT 时主要沿身体长轴移动。
-	private static final float CARRIED_CAMERA_HEAD_LOCAL_Z = PLAYER_EYE_HEIGHT;
+	public static final float CARRIED_CAMERA_HEAD_LOCAL_Z = PLAYER_EYE_HEIGHT;
+
+	// 当前公主抱姿势中，被抱者头部/身体正面按局部 +Z 处理；Minecraft Camera 自身默认看向 -Z，应用到相机时需要 180° Y 轴补偿。
+	private static final Vector3f CAMERA_LOCAL_FORWARD = new Vector3f(0.0F, 0.0F, -1.0F);
+	private static final Vector3f CAMERA_LOCAL_UP = new Vector3f(0.0F, 1.0F, 0.0F);
+	private static final Vector3f CAMERA_LOCAL_RIGHT = new Vector3f(-1.0F, 0.0F, 0.0F);
 
 	private CarryAttachedRenderMath() {
 	}
@@ -67,20 +72,42 @@ public final class CarryAttachedRenderMath {
 
 	public static CarriedCameraOrientation getCarriedLocalViewCameraOrientation(Entity carrier, float tickProgress, float localYawDegrees, float localPitchDegrees) {
 		MatrixStack matrices = createConfiguredCarriedViewMatrix(carrier, tickProgress, localYawDegrees, localPitchDegrees);
-		Vector3f modelRight = transformLocalDirection(matrices, 1.0F, 0.0F, 0.0F);
-		Vector3f modelUp = transformLocalDirection(matrices, 0.0F, 1.0F, 0.0F);
 		Vector3f modelForward = transformLocalDirection(matrices, 0.0F, 0.0F, 1.0F);
 
-		Quaternionf rotation = new Matrix4f(matrices.peek().getPositionMatrix()).getUnnormalizedRotation(new Quaternionf());
+		Quaternionf rotation = new Matrix4f(matrices.peek().getPositionMatrix())
+				.getUnnormalizedRotation(new Quaternionf())
+				.normalize();
 		rotation.rotateY((float) Math.PI);
 
 		float yaw = (float) Math.toDegrees(Math.atan2(-modelForward.x, modelForward.z));
 		float horizontalLength = MathHelper.sqrt(modelForward.x * modelForward.x + modelForward.z * modelForward.z);
 		float pitch = (float) Math.toDegrees(Math.atan2(-modelForward.y, horizontalLength));
-		Vector3f horizontalPlane = new Vector3f(modelForward);
-		Vector3f verticalPlane = new Vector3f(modelUp);
-		Vector3f diagonalPlane = new Vector3f(modelRight);
+		Vector3f horizontalPlane = new Vector3f(CAMERA_LOCAL_FORWARD).rotate(rotation).normalize();
+		Vector3f verticalPlane = new Vector3f(CAMERA_LOCAL_UP).rotate(rotation).normalize();
+		Vector3f diagonalPlane = new Vector3f(CAMERA_LOCAL_RIGHT).rotate(rotation).normalize();
 		return new CarriedCameraOrientation(yaw, pitch, rotation, horizontalPlane, verticalPlane, diagonalPlane);
+	}
+
+	public static DebugTransform getCarriedBaseHeadDebugTransform(Entity carrier, float tickProgress) {
+		float baseHeadYaw = CarryPoseTuning.HEAD_YAW + CarryPoseTuning.CUSTOM_HEAD_YAW;
+		float baseHeadPitch = CarryPoseTuning.HEAD_PITCH + CarryPoseTuning.CUSTOM_HEAD_PITCH;
+		float baseHeadRoll = CarryPoseTuning.HEAD_ROLL + CarryPoseTuning.CUSTOM_HEAD_ROLL;
+		return createDebugTransform(createCarriedBaseHeadMatrix(
+				carrier,
+				tickProgress,
+				baseHeadYaw,
+				baseHeadPitch,
+				baseHeadRoll
+		));
+	}
+
+	public static DebugTransform getCarriedLocalViewDebugTransform(Entity carrier, float tickProgress, float localYawDegrees, float localPitchDegrees) {
+		return createDebugTransform(createConfiguredCarriedViewMatrix(
+				carrier,
+				tickProgress,
+				localYawDegrees,
+				localPitchDegrees
+		));
 	}
 
 	private static MatrixStack createConfiguredCarriedViewMatrix(Entity carrier, float tickProgress, float localYawDegrees, float localPitchDegrees) {
@@ -291,6 +318,19 @@ public final class CarryAttachedRenderMath {
 		return new Vector3f(direction.x, direction.y, direction.z).normalize();
 	}
 
+	private static DebugTransform createDebugTransform(MatrixStack matrices) {
+		Matrix4f matrix = new Matrix4f(matrices.peek().getPositionMatrix());
+		Quaternionf rotation = matrix.getUnnormalizedRotation(new Quaternionf()).normalize();
+		return new DebugTransform(
+				transformLocalPoint(matrices, 0.0F, 0.0F, 0.0F),
+				transformLocalDirection(matrices, 1.0F, 0.0F, 0.0F),
+				transformLocalDirection(matrices, 0.0F, 1.0F, 0.0F),
+				transformLocalDirection(matrices, 0.0F, 0.0F, 1.0F),
+				rotation,
+				matrix
+		);
+	}
+
 	public record CarriedHeadWorldRotation(float yawDegrees, float pitchDegrees) {
 	}
 
@@ -301,6 +341,9 @@ public final class CarryAttachedRenderMath {
 	}
 
 	public record CarriedCameraOrientation(float yawDegrees, float pitchDegrees, Quaternionf rotation, Vector3f horizontalPlane, Vector3f verticalPlane, Vector3f diagonalPlane) {
+	}
+
+	public record DebugTransform(Vec3d position, Vector3f right, Vector3f up, Vector3f forward, Quaternionf rotation, Matrix4f matrix) {
 	}
 
 	public record HeadModelRotation(float yawRadians, float pitchRadians) {

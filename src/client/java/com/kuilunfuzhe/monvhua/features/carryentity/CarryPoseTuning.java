@@ -93,23 +93,29 @@ public final class CarryPoseTuning {
 	// 被抱者左腿 roll 附加偏移。
 	public static float CUSTOM_LEFT_LEG_ROLL = 0.0F;
 	// 被抱者头部 pitch 附加偏移。
-	public static float CUSTOM_HEAD_PITCH = 0.0F;
+	public static float CUSTOM_HEAD_PITCH = 0.9F;
 	// 被抱者头部 yaw 附加偏移。
-	public static float CUSTOM_HEAD_YAW = 0.0F;
+	public static float CUSTOM_HEAD_YAW = -0.7F;
 	// 被抱者头部 roll 附加偏移。
-	public static float CUSTOM_HEAD_ROLL = 0.0F;
+	public static float CUSTOM_HEAD_ROLL = -0.2F;
 
 	// ========== 被抱者第一人称视角限制/头部同步参数 ==========
+	// 开启后，被抱者第一人称视角固定到下面的 local yaw/pitch，不再由鼠标控制；模型头部也不再跟随视角，改由 HEAD_* / CUSTOM_HEAD_* 手调。
+	public static boolean CARRIED_FIXED_VIEW_ENABLED = true;
+	// 固定视角的本地 yaw，单位：度；取自调试输出 localViewYawDegrees。
+	public static float CARRIED_FIXED_VIEW_LOCAL_YAW_DEGREES = 180.0F;
+	// 固定视角的本地 pitch，单位：度；取自调试输出 localViewPitchDegrees。
+	public static float CARRIED_FIXED_VIEW_LOCAL_PITCH_DEGREES = -76.799957F;
 	// 被抱者第一人称视角限制中心相对基础头部世界朝向的左右偏移，单位：度；只移动限制/追踪零点，不直接改变基础头部姿势。
 	public static float CARRIED_VIEW_CENTER_YAW_OFFSET_DEGREES = 0F;//-135.0F;
 	// 被抱者第一人称视角限制中心相对基础头部世界朝向的上下偏移，单位：度；正负方向按游戏内效果微调。
 	public static float CARRIED_VIEW_CENTER_PITCH_OFFSET_DEGREES = 0F;// 45.0F;
 	// 被抱者第一人称视角相对“被抱模型头部基础朝向”的左右可转范围，单位：度。
-	public static float CARRIED_VIEW_YAW_LIMIT_DEGREES = 120.0F;
+	public static float CARRIED_VIEW_YAW_LIMIT_DEGREES = 180.0F;
 	// 被抱者第一人称视角相对“被抱模型头部基础朝向”的向上可转范围，单位：度。
-	public static float CARRIED_VIEW_PITCH_UP_LIMIT_DEGREES = 75.0F;
+	public static float CARRIED_VIEW_PITCH_UP_LIMIT_DEGREES = 90.0F;
 	// 被抱者第一人称视角相对“被抱模型头部基础朝向”的向下可转范围，单位：度。
-	public static float CARRIED_VIEW_PITCH_DOWN_LIMIT_DEGREES = 45.0F;
+	public static float CARRIED_VIEW_PITCH_DOWN_LIMIT_DEGREES = 90.0F;
 	// 被抱者视角左右转动同步到额外模型头部 yaw 的比例；1.0 = 完全同步，0.5 = 只同步一半。
 	public static float CARRIED_HEAD_VIEW_YAW_SCALE = 1.0F;
 	// 被抱者视角左右转动同步到额外模型头部 yaw 的方向；如果左右相反，运行时改成 -1.0F。

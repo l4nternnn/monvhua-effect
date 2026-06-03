@@ -4,6 +4,7 @@ import com.kuilunfuzhe.monvhua.event.ClientTickHandler;
 import com.kuilunfuzhe.monvhua.event.KeyBindingHandler;
 import com.kuilunfuzhe.monvhua.event.WorldRenderHandler;
 import com.kuilunfuzhe.monvhua.compat.DhCompat;
+import com.kuilunfuzhe.monvhua.features.carryentity.CarryTransformDebugCommand;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.ClientCameraWatchReceiver;
 import com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient;
@@ -75,6 +76,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         WorldRenderHandler.register();
         mirrorHUD.register();
         BodyBlockModelRegister.register();
+        CarryTransformDebugCommand.register();
 
         // ===== 4. 摄像机追踪与镜面HUD =====
         ClientCameraWatchReceiver.register();
