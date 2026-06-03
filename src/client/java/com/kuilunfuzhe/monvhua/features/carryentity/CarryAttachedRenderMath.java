@@ -30,11 +30,11 @@ public final class CarryAttachedRenderMath {
 
 	// 沿被抱者“头 -> 脚 / 脚 -> 头”身体长轴的摄像机偏移，单位：方块；用于把第一人称原点推到头部附近。
 	// 注意：这里不直接放到局部 Y，因为当前渲染矩阵里局部 Y 的移动轨迹会垂直于身体长轴。
-	private static final float PLAYER_EYE_HEIGHT = 1.5F;
+	private static final float PLAYER_EYE_HEIGHT = 1.6F;
 	// 被抱者第一人称摄像机在“被抱者模型自身局部坐标”里的左右偏移；正负方向按游戏内效果微调。
-	private static final float CARRIED_CAMERA_HEAD_LOCAL_X = -0.1F;
+	private static final float CARRIED_CAMERA_HEAD_LOCAL_X = -0.15F;
 	// 被抱者第一人称摄像机在“被抱者模型自身局部坐标”里的身体厚度/贴脸高度偏移；不是头脚方向，通常只做小幅微调。
-	private static final float CARRIED_CAMERA_HEAD_LOCAL_Y = 0.9F;
+	private static final float CARRIED_CAMERA_HEAD_LOCAL_Y = 0.6F;
 	// 被抱者第一人称摄像机在“被抱者模型自身局部坐标”里的头脚方向偏移；调 PLAYER_EYE_HEIGHT 时主要沿身体长轴移动。
 	private static final float CARRIED_CAMERA_HEAD_LOCAL_Z = PLAYER_EYE_HEIGHT;
 
@@ -71,16 +71,60 @@ public final class CarryAttachedRenderMath {
 		return new CarriedHeadWorldRotation(yaw, pitch);
 	}
 
-	public static HeadModelRotation getCarriedHeadModelRotationForWorldView(Entity carrier, float tickProgress, float viewYawDegrees, float viewPitchDegrees) {
-		float viewYawRadians = (float) Math.toRadians(viewYawDegrees);
-		float viewPitchRadians = (float) Math.toRadians(viewPitchDegrees);
-		float horizontalLength = MathHelper.cos(viewPitchRadians);
-		Vector4f worldForward = new Vector4f(
-				-MathHelper.sin(viewYawRadians) * horizontalLength,
-				-MathHelper.sin(viewPitchRadians),
-				MathHelper.cos(viewYawRadians) * horizontalLength,
-				0.0F
+	public static HeadViewOffset getCarriedHeadViewOffsetForWorldView(Entity carrier, float tickProgress, float viewYawDegrees, float viewPitchDegrees, float baseHeadYawRadians, float baseHeadPitchRadians, float baseHeadRollRadians) {
+		Vector4f worldForward = getWorldForwardVector(viewYawDegrees, viewPitchDegrees);
+		Matrix4f inverseBaseHeadMatrix = new Matrix4f(createCarriedBaseHeadMatrix(
+				carrier,
+				tickProgress,
+				baseHeadYawRadians,
+				baseHeadPitchRadians,
+				baseHeadRollRadians
+		).peek().getPositionMatrix()).invert();
+		Vector4f localForward4 = inverseBaseHeadMatrix.transform(worldForward);
+		Vector3f localForward = new Vector3f(localForward4.x, localForward4.y, localForward4.z).normalize();
+		float yawDegrees = (float) Math.toDegrees(Math.atan2(localForward.x, localForward.z));
+		float localHorizontalLength = MathHelper.sqrt(localForward.x * localForward.x + localForward.z * localForward.z);
+		float pitchDegrees = (float) Math.toDegrees(Math.atan2(localForward.y, localHorizontalLength));
+		return new HeadViewOffset(yawDegrees, pitchDegrees);
+	}
+
+	public static WorldViewRotation clampCarriedWorldView(Entity carrier, float tickProgress, float viewYawDegrees, float viewPitchDegrees, float baseHeadYawRadians, float baseHeadPitchRadians, float baseHeadRollRadians) {
+		HeadViewOffset offset = getCarriedHeadViewOffsetForWorldView(
+				carrier,
+				tickProgress,
+				viewYawDegrees,
+				viewPitchDegrees,
+				baseHeadYawRadians,
+				baseHeadPitchRadians,
+				baseHeadRollRadians
 		);
+		float clampedYawDegrees = MathHelper.clamp(
+				offset.yawDegrees(),
+				-CarryPoseTuning.CARRIED_VIEW_YAW_LIMIT_DEGREES,
+				CarryPoseTuning.CARRIED_VIEW_YAW_LIMIT_DEGREES
+		);
+		float clampedPitchDegrees = MathHelper.clamp(
+				offset.pitchDegrees(),
+				-CarryPoseTuning.CARRIED_VIEW_PITCH_UP_LIMIT_DEGREES,
+				CarryPoseTuning.CARRIED_VIEW_PITCH_DOWN_LIMIT_DEGREES
+		);
+		Vector4f localForward = getLocalForwardVector(clampedYawDegrees, clampedPitchDegrees);
+		Vector4f worldForward = createCarriedBaseHeadMatrix(
+				carrier,
+				tickProgress,
+				baseHeadYawRadians,
+				baseHeadPitchRadians,
+				baseHeadRollRadians
+		).peek().getPositionMatrix().transform(localForward);
+		Vector3f normalizedForward = new Vector3f(worldForward.x, worldForward.y, worldForward.z).normalize();
+		float yaw = (float) Math.toDegrees(Math.atan2(-normalizedForward.x, normalizedForward.z));
+		float horizontalLength = MathHelper.sqrt(normalizedForward.x * normalizedForward.x + normalizedForward.z * normalizedForward.z);
+		float pitch = (float) Math.toDegrees(Math.atan2(-normalizedForward.y, horizontalLength));
+		return new WorldViewRotation(yaw, pitch);
+	}
+
+	public static HeadModelRotation getCarriedHeadModelRotationForWorldView(Entity carrier, float tickProgress, float viewYawDegrees, float viewPitchDegrees) {
+		Vector4f worldForward = getWorldForwardVector(viewYawDegrees, viewPitchDegrees);
 
 		Matrix4f inverseHeadParentMatrix = new Matrix4f(createCarriedHeadParentMatrix(carrier, tickProgress).peek().getPositionMatrix()).invert();
 		Vector4f localForward4 = inverseHeadParentMatrix.transform(worldForward);
@@ -89,6 +133,14 @@ public final class CarryAttachedRenderMath {
 		float localHorizontalLength = MathHelper.sqrt(localForward.x * localForward.x + localForward.z * localForward.z);
 		float headPitchRadians = (float) Math.atan2(localForward.y, localHorizontalLength);
 		return new HeadModelRotation(headYawRadians, headPitchRadians);
+	}
+
+	private static MatrixStack createCarriedBaseHeadMatrix(Entity carrier, float tickProgress, float headYawRadians, float headPitchRadians, float headRollRadians) {
+		MatrixStack matrices = createCarriedHeadParentMatrix(carrier, tickProgress);
+		matrices.multiply(RotationAxis.POSITIVE_Y.rotation(headYawRadians));
+		matrices.multiply(RotationAxis.POSITIVE_X.rotation(headPitchRadians));
+		matrices.multiply(RotationAxis.POSITIVE_Z.rotation(headRollRadians));
+		return matrices;
 	}
 
 	private static MatrixStack createCarriedHeadParentMatrix(Entity carrier, float tickProgress) {
@@ -153,6 +205,30 @@ public final class CarryAttachedRenderMath {
 		return new Vec3d(point.x, point.y, point.z);
 	}
 
+	private static Vector4f getWorldForwardVector(float viewYawDegrees, float viewPitchDegrees) {
+		float viewYawRadians = (float) Math.toRadians(viewYawDegrees);
+		float viewPitchRadians = (float) Math.toRadians(viewPitchDegrees);
+		float horizontalLength = MathHelper.cos(viewPitchRadians);
+		return new Vector4f(
+				-MathHelper.sin(viewYawRadians) * horizontalLength,
+				-MathHelper.sin(viewPitchRadians),
+				MathHelper.cos(viewYawRadians) * horizontalLength,
+				0.0F
+		);
+	}
+
+	private static Vector4f getLocalForwardVector(float yawDegrees, float pitchDegrees) {
+		float yawRadians = (float) Math.toRadians(yawDegrees);
+		float pitchRadians = (float) Math.toRadians(pitchDegrees);
+		float horizontalLength = MathHelper.cos(pitchRadians);
+		return new Vector4f(
+				MathHelper.sin(yawRadians) * horizontalLength,
+				MathHelper.sin(pitchRadians),
+				MathHelper.cos(yawRadians) * horizontalLength,
+				0.0F
+		);
+	}
+
 	private static Vector3f transformLocalDirection(MatrixStack matrices, float localX, float localY, float localZ) {
 		Matrix4f matrix = matrices.peek().getPositionMatrix();
 		Vector4f direction = matrix.transform(new Vector4f(localX, localY, localZ, 0.0F));
@@ -160,6 +236,12 @@ public final class CarryAttachedRenderMath {
 	}
 
 	public record CarriedHeadWorldRotation(float yawDegrees, float pitchDegrees) {
+	}
+
+	public record HeadViewOffset(float yawDegrees, float pitchDegrees) {
+	}
+
+	public record WorldViewRotation(float yawDegrees, float pitchDegrees) {
 	}
 
 	public record HeadModelRotation(float yawRadians, float pitchRadians) {

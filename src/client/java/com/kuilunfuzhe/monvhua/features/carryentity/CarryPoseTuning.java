@@ -100,10 +100,14 @@ public final class CarryPoseTuning {
 	public static float CUSTOM_HEAD_ROLL = 0.0F;
 
 	// ========== 被抱者第一人称视角限制/头部同步参数 ==========
+	// 被抱者第一人称视角限制中心相对基础头部世界朝向的左右偏移，单位：度；只移动限制/追踪零点，不直接改变基础头部姿势。
+	public static float CARRIED_VIEW_CENTER_YAW_OFFSET_DEGREES = -135.0F;
+	// 被抱者第一人称视角限制中心相对基础头部世界朝向的上下偏移，单位：度；正负方向按游戏内效果微调。
+	public static float CARRIED_VIEW_CENTER_PITCH_OFFSET_DEGREES = 45.0F;
 	// 被抱者第一人称视角相对“被抱模型头部基础朝向”的左右可转范围，单位：度。
-	public static float CARRIED_VIEW_YAW_LIMIT_DEGREES = 70.0F;
+	public static float CARRIED_VIEW_YAW_LIMIT_DEGREES = 120.0F;
 	// 被抱者第一人称视角相对“被抱模型头部基础朝向”的向上可转范围，单位：度。
-	public static float CARRIED_VIEW_PITCH_UP_LIMIT_DEGREES = 45.0F;
+	public static float CARRIED_VIEW_PITCH_UP_LIMIT_DEGREES = 75.0F;
 	// 被抱者第一人称视角相对“被抱模型头部基础朝向”的向下可转范围，单位：度。
 	public static float CARRIED_VIEW_PITCH_DOWN_LIMIT_DEGREES = 45.0F;
 	// 被抱者视角左右转动同步到额外模型头部 yaw 的比例；1.0 = 完全同步，0.5 = 只同步一半。

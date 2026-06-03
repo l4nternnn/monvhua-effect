@@ -13,6 +13,7 @@
 		"carrymodelpose.PlayerEntityRendererCarryPoseMixin",
 		"carrymodelpose.CarriedEntityDirectRenderCancelMixin",
 		"carrymodelpose.CarriedPlayerCameraMixin",
+		"carrymodelpose.CarriedPlayerLookClampMixin",
 		"carrymodelpose.FirstPersonCarrierAttachedEntityRenderMixin",
 		"PlayerSkinGuiElementRendererMixin"
 	],

@@ -30,12 +30,12 @@ public final class CarriedPlayerViewState {
 		float baseHeadYaw = CarryPoseTuning.HEAD_YAW + CarryPoseTuning.CUSTOM_HEAD_YAW;
 		float baseHeadPitch = CarryPoseTuning.HEAD_PITCH + CarryPoseTuning.CUSTOM_HEAD_PITCH;
 		float yawOffset = MathHelper.clamp(
-				MathHelper.wrapDegrees((float) Math.toDegrees(solvedRotation.yawRadians() - baseHeadYaw)),
+				MathHelper.wrapDegrees((float) Math.toDegrees(solvedRotation.yawRadians() - baseHeadYaw) - CarryPoseTuning.CARRIED_VIEW_CENTER_YAW_OFFSET_DEGREES),
 				-CarryPoseTuning.CARRIED_VIEW_YAW_LIMIT_DEGREES,
 				CarryPoseTuning.CARRIED_VIEW_YAW_LIMIT_DEGREES
 		);
 		float pitchOffset = MathHelper.clamp(
-				(float) Math.toDegrees(solvedRotation.pitchRadians() - baseHeadPitch),
+				(float) Math.toDegrees(solvedRotation.pitchRadians() - baseHeadPitch) - CarryPoseTuning.CARRIED_VIEW_CENTER_PITCH_OFFSET_DEGREES,
 				-CarryPoseTuning.CARRIED_VIEW_PITCH_UP_LIMIT_DEGREES,
 				CarryPoseTuning.CARRIED_VIEW_PITCH_DOWN_LIMIT_DEGREES
 		);
