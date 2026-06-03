@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.carryentity;
 
+import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
@@ -48,30 +49,64 @@ public final class CarryAttachedRenderMath {
 	}
 
 	public static void applyAttachedTransform(MatrixStack matrices) {
-		matrices.translate(ATTACHED_CARRIED_X, ATTACHED_CARRIED_Y, ATTACHED_CARRIED_Z);
+		applyAttachedTransform(matrices, 1.0F, 1.0F);
+	}
+
+	public static void applyAttachedTransform(MatrixStack matrices, Entity carrier) {
+		applyAttachedTransform(matrices, getCarrierScale(carrier), 1.0F);
+	}
+
+	public static void applyAttachedTransform(MatrixStack matrices, Entity carrier, Entity carried) {
+		applyAttachedTransform(matrices, getCarrierScale(carrier), getEntityScale(carried));
+	}
+
+	public static void applyAttachedTransform(MatrixStack matrices, float carrierScale) {
+		applyAttachedTransform(matrices, carrierScale, 1.0F);
+	}
+
+	public static void applyAttachedTransform(MatrixStack matrices, float carrierScale, Entity carried) {
+		applyAttachedTransform(matrices, carrierScale, getEntityScale(carried));
+	}
+
+	public static void applyAttachedTransform(MatrixStack matrices, float carrierScale, float carriedScale) {
+		float scale = carrierScale / sanitizeScale(carriedScale);
+		//MonvhuaMod.LOGGER.info("抱"+carrierScale+"被抱"+carriedScale+"，最终缩放比="+scale);
+		matrices.translate(ATTACHED_CARRIED_X, ATTACHED_CARRIED_Y * scale, ATTACHED_CARRIED_Z );
 		matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(ATTACHED_CARRIED_YAW_DEGREES));
 	}
 
-	public static Vec3d getAttachedBaseWorldPos(Entity carrier, float tickProgress) {
+	public static Vec3d getAttachedBaseWorldPos(Entity carrier, Entity carried, float tickProgress) {
 		MatrixStack matrices = createCarrierWorldMatrix(carrier, tickProgress);
-		applyAttachedTransform(matrices);
+		applyAttachedTransform(matrices, carrier, carried);
 		return transformLocalPoint(matrices, 0.0F, 0.0F, 0.0F);
 	}
 
-	public static Vec3d getCarriedCameraHeadWorldPos(Entity carrier, float tickProgress) {
+	public static Vec3d getAttachedBaseWorldPos(Entity carrier, float tickProgress) {
+		return getAttachedBaseWorldPos(carrier, null, tickProgress);
+	}
+
+	public static Vec3d getCarriedCameraHeadWorldPos(Entity carrier, Entity carried, float tickProgress) {
 		MatrixStack matrices = createCarrierWorldMatrix(carrier, tickProgress);
-		applyAttachedTransform(matrices);
+		applyAttachedTransform(matrices, carrier, carried);
 		applyCarriedModelHorizontalTransform(matrices, 1.0F);
 		return transformLocalPoint(matrices, CARRIED_CAMERA_HEAD_LOCAL_X, CARRIED_CAMERA_HEAD_LOCAL_Y, CARRIED_CAMERA_HEAD_LOCAL_Z);
 	}
 
-	public static WorldViewRotation getCarriedLocalViewWorldRotation(Entity carrier, float tickProgress, float localYawDegrees, float localPitchDegrees) {
-		CarriedCameraOrientation orientation = getCarriedLocalViewCameraOrientation(carrier, tickProgress, localYawDegrees, localPitchDegrees);
+	public static Vec3d getCarriedCameraHeadWorldPos(Entity carrier, float tickProgress) {
+		return getCarriedCameraHeadWorldPos(carrier, null, tickProgress);
+	}
+
+	public static WorldViewRotation getCarriedLocalViewWorldRotation(Entity carrier, Entity carried, float tickProgress, float localYawDegrees, float localPitchDegrees) {
+		CarriedCameraOrientation orientation = getCarriedLocalViewCameraOrientation(carrier, carried, tickProgress, localYawDegrees, localPitchDegrees);
 		return new WorldViewRotation(orientation.yawDegrees(), orientation.pitchDegrees());
 	}
 
-	public static CarriedCameraOrientation getCarriedLocalViewCameraOrientation(Entity carrier, float tickProgress, float localYawDegrees, float localPitchDegrees) {
-		MatrixStack matrices = createConfiguredCarriedViewMatrix(carrier, tickProgress, localYawDegrees, localPitchDegrees);
+	public static WorldViewRotation getCarriedLocalViewWorldRotation(Entity carrier, float tickProgress, float localYawDegrees, float localPitchDegrees) {
+		return getCarriedLocalViewWorldRotation(carrier, null, tickProgress, localYawDegrees, localPitchDegrees);
+	}
+
+	public static CarriedCameraOrientation getCarriedLocalViewCameraOrientation(Entity carrier, Entity carried, float tickProgress, float localYawDegrees, float localPitchDegrees) {
+		MatrixStack matrices = createConfiguredCarriedViewMatrix(carrier, carried, tickProgress, localYawDegrees, localPitchDegrees);
 		Vector3f modelForward = transformLocalDirection(matrices, 0.0F, 0.0F, 1.0F);
 
 		Quaternionf rotation = new Matrix4f(matrices.peek().getPositionMatrix())
@@ -88,12 +123,17 @@ public final class CarryAttachedRenderMath {
 		return new CarriedCameraOrientation(yaw, pitch, rotation, horizontalPlane, verticalPlane, diagonalPlane);
 	}
 
-	public static DebugTransform getCarriedBaseHeadDebugTransform(Entity carrier, float tickProgress) {
+	public static CarriedCameraOrientation getCarriedLocalViewCameraOrientation(Entity carrier, float tickProgress, float localYawDegrees, float localPitchDegrees) {
+		return getCarriedLocalViewCameraOrientation(carrier, null, tickProgress, localYawDegrees, localPitchDegrees);
+	}
+
+	public static DebugTransform getCarriedBaseHeadDebugTransform(Entity carrier, Entity carried, float tickProgress) {
 		float baseHeadYaw = CarryPoseTuning.HEAD_YAW + CarryPoseTuning.CUSTOM_HEAD_YAW;
 		float baseHeadPitch = CarryPoseTuning.HEAD_PITCH + CarryPoseTuning.CUSTOM_HEAD_PITCH;
 		float baseHeadRoll = CarryPoseTuning.HEAD_ROLL + CarryPoseTuning.CUSTOM_HEAD_ROLL;
 		return createDebugTransform(createCarriedBaseHeadMatrix(
 				carrier,
+				carried,
 				tickProgress,
 				baseHeadYaw,
 				baseHeadPitch,
@@ -101,21 +141,31 @@ public final class CarryAttachedRenderMath {
 		));
 	}
 
-	public static DebugTransform getCarriedLocalViewDebugTransform(Entity carrier, float tickProgress, float localYawDegrees, float localPitchDegrees) {
+	public static DebugTransform getCarriedBaseHeadDebugTransform(Entity carrier, float tickProgress) {
+		return getCarriedBaseHeadDebugTransform(carrier, null, tickProgress);
+	}
+
+	public static DebugTransform getCarriedLocalViewDebugTransform(Entity carrier, Entity carried, float tickProgress, float localYawDegrees, float localPitchDegrees) {
 		return createDebugTransform(createConfiguredCarriedViewMatrix(
 				carrier,
+				carried,
 				tickProgress,
 				localYawDegrees,
 				localPitchDegrees
 		));
 	}
 
-	private static MatrixStack createConfiguredCarriedViewMatrix(Entity carrier, float tickProgress, float localYawDegrees, float localPitchDegrees) {
+	public static DebugTransform getCarriedLocalViewDebugTransform(Entity carrier, float tickProgress, float localYawDegrees, float localPitchDegrees) {
+		return getCarriedLocalViewDebugTransform(carrier, null, tickProgress, localYawDegrees, localPitchDegrees);
+	}
+
+	private static MatrixStack createConfiguredCarriedViewMatrix(Entity carrier, Entity carried, float tickProgress, float localYawDegrees, float localPitchDegrees) {
 		float baseHeadYaw = CarryPoseTuning.HEAD_YAW + CarryPoseTuning.CUSTOM_HEAD_YAW;
 		float baseHeadPitch = CarryPoseTuning.HEAD_PITCH + CarryPoseTuning.CUSTOM_HEAD_PITCH;
 		float baseHeadRoll = CarryPoseTuning.HEAD_ROLL + CarryPoseTuning.CUSTOM_HEAD_ROLL;
 		return createCarriedViewMatrix(
 				carrier,
+				carried,
 				tickProgress,
 				baseHeadYaw,
 				baseHeadPitch,
@@ -127,8 +177,8 @@ public final class CarryAttachedRenderMath {
 		);
 	}
 
-	public static CarriedHeadWorldRotation getCarriedHeadWorldRotation(Entity carrier, float tickProgress, float headYawRadians, float headPitchRadians, float headRollRadians) {
-		MatrixStack matrices = createCarriedHeadParentMatrix(carrier, tickProgress);
+	public static CarriedHeadWorldRotation getCarriedHeadWorldRotation(Entity carrier, Entity carried, float tickProgress, float headYawRadians, float headPitchRadians, float headRollRadians) {
+		MatrixStack matrices = createCarriedHeadParentMatrix(carrier, carried, tickProgress);
 		matrices.multiply(RotationAxis.POSITIVE_Y.rotation(headYawRadians));
 		matrices.multiply(RotationAxis.POSITIVE_X.rotation(headPitchRadians));
 		matrices.multiply(RotationAxis.POSITIVE_Z.rotation(headRollRadians));
@@ -139,10 +189,15 @@ public final class CarryAttachedRenderMath {
 		return new CarriedHeadWorldRotation(yaw, pitch);
 	}
 
-	public static HeadViewOffset getCarriedHeadViewOffsetForWorldView(Entity carrier, float tickProgress, float viewYawDegrees, float viewPitchDegrees, float baseHeadYawRadians, float baseHeadPitchRadians, float baseHeadRollRadians) {
+	public static CarriedHeadWorldRotation getCarriedHeadWorldRotation(Entity carrier, float tickProgress, float headYawRadians, float headPitchRadians, float headRollRadians) {
+		return getCarriedHeadWorldRotation(carrier, null, tickProgress, headYawRadians, headPitchRadians, headRollRadians);
+	}
+
+	public static HeadViewOffset getCarriedHeadViewOffsetForWorldView(Entity carrier, Entity carried, float tickProgress, float viewYawDegrees, float viewPitchDegrees, float baseHeadYawRadians, float baseHeadPitchRadians, float baseHeadRollRadians) {
 		Vector4f worldForward = getWorldForwardVector(viewYawDegrees, viewPitchDegrees);
 		Matrix4f inverseBaseHeadMatrix = new Matrix4f(createCarriedBaseHeadMatrix(
 				carrier,
+				carried,
 				tickProgress,
 				baseHeadYawRadians,
 				baseHeadPitchRadians,
@@ -156,9 +211,14 @@ public final class CarryAttachedRenderMath {
 		return new HeadViewOffset(yawDegrees, pitchDegrees);
 	}
 
-	public static WorldViewRotation clampCarriedWorldView(Entity carrier, float tickProgress, float viewYawDegrees, float viewPitchDegrees, float baseHeadYawRadians, float baseHeadPitchRadians, float baseHeadRollRadians) {
+	public static HeadViewOffset getCarriedHeadViewOffsetForWorldView(Entity carrier, float tickProgress, float viewYawDegrees, float viewPitchDegrees, float baseHeadYawRadians, float baseHeadPitchRadians, float baseHeadRollRadians) {
+		return getCarriedHeadViewOffsetForWorldView(carrier, null, tickProgress, viewYawDegrees, viewPitchDegrees, baseHeadYawRadians, baseHeadPitchRadians, baseHeadRollRadians);
+	}
+
+	public static WorldViewRotation clampCarriedWorldView(Entity carrier, Entity carried, float tickProgress, float viewYawDegrees, float viewPitchDegrees, float baseHeadYawRadians, float baseHeadPitchRadians, float baseHeadRollRadians) {
 		HeadViewOffset offset = getCarriedHeadViewOffsetForWorldView(
 				carrier,
+				carried,
 				tickProgress,
 				viewYawDegrees,
 				viewPitchDegrees,
@@ -179,6 +239,7 @@ public final class CarryAttachedRenderMath {
 		Vector4f localForward = getLocalForwardVector(clampedYawDegrees, clampedPitchDegrees);
 		Vector4f worldForward = createCarriedBaseHeadMatrix(
 				carrier,
+				carried,
 				tickProgress,
 				baseHeadYawRadians,
 				baseHeadPitchRadians,
@@ -191,10 +252,14 @@ public final class CarryAttachedRenderMath {
 		return new WorldViewRotation(yaw, pitch);
 	}
 
-	public static HeadModelRotation getCarriedHeadModelRotationForWorldView(Entity carrier, float tickProgress, float viewYawDegrees, float viewPitchDegrees) {
+	public static WorldViewRotation clampCarriedWorldView(Entity carrier, float tickProgress, float viewYawDegrees, float viewPitchDegrees, float baseHeadYawRadians, float baseHeadPitchRadians, float baseHeadRollRadians) {
+		return clampCarriedWorldView(carrier, null, tickProgress, viewYawDegrees, viewPitchDegrees, baseHeadYawRadians, baseHeadPitchRadians, baseHeadRollRadians);
+	}
+
+	public static HeadModelRotation getCarriedHeadModelRotationForWorldView(Entity carrier, Entity carried, float tickProgress, float viewYawDegrees, float viewPitchDegrees) {
 		Vector4f worldForward = getWorldForwardVector(viewYawDegrees, viewPitchDegrees);
 
-		Matrix4f inverseHeadParentMatrix = new Matrix4f(createCarriedHeadParentMatrix(carrier, tickProgress).peek().getPositionMatrix()).invert();
+		Matrix4f inverseHeadParentMatrix = new Matrix4f(createCarriedHeadParentMatrix(carrier, carried, tickProgress).peek().getPositionMatrix()).invert();
 		Vector4f localForward4 = inverseHeadParentMatrix.transform(worldForward);
 		Vector3f localForward = new Vector3f(localForward4.x, localForward4.y, localForward4.z).normalize();
 		float headYawRadians = (float) Math.atan2(localForward.x, localForward.z);
@@ -203,9 +268,14 @@ public final class CarryAttachedRenderMath {
 		return new HeadModelRotation(headYawRadians, headPitchRadians);
 	}
 
-	private static MatrixStack createCarriedViewMatrix(Entity carrier, float tickProgress, float baseHeadYawRadians, float baseHeadPitchRadians, float baseHeadRollRadians, float centerYawDegrees, float centerPitchDegrees, float localYawDegrees, float localPitchDegrees) {
+	public static HeadModelRotation getCarriedHeadModelRotationForWorldView(Entity carrier, float tickProgress, float viewYawDegrees, float viewPitchDegrees) {
+		return getCarriedHeadModelRotationForWorldView(carrier, null, tickProgress, viewYawDegrees, viewPitchDegrees);
+	}
+
+	private static MatrixStack createCarriedViewMatrix(Entity carrier, Entity carried, float tickProgress, float baseHeadYawRadians, float baseHeadPitchRadians, float baseHeadRollRadians, float centerYawDegrees, float centerPitchDegrees, float localYawDegrees, float localPitchDegrees) {
 		MatrixStack matrices = createCarriedBaseHeadMatrix(
 				carrier,
+				carried,
 				tickProgress,
 				baseHeadYawRadians,
 				baseHeadPitchRadians,
@@ -218,29 +288,33 @@ public final class CarryAttachedRenderMath {
 		return matrices;
 	}
 
-	private static MatrixStack createCarriedBaseHeadMatrix(Entity carrier, float tickProgress, float headYawRadians, float headPitchRadians, float headRollRadians) {
-		MatrixStack matrices = createCarriedHeadParentMatrix(carrier, tickProgress);
+	private static MatrixStack createCarriedBaseHeadMatrix(Entity carrier, Entity carried, float tickProgress, float headYawRadians, float headPitchRadians, float headRollRadians) {
+		MatrixStack matrices = createCarriedHeadParentMatrix(carrier, carried, tickProgress);
 		matrices.multiply(RotationAxis.POSITIVE_Y.rotation(headYawRadians));
 		matrices.multiply(RotationAxis.POSITIVE_X.rotation(headPitchRadians));
 		matrices.multiply(RotationAxis.POSITIVE_Z.rotation(headRollRadians));
 		return matrices;
 	}
 
-	private static MatrixStack createCarriedHeadParentMatrix(Entity carrier, float tickProgress) {
+	private static MatrixStack createCarriedHeadParentMatrix(Entity carrier, Entity carried, float tickProgress) {
 		MatrixStack matrices = createCarrierWorldMatrix(carrier, tickProgress);
-		applyAttachedTransform(matrices);
+		applyAttachedTransform(matrices, carrier, carried);
 		applyCarriedModelHorizontalTransform(matrices, 1.0F);
 		return matrices;
 	}
 
-	public static MatrixStack createAttachedViewMatrix(Entity carrier, float tickProgress, Vec3d cameraPos, Matrix4f positionMatrix) {
+	public static MatrixStack createAttachedViewMatrix(Entity carrier, Entity carried, float tickProgress, Vec3d cameraPos, Matrix4f positionMatrix) {
 		Vec3d carrierPos = carrier.getLerpedPos(tickProgress);
 		MatrixStack matrices = new MatrixStack();
 		matrices.multiplyPositionMatrix(positionMatrix);
 		matrices.translate(carrierPos.x - cameraPos.x, carrierPos.y - cameraPos.y, carrierPos.z - cameraPos.z);
 		applyCarrierYaw(matrices, carrier, tickProgress);
-		applyAttachedTransform(matrices);
+		applyAttachedTransform(matrices, carrier, carried);
 		return matrices;
+	}
+
+	public static MatrixStack createAttachedViewMatrix(Entity carrier, float tickProgress, Vec3d cameraPos, Matrix4f positionMatrix) {
+		return createAttachedViewMatrix(carrier, null, tickProgress, cameraPos, positionMatrix);
 	}
 
 	public static void applyCarriedModelHorizontalTransform(MatrixStack matrices, float baseScale) {
@@ -280,6 +354,21 @@ public final class CarryAttachedRenderMath {
 			return MathHelper.lerpAngleDegrees(tickProgress, livingCarrier.lastBodyYaw, livingCarrier.bodyYaw);
 		}
 		return carrier.getLerpedYaw(tickProgress);
+	}
+
+	private static float getCarrierScale(Entity carrier) {
+		return getEntityScale(carrier);
+	}
+
+	private static float getEntityScale(Entity entity) {
+		if (entity instanceof LivingEntity livingEntity) {
+			return livingEntity.getScale();
+		}
+		return 1.0F;
+	}
+
+	private static float sanitizeScale(float scale) {
+		return scale == 0.0F ? 1.0F : scale;
 	}
 
 	public static Vec3d transformLocalPoint(MatrixStack matrices, float localX, float localY, float localZ) {

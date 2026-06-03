@@ -59,9 +59,10 @@ public abstract class CarriedPlayerCameraMixin {
 		}
 
 		CarriedPlayerViewState.updateLocalViewRotation(focusedEntity, carrier, tickProgress);
-		setPos(CarryAttachedRenderMath.getCarriedCameraHeadWorldPos(carrier, tickProgress));
+		setPos(CarryAttachedRenderMath.getCarriedCameraHeadWorldPos(carrier, focusedEntity, tickProgress));
 		CarryAttachedRenderMath.CarriedCameraOrientation orientation = CarryAttachedRenderMath.getCarriedLocalViewCameraOrientation(
 				carrier,
+				focusedEntity,
 				tickProgress,
 				CarriedPlayerViewState.getLocalViewYawDegrees(),
 				CarriedPlayerViewState.getLocalViewPitchDegrees()

@@ -46,7 +46,7 @@ public abstract class CarrierAttachedEntityRenderMixin {
 		EntityRenderDispatcher dispatcher = client.getEntityRenderDispatcher();
 
 		matrices.push();
-		CarryAttachedRenderMath.applyAttachedTransform(matrices);
+		CarryAttachedRenderMath.applyAttachedTransform(matrices, state.baseScale, carried);
 
 		CarryAttachmentRenderState.beginAttachedCarriedEntityRender();
 		try {
