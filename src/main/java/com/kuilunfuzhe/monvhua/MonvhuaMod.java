@@ -18,10 +18,13 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ViewingModeBlocker;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
 import com.kuilunfuzhe.monvhua.features.guidance.Gazeguidance;
+import com.kuilunfuzhe.monvhua.features.imitate.ImitateManager;
 import com.kuilunfuzhe.monvhua.item.ModItemGroups;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
+import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
+import com.kuilunfuzhe.monvhua.item.imitate.ImitateItem;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
 import com.kuilunfuzhe.monvhua.item.secrecy.SecrecyItem;
 import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
@@ -33,6 +36,15 @@ import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
+import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
+import com.kuilunfuzhe.monvhua.network.imitate.ImitateSelectPacket;
+import com.kuilunfuzhe.monvhua.network.imitate.RequestImitateConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.imitate.SilenceEffect;
+import com.kuilunfuzhe.monvhua.network.imitate.SilenceEffectS2CPacket;
+import com.kuilunfuzhe.monvhua.network.imitate.SilenceServerManager;
+import com.kuilunfuzhe.monvhua.network.imitate.SilencePacket;
+import com.kuilunfuzhe.monvhua.network.imitate.SoundWavePacket;
+import com.kuilunfuzhe.monvhua.network.imitate.UpdateImitateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.network.action.*;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeC2SPacket;
@@ -51,6 +63,7 @@ import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyStateS2CPacket;
 import com.kuilunfuzhe.monvhua.screen.ModScreenHandlers;
 import com.kuilunfuzhe.monvhua.screen.OtherPlayerInventoryScreenHandler;
 import com.kuilunfuzhe.monvhua.screen.OtherPlayerInventoryScreenHandlerFactory;
+import com.kuilunfuzhe.monvhua.sound.ModSounds;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
@@ -186,6 +199,10 @@ public class MonvhuaMod implements ModInitializer {
         RequestMirrorConfigC2SPacket.register();
         RequestSecrecyConfigC2SPacket.register();
         SecrecyConfigUpdateC2SPacket.register();
+        ImitateSelectPacket.register();
+        ImitateSelectPacket.registerHandler();
+        SilencePacket.register();
+        SilenceEffectS2CPacket.register();
 
         ServerPlayNetworking.registerGlobalReceiver(MirrorToggleC2SPacket.ID, (packet, context) -> {
             MirrorCommand.toggleViewport(context.player());
@@ -297,6 +314,25 @@ public class MonvhuaMod implements ModInitializer {
             });
         });
 
+        ServerPlayNetworking.registerGlobalReceiver(RequestImitateConfigC2SPacket.ID, (packet, context) -> {
+            ServerPlayNetworking.send(context.player(), new ImitateConfigS2CPacket(ImitateConfig.getInstance().toJson()));
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(UpdateImitateConfigC2SPacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                if (!context.player().hasPermissionLevel(2) && !context.player().isCreative()) {
+                    context.player().sendMessage(Text.literal("§c你没有权限修改模仿配置"), true);
+                    return;
+                }
+                ImitateConfig newConfig = ImitateConfig.fromJson(packet.json());
+                ImitateConfig.setInstance(newConfig);
+                for (ServerPlayerEntity p : context.server().getPlayerManager().getPlayerList()) {
+                    ServerPlayNetworking.send(p, new ImitateConfigS2CPacket(newConfig.toJson()));
+                }
+                context.player().sendMessage(Text.literal("§a模仿配置已更新并同步"), true);
+            });
+        });
+
         // ===== 3. 命令注册 =====
         CommandRegistrationCallback.EVENT.register(GiveBodyPartCommand::register);
         CommandRegistrationCallback.EVENT.register(ReplaceBodyPartCommand::register);
@@ -372,6 +408,8 @@ public class MonvhuaMod implements ModInitializer {
         // ===== 6. 摄像机追踪 & 镜面视口 tick =====
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             CameraWatchManager.tick(server);
+            ImitateManager.tick(server);
+            SilenceServerManager.tick(server);
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                 MirrorCommand.tickViewports(player);
                 MirrorCommand.tickCharging(player);
@@ -401,6 +439,15 @@ public class MonvhuaMod implements ModInitializer {
         ModBlockEntities.initialize();
         ModScreenHandlers.initialize();
         ModItemGroups.initialize();
+        ImitateItem.initialize();
+        ImitateManager.initialize();
+        ModSounds.initialize();
+        SoundWavePacket.registerHandler();
+        ServerPlayNetworking.registerGlobalReceiver(SilencePacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                SilenceEffect.execute(context.player(), packet.targetUUID());
+            });
+        });
 
 
         // ===== 8. 功能事件注册 =====

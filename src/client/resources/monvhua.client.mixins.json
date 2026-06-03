@@ -14,7 +14,9 @@
 		"carrymodelpose.CarriedEntityDirectRenderCancelMixin",
 		"carrymodelpose.CarriedPlayerCameraMixin",
 		"carrymodelpose.FirstPersonCarrierAttachedEntityRenderMixin",
-		"PlayerSkinGuiElementRendererMixin"
+		"PlayerSkinGuiElementRendererMixin",
+		"SoundManagerMixin",
+		"ChatHudMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

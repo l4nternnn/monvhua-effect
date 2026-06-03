@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.gui;
 
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
+import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.GlobalConfigS2CPacket;
@@ -8,6 +9,9 @@ import com.kuilunfuzhe.monvhua.network.evil_eyes.RequestGlobalConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.UpdateGlobalConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.RequestConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.UpdateConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
+import com.kuilunfuzhe.monvhua.network.imitate.RequestImitateConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.imitate.UpdateImitateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigUpdateC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.RequestMirrorConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.secrecy.RequestSecrecyConfigC2SPacket;
@@ -30,10 +34,10 @@ import java.util.List;
  */
 public class CombinedConfigScreen extends Screen {
     /** 配置类型枚举，对应顶部五个标签页 */
-    private enum ConfigType { EVIL_EYES, GAZE_GUIDANCE, MIRROR, SECRECY, STAGE_RANGE }
+    private enum ConfigType { EVIL_EYES, GAZE_GUIDANCE, MIRROR, SECRECY, STAGE_RANGE, IMITATE }
     private ConfigType currentType = ConfigType.EVIL_EYES;
 
-    private ButtonWidget btnEvilEyes, btnGaze, btnMirror, btnSecrecy, btnStageRange;
+    private ButtonWidget btnEvilEyes, btnGaze, btnMirror, btnSecrecy, btnStageRange, btnImitate;
     private int panelX, panelY, panelWidth, panelHeight;
     private int leftWidth, rightWidth;
 
@@ -77,6 +81,16 @@ public class CombinedConfigScreen extends Screen {
     private final List<TextWidget> secrecyLabels = new ArrayList<>();
     private static SecrecyConfig cachedSecrecyConfig = null;
 
+    // ===== 模仿魔法配置组件 =====
+    private final List<ButtonWidget> imitateStageButtons = new ArrayList<>();
+    private int imitateCurrentStage = 1;
+    private TextFieldWidget imitateDurationField, imitateSwitchCooldownField, imitateSoundWaveCooldownField;
+    private TextFieldWidget imitateSoundWaveRadiusField, imitateSoundWaveEffectDurationField;
+    private TextFieldWidget imitateSilenceRadiusField, imitateSilenceDurationField, imitateSilenceCooldownField;
+    private ButtonWidget saveImitateButton;
+    private final List<TextWidget> imitateLabels = new ArrayList<>();
+    private static ImitateConfig cachedImitateConfig = null;
+
     /**
      * 构造聚合配置界面，初始化时向服务器请求四种配置数据，
      * 本地缓存未就绪时使用默认值填充。
@@ -87,6 +101,7 @@ public class CombinedConfigScreen extends Screen {
         ClientPlayNetworking.send(new RequestConfigC2SPacket());
         ClientPlayNetworking.send(new RequestMirrorConfigC2SPacket());
         ClientPlayNetworking.send(new RequestSecrecyConfigC2SPacket());
+        ClientPlayNetworking.send(new RequestImitateConfigC2SPacket());
         if (cachedGazeConfig == null) {
             cachedGazeConfig = createDefaultGazeConfig();
         }
@@ -95,6 +110,9 @@ public class CombinedConfigScreen extends Screen {
         }
         if (cachedSecrecyConfig == null) {
             cachedSecrecyConfig = createDefaultSecrecyConfig();
+        }
+        if (cachedImitateConfig == null) {
+            cachedImitateConfig = createDefaultImitateConfig();
         }
     }
 
@@ -149,6 +167,19 @@ public class CombinedConfigScreen extends Screen {
         return config;
     }
 
+    private ImitateConfig createDefaultImitateConfig() {
+        ImitateConfig config = new ImitateConfig();
+        for (int i = 0; i < 7; i++) {
+            int stage = i + 1;
+            config.stages[i] = new ImitateConfig.StageConfig();
+            config.stages[i].name = "阶段 " + stage;
+            config.stages[i].durationSeconds = 0;
+            config.stages[i].switchCooldownSeconds = 0;
+            config.stages[i].soundWaveCooldownSeconds = 0;
+        }
+        return config;
+    }
+
     @Override
     protected void init() {
         super.init();
@@ -181,17 +212,21 @@ public class CombinedConfigScreen extends Screen {
                 .dimensions(centerX + btnWidth - 26, btnY, btnWidth, btnHeight).build();
         btnStageRange = ButtonWidget.builder(Text.literal("阶段区间"), btn -> switchTo(ConfigType.STAGE_RANGE))
                 .dimensions(centerX + btnWidth * 2 - 22, btnY, btnWidth, btnHeight).build();
+        btnImitate = ButtonWidget.builder(Text.literal("模仿"), btn -> switchTo(ConfigType.IMITATE))
+                .dimensions(centerX + btnWidth * 3 - 18, btnY, btnWidth, btnHeight).build();
         addDrawableChild(btnEvilEyes);
         addDrawableChild(btnGaze);
         addDrawableChild(btnMirror);
         addDrawableChild(btnSecrecy);
         addDrawableChild(btnStageRange);
+        addDrawableChild(btnImitate);
 
         buildEvilEyesUI();
         buildGazeGuidanceUI();
         buildMirrorUI();
         buildSecrecyUI();
         buildStageRangeUI();
+        buildImitateUI();
 
         switchTo(ConfigType.EVIL_EYES);
     }
@@ -378,6 +413,55 @@ public class CombinedConfigScreen extends Screen {
         addDrawableChild(saveStageRangeButton);
     }
 
+    private void buildImitateUI() {
+        int leftX = panelX + 5;
+        for (int i = 1; i <= 7; i++) {
+            int stage = i;
+            ButtonWidget btn = ButtonWidget.builder(Text.literal("阶段 " + i), button -> {
+                imitateCurrentStage = stage;
+                loadImitateStageUI();
+            }).dimensions(leftX, panelY + 10 + (i-1)*25, leftWidth - 10, 20).build();
+            addDrawableChild(btn);
+            imitateStageButtons.add(btn);
+        }
+
+        int rightX = panelX + leftWidth + 5;
+        int rowY = panelY + 10;
+        int rowHeight = 20;
+        int labelWidth = 110;
+        int inputWidth = 50;
+
+        String[] labels = {
+            "模仿持续时间(秒):",
+            "切换冷却时间(秒):",
+            "声波震荡冷却(秒):",
+            "声波震荡半径:",
+            "声波效果持续时间(秒):",
+            "静音检测半径:",
+            "静音持续时间(秒):",
+            "静音冷却时间(秒):"
+        };
+
+        for (int i = 0; i < labels.length; i++) {
+            TextWidget label = new TextWidget(rightX, rowY + i * rowHeight + 2, labelWidth, 9, Text.literal(labels[i]), textRenderer);
+            addDrawableChild(label);
+            imitateLabels.add(label);
+        }
+
+        imitateDurationField = createField(rightX + labelWidth, rowY, inputWidth);
+        imitateSwitchCooldownField = createField(rightX + labelWidth, rowY + rowHeight, inputWidth);
+        imitateSoundWaveCooldownField = createField(rightX + labelWidth, rowY + 2*rowHeight, inputWidth);
+        imitateSoundWaveRadiusField = createField(rightX + labelWidth, rowY + 3*rowHeight, inputWidth);
+        imitateSoundWaveEffectDurationField = createField(rightX + labelWidth, rowY + 4*rowHeight, inputWidth);
+        imitateSilenceRadiusField = createField(rightX + labelWidth, rowY + 5*rowHeight, inputWidth);
+        imitateSilenceDurationField = createField(rightX + labelWidth, rowY + 6*rowHeight, inputWidth);
+        imitateSilenceCooldownField = createField(rightX + labelWidth, rowY + 7*rowHeight, inputWidth);
+
+        saveImitateButton = ButtonWidget.builder(Text.literal("保存"), btn -> saveImitateConfig())
+                .dimensions(rightX, rowY + 8*rowHeight + 10, 80, 20).build();
+        addDrawableChild(saveImitateButton);
+    }
+
     // ==================== 工具方法 ====================
     /**
      * 创建一个限制最大输入长度为6的文本输入框。
@@ -399,12 +483,14 @@ public class CombinedConfigScreen extends Screen {
         btnMirror.setMessage(currentType == ConfigType.MIRROR ? Text.literal("§l§a昔今之镜") : Text.literal("镜子"));
         btnSecrecy.setMessage(currentType == ConfigType.SECRECY ? Text.literal("§l§a窃密") : Text.literal("窃密"));
         btnStageRange.setMessage(currentType == ConfigType.STAGE_RANGE ? Text.literal("§l§a阶段区间") : Text.literal("阶段区间"));
+        btnImitate.setMessage(currentType == ConfigType.IMITATE ? Text.literal("§l§a模仿") : Text.literal("模仿"));
 
         setEvilComponentsVisible(currentType == ConfigType.EVIL_EYES);
         setGazeComponentsVisible(currentType == ConfigType.GAZE_GUIDANCE);
         setMirrorComponentsVisible(currentType == ConfigType.MIRROR);
         setSecrecyComponentsVisible(currentType == ConfigType.SECRECY);
         setStageRangeComponentsVisible(currentType == ConfigType.STAGE_RANGE);
+        setImitateComponentsVisible(currentType == ConfigType.IMITATE);
 
         switch (currentType) {
             case EVIL_EYES -> loadEvilStageUI();
@@ -412,6 +498,7 @@ public class CombinedConfigScreen extends Screen {
             case MIRROR -> loadMirrorStageUI();
             case SECRECY -> loadSecrecyStageUI();
             case STAGE_RANGE -> loadStageRangeUI();
+            case IMITATE -> loadImitateStageUI();
         }
     }
 
@@ -464,6 +551,20 @@ public class CombinedConfigScreen extends Screen {
         if (stageRangeMinField != null) stageRangeMinField.visible = visible;
         if (stageRangeMaxField != null) stageRangeMaxField.visible = visible;
         if (saveStageRangeButton != null) saveStageRangeButton.visible = visible;
+    }
+
+    private void setImitateComponentsVisible(boolean visible) {
+        for (ButtonWidget btn : imitateStageButtons) btn.visible = visible;
+        for (TextWidget label : imitateLabels) label.visible = visible;
+        if (imitateDurationField != null) imitateDurationField.visible = visible;
+        if (imitateSwitchCooldownField != null) imitateSwitchCooldownField.visible = visible;
+        if (imitateSoundWaveCooldownField != null) imitateSoundWaveCooldownField.visible = visible;
+        if (imitateSoundWaveRadiusField != null) imitateSoundWaveRadiusField.visible = visible;
+        if (imitateSoundWaveEffectDurationField != null) imitateSoundWaveEffectDurationField.visible = visible;
+        if (imitateSilenceRadiusField != null) imitateSilenceRadiusField.visible = visible;
+        if (imitateSilenceDurationField != null) imitateSilenceDurationField.visible = visible;
+        if (imitateSilenceCooldownField != null) imitateSilenceCooldownField.visible = visible;
+        if (saveImitateButton != null) saveImitateButton.visible = visible;
     }
 
     // ========== 千里眼配置 ==========
@@ -720,6 +821,66 @@ public class CombinedConfigScreen extends Screen {
         }
     }
 
+    private void loadImitateStageUI() {
+        if (cachedImitateConfig == null) {
+            imitateDurationField.setText("0");
+            imitateSwitchCooldownField.setText("0");
+            imitateSoundWaveCooldownField.setText("0");
+            imitateSoundWaveRadiusField.setText("10");
+            imitateSoundWaveEffectDurationField.setText("5");
+            imitateSilenceRadiusField.setText("10");
+            imitateSilenceDurationField.setText("10");
+            imitateSilenceCooldownField.setText("0");
+            return;
+        }
+        imitateDurationField.setText(String.valueOf(cachedImitateConfig.getDuration(imitateCurrentStage)));
+        imitateSwitchCooldownField.setText(String.valueOf(cachedImitateConfig.getSwitchCooldown(imitateCurrentStage)));
+        imitateSoundWaveCooldownField.setText(String.valueOf(cachedImitateConfig.getSoundWaveCooldown(imitateCurrentStage)));
+        imitateSoundWaveRadiusField.setText(String.valueOf(cachedImitateConfig.getSoundWaveRadius(imitateCurrentStage)));
+        imitateSoundWaveEffectDurationField.setText(String.valueOf(cachedImitateConfig.getSoundWaveEffectDuration(imitateCurrentStage)));
+        imitateSilenceRadiusField.setText(String.valueOf(cachedImitateConfig.getSilenceRadius(imitateCurrentStage)));
+        imitateSilenceDurationField.setText(String.valueOf(cachedImitateConfig.getSilenceDuration(imitateCurrentStage)));
+        imitateSilenceCooldownField.setText(String.valueOf(cachedImitateConfig.getSilenceCooldown(imitateCurrentStage)));
+    }
+
+    private void saveImitateConfig() {
+        try {
+            int duration = Integer.parseInt(imitateDurationField.getText().trim());
+            int switchCooldown = Integer.parseInt(imitateSwitchCooldownField.getText().trim());
+            int soundWaveCooldown = Integer.parseInt(imitateSoundWaveCooldownField.getText().trim());
+            double soundWaveRadius = Double.parseDouble(imitateSoundWaveRadiusField.getText().trim());
+            int soundWaveEffectDuration = Integer.parseInt(imitateSoundWaveEffectDurationField.getText().trim());
+            double silenceRadius = Double.parseDouble(imitateSilenceRadiusField.getText().trim());
+            int silenceDuration = Integer.parseInt(imitateSilenceDurationField.getText().trim());
+            int silenceCooldown = Integer.parseInt(imitateSilenceCooldownField.getText().trim());
+
+            if (cachedImitateConfig == null) cachedImitateConfig = new ImitateConfig();
+            cachedImitateConfig.setDuration(imitateCurrentStage, duration);
+            cachedImitateConfig.setSwitchCooldown(imitateCurrentStage, switchCooldown);
+            cachedImitateConfig.setSoundWaveCooldown(imitateCurrentStage, soundWaveCooldown);
+            cachedImitateConfig.setSoundWaveRadius(imitateCurrentStage, soundWaveRadius);
+            cachedImitateConfig.setSoundWaveEffectDuration(imitateCurrentStage, soundWaveEffectDuration);
+            cachedImitateConfig.setSilenceRadius(imitateCurrentStage, silenceRadius);
+            cachedImitateConfig.setSilenceDuration(imitateCurrentStage, silenceDuration);
+            cachedImitateConfig.setSilenceCooldown(imitateCurrentStage, silenceCooldown);
+
+            ClientPlayNetworking.send(new UpdateImitateConfigC2SPacket(cachedImitateConfig.toJson()));
+            if (client != null && client.player != null)
+                client.player.sendMessage(Text.literal("§e阶段 " + imitateCurrentStage + " 模仿配置已提交，正在同步..."), true);
+        } catch (NumberFormatException e) {
+            if (client != null && client.player != null)
+                client.player.sendMessage(Text.literal("§c请输入有效的整数数字"), true);
+        }
+    }
+
+    public void receiveImitateConfig(ImitateConfig config) {
+        if (config == null) return;
+        cachedImitateConfig = config;
+        if (currentType == ConfigType.IMITATE) {
+            loadImitateStageUI();
+        }
+    }
+
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         // 半透明黑色遮罩背景
@@ -752,6 +913,10 @@ public class CombinedConfigScreen extends Screen {
             case STAGE_RANGE -> {
                 context.drawText(textRenderer, "阶段区间配置", panelX + 5, panelY + 5, 0xFFFFFF, false);
                 context.drawText(textRenderer, "当前编辑: 阶段 " + stageRangeCurrentStage, panelX + leftWidth + 5, panelY + 5, 0xFFFFFF, false);
+            }
+            case IMITATE -> {
+                context.drawText(textRenderer, "模仿魔法配置", panelX + 5, panelY + 5, 0xFFAAFF, false);
+                context.drawText(textRenderer, "当前编辑: 阶段 " + imitateCurrentStage, panelX + leftWidth + 5, panelY + 5, 0xFFAAFF, false);
             }
         }
 

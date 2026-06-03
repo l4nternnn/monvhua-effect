@@ -1,7 +1,8 @@
 {
   "item.monvhua.clairvoyance": "|魔法:§4千里眼§r|",
+  "item.monvhua.imitate_book": "|魔法:§d模仿§r|",
   "category.monvhua": "魔女化魔法相关配置菜单",
-  "key.monvhua.mark": "标记实体",
+  "key.monvhua.mark": "标记实体 (G)",
   "key.monvhua.use": "使用物品",
   "item.monvhua.magic_stick": "|魔法:§6视线诱导§r|",
   "item.monvhua.secrecy": "|魔法:§b窃密§r|",
@@ -11,13 +12,11 @@
   "category.gazeguidance": "视线诱导",
   "item.monvhua.mirror_of_then_and_now": "|魔法:§6昔§r§5今§r之镜§r|",
 
-
   "item.monvhua.torso": "玩家躯干",
   "item.monvhua.left_arm": "玩家左臂",
   "item.monvhua.right_arm": "玩家右臂",
   "item.monvhua.left_leg": "玩家左腿",
   "item.monvhua.right_leg": "玩家右腿",
-
 
   "block.monvhua.torso": "§3§k123§r§6躯干§r§3§k123§r",
   "block.monvhua.left_arm": "§3§k123§r§6左手臂§r§3§k123§r",
@@ -26,8 +25,6 @@
   "block.monvhua.right_leg": "§3§k123§r§6右腿§r§3§k123§r",
   "item.monvhua.head": "玩家头部",
   "block.monvhua.head": "§3§k123§r§6头部§r§3§k123§r",
-
-
 
   "effect.monvhua.ema_1": "神智清醒",
   "effect.monvhua.ema_2": "略染污浊",
@@ -140,5 +137,7 @@
   "effect.monvhua.hanna_5": "高度魔女化",
   "effect.monvhua.hanna_6": "重度魔女化",
   "effect.monvhua.hanna_7": "准魔女",
-  "effect.monvhua.hanna_8": "魔女"
+  "effect.monvhua.hanna_8": "魔女",
+  "sound.monvhua.sound_wave": "声音震荡",
+  "sound.monvhua.tinnitus": "耳鸣"
 }

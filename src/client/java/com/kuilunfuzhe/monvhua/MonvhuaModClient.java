@@ -1,5 +1,7 @@
 package com.kuilunfuzhe.monvhua;
 
+import com.kuilunfuzhe.monvhua.client.imitate.SilenceClientManager;
+import com.kuilunfuzhe.monvhua.client.imitate.SilenceHudOverlay;
 import com.kuilunfuzhe.monvhua.event.ClientTickHandler;
 import com.kuilunfuzhe.monvhua.event.KeyBindingHandler;
 import com.kuilunfuzhe.monvhua.event.WorldRenderHandler;
@@ -7,6 +9,7 @@ import com.kuilunfuzhe.monvhua.compat.DhCompat;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.ClientCameraWatchReceiver;
 import com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient;
+import com.kuilunfuzhe.monvhua.features.imitate.ImitateHudOverlay;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorHudOverlay;
 import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.body.bodyback.BodyPartScreen;
@@ -14,10 +17,12 @@ import com.kuilunfuzhe.monvhua.gui.mirror.mirrorHUD;
 import com.kuilunfuzhe.monvhua.gui.openback.OtherPlayerInventoryScreen;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.AnchorDestroyC2SPacket;
+import com.kuilunfuzhe.monvhua.network.imitate.SilenceEffectS2CPacket;
 import com.kuilunfuzhe.monvhua.network.openback.CarryEntityPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
 import com.kuilunfuzhe.monvhua.register.BodyBlockModelRegister;
 import com.kuilunfuzhe.monvhua.register.ClientPacketHandler;
+import com.kuilunfuzhe.monvhua.register.imitate.ImitateClientPacketHandler;
 import com.kuilunfuzhe.monvhua.screen.ModScreenHandlers;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -63,6 +68,7 @@ public class MonvhuaModClient implements ClientModInitializer {
     public void onInitializeClient() {
         // ===== 1. 网络包接收器注册 =====
         ModNetworking.registerS2CPackets();
+        ModNetworking.registerC2SPackets();
 
         // ===== 2. 功能模块客户端初始化 =====
         GazeguidanceClient.initialize();
@@ -81,7 +87,17 @@ public class MonvhuaModClient implements ClientModInitializer {
         CameraWatchClientHandler.initialize();
         MirrorHudOverlay.register();
 
-        // ===== 5. 攻击锚点装甲架 =====
+        // ===== 5. 模仿魔法客户端 =====
+        ImitateClientPacketHandler.register();
+        ImitateHudOverlay.register();
+        SilenceHudOverlay.register();
+        ClientPlayNetworking.registerGlobalReceiver(SilenceEffectS2CPacket.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                SilenceClientManager.setSilenced(packet.targetUUID(), packet.durationSeconds());
+            });
+        });
+
+        // ===== 6. 攻击锚点装甲架 =====
         // 当玩家攻击名为 "clairvoyance_evil_eyes" 的盔甲架时，发送锚点破坏包
         AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
             if (entity instanceof ArmorStandEntity armorStand) {

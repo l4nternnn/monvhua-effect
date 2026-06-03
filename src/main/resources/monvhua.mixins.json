@@ -4,7 +4,9 @@
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
 		"ExampleMixin",
-		"FallDamageMixin"
+		"FallDamageMixin",
+		"ServerPlayNetworkHandlerMixin",
+		"StyledChatStylesMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
