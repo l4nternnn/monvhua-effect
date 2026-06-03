@@ -1,6 +1,8 @@
 package com.kuilunfuzhe.monvhua.gui.body.bodypose;
 
 import com.kuilunfuzhe.monvhua.features.block.body.BodyModelSelectionCatalog;
+import com.kuilunfuzhe.monvhua.model.CombinedBodyModelData;
+import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.gui.DrawContext;
@@ -10,7 +12,6 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.client.render.entity.model.EntityModelLayers;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.util.SkinTextures;
 import net.minecraft.registry.Registries;
@@ -389,10 +390,13 @@ public class BodyPoseEditorScreen extends Screen {
 	}
 
 	private void placePosedBody() {
-		ClientPlayNetworking.send(new PlacePosedBodyC2SPacket(selectedSkin, slimModel, createStaticPoseValueArray(),
+		boolean skeletalMode = poseEditMode == PoseEditMode.SKELETAL;
+		ClientPlayNetworking.send(new PlacePosedBodyC2SPacket(selectedSkin, slimModel,
+				skeletalMode ? createSkeletalPoseValueArray() : createStaticPoseValueArray(),
+				skeletalMode ? createSkeletalBendValueArray() : null,
 				selectedSkinSource == SkinSource.PLAYER, selectedPlayerName,
 				modelOffsetX, modelOffsetY, modelOffsetZ,
-				modelPitch, modelYaw, modelRoll));
+				modelPitch, modelYaw, modelRoll, wholeBodyScale));
 	}
 
 	private void applySkeletalPose() {
@@ -856,12 +860,12 @@ public class BodyPoseEditorScreen extends Screen {
 		}
 		if (slimModel) {
 			if (this.slimPreviewModel == null) {
-				this.slimPreviewModel = new PlayerEntityModel(client.getLoadedEntityModels().getModelPart(EntityModelLayers.PLAYER_SLIM), true);
+				this.slimPreviewModel = new PlayerEntityModel(client.getLoadedEntityModels().getModelPart(ModModelLayers.COMBINED_BODY_SLIM), true);
 			}
 			return this.slimPreviewModel;
 		}
 		if (this.defaultPreviewModel == null) {
-			this.defaultPreviewModel = new PlayerEntityModel(client.getLoadedEntityModels().getModelPart(EntityModelLayers.PLAYER), false);
+			this.defaultPreviewModel = new PlayerEntityModel(client.getLoadedEntityModels().getModelPart(ModModelLayers.COMBINED_BODY), false);
 		}
 		return this.defaultPreviewModel;
 	}
@@ -910,12 +914,12 @@ public class BodyPoseEditorScreen extends Screen {
 		}
 
 		Map<String, PartPose> previewPoses = getActivePoseMap();
-		applyPose(model.head, previewPoses.get("head"));
-		applyPose(model.body, previewPoses.get("torso"));
-		applyPose(model.leftArm, previewPoses.get("left_arm"));
-		applyPose(model.rightArm, previewPoses.get("right_arm"));
-		applyPose(model.leftLeg, previewPoses.get("left_leg"));
-		applyPose(model.rightLeg, previewPoses.get("right_leg"));
+		applyPartPose("head", model.head, previewPoses.get("head"));
+		applyPartPose("torso", model.body, previewPoses.get("torso"));
+		applyPartPose("left_arm", model.leftArm, previewPoses.get("left_arm"));
+		applyPartPose("right_arm", model.rightArm, previewPoses.get("right_arm"));
+		applyPartPose("left_leg", model.leftLeg, previewPoses.get("left_leg"));
+		applyPartPose("right_leg", model.rightLeg, previewPoses.get("right_leg"));
 	}
 
 	private static void centerSelectedPart(PlayerEntityModel model) {
@@ -944,6 +948,26 @@ public class BodyPoseEditorScreen extends Screen {
 		part.originZ = z;
 	}
 
+	private static void applyPartPose(String partName, ModelPart part, PartPose pose) {
+		applyPose(part, pose);
+		ModelPart bendPart = getBendPart(partName, part);
+		if (bendPart != null && pose != null && poseEditMode == PoseEditMode.SKELETAL) {
+			applyBendPose(bendPart, pose);
+		}
+	}
+
+	private static ModelPart getBendPart(String partName, ModelPart part) {
+		String childName = switch (partName) {
+			case "torso" -> CombinedBodyModelData.WAIST;
+			case "left_arm" -> CombinedBodyModelData.LEFT_FOREARM;
+			case "right_arm" -> CombinedBodyModelData.RIGHT_FOREARM;
+			case "left_leg" -> CombinedBodyModelData.LEFT_LOWER_LEG;
+			case "right_leg" -> CombinedBodyModelData.RIGHT_LOWER_LEG;
+			default -> null;
+		};
+		return childName != null && part.hasChild(childName) ? part.getChild(childName) : null;
+	}
+
 	private static void applyPose(ModelPart part, PartPose pose) {
 		if (pose == null) {
 			return;
@@ -953,6 +977,13 @@ public class BodyPoseEditorScreen extends Screen {
 		part.yaw += pose.yaw * degreesToRadians;
 		part.roll += pose.roll * degreesToRadians;
 		setUniformScale(part, pose.scale);
+	}
+
+	private static void applyBendPose(ModelPart part, PartPose pose) {
+		float degreesToRadians = (float) (Math.PI / 180.0);
+		part.pitch += pose.bendPitch * degreesToRadians;
+		part.yaw += pose.bendYaw * degreesToRadians;
+		part.roll += pose.bendRoll * degreesToRadians;
 	}
 
 	private static void setUniformScale(ModelPart part, float scale) {
@@ -969,13 +1000,13 @@ public class BodyPoseEditorScreen extends Screen {
 		if (slimModel) {
 			if (this.worldPreviewModelSlim == null) {
 				this.worldPreviewModelSlim = new PlayerEntityModel(
-					client.getLoadedEntityModels().getModelPart(EntityModelLayers.PLAYER_SLIM), true);
+					client.getLoadedEntityModels().getModelPart(ModModelLayers.COMBINED_BODY_SLIM), true);
 			}
 			model = this.worldPreviewModelSlim;
 		} else {
 			if (this.worldPreviewModelDefault == null) {
 				this.worldPreviewModelDefault = new PlayerEntityModel(
-					client.getLoadedEntityModels().getModelPart(EntityModelLayers.PLAYER), false);
+					client.getLoadedEntityModels().getModelPart(ModModelLayers.COMBINED_BODY), false);
 			}
 			model = this.worldPreviewModelDefault;
 		}
@@ -1007,12 +1038,12 @@ public class BodyPoseEditorScreen extends Screen {
 		}
 
 		Map<String, PartPose> previewPoses = getActivePoseMap();
-		applyPose(model.head, previewPoses.get("head"));
-		applyPose(model.body, previewPoses.get("torso"));
-		applyPose(model.leftArm, previewPoses.get("left_arm"));
-		applyPose(model.rightArm, previewPoses.get("right_arm"));
-		applyPose(model.leftLeg, previewPoses.get("left_leg"));
-		applyPose(model.rightLeg, previewPoses.get("right_leg"));
+		applyPartPose("head", model.head, previewPoses.get("head"));
+		applyPartPose("torso", model.body, previewPoses.get("torso"));
+		applyPartPose("left_arm", model.leftArm, previewPoses.get("left_arm"));
+		applyPartPose("right_arm", model.rightArm, previewPoses.get("right_arm"));
+		applyPartPose("left_leg", model.leftLeg, previewPoses.get("left_leg"));
+		applyPartPose("right_leg", model.rightLeg, previewPoses.get("right_leg"));
 
 		return model;
 	}

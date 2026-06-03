@@ -1,6 +1,8 @@
 package com.kuilunfuzhe.monvhua.gui.body.bodypose;
 
 import com.kuilunfuzhe.monvhua.features.block.body.BodyModelSelectionCatalog;
+import com.kuilunfuzhe.monvhua.model.CombinedBodyModelData;
+import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.network.bodypose.ApplySkeletalPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
@@ -22,7 +24,6 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.client.render.entity.model.EntityModelLayers;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.util.SkinTextures;
 import net.minecraft.item.Item;
@@ -1584,13 +1585,13 @@ public class BodyPoseEditorFragment extends Fragment {
         if (slimModel) {
             if (slimPreviewModel == null) {
                 slimPreviewModel = new PlayerEntityModel(
-                        client.getLoadedEntityModels().getModelPart(EntityModelLayers.PLAYER_SLIM), true);
+                        client.getLoadedEntityModels().getModelPart(ModModelLayers.COMBINED_BODY_SLIM), true);
             }
             return slimPreviewModel;
         }
         if (defaultPreviewModel == null) {
             defaultPreviewModel = new PlayerEntityModel(
-                    client.getLoadedEntityModels().getModelPart(EntityModelLayers.PLAYER), false);
+                    client.getLoadedEntityModels().getModelPart(ModModelLayers.COMBINED_BODY), false);
         }
         return defaultPreviewModel;
     }
@@ -1639,12 +1640,12 @@ public class BodyPoseEditorFragment extends Fragment {
         }
 
         Map<String, PartPose> previewPoses = getActivePoseMap();
-        applyPose(model.head, previewPoses.get("head"));
-        applyPose(model.body, previewPoses.get("torso"));
-        applyPose(model.leftArm, previewPoses.get("left_arm"));
-        applyPose(model.rightArm, previewPoses.get("right_arm"));
-        applyPose(model.leftLeg, previewPoses.get("left_leg"));
-        applyPose(model.rightLeg, previewPoses.get("right_leg"));
+        applyPartPose("head", model.head, previewPoses.get("head"));
+        applyPartPose("torso", model.body, previewPoses.get("torso"));
+        applyPartPose("left_arm", model.leftArm, previewPoses.get("left_arm"));
+        applyPartPose("right_arm", model.rightArm, previewPoses.get("right_arm"));
+        applyPartPose("left_leg", model.leftLeg, previewPoses.get("left_leg"));
+        applyPartPose("right_leg", model.rightLeg, previewPoses.get("right_leg"));
     }
 
     public static PlayerEntityModel getPreparedWorldPreviewModel() {
@@ -1655,13 +1656,13 @@ public class BodyPoseEditorFragment extends Fragment {
         if (slimModel) {
             if (worldPreviewModelSlim == null) {
                 worldPreviewModelSlim = new PlayerEntityModel(
-                        client.getLoadedEntityModels().getModelPart(EntityModelLayers.PLAYER_SLIM), true);
+                        client.getLoadedEntityModels().getModelPart(ModModelLayers.COMBINED_BODY_SLIM), true);
             }
             model = worldPreviewModelSlim;
         } else {
             if (worldPreviewModelDefault == null) {
                 worldPreviewModelDefault = new PlayerEntityModel(
-                        client.getLoadedEntityModels().getModelPart(EntityModelLayers.PLAYER), false);
+                        client.getLoadedEntityModels().getModelPart(ModModelLayers.COMBINED_BODY), false);
             }
             model = worldPreviewModelDefault;
         }
@@ -1692,12 +1693,12 @@ public class BodyPoseEditorFragment extends Fragment {
         }
 
         Map<String, PartPose> previewPoses = getActivePoseMap();
-        applyPose(model.head, previewPoses.get("head"));
-        applyPose(model.body, previewPoses.get("torso"));
-        applyPose(model.leftArm, previewPoses.get("left_arm"));
-        applyPose(model.rightArm, previewPoses.get("right_arm"));
-        applyPose(model.leftLeg, previewPoses.get("left_leg"));
-        applyPose(model.rightLeg, previewPoses.get("right_leg"));
+        applyPartPose("head", model.head, previewPoses.get("head"));
+        applyPartPose("torso", model.body, previewPoses.get("torso"));
+        applyPartPose("left_arm", model.leftArm, previewPoses.get("left_arm"));
+        applyPartPose("right_arm", model.rightArm, previewPoses.get("right_arm"));
+        applyPartPose("left_leg", model.leftLeg, previewPoses.get("left_leg"));
+        applyPartPose("right_leg", model.rightLeg, previewPoses.get("right_leg"));
 
         return model;
     }
@@ -1728,6 +1729,26 @@ public class BodyPoseEditorFragment extends Fragment {
         part.originZ = z;
     }
 
+    private static void applyPartPose(String partName, ModelPart part, PartPose pose) {
+        applyPose(part, pose);
+        ModelPart bendPart = getBendPart(partName, part);
+        if (bendPart != null && pose != null && poseEditMode == PoseEditMode.SKELETAL) {
+            applyBendPose(bendPart, pose);
+        }
+    }
+
+    private static ModelPart getBendPart(String partName, ModelPart part) {
+        String childName = switch (partName) {
+            case "torso" -> CombinedBodyModelData.WAIST;
+            case "left_arm" -> CombinedBodyModelData.LEFT_FOREARM;
+            case "right_arm" -> CombinedBodyModelData.RIGHT_FOREARM;
+            case "left_leg" -> CombinedBodyModelData.LEFT_LOWER_LEG;
+            case "right_leg" -> CombinedBodyModelData.RIGHT_LOWER_LEG;
+            default -> null;
+        };
+        return childName != null && part.hasChild(childName) ? part.getChild(childName) : null;
+    }
+
     private static void applyPose(ModelPart part, PartPose pose) {
         if (pose == null) return;
         float r = (float) (Math.PI / 180.0);
@@ -1735,6 +1756,13 @@ public class BodyPoseEditorFragment extends Fragment {
         part.yaw += pose.yaw * r;
         part.roll += pose.roll * r;
         setUniformScale(part, pose.scale);
+    }
+
+    private static void applyBendPose(ModelPart part, PartPose pose) {
+        float r = (float) (Math.PI / 180.0);
+        part.pitch += pose.bendPitch * r;
+        part.yaw += pose.bendYaw * r;
+        part.roll += pose.bendRoll * r;
     }
 
     private static void setUniformScale(ModelPart part, float scale) {
@@ -1873,7 +1901,10 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void placePosedBody() {
-        ClientPlayNetworking.send(new PlacePosedBodyC2SPacket(selectedSkin, slimModel, createStaticPoseValueArray(),
+        boolean skeletalMode = poseEditMode == PoseEditMode.SKELETAL;
+        ClientPlayNetworking.send(new PlacePosedBodyC2SPacket(selectedSkin, slimModel,
+                skeletalMode ? createSkeletalPoseValueArray() : createStaticPoseValueArray(),
+                skeletalMode ? createSkeletalBendValueArray() : null,
                 selectedSkinSource == SkinSource.PLAYER, selectedPlayerName,
                 modelOffsetX, modelOffsetY, modelOffsetZ,
                 modelPitch, modelYaw, modelRoll, wholeBodyScale));

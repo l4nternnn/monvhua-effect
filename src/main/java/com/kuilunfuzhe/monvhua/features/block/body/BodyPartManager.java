@@ -645,46 +645,58 @@ public class BodyPartManager {
 	}
 
 	public static void createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile) {
-		createCombinedDisplay(world, pos, skinName, torsoInv, profile, false, null, true,
+		createCombinedDisplay(world, pos, skinName, torsoInv, profile, false, null, null, true,
 				0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F);
 	}
 
 	public static void createPosedCombinedDisplay(ServerPlayerEntity player, String skinName, boolean slim, float[] poseValues) {
-		createPosedCombinedDisplay(player, skinName, slim, poseValues, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F);
+		createPosedCombinedDisplay(player, skinName, slim, poseValues, null, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F);
 	}
 
 	public static void createPosedCombinedDisplay(ServerPlayerEntity player, String skinName, boolean slim, float[] poseValues,
 			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll) {
-		createPosedCombinedDisplay(player, skinName, slim, poseValues,
+		createPosedCombinedDisplay(player, skinName, slim, poseValues, null,
 				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, 1.0F);
 	}
 
 	public static void createPosedCombinedDisplay(ServerPlayerEntity player, String skinName, boolean slim, float[] poseValues,
 			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
+		createPosedCombinedDisplay(player, skinName, slim, poseValues, null,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
+	}
+
+	public static void createPosedCombinedDisplay(ServerPlayerEntity player, String skinName, boolean slim, float[] poseValues, float[] bendValues,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
 		ServerWorld world = (ServerWorld) player.getWorld();
 		Vec3d forward = getHorizontalForward(player);
 		Vec3d pos = player.getPos().add(forward.x, 1.5D, forward.z);
-		createCombinedDisplay(world, pos, skinName, DefaultedList.ofSize(9, ItemStack.EMPTY), null, slim, poseValues, false,
+		createCombinedDisplay(world, pos, skinName, DefaultedList.ofSize(9, ItemStack.EMPTY), null, slim, poseValues, bendValues, false,
 				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
 		player.sendMessage(Text.literal("Placed posed body model"), true);
 	}
 
 	public static void createPosedCombinedDisplay(ServerPlayerEntity player, ProfileComponent profile, boolean slim, float[] poseValues) {
-		createPosedCombinedDisplay(player, profile, slim, poseValues, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F);
+		createPosedCombinedDisplay(player, profile, slim, poseValues, null, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F);
 	}
 
 	public static void createPosedCombinedDisplay(ServerPlayerEntity player, ProfileComponent profile, boolean slim, float[] poseValues,
 			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll) {
-		createPosedCombinedDisplay(player, profile, slim, poseValues,
+		createPosedCombinedDisplay(player, profile, slim, poseValues, null,
 				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, 1.0F);
 	}
 
 	public static void createPosedCombinedDisplay(ServerPlayerEntity player, ProfileComponent profile, boolean slim, float[] poseValues,
 			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
+		createPosedCombinedDisplay(player, profile, slim, poseValues, null,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
+	}
+
+	public static void createPosedCombinedDisplay(ServerPlayerEntity player, ProfileComponent profile, boolean slim, float[] poseValues, float[] bendValues,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
 		ServerWorld world = (ServerWorld) player.getWorld();
 		Vec3d forward = getHorizontalForward(player);
 		Vec3d pos = player.getPos().add(forward.x, 1.5D, forward.z);
-		createCombinedDisplay(world, pos, "", DefaultedList.ofSize(9, ItemStack.EMPTY), profile, slim, poseValues, false,
+		createCombinedDisplay(world, pos, "", DefaultedList.ofSize(9, ItemStack.EMPTY), profile, slim, poseValues, bendValues, false,
 				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
 		player.sendMessage(Text.literal("Placed posed body model"), true);
 	}
@@ -723,18 +735,19 @@ public class BodyPartManager {
 	}
 
 	private static void createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile,
-			boolean slim, float[] poseValues, boolean lyingDown,
+			boolean slim, float[] poseValues, float[] bendValues, boolean lyingDown,
 			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
 		ItemStack combinedStack = new ItemStack(Items.NETHERITE_SCRAP);
 		combinedStack.set(DataComponentTypes.ITEM_MODEL, Identifier.of("monvhua", "combined_body"));
 		if (profile != null) {
 			combinedStack.set(DataComponentTypes.PROFILE, profile);
-			if (poseValues != null || slim || hasPlacementTransform(offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale)) {
+			if (poseValues != null || bendValues != null || slim || hasPlacementTransform(offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale)) {
 				NbtCompound nbt = new NbtCompound();
 				if (slim) {
 					nbt.putString("arm_model", "slim");
 				}
 				writePoseValues(nbt, poseValues);
+				writeBendValues(nbt, bendValues);
 				writePlacementTransform(nbt, offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
 				combinedStack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
 			}
@@ -745,6 +758,7 @@ public class BodyPartManager {
 				nbt.putString("arm_model", "slim");
 			}
 			writePoseValues(nbt, poseValues);
+			writeBendValues(nbt, bendValues);
 			writePlacementTransform(nbt, offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
 			combinedStack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
 		}
@@ -799,6 +813,24 @@ public class BodyPartManager {
 		if (hasScaleValue) {
 			nbt.putFloat("pose_" + part + "_scale", Math.max(0.1F, values[offset + 3]));
 		}
+	}
+
+	private static void writeBendValues(NbtCompound nbt, float[] bendValues) {
+		if (bendValues == null || bendValues.length < PlacePosedBodyC2SPacket.BEND_VALUE_COUNT) {
+			return;
+		}
+		writeBend(nbt, bendValues, 0, "head");
+		writeBend(nbt, bendValues, 3, "torso");
+		writeBend(nbt, bendValues, 6, "left_arm");
+		writeBend(nbt, bendValues, 9, "right_arm");
+		writeBend(nbt, bendValues, 12, "left_leg");
+		writeBend(nbt, bendValues, 15, "right_leg");
+	}
+
+	private static void writeBend(NbtCompound nbt, float[] values, int offset, String part) {
+		nbt.putFloat("bend_" + part + "_pitch", values[offset]);
+		nbt.putFloat("bend_" + part + "_yaw", values[offset + 1]);
+		nbt.putFloat("bend_" + part + "_roll", values[offset + 2]);
 	}
 
 	private static boolean hasPlacementTransform(float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll,
