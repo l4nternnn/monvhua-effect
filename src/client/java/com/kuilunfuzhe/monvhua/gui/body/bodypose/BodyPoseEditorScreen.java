@@ -950,9 +950,17 @@ public class BodyPoseEditorScreen extends Screen {
 
 	private static void applyPartPose(String partName, ModelPart part, PartPose pose) {
 		applyPose(part, pose);
+		ModelPart blendPart = getBlendPart(partName, part);
+		if (blendPart != null) {
+			blendPart.visible = false;
+		}
 		ModelPart bendPart = getBendPart(partName, part);
 		if (bendPart != null && pose != null && poseEditMode == PoseEditMode.SKELETAL) {
 			applyBendPose(bendPart, pose);
+			if (blendPart != null && hasBendPose(pose)) {
+				blendPart.visible = true;
+				applyHalfBendPose(blendPart, pose);
+			}
 		}
 	}
 
@@ -963,6 +971,18 @@ public class BodyPoseEditorScreen extends Screen {
 			case "right_arm" -> CombinedBodyModelData.RIGHT_FOREARM;
 			case "left_leg" -> CombinedBodyModelData.LEFT_LOWER_LEG;
 			case "right_leg" -> CombinedBodyModelData.RIGHT_LOWER_LEG;
+			default -> null;
+		};
+		return childName != null && part.hasChild(childName) ? part.getChild(childName) : null;
+	}
+
+	private static ModelPart getBlendPart(String partName, ModelPart part) {
+		String childName = switch (partName) {
+			case "torso" -> CombinedBodyModelData.WAIST_BLEND;
+			case "left_arm" -> CombinedBodyModelData.LEFT_ELBOW_BLEND;
+			case "right_arm" -> CombinedBodyModelData.RIGHT_ELBOW_BLEND;
+			case "left_leg" -> CombinedBodyModelData.LEFT_KNEE_BLEND;
+			case "right_leg" -> CombinedBodyModelData.RIGHT_KNEE_BLEND;
 			default -> null;
 		};
 		return childName != null && part.hasChild(childName) ? part.getChild(childName) : null;
@@ -984,6 +1004,17 @@ public class BodyPoseEditorScreen extends Screen {
 		part.pitch += pose.bendPitch * degreesToRadians;
 		part.yaw += pose.bendYaw * degreesToRadians;
 		part.roll += pose.bendRoll * degreesToRadians;
+	}
+
+	private static void applyHalfBendPose(ModelPart part, PartPose pose) {
+		float degreesToRadians = (float) (Math.PI / 180.0);
+		part.pitch += pose.bendPitch * 0.5F * degreesToRadians;
+		part.yaw += pose.bendYaw * 0.5F * degreesToRadians;
+		part.roll += pose.bendRoll * 0.5F * degreesToRadians;
+	}
+
+	private static boolean hasBendPose(PartPose pose) {
+		return pose.bendPitch != 0.0F || pose.bendYaw != 0.0F || pose.bendRoll != 0.0F;
 	}
 
 	private static void setUniformScale(ModelPart part, float scale) {

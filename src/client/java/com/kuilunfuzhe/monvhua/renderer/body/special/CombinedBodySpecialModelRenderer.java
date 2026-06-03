@@ -205,9 +205,17 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
 
     private static void applyPartPose(ModelPart part, NbtCompound data, String partName) {
         applyPose(part, data, partName);
+        ModelPart blendPart = getBlendPart(part, partName);
+        if (blendPart != null) {
+            blendPart.visible = false;
+        }
         ModelPart bendPart = getBendPart(part, partName);
         if (bendPart != null) {
             applyBendPose(bendPart, data, partName);
+            if (blendPart != null && hasBendPose(data, partName)) {
+                blendPart.visible = true;
+                applyHalfBendPose(blendPart, data, partName);
+            }
         }
     }
 
@@ -218,6 +226,18 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
             case "right_arm" -> CombinedBodyModelData.RIGHT_FOREARM;
             case "left_leg" -> CombinedBodyModelData.LEFT_LOWER_LEG;
             case "right_leg" -> CombinedBodyModelData.RIGHT_LOWER_LEG;
+            default -> null;
+        };
+        return childName != null && part.hasChild(childName) ? part.getChild(childName) : null;
+    }
+
+    private static ModelPart getBlendPart(ModelPart part, String partName) {
+        String childName = switch (partName) {
+            case "torso" -> CombinedBodyModelData.WAIST_BLEND;
+            case "left_arm" -> CombinedBodyModelData.LEFT_ELBOW_BLEND;
+            case "right_arm" -> CombinedBodyModelData.RIGHT_ELBOW_BLEND;
+            case "left_leg" -> CombinedBodyModelData.LEFT_KNEE_BLEND;
+            case "right_leg" -> CombinedBodyModelData.RIGHT_KNEE_BLEND;
             default -> null;
         };
         return childName != null && part.hasChild(childName) ? part.getChild(childName) : null;
@@ -240,6 +260,20 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         part.yaw += data.getFloat("bend_" + partName + "_yaw", 0.0F) * degreesToRadians;
         part.roll += data.getFloat("bend_" + partName + "_roll", 0.0F) * degreesToRadians;
     }
+
+    private static void applyHalfBendPose(ModelPart part, NbtCompound data, String partName) {
+        float degreesToRadians = (float) (Math.PI / 180.0);
+        part.pitch += data.getFloat("bend_" + partName + "_pitch", 0.0F) * 0.5F * degreesToRadians;
+        part.yaw += data.getFloat("bend_" + partName + "_yaw", 0.0F) * 0.5F * degreesToRadians;
+        part.roll += data.getFloat("bend_" + partName + "_roll", 0.0F) * 0.5F * degreesToRadians;
+    }
+
+    private static boolean hasBendPose(NbtCompound data, String partName) {
+        return data.getFloat("bend_" + partName + "_pitch", 0.0F) != 0.0F
+                || data.getFloat("bend_" + partName + "_yaw", 0.0F) != 0.0F
+                || data.getFloat("bend_" + partName + "_roll", 0.0F) != 0.0F;
+    }
+
 
     private static void applyPlacementTransform(MatrixStack matrices, NbtCompound data) {
         if (data == null) {

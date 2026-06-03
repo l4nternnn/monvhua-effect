@@ -70,6 +70,11 @@ public class SkeletalBodyPartGeoModel<T extends SkeletalBodyPartBlockEntity> ext
         if (bendBone != null) {
             bendBone.updateRotation(0.0F, 0.0F, 0.0F);
         }
+        GeoBone blendBone = getBlendBone(part);
+        if (blendBone != null) {
+            blendBone.updateRotation(0.0F, 0.0F, 0.0F);
+            blendBone.setHidden(true);
+        }
 
         if (active) {
             bone.updateRotation(
@@ -82,6 +87,14 @@ public class SkeletalBodyPartGeoModel<T extends SkeletalBodyPartBlockEntity> ext
                         degreesToRadians(entity.getBendPitch()),
                         degreesToRadians(entity.getBendYaw()),
                         degreesToRadians(entity.getBendRoll())
+                );
+            }
+            if (blendBone != null && hasBendPose(entity)) {
+                blendBone.setHidden(false);
+                blendBone.updateRotation(
+                        degreesToRadians(entity.getBendPitch() * 0.5F),
+                        degreesToRadians(entity.getBendYaw() * 0.5F),
+                        degreesToRadians(entity.getBendRoll() * 0.5F)
                 );
             }
         }
@@ -97,6 +110,22 @@ public class SkeletalBodyPartGeoModel<T extends SkeletalBodyPartBlockEntity> ext
             default -> null;
         };
         return boneName == null ? null : getBone(boneName).orElse(null);
+    }
+
+    private GeoBone getBlendBone(SkeletalBodyPart part) {
+        String boneName = switch (part) {
+            case TORSO -> "waist_blend";
+            case LEFT_ARM -> "left_elbow_blend";
+            case RIGHT_ARM -> "right_elbow_blend";
+            case LEFT_LEG -> "left_knee_blend";
+            case RIGHT_LEG -> "right_knee_blend";
+            default -> null;
+        };
+        return boneName == null ? null : getBone(boneName).orElse(null);
+    }
+
+    private static boolean hasBendPose(SkeletalBodyPartBlockEntity entity) {
+        return entity.getBendPitch() != 0.0F || entity.getBendYaw() != 0.0F || entity.getBendRoll() != 0.0F;
     }
 
     private static float degreesToRadians(float degrees) {
