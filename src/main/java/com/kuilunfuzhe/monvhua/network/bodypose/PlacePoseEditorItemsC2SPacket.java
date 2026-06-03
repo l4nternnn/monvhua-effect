@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.network.bodypose;
 
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.minecraft.item.ItemDisplayContext;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.packet.CustomPayload;
@@ -35,6 +36,7 @@ public record PlacePoseEditorItemsC2SPacket(List<ItemPlacement> items) implement
 			buf.writeFloat(item.pitch());
 			buf.writeFloat(item.yaw());
 			buf.writeFloat(item.roll());
+			buf.writeVarInt(item.displayContext().getIndex());
 		}
 	}
 
@@ -49,7 +51,8 @@ public record PlacePoseEditorItemsC2SPacket(List<ItemPlacement> items) implement
 					buf.readFloat(),
 					buf.readFloat(),
 					buf.readFloat(),
-					buf.readFloat()));
+					buf.readFloat(),
+					ItemDisplayContext.FROM_INDEX.apply(buf.readVarInt())));
 		}
 		return items;
 	}
@@ -68,6 +71,18 @@ public record PlacePoseEditorItemsC2SPacket(List<ItemPlacement> items) implement
 
 	public record ItemPlacement(Identifier itemId,
 								float offsetX, float offsetY, float offsetZ,
-								float pitch, float yaw, float roll) {
+								float pitch, float yaw, float roll,
+								ItemDisplayContext displayContext) {
+		public ItemPlacement(Identifier itemId,
+							 float offsetX, float offsetY, float offsetZ,
+							 float pitch, float yaw, float roll) {
+			this(itemId, offsetX, offsetY, offsetZ, pitch, yaw, roll, ItemDisplayContext.FIXED);
+		}
+
+		public ItemPlacement {
+			if (displayContext == null) {
+				displayContext = ItemDisplayContext.FIXED;
+			}
+		}
 	}
 }
