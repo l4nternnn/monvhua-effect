@@ -25,6 +25,9 @@ public class SkeletalBodyPartBlockEntity extends BodyPartBlockEntity implements 
     private float jointPitch;
     private float jointYaw;
     private float jointRoll;
+    private float bendPitch;
+    private float bendYaw;
+    private float bendRoll;
 
     public SkeletalBodyPartBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state, SkeletalBodyPart part) {
         super(type, pos, state);
@@ -56,10 +59,34 @@ public class SkeletalBodyPartBlockEntity extends BodyPartBlockEntity implements 
         return jointRoll;
     }
 
+    public float getBendPitch() {
+        return bendPitch;
+    }
+
+    public float getBendYaw() {
+        return bendYaw;
+    }
+
+    public float getBendRoll() {
+        return bendRoll;
+    }
+
     public void setJointPose(float pitch, float yaw, float roll) {
-        this.jointPitch = pitch;
-        this.jointYaw = yaw;
-        this.jointRoll = roll;
+        setSkeletalPose(pitch, yaw, roll, this.bendPitch, this.bendYaw, this.bendRoll);
+    }
+
+    public void setBendPose(float pitch, float yaw, float roll) {
+        setSkeletalPose(this.jointPitch, this.jointYaw, this.jointRoll, pitch, yaw, roll);
+    }
+
+    public void setSkeletalPose(float jointPitch, float jointYaw, float jointRoll,
+                                float bendPitch, float bendYaw, float bendRoll) {
+        this.jointPitch = jointPitch;
+        this.jointYaw = jointYaw;
+        this.jointRoll = jointRoll;
+        this.bendPitch = bendPitch;
+        this.bendYaw = bendYaw;
+        this.bendRoll = bendRoll;
         this.markDirty();
         if (this.world instanceof ServerWorld serverWorld) {
             serverWorld.getChunkManager().markForUpdate(this.pos);
@@ -91,6 +118,9 @@ public class SkeletalBodyPartBlockEntity extends BodyPartBlockEntity implements 
         this.jointPitch = view.read("joint_pitch", Codec.FLOAT).orElse(0.0F);
         this.jointYaw = view.read("joint_yaw", Codec.FLOAT).orElse(0.0F);
         this.jointRoll = view.read("joint_roll", Codec.FLOAT).orElse(0.0F);
+        this.bendPitch = view.read("bend_pitch", Codec.FLOAT).orElse(0.0F);
+        this.bendYaw = view.read("bend_yaw", Codec.FLOAT).orElse(0.0F);
+        this.bendRoll = view.read("bend_roll", Codec.FLOAT).orElse(0.0F);
     }
 
     @Override
@@ -101,5 +131,8 @@ public class SkeletalBodyPartBlockEntity extends BodyPartBlockEntity implements 
         view.put("joint_pitch", Codec.FLOAT, jointPitch);
         view.put("joint_yaw", Codec.FLOAT, jointYaw);
         view.put("joint_roll", Codec.FLOAT, jointRoll);
+        view.put("bend_pitch", Codec.FLOAT, bendPitch);
+        view.put("bend_yaw", Codec.FLOAT, bendYaw);
+        view.put("bend_roll", Codec.FLOAT, bendRoll);
     }
 }

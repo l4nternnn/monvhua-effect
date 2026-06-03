@@ -17,6 +17,7 @@ import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import com.kuilunfuzhe.monvhua.network.bodypose.ApplySkeletalPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import org.joml.Matrix3x2fStack;
@@ -56,6 +57,9 @@ public class BodyPoseEditorScreen extends Screen {
 	private static final int ITEM_LIST_ITEM_HEIGHT = 18;
 	private static final int ITEM_LIST_VISIBLE_ROWS = 8;
 	private static final int ITEM_SELECTOR_WIDTH = 150;
+	private static final int RIGHT_CONTROL_WIDTH = 250;
+	private static final int RIGHT_CONTROL_MARGIN = 28;
+	private static final int RIGHT_PREVIEW_GUTTER = 48;
 	private static String selectedSkin = BodyModelSelectionCatalog.LOCAL_SKINS[0];
 	private static String selectedPlayerName = "";
 	private static SkinSource selectedSkinSource = SkinSource.LOCAL;
@@ -68,8 +72,10 @@ public class BodyPoseEditorScreen extends Screen {
 	private static float modelYaw;
 	private static float modelRoll;
 	private static float wholeBodyScale = 1.0F;
+	private static PoseEditMode poseEditMode = PoseEditMode.STATIC_PART;
 	private static final List<EditorItemModel> EDITOR_ITEMS = new ArrayList<>();
 	private static final Map<String, PartPose> PART_POSES = createPartPoses();
+	private static final Map<String, PartPose> SKELETAL_POSES = createPartPoses();
 
 	/** 世界3D预览是否启用 */
 	private static boolean worldPreviewEnabled = true;
@@ -86,8 +92,10 @@ public class BodyPoseEditorScreen extends Screen {
 	private final List<ButtonWidget> partButtons = new ArrayList<>();
 	private final List<ButtonWidget> poseButtons = new ArrayList<>();
 	private ButtonWidget modelButton;
+	private ButtonWidget poseModeButton;
 	private ButtonWidget runCommandButton;
 	private ButtonWidget placeButton;
+	private ButtonWidget applySkeletalButton;
 	private ButtonWidget showWholeButton;
 	private ButtonWidget playerButton;
 	private ButtonWidget itemButton;
@@ -168,19 +176,24 @@ public class BodyPoseEditorScreen extends Screen {
 			this.skinButtons.add(this.addDrawableChild(button));
 		}
 
-		int rightX = this.width - 178;
+		int rightX = getRightControlX();
 		this.modelButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> {
 			slimModel = !slimModel;
 			refreshButtonLabels();
-		}).size(150, 20).position(rightX, panelTop).build());
+		}).size(RIGHT_CONTROL_WIDTH, 20).position(rightX, panelTop).build());
 
-		int partY = panelTop + 34;
+		this.poseModeButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> {
+			poseEditMode = poseEditMode == PoseEditMode.STATIC_PART ? PoseEditMode.SKELETAL : PoseEditMode.STATIC_PART;
+			refreshButtonLabels();
+		}).size(RIGHT_CONTROL_WIDTH, 20).position(rightX, panelTop + 24).build());
+
+		int partY = panelTop + 58;
 		for (int i = 0; i < BodyModelSelectionCatalog.PARTS.length; i++) {
 			String part = BodyModelSelectionCatalog.PARTS[i];
 			ButtonWidget button = ButtonWidget.builder(Text.literal(part), pressed -> {
 				selectedPart = part;
 				refreshButtonLabels();
-			}).size(150, 18).position(rightX, partY + i * 22).build();
+			}).size(RIGHT_CONTROL_WIDTH, 18).position(rightX, partY + i * 22).build();
 			this.partButtons.add(this.addDrawableChild(button));
 		}
 
@@ -191,16 +204,27 @@ public class BodyPoseEditorScreen extends Screen {
 		addPoseButton(rightX + 104, poseY + 24, "+偏转", () -> adjustSelectedPose(Axis.YAW, ROTATION_STEP_DEGREES));
 		addPoseButton(rightX + 58, poseY + 48, "-R", () -> adjustSelectedPose(Axis.ROLL, -ROTATION_STEP_DEGREES));
 		addPoseButton(rightX + 104, poseY + 48, "+R", () -> adjustSelectedPose(Axis.ROLL, ROTATION_STEP_DEGREES));
-		addPoseButton(rightX, poseY + 76, "重置", BodyPoseEditorScreen::resetSelectedPose, 72);
+		addPoseButton(rightX + 156, poseY, "-B P", () -> adjustSelectedBend(Axis.PITCH, -ROTATION_STEP_DEGREES));
+		addPoseButton(rightX + 202, poseY, "+B P", () -> adjustSelectedBend(Axis.PITCH, ROTATION_STEP_DEGREES));
+		addPoseButton(rightX + 156, poseY + 24, "-B Y", () -> adjustSelectedBend(Axis.YAW, -ROTATION_STEP_DEGREES));
+		addPoseButton(rightX + 202, poseY + 24, "+B Y", () -> adjustSelectedBend(Axis.YAW, ROTATION_STEP_DEGREES));
+		addPoseButton(rightX + 156, poseY + 48, "-B R", () -> adjustSelectedBend(Axis.ROLL, -ROTATION_STEP_DEGREES));
+		addPoseButton(rightX + 202, poseY + 48, "+B R", () -> adjustSelectedBend(Axis.ROLL, ROTATION_STEP_DEGREES));
+		addPoseButton(rightX, poseY + 100, "重置", BodyPoseEditorScreen::resetSelectedPose, 72);
 
 		this.runCommandButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> runGiveCommand())
 				.size(72, 18)
-				.position(rightX + 78, poseY + 76)
+				.position(rightX + 78, poseY + 100)
 				.build());
 
 		this.placeButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> placePosedBody())
-				.size(150, 20)
-				.position(rightX, poseY + 102)
+				.size(RIGHT_CONTROL_WIDTH, 20)
+				.position(rightX, poseY + 126)
+				.build());
+
+		this.applySkeletalButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> applySkeletalPose())
+				.size(RIGHT_CONTROL_WIDTH, 18)
+				.position(rightX, poseY + 150)
 				.build());
 
 		this.itemButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> {
@@ -213,23 +237,23 @@ public class BodyPoseEditorScreen extends Screen {
 				.build());
 
 		this.placeItemsButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> placeEditorItems())
-				.size(150, 18)
-				.position(rightX, poseY + 150)
+				.size(RIGHT_CONTROL_WIDTH, 18)
+				.position(rightX, poseY + 174)
 				.build());
 
 		this.clearSelectedItemButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> clearSelectedItemModel())
 				.size(72, 18)
-				.position(rightX, poseY + 172)
+				.position(rightX, poseY + 196)
 				.build());
 
 		this.clearAllItemsButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> clearAllItemModels())
 				.size(74, 18)
-				.position(rightX + 76, poseY + 172)
+				.position(rightX + 76, poseY + 196)
 				.build());
 
 		this.resetTransformButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> resetActiveTransform())
-				.size(150, 18)
-				.position(rightX, poseY + 194)
+				.size(RIGHT_CONTROL_WIDTH, 18)
+				.position(rightX, poseY + 218)
 				.build());
 
 		this.showWholeButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> {
@@ -288,11 +312,17 @@ public class BodyPoseEditorScreen extends Screen {
 		if (this.modelButton != null) {
 			this.modelButton.setMessage(Text.literal("Model: " + (slimModel ? "slim" : "default-默认")));
 		}
+		if (this.poseModeButton != null) {
+			this.poseModeButton.setMessage(Text.literal("Pose Mode: " + (poseEditMode == PoseEditMode.STATIC_PART ? "Static" : "Skeletal")));
+		}
 		if (this.runCommandButton != null) {
 			this.runCommandButton.setMessage(Text.literal("给予肢体"));
 		}
 		if (this.placeButton != null) {
 			this.placeButton.setMessage(Text.literal("放置模型"));
+		}
+		if (this.applySkeletalButton != null) {
+			this.applySkeletalButton.setMessage(Text.literal("Apply Skeletal"));
 		}
 		if (this.itemButton != null) {
 			this.itemButton.setMessage(Text.literal("物品: " + getSelectedItemLabel()));
@@ -359,10 +389,16 @@ public class BodyPoseEditorScreen extends Screen {
 	}
 
 	private void placePosedBody() {
-		ClientPlayNetworking.send(new PlacePosedBodyC2SPacket(selectedSkin, slimModel, createPoseValueArray(),
+		ClientPlayNetworking.send(new PlacePosedBodyC2SPacket(selectedSkin, slimModel, createStaticPoseValueArray(),
 				selectedSkinSource == SkinSource.PLAYER, selectedPlayerName,
 				modelOffsetX, modelOffsetY, modelOffsetZ,
 				modelPitch, modelYaw, modelRoll));
+	}
+
+	private void applySkeletalPose() {
+		ClientPlayNetworking.send(new ApplySkeletalPoseC2SPacket(
+				createSkeletalPoseValueArray(),
+				createSkeletalBendValueArray()));
 	}
 
 	private void placeEditorItems() {
@@ -396,10 +432,10 @@ public class BodyPoseEditorScreen extends Screen {
 		context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 14, 0xFFFFFF);
 		context.drawTextWithShadow(this.textRenderer, "Skin", 18, 26, 0xD8D8D8);
 		context.drawTextWithShadow(this.textRenderer, "Preview", previewLeft, 26, 0xD8D8D8);
-		context.drawTextWithShadow(this.textRenderer, "Selection", this.width - 178, 26, 0xD8D8D8);
+		context.drawTextWithShadow(this.textRenderer, "Selection", getRightControlX(), 26, 0xD8D8D8);
 		String modeText = worldPreviewMode == PreviewMode.FOLLOW_PLAYER ? "P: 预览模式" : "P: 放置模式";
 		context.drawTextWithShadow(this.textRenderer, modeText, 18, this.height - 26, 0xFFB8B8FF);
-		renderPoseReadout(context, this.width - 178, getPoseControlsY(38));
+		renderPoseReadout(context, getRightControlX(), getPoseControlsY(38));
 
 		context.fill(previewLeft, previewTop, previewRight, previewBottom, 0x66000000);
 		context.drawBorder(previewLeft, previewTop, previewRight - previewLeft, previewBottom - previewTop, 0x88FFFFFF);
@@ -592,6 +628,12 @@ public class BodyPoseEditorScreen extends Screen {
 		context.drawTextWithShadow(this.textRenderer, "Pitch " + formatDegrees(pose.pitch), x, y + 4, 0xB8B8B8);
 		context.drawTextWithShadow(this.textRenderer, "Yaw   " + formatDegrees(pose.yaw), x, y + 28, 0xB8B8B8);
 		context.drawTextWithShadow(this.textRenderer, "Roll  " + formatDegrees(pose.roll), x, y + 52, 0xB8B8B8);
+		if (hasSelectedBendControls()) {
+			context.drawTextWithShadow(this.textRenderer, getBendLabelPrefix(), x + 156, y - 14, 0xAAE0FF);
+			context.drawTextWithShadow(this.textRenderer, "P " + formatDegrees(pose.bendPitch), x + 156, y + 4, 0xAAE0FF);
+			context.drawTextWithShadow(this.textRenderer, "Y " + formatDegrees(pose.bendYaw), x + 156, y + 28, 0xAAE0FF);
+			context.drawTextWithShadow(this.textRenderer, "R " + formatDegrees(pose.bendRoll), x + 156, y + 52, 0xAAE0FF);
+		}
 	}
 
 	private void renderPlayerPreview(DrawContext context, int x1, int y1, int x2, int y2) {
@@ -867,12 +909,13 @@ public class BodyPoseEditorScreen extends Screen {
 			moveWholeModelToChestPivot(model);
 		}
 
-		applyPose(model.head, PART_POSES.get("head"));
-		applyPose(model.body, PART_POSES.get("torso"));
-		applyPose(model.leftArm, PART_POSES.get("left_arm"));
-		applyPose(model.rightArm, PART_POSES.get("right_arm"));
-		applyPose(model.leftLeg, PART_POSES.get("left_leg"));
-		applyPose(model.rightLeg, PART_POSES.get("right_leg"));
+		Map<String, PartPose> previewPoses = getActivePoseMap();
+		applyPose(model.head, previewPoses.get("head"));
+		applyPose(model.body, previewPoses.get("torso"));
+		applyPose(model.leftArm, previewPoses.get("left_arm"));
+		applyPose(model.rightArm, previewPoses.get("right_arm"));
+		applyPose(model.leftLeg, previewPoses.get("left_leg"));
+		applyPose(model.rightLeg, previewPoses.get("right_leg"));
 	}
 
 	private static void centerSelectedPart(PlayerEntityModel model) {
@@ -963,18 +1006,19 @@ public class BodyPoseEditorScreen extends Screen {
 			moveWholeModelToChestPivot(model);
 		}
 
-		applyPose(model.head, PART_POSES.get("head"));
-		applyPose(model.body, PART_POSES.get("torso"));
-		applyPose(model.leftArm, PART_POSES.get("left_arm"));
-		applyPose(model.rightArm, PART_POSES.get("right_arm"));
-		applyPose(model.leftLeg, PART_POSES.get("left_leg"));
-		applyPose(model.rightLeg, PART_POSES.get("right_leg"));
+		Map<String, PartPose> previewPoses = getActivePoseMap();
+		applyPose(model.head, previewPoses.get("head"));
+		applyPose(model.body, previewPoses.get("torso"));
+		applyPose(model.leftArm, previewPoses.get("left_arm"));
+		applyPose(model.rightArm, previewPoses.get("right_arm"));
+		applyPose(model.leftLeg, previewPoses.get("left_leg"));
+		applyPose(model.rightLeg, previewPoses.get("right_leg"));
 
 		return model;
 	}
 
 	private static int getPoseControlsY(int panelTop) {
-		return panelTop + 34 + BodyModelSelectionCatalog.PARTS.length * 22 + 16;
+		return panelTop + 58 + BodyModelSelectionCatalog.PARTS.length * 22 + 16;
 	}
 
 	private int getPreviewLeft() {
@@ -982,7 +1026,11 @@ public class BodyPoseEditorScreen extends Screen {
 	}
 
 	private int getPreviewRight() {
-		return Math.max(getPreviewLeft() + 140, this.width - 198);
+		return Math.max(getPreviewLeft() + 140, getRightControlX() - RIGHT_PREVIEW_GUTTER);
+	}
+
+	private int getRightControlX() {
+		return this.width - RIGHT_CONTROL_WIDTH - RIGHT_CONTROL_MARGIN;
 	}
 
 	private int getPreviewTop() {
@@ -1699,8 +1747,12 @@ public class BodyPoseEditorScreen extends Screen {
 		return poses;
 	}
 
+	private static Map<String, PartPose> getActivePoseMap() {
+		return poseEditMode == PoseEditMode.SKELETAL ? SKELETAL_POSES : PART_POSES;
+	}
+
 	private static PartPose getSelectedPose() {
-		return PART_POSES.computeIfAbsent(selectedPart, ignored -> new PartPose());
+		return getActivePoseMap().computeIfAbsent(selectedPart, ignored -> new PartPose());
 	}
 
 	private static void adjustSelectedPose(Axis axis, float amount) {
@@ -1715,6 +1767,34 @@ public class BodyPoseEditorScreen extends Screen {
 		}
 	}
 
+	private static void adjustSelectedBend(Axis axis, float amount) {
+		if (!hasSelectedBendControls()) {
+			return;
+		}
+		PartPose pose = getSelectedPose();
+		switch (axis) {
+			case PITCH -> pose.bendPitch = clamp(pose.bendPitch + amount, -180.0F, 180.0F);
+			case YAW -> pose.bendYaw = normalizeDegrees(pose.bendYaw + amount);
+			case ROLL -> pose.bendRoll = normalizeDegrees(pose.bendRoll + amount);
+		}
+	}
+
+	private static boolean hasSelectedBendControls() {
+		return poseEditMode == PoseEditMode.SKELETAL && switch (selectedPart) {
+			case "torso", "left_arm", "right_arm", "left_leg", "right_leg" -> true;
+			default -> false;
+		};
+	}
+
+	private static String getBendLabelPrefix() {
+		return switch (selectedPart) {
+			case "torso" -> "Waist";
+			case "left_arm", "right_arm" -> "Elbow";
+			case "left_leg", "right_leg" -> "Knee";
+			default -> "Bend";
+		};
+	}
+
 	private static void resetSelectedPose() {
 		if (selectedPart.equals("all")) {
 			return;
@@ -1723,6 +1803,9 @@ public class BodyPoseEditorScreen extends Screen {
 		pose.pitch = 0.0F;
 		pose.yaw = 0.0F;
 		pose.roll = 0.0F;
+		pose.bendPitch = 0.0F;
+		pose.bendYaw = 0.0F;
+		pose.bendRoll = 0.0F;
 		pose.scale = 1.0F;
 	}
 
@@ -1748,14 +1831,33 @@ public class BodyPoseEditorScreen extends Screen {
 		return value;
 	}
 
-	private static float[] createPoseValueArray() {
+	private static float[] createStaticPoseValueArray() {
+		return createPoseValueArray(PART_POSES);
+	}
+
+	private static float[] createSkeletalPoseValueArray() {
+		return createPoseValueArray(SKELETAL_POSES);
+	}
+
+	private static float[] createSkeletalBendValueArray() {
+		float[] values = new float[ApplySkeletalPoseC2SPacket.BEND_VALUE_COUNT];
+		writeBend(values, 0, SKELETAL_POSES.get("head"));
+		writeBend(values, 3, SKELETAL_POSES.get("torso"));
+		writeBend(values, 6, SKELETAL_POSES.get("left_arm"));
+		writeBend(values, 9, SKELETAL_POSES.get("right_arm"));
+		writeBend(values, 12, SKELETAL_POSES.get("left_leg"));
+		writeBend(values, 15, SKELETAL_POSES.get("right_leg"));
+		return values;
+	}
+
+	private static float[] createPoseValueArray(Map<String, PartPose> poses) {
 		float[] values = new float[PlacePosedBodyC2SPacket.POSE_VALUE_COUNT];
-		writePose(values, 0, PART_POSES.get("head"));
-		writePose(values, 4, PART_POSES.get("torso"));
-		writePose(values, 8, PART_POSES.get("left_arm"));
-		writePose(values, 12, PART_POSES.get("right_arm"));
-		writePose(values, 16, PART_POSES.get("left_leg"));
-		writePose(values, 20, PART_POSES.get("right_leg"));
+		writePose(values, 0, poses.get("head"));
+		writePose(values, 4, poses.get("torso"));
+		writePose(values, 8, poses.get("left_arm"));
+		writePose(values, 12, poses.get("right_arm"));
+		writePose(values, 16, poses.get("left_leg"));
+		writePose(values, 20, poses.get("right_leg"));
 		return values;
 	}
 
@@ -1768,6 +1870,15 @@ public class BodyPoseEditorScreen extends Screen {
 		values[offset + 1] = pose.yaw;
 		values[offset + 2] = pose.roll;
 		values[offset + 3] = pose.scale;
+	}
+
+	private static void writeBend(float[] values, int offset, PartPose pose) {
+		if (pose == null) {
+			return;
+		}
+		values[offset] = pose.bendPitch;
+		values[offset + 1] = pose.bendYaw;
+		values[offset + 2] = pose.bendRoll;
 	}
 
 	private enum Axis {
@@ -1790,6 +1901,11 @@ public class BodyPoseEditorScreen extends Screen {
 		ROLL
 	}
 
+	private enum PoseEditMode {
+		STATIC_PART,
+		SKELETAL
+	}
+
 	public enum PreviewMode {
 		FOLLOW_PLAYER,
 		FIXED
@@ -1804,6 +1920,9 @@ public class BodyPoseEditorScreen extends Screen {
 		private float pitch;
 		private float yaw;
 		private float roll;
+		private float bendPitch;
+		private float bendYaw;
+		private float bendRoll;
 		private float scale = 1.0F;
 	}
 

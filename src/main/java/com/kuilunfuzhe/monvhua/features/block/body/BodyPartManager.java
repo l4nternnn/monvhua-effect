@@ -1,6 +1,8 @@
 package com.kuilunfuzhe.monvhua.features.block.body;
 
 import com.kuilunfuzhe.monvhua.command.GiveBodyPartCommand;
+import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalBodyPart;
+import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalBodyPartBlockEntity;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
@@ -588,6 +590,58 @@ public class BodyPartManager {
 		}
 
 		return removed;
+	}
+
+	public static int applySkeletalPose(ServerPlayerEntity player, float[] poseValues, int radius) {
+		return applySkeletalPose(player, poseValues, null, radius);
+	}
+
+	public static int applySkeletalPose(ServerPlayerEntity player, float[] poseValues, float[] bendValues, int radius) {
+		if (poseValues == null || poseValues.length < PlacePosedBodyC2SPacket.ROTATION_VALUE_COUNT) {
+			player.sendMessage(Text.literal("Invalid skeletal pose payload"), true);
+			return 0;
+		}
+
+		ServerWorld world = (ServerWorld) player.getWorld();
+		BlockPos center = player.getBlockPos();
+		int stride = poseValues.length >= PlacePosedBodyC2SPacket.POSE_VALUE_COUNT
+				? PlacePosedBodyC2SPacket.POSE_VALUE_STRIDE
+				: 3;
+		int updated = 0;
+
+		for (int x = -radius; x <= radius; x++) {
+			for (int y = -radius; y <= radius; y++) {
+				for (int z = -radius; z <= radius; z++) {
+					BlockPos pos = center.add(x, y, z);
+					if (!(world.getBlockEntity(pos) instanceof SkeletalBodyPartBlockEntity skeletal)) {
+						continue;
+					}
+					int partIndex = getPoseIndex(skeletal.getPart());
+					int offset = partIndex * stride;
+					int bendOffset = partIndex * 3;
+					float bendPitch = bendValues != null && bendValues.length >= bendOffset + 3 ? bendValues[bendOffset] : 0.0F;
+					float bendYaw = bendValues != null && bendValues.length >= bendOffset + 3 ? bendValues[bendOffset + 1] : 0.0F;
+					float bendRoll = bendValues != null && bendValues.length >= bendOffset + 3 ? bendValues[bendOffset + 2] : 0.0F;
+					skeletal.setSkeletalPose(poseValues[offset], poseValues[offset + 1], poseValues[offset + 2],
+							bendPitch, bendYaw, bendRoll);
+					updated++;
+				}
+			}
+		}
+
+		player.sendMessage(Text.literal("Applied skeletal pose to " + updated + " body part block(s)"), true);
+		return updated;
+	}
+
+	private static int getPoseIndex(SkeletalBodyPart part) {
+		return switch (part) {
+			case HEAD -> 0;
+			case TORSO -> 1;
+			case LEFT_ARM -> 2;
+			case RIGHT_ARM -> 3;
+			case LEFT_LEG -> 4;
+			case RIGHT_LEG -> 5;
+		};
 	}
 
 	public static void createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile) {

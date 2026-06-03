@@ -115,7 +115,10 @@ public abstract class SkeletalBodyPartBlock extends BlockWithEntity {
                 float pitch = nbt.getFloat("joint_pitch").orElse(0.0F);
                 float yaw = nbt.getFloat("joint_yaw").orElse(0.0F);
                 float roll = nbt.getFloat("joint_roll").orElse(0.0F);
-                skeletal.setJointPose(pitch, yaw, roll);
+                float bendPitch = nbt.getFloat("bend_pitch").orElse(0.0F);
+                float bendYaw = nbt.getFloat("bend_yaw").orElse(0.0F);
+                float bendRoll = nbt.getFloat("bend_roll").orElse(0.0F);
+                skeletal.setSkeletalPose(pitch, yaw, roll, bendPitch, bendYaw, bendRoll);
             }
         }
         bodyPart.markDirty();

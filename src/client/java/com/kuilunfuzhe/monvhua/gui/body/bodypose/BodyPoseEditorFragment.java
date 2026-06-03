@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.gui.body.bodypose;
 
 import com.kuilunfuzhe.monvhua.features.block.body.BodyModelSelectionCatalog;
+import com.kuilunfuzhe.monvhua.network.bodypose.ApplySkeletalPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import icyllis.modernui.core.Context;
@@ -73,6 +74,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final float GROUND_GRID_HALF_SIZE = GROUND_GRID_SIZE * 0.5F;
     private static final float GROUND_GRID_CELL = 1.0F;
     private static final float GROUND_GRID_Y = 1.05F;
+    private static final int RIGHT_PANEL_WIDTH = 500;
     private static final int PLAYER_LIST_VISIBLE_ROWS = 6;
     private static final int ITEM_LIST_VISIBLE_ROWS = 8;
 
@@ -92,8 +94,10 @@ public class BodyPoseEditorFragment extends Fragment {
     private static float modelYaw;
     private static float modelRoll;
     private static float wholeBodyScale = 1.0F;
+    private static PoseEditMode poseEditMode = PoseEditMode.STATIC_PART;
     private static final List<EditorItemModel> EDITOR_ITEMS = new ArrayList<>();
     private static final Map<String, PartPose> PART_POSES = createPartPoses();
+    private static final Map<String, PartPose> SKELETAL_POSES = createPartPoses();
 
     private static boolean worldPreviewEnabled = true;
     private static PreviewMode worldPreviewMode = PreviewMode.FOLLOW_PLAYER;
@@ -177,6 +181,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private LinearLayout itemListContainer;
     private Button playerButton;
     private Button modelTypeButton;
+    private Button poseModeButton;
     private Button itemButton;
     private Button placeItemsButton;
     private Button clearSelectedItemButton;
@@ -188,6 +193,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private Button worldPreviewToggleButton;
     private Button runCommandButton;
     private Button placeButton;
+    private Button applySkeletalButton;
     private List<Button> partButtons = new ArrayList<>();
     private List<Button> poseButtons = new ArrayList<>();
     private List<Button> skinButtons = new ArrayList<>();
@@ -240,7 +246,7 @@ public class BodyPoseEditorFragment extends Fragment {
 
         // 右栏：部位/姿势/物品控制
         View right = createRightPanel(ctx);
-        root.addView(right, new LinearLayout.LayoutParams(300, -1));
+        root.addView(right, new LinearLayout.LayoutParams(RIGHT_PANEL_WIDTH, -1));
 
         rootView = root;
         return root;
@@ -489,6 +495,9 @@ public class BodyPoseEditorFragment extends Fragment {
         modelTypeButton = new Button(ctx);
         panel.addView(modelTypeButton, new LinearLayout.LayoutParams(-1, -2));
 
+        poseModeButton = new Button(ctx);
+        panel.addView(poseModeButton, new LinearLayout.LayoutParams(-1, -2));
+
         // ── 部位选择 ──
         addSectionLabel(panel, ctx, "部位");
         partButtonsContainer = new LinearLayout(ctx);
@@ -512,6 +521,9 @@ public class BodyPoseEditorFragment extends Fragment {
 
         // ── 物品 ──
         addSectionLabel(panel, ctx, "物品");
+        applySkeletalButton = new Button(ctx);
+        panel.addView(applySkeletalButton, new LinearLayout.LayoutParams(-1, -2));
+
         itemButton = new Button(ctx);
         itemButton.setOnClickListener(v -> toggleItemList());
         panel.addView(itemButton, new LinearLayout.LayoutParams(-1, -2));
@@ -746,6 +758,7 @@ public class BodyPoseEditorFragment extends Fragment {
             button.setTextColor(selected ? 0xFFFFDD66 : 0xFFE8E8E8);
             button.setOnClickListener(v -> {
                 selectedPart = part;
+                rebuildPoseControls();
                 refreshButtonLabels();
                 refreshNumericValueBindings();
                 invalidatePreview();
@@ -783,6 +796,13 @@ public class BodyPoseEditorFragment extends Fragment {
         // 翻滚 (Roll)
         poseControlsContainer.addView(createPoseRow(ctx, "翻滚", Axis.ROLL));
 
+        if (hasSelectedBendControls()) {
+            String bendLabel = getBendLabelPrefix();
+            poseControlsContainer.addView(createBendRow(ctx, bendLabel + " Pitch", Axis.PITCH));
+            poseControlsContainer.addView(createBendRow(ctx, bendLabel + " Yaw", Axis.YAW));
+            poseControlsContainer.addView(createBendRow(ctx, bendLabel + " Roll", Axis.ROLL));
+        }
+
         // 重置
         Button resetBtn = new Button(ctx);
         resetBtn.setText("重置姿势");
@@ -817,6 +837,44 @@ public class BodyPoseEditorFragment extends Fragment {
         NumericValueBinding binding = new NumericValueBinding(
                 () -> getSelectedPoseValue(axis),
                 value -> setSelectedPoseValue(axis, value),
+                -180.0F, 180.0F, axis != Axis.PITCH);
+
+        Button minusBtn = new Button(ctx);
+        minusBtn.setText("-");
+        installRepeatingTransformButton(minusBtn, () -> binding.add(-ROTATION_STEP_DEGREES));
+        row.addView(minusBtn, new LinearLayout.LayoutParams(0, -2, 1f));
+        poseButtons.add(minusBtn);
+
+        EditText valueField = new EditText(ctx);
+        valueField.setTextColor(0xFFE8E8E8);
+        valueField.setTextSize(12);
+        binding.attach(valueField);
+        installNumericFieldScroll(valueField, binding, ROTATION_STEP_DEGREES);
+        row.addView(valueField, new LinearLayout.LayoutParams(0, -2, 1.25f));
+        poseValueBindings.add(binding);
+
+        Button plusBtn = new Button(ctx);
+        plusBtn.setText("+");
+        installRepeatingTransformButton(plusBtn, () -> binding.add(ROTATION_STEP_DEGREES));
+        row.addView(plusBtn, new LinearLayout.LayoutParams(0, -2, 1f));
+        poseButtons.add(plusBtn);
+
+        return row;
+    }
+
+    private LinearLayout createBendRow(Context ctx, String label, Axis axis) {
+        LinearLayout row = new LinearLayout(ctx);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+
+        TextView labelView = new TextView(ctx);
+        labelView.setText(label);
+        labelView.setTextColor(0xFFAAE0FF);
+        labelView.setWidth(88);
+        row.addView(labelView, new LinearLayout.LayoutParams(-2, -2));
+
+        NumericValueBinding binding = new NumericValueBinding(
+                () -> getSelectedBendValue(axis),
+                value -> setSelectedBendValue(axis, value),
                 -180.0F, 180.0F, axis != Axis.PITCH);
 
         Button minusBtn = new Button(ctx);
@@ -1580,12 +1638,13 @@ public class BodyPoseEditorFragment extends Fragment {
             moveWholeModelToChestPivot(model);
         }
 
-        applyPose(model.head, PART_POSES.get("head"));
-        applyPose(model.body, PART_POSES.get("torso"));
-        applyPose(model.leftArm, PART_POSES.get("left_arm"));
-        applyPose(model.rightArm, PART_POSES.get("right_arm"));
-        applyPose(model.leftLeg, PART_POSES.get("left_leg"));
-        applyPose(model.rightLeg, PART_POSES.get("right_leg"));
+        Map<String, PartPose> previewPoses = getActivePoseMap();
+        applyPose(model.head, previewPoses.get("head"));
+        applyPose(model.body, previewPoses.get("torso"));
+        applyPose(model.leftArm, previewPoses.get("left_arm"));
+        applyPose(model.rightArm, previewPoses.get("right_arm"));
+        applyPose(model.leftLeg, previewPoses.get("left_leg"));
+        applyPose(model.rightLeg, previewPoses.get("right_leg"));
     }
 
     public static PlayerEntityModel getPreparedWorldPreviewModel() {
@@ -1632,12 +1691,13 @@ public class BodyPoseEditorFragment extends Fragment {
             moveWholeModelToChestPivot(model);
         }
 
-        applyPose(model.head, PART_POSES.get("head"));
-        applyPose(model.body, PART_POSES.get("torso"));
-        applyPose(model.leftArm, PART_POSES.get("left_arm"));
-        applyPose(model.rightArm, PART_POSES.get("right_arm"));
-        applyPose(model.leftLeg, PART_POSES.get("left_leg"));
-        applyPose(model.rightLeg, PART_POSES.get("right_leg"));
+        Map<String, PartPose> previewPoses = getActivePoseMap();
+        applyPose(model.head, previewPoses.get("head"));
+        applyPose(model.body, previewPoses.get("torso"));
+        applyPose(model.leftArm, previewPoses.get("left_arm"));
+        applyPose(model.rightArm, previewPoses.get("right_arm"));
+        applyPose(model.leftLeg, previewPoses.get("left_leg"));
+        applyPose(model.rightLeg, previewPoses.get("right_leg"));
 
         return model;
     }
@@ -1720,6 +1780,16 @@ public class BodyPoseEditorFragment extends Fragment {
                 refreshButtonLabels();
             });
         }
+        if (poseModeButton != null) {
+            poseModeButton.setText("Pose Mode: " + (poseEditMode == PoseEditMode.STATIC_PART ? "Static" : "Skeletal"));
+            poseModeButton.setOnClickListener(v -> {
+                poseEditMode = poseEditMode == PoseEditMode.STATIC_PART ? PoseEditMode.SKELETAL : PoseEditMode.STATIC_PART;
+                rebuildPoseControls();
+                refreshButtonLabels();
+                refreshNumericValueBindings();
+                invalidatePreview();
+            });
+        }
         if (runCommandButton != null) {
             runCommandButton.setText("给予肢体");
             runCommandButton.setOnClickListener(v -> runGiveCommand());
@@ -1727,6 +1797,10 @@ public class BodyPoseEditorFragment extends Fragment {
         if (placeButton != null) {
             placeButton.setText("放置模型");
             placeButton.setOnClickListener(v -> placePosedBody());
+        }
+        if (applySkeletalButton != null) {
+            applySkeletalButton.setText("Apply Skeletal");
+            applySkeletalButton.setOnClickListener(v -> applySkeletalPose());
         }
         if (itemButton != null) {
             itemButton.setText("物品: " + getSelectedItemLabel());
@@ -1799,10 +1873,16 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void placePosedBody() {
-        ClientPlayNetworking.send(new PlacePosedBodyC2SPacket(selectedSkin, slimModel, createPoseValueArray(),
+        ClientPlayNetworking.send(new PlacePosedBodyC2SPacket(selectedSkin, slimModel, createStaticPoseValueArray(),
                 selectedSkinSource == SkinSource.PLAYER, selectedPlayerName,
                 modelOffsetX, modelOffsetY, modelOffsetZ,
                 modelPitch, modelYaw, modelRoll, wholeBodyScale));
+    }
+
+    private void applySkeletalPose() {
+        ClientPlayNetworking.send(new ApplySkeletalPoseC2SPacket(
+                createSkeletalPoseValueArray(),
+                createSkeletalBendValueArray()));
     }
 
     private void placeEditorItems() {
@@ -2041,8 +2121,12 @@ public class BodyPoseEditorFragment extends Fragment {
         return poses;
     }
 
+    private static Map<String, PartPose> getActivePoseMap() {
+        return poseEditMode == PoseEditMode.SKELETAL ? SKELETAL_POSES : PART_POSES;
+    }
+
     private static PartPose getSelectedPose() {
-        return PART_POSES.computeIfAbsent(selectedPart, k -> new PartPose());
+        return getActivePoseMap().computeIfAbsent(selectedPart, k -> new PartPose());
     }
 
     private static void adjustSelectedPose(Axis axis, float amount) {
@@ -2071,6 +2155,43 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
+    private static boolean hasSelectedBendControls() {
+        return poseEditMode == PoseEditMode.SKELETAL && switch (selectedPart) {
+            case "torso", "left_arm", "right_arm", "left_leg", "right_leg" -> true;
+            default -> false;
+        };
+    }
+
+    private static String getBendLabelPrefix() {
+        return switch (selectedPart) {
+            case "torso" -> "Waist";
+            case "left_arm", "right_arm" -> "Elbow";
+            case "left_leg", "right_leg" -> "Knee";
+            default -> "Bend";
+        };
+    }
+
+    private static float getSelectedBendValue(Axis axis) {
+        if (!hasSelectedBendControls()) return 0.0F;
+        PartPose pose = getSelectedPose();
+        switch (axis) {
+            case PITCH -> { return pose.bendPitch; }
+            case YAW -> { return pose.bendYaw; }
+            case ROLL -> { return pose.bendRoll; }
+        }
+        return 0.0F;
+    }
+
+    private static void setSelectedBendValue(Axis axis, float value) {
+        if (!hasSelectedBendControls()) return;
+        PartPose pose = getSelectedPose();
+        switch (axis) {
+            case PITCH -> pose.bendPitch = clampPreview(value, -180.0F, 180.0F);
+            case YAW -> pose.bendYaw = normalizeDegrees(value);
+            case ROLL -> pose.bendRoll = normalizeDegrees(value);
+        }
+    }
+
     private static float getSelectedPartScale() {
         if (selectedPart.equals("all")) return 1.0F;
         return getSelectedPose().scale;
@@ -2092,8 +2213,10 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private static void resetAllPartPoses() {
-        wholeBodyScale = 1.0F;
-        for (PartPose pose : PART_POSES.values()) {
+        if (poseEditMode == PoseEditMode.STATIC_PART) {
+            wholeBodyScale = 1.0F;
+        }
+        for (PartPose pose : getActivePoseMap().values()) {
             resetPartPose(pose);
         }
     }
@@ -2102,17 +2225,39 @@ public class BodyPoseEditorFragment extends Fragment {
         pose.pitch = 0.0F;
         pose.yaw = 0.0F;
         pose.roll = 0.0F;
+        pose.bendPitch = 0.0F;
+        pose.bendYaw = 0.0F;
+        pose.bendRoll = 0.0F;
         pose.scale = 1.0F;
     }
 
-    private static float[] createPoseValueArray() {
+    private static float[] createStaticPoseValueArray() {
+        return createPoseValueArray(PART_POSES);
+    }
+
+    private static float[] createSkeletalPoseValueArray() {
+        return createPoseValueArray(SKELETAL_POSES);
+    }
+
+    private static float[] createSkeletalBendValueArray() {
+        float[] values = new float[ApplySkeletalPoseC2SPacket.BEND_VALUE_COUNT];
+        writeBend(values, 0, SKELETAL_POSES.get("head"));
+        writeBend(values, 3, SKELETAL_POSES.get("torso"));
+        writeBend(values, 6, SKELETAL_POSES.get("left_arm"));
+        writeBend(values, 9, SKELETAL_POSES.get("right_arm"));
+        writeBend(values, 12, SKELETAL_POSES.get("left_leg"));
+        writeBend(values, 15, SKELETAL_POSES.get("right_leg"));
+        return values;
+    }
+
+    private static float[] createPoseValueArray(Map<String, PartPose> poses) {
         float[] values = new float[PlacePosedBodyC2SPacket.POSE_VALUE_COUNT];
-        writePose(values, 0, PART_POSES.get("head"));
-        writePose(values, 4, PART_POSES.get("torso"));
-        writePose(values, 8, PART_POSES.get("left_arm"));
-        writePose(values, 12, PART_POSES.get("right_arm"));
-        writePose(values, 16, PART_POSES.get("left_leg"));
-        writePose(values, 20, PART_POSES.get("right_leg"));
+        writePose(values, 0, poses.get("head"));
+        writePose(values, 4, poses.get("torso"));
+        writePose(values, 8, poses.get("left_arm"));
+        writePose(values, 12, poses.get("right_arm"));
+        writePose(values, 16, poses.get("left_leg"));
+        writePose(values, 20, poses.get("right_leg"));
         return values;
     }
 
@@ -2123,6 +2268,13 @@ public class BodyPoseEditorFragment extends Fragment {
         values[offset + 1] = pose.yaw;
         values[offset + 2] = pose.roll;
         values[offset + 3] = pose.scale;
+    }
+
+    private static void writeBend(float[] values, int offset, PartPose pose) {
+        if (pose == null) return;
+        values[offset] = pose.bendPitch;
+        values[offset + 1] = pose.bendYaw;
+        values[offset + 2] = pose.bendRoll;
     }
 
     // ═══════════════════════════════════════════════════════
@@ -2263,6 +2415,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private enum Axis { PITCH, YAW, ROLL }
     private enum MoveAxis { NONE, X, Y, Z }
     private enum RotationAxis { NONE, PITCH, YAW, ROLL }
+    private enum PoseEditMode { STATIC_PART, SKELETAL }
 
     public enum PreviewMode {
         FOLLOW_PLAYER,
@@ -2360,6 +2513,9 @@ public class BodyPoseEditorFragment extends Fragment {
         private float pitch;
         private float yaw;
         private float roll;
+        private float bendPitch;
+        private float bendYaw;
+        private float bendRoll;
         private float scale = 1.0F;
     }
 

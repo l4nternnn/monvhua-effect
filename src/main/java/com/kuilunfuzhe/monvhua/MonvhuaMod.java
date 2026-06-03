@@ -27,6 +27,7 @@ import com.kuilunfuzhe.monvhua.item.secrecy.SecrecyItem;
 import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
+import com.kuilunfuzhe.monvhua.network.bodypose.ApplySkeletalPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
@@ -259,6 +260,17 @@ public class MonvhuaMod implements ModInitializer {
                     return;
                 }
                 BodyPartManager.createPoseEditorItemDisplays(player, packet.items());
+            });
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(ApplySkeletalPoseC2SPacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity player = context.player();
+                if (!player.isCreative() && !player.hasPermissionLevel(2)) {
+                    player.sendMessage(Text.literal("No permission to apply skeletal pose"), true);
+                    return;
+                }
+                BodyPartManager.applySkeletalPose(player, packet.poseValues(), packet.bendValues(), packet.radius());
             });
         });
 

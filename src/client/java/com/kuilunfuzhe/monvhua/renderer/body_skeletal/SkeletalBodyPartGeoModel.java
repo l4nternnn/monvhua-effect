@@ -68,12 +68,7 @@ public class SkeletalBodyPartGeoModel<T extends SkeletalBodyPartBlockEntity> ext
 
         GeoBone bendBone = getBendBone(part);
         if (bendBone != null) {
-            bendBone.updateRotation(
-                    active ? degreesToRadians(entity.getJointPitch()) : 0.0F,
-                    active ? degreesToRadians(entity.getJointYaw()) : 0.0F,
-                    active ? degreesToRadians(entity.getJointRoll()) : 0.0F
-            );
-            return;
+            bendBone.updateRotation(0.0F, 0.0F, 0.0F);
         }
 
         if (active) {
@@ -82,11 +77,19 @@ public class SkeletalBodyPartGeoModel<T extends SkeletalBodyPartBlockEntity> ext
                     degreesToRadians(entity.getJointYaw()),
                     degreesToRadians(entity.getJointRoll())
             );
+            if (bendBone != null) {
+                bendBone.updateRotation(
+                        degreesToRadians(entity.getBendPitch()),
+                        degreesToRadians(entity.getBendYaw()),
+                        degreesToRadians(entity.getBendRoll())
+                );
+            }
         }
     }
 
     private GeoBone getBendBone(SkeletalBodyPart part) {
         String boneName = switch (part) {
+            case TORSO -> "waist";
             case LEFT_ARM -> "left_forearm";
             case RIGHT_ARM -> "right_forearm";
             case LEFT_LEG -> "left_lower_leg";
