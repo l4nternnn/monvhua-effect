@@ -210,6 +210,7 @@ public class Gazeguidance {
 		ServerPlayNetworking.registerGlobalReceiver(RightClickActionPacket.ID, (payload, context) -> {
 			context.server().execute(() -> {
 				PlayerEntity player = context.player();
+                    if (player.getCommandTags().contains("Silenced")) { player.sendMessage(net.minecraft.text.Text.literal("§c你难以集中精神"), true); return; }
 				if (player.getMainHandStack().getItem() != ModItems.MAGIC_STICK) return;
 				if (payload.start()) {
 					setTemporaryFocus(player, player.getWorld(), player.isSneaking());
@@ -245,6 +246,7 @@ public class Gazeguidance {
 			context.server().execute(() -> {
 				var player = context.player();
 				var world = player.getWorld();
+                    if (player.getCommandTags().contains("Silenced")) { player.sendMessage(net.minecraft.text.Text.literal("§c你难以集中精神"), true); return; }
 				var entity = world.getEntityById(payload.entityId());
 				if (entity instanceof LivingEntity target && player.getMainHandStack().getItem() == ModItems.MAGIC_STICK) {
 					double maxRange = 50.0;

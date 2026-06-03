@@ -1,10 +1,14 @@
 package com.kuilunfuzhe.monvhua.features.carryentity;
 
+import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.Map;
@@ -13,6 +17,11 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class CarryManager {
+	private static final double CARRIED_ENTITY_FORWARD_DISTANCE = 1.2D;
+	private static final double CARRIED_PLAYER_FORWARD_DISTANCE = 1.5D;
+	private static final double CARRY_Y_OFFSET = 0.8D;
+	private static final double CARRY_BOX_EPSILON = 1.0E-7D;
+
 	// 搬运者 -> 被搬运实体数据
 	public static final Map<ServerPlayerEntity, CarriedEntityData> CARRIED_ENTITIES = new ConcurrentHashMap<>();
 	// 被搬运实体 -> 搬运者（用于快速挣扎查找）
@@ -54,8 +63,30 @@ public class CarryManager {
 		return 300;
 	}
 
+	public static void syncCarryPose(ServerPlayerEntity carrier, Entity carried, boolean active) {
+		MinecraftServer server = carrier.getServer();
+		if (server == null) return;
+		for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+			sendCarryPose(player, carrier, carried, active);
+		}
+	}
+
+	public static void syncAllCarryPosesTo(ServerPlayerEntity receiver) {
+		for (Map.Entry<ServerPlayerEntity, CarriedEntityData> entry : CARRIED_ENTITIES.entrySet()) {
+			sendCarryPose(receiver, entry.getKey(), entry.getValue().entity, true);
+		}
+	}
+
+	private static void sendCarryPose(ServerPlayerEntity receiver, ServerPlayerEntity carrier, Entity carried, boolean active) {
+		int carrierPose = active ? CarryPoseSyncS2CPacket.POSE_CARRIER : CarryPoseSyncS2CPacket.POSE_NONE;
+		int carriedPose = active ? CarryPoseSyncS2CPacket.POSE_CARRIED : CarryPoseSyncS2CPacket.POSE_NONE;
+		ServerPlayNetworking.send(receiver, new CarryPoseSyncS2CPacket(carrier.getId(), carrierPose, active ? carried.getId() : -1));
+		ServerPlayNetworking.send(receiver, new CarryPoseSyncS2CPacket(carried.getId(), carriedPose, active ? carrier.getId() : -1));
+	}
+
 	public static void releaseCarried(ServerPlayerEntity carrier, Entity carried) {
 		CarriedEntityData data = CARRIED_ENTITIES.get(carrier);
+		syncCarryPose(carrier, carried, false);
 		CARRIED_ENTITIES.remove(carrier);
 		CARRIED_BY.remove(carried);
 		carried.setNoGravity(false);
@@ -73,11 +104,10 @@ public class CarryManager {
 		STRUGGLE_COUNTER.remove(carried);
 		CARRY_XP_TICK_COUNTER.remove(carrier);
 		CARRIED_COOLDOWN.put(carried, System.currentTimeMillis() + 5000);
-		Vec3d lookVec = carrier.getRotationVec(1.0f);
-		Vec3d pos = carrier.getEyePos().add(lookVec.multiply(0.5));
-		carried.refreshPositionAndAngles(pos.x, pos.y, pos.z, carrier.getYaw(), carrier.getPitch());
+		Vec3d pos = findSafeReleasePosition(carrier, carried, 0.5D);
+		carried.refreshPositionAndAngles(pos.x, pos.y, pos.z, carried.getYaw(), carried.getPitch());
 		if (carried instanceof ServerPlayerEntity carriedPlayer) {
-			carriedPlayer.networkHandler.requestTeleport(pos.x, pos.y, pos.z, carrier.getYaw(), carrier.getPitch());
+			carriedPlayer.requestTeleport(pos.x, pos.y, pos.z);
 		}
 	}
 
@@ -104,6 +134,7 @@ public class CarryManager {
 	public static void tickCarried(ServerPlayerEntity carrier, CarriedEntityData data) {
 		Entity carried = data.entity;
 		if (!carried.isAlive()) {
+			syncCarryPose(carrier, carried, false);
 			CARRIED_ENTITIES.remove(carrier);
 			CARRIED_BY.remove(carried);
 			if (carried instanceof ServerPlayerEntity carriedPlayer) {
@@ -115,14 +146,19 @@ public class CarryManager {
 			return;
 		}
 
-		float yaw = carrier.getYaw();
-		double rad = Math.toRadians(yaw);
-		double forwardX = -Math.sin(rad);
-		double forwardZ = Math.cos(rad);
-		Vec3d horizontalForward = new Vec3d(forwardX, 0, forwardZ).normalize();
-		Vec3d targetPos = carrier.getPos().add(horizontalForward.multiply(1.2)).add(0, 0.5, 0);
+		Vec3d targetPos = findSafeCarryPosition(carrier, carried);
 
-		carried.setPosition(targetPos.x, targetPos.y, targetPos.z);
+
+		// 计算被抱实体应该面向抱起者的水平角度
+		double dx = carrier.getX() - carried.getX();
+		double dz = carrier.getZ() - carried.getZ();
+		float yawToCarrier = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90);
+
+		if (!(carried instanceof ServerPlayerEntity)) {
+			carried.setPosition(targetPos.x, targetPos.y, targetPos.z);
+			carried.setYaw(yawToCarrier);
+//			carried.setPitch(pitch);
+		}
 		carried.setVelocity(Vec3d.ZERO);
 		carried.setNoGravity(true);
 		if (carried instanceof MobEntity mob) {
@@ -153,14 +189,17 @@ public class CarryManager {
 					STRUGGLE_COUNTER.remove(carried);
 					carriedPlayer.sendMessage(Text.literal("§7挣扎中断"), false);
 				}
-				carriedPlayer.networkHandler.requestTeleport(
-						targetPos.x, targetPos.y, targetPos.z,
-						carriedPlayer.getYaw(), carriedPlayer.getPitch()
-				);
+			}
+			if (CARRIED_BY.get(carriedPlayer) == carrier) {
+				carriedPlayer.requestTeleport(targetPos.x, targetPos.y, targetPos.z);
 			}
 		}
 
 		// 每 20 刻消耗一次经验
+		if (CARRIED_BY.get(carried) != carrier) {
+			return;
+		}
+
 		if (carried instanceof LivingEntity && !carrier.isCreative() && !carrier.getCommandTags().contains("kebao")) {
 			int tickCount = CARRY_XP_TICK_COUNTER.merge(carrier, 1, (oldVal, v) -> oldVal + 1);
 			if (tickCount >= 20) {
@@ -183,6 +222,7 @@ public class CarryManager {
 		CarriedEntityData carriedData = CARRIED_ENTITIES.remove(player);
 		if (carriedData != null) {
 			Entity carried = carriedData.entity;
+			syncCarryPose(player, carried, false);
 			CARRIED_BY.remove(carried);
 			carried.setNoGravity(false);
 			carried.setInvulnerable(false);
@@ -200,6 +240,7 @@ public class CarryManager {
 		ServerPlayerEntity theirCarrier = CARRIED_BY.remove(player);
 		if (theirCarrier != null) {
 			CarriedEntityData removedData = CARRIED_ENTITIES.remove(theirCarrier);
+			syncCarryPose(theirCarrier, player, false);
 			if (removedData != null) {
 				player.getAbilities().flying = removedData.originalFlying;
 				player.getAbilities().allowFlying = removedData.originalAllowFlying;
@@ -215,5 +256,75 @@ public class CarryManager {
 	public static void cleanupCooldowns() {
 		long now = System.currentTimeMillis();
 		CARRIED_COOLDOWN.values().removeIf(expiry -> expiry <= now);
+	}
+
+	public static Vec3d findSafeCarryPosition(ServerPlayerEntity carrier, Entity carried) {
+		Vec3d lookVec = carrier.getRotationVec(1.0F);
+		Vec3d forward = getHorizontalForward(carrier);
+		Vec3d right = new Vec3d(forward.z, 0, -forward.x);
+		double forwardDistance = carried instanceof ServerPlayerEntity
+				? CARRIED_PLAYER_FORWARD_DISTANCE
+				: CARRIED_ENTITY_FORWARD_DISTANCE;
+		Vec3d base = carrier.getPos();
+		Vec3d eyePos = carrier.getEyePos();
+		// 主位置：跟随视线方向（含俯仰），位于眼前偏下
+		Vec3d desired = eyePos.add(lookVec.multiply(forwardDistance)).subtract(0, 0.4D, 0);
+
+		return findFirstSafePosition(carrier, carried, desired,
+				desired,
+				// 无俯仰回退：水平方向 + 眼部高度偏下
+				eyePos.add(forward.multiply(forwardDistance)).subtract(0, 0.4D, 0),
+				// 原候选位置（使用脚部坐标）
+				base.add(forward.multiply(forwardDistance)).add(0, CARRY_Y_OFFSET, 0),
+				base.add(forward.multiply(forwardDistance * 0.5D)).add(0, CARRY_Y_OFFSET, 0),
+				base.add(forward.multiply(forwardDistance)).add(0, 1.0D, 0),
+				base.add(forward.multiply(forwardDistance * 0.5D)).add(0, 1.0D, 0),
+				base.add(right.multiply(0.55D)).add(0, 0.65D, 0),
+				base.subtract(right.multiply(0.55D)).add(0, 0.65D, 0),
+				base.add(0, CARRY_Y_OFFSET, 0),
+				base.add(0, 1.2D, 0),
+				base,
+				carried.getPos()
+		);
+	}
+
+	public static Vec3d findSafeReleasePosition(ServerPlayerEntity carrier, Entity carried, double forwardDistance) {
+		Vec3d lookVec = carrier.getRotationVec(1.0F);
+		Vec3d forward = getHorizontalForward(carrier);
+		Vec3d right = new Vec3d(forward.z, 0, -forward.x);
+		Vec3d base = carrier.getPos();
+		Vec3d desired = carrier.getEyePos().add(lookVec.multiply(forwardDistance)).subtract(0, 0.5D, 0);
+
+		return findFirstSafePosition(carrier, carried, desired,
+				desired,
+				base.add(forward.multiply(Math.min(forwardDistance, 0.8D))).add(0, 0.1D, 0),
+				base.add(right.multiply(0.65D)).add(0, 0.1D, 0),
+				base.subtract(right.multiply(0.65D)).add(0, 0.1D, 0),
+				base.subtract(forward.multiply(0.5D)).add(0, 0.1D, 0),
+				base.add(0, 0.1D, 0),
+				base.add(0, 1.0D, 0),
+				carried.getPos()
+		);
+	}
+
+	private static Vec3d getHorizontalForward(ServerPlayerEntity carrier) {
+		double rad = Math.toRadians(carrier.getYaw());
+		return new Vec3d(-Math.sin(rad), 0, Math.cos(rad)).normalize();
+	}
+
+	private static Vec3d findFirstSafePosition(ServerPlayerEntity carrier, Entity carried, Vec3d fallback, Vec3d... candidates) {
+		for (Vec3d candidate : candidates) {
+			if (isSafePosition(carrier, carried, candidate)) {
+				return candidate;
+			}
+		}
+		return fallback;
+	}
+
+	private static boolean isSafePosition(ServerPlayerEntity carrier, Entity carried, Vec3d pos) {
+		Box box = carried.getBoundingBox()
+				.offset(pos.x - carried.getX(), pos.y - carried.getY(), pos.z - carried.getZ())
+				.contract(CARRY_BOX_EPSILON);
+		return carrier.getWorld().isSpaceEmpty(carried, box);
 	}
 }

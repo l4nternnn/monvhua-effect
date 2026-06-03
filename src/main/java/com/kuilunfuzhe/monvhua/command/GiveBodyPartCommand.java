@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.kuilunfuzhe.monvhua.features.block.body.BodyModelSelectionCatalog;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import net.minecraft.command.CommandRegistryAccess;
 import net.minecraft.command.CommandSource;
@@ -20,10 +21,7 @@ import net.minecraft.text.Text;
 
 public class GiveBodyPartCommand {
     // 内置皮肤列表（文件名不含扩展名）
-    public static final String[] LOCAL_SKINS = {
-        "anan", "coco", "ema", "hanna", "hiro", "mago", "miria", "mll", "nnk",
-        "noa", "reiya", "sherry", "yalisa", "yuki", " kanshou"
-    };
+    public static final String[] LOCAL_SKINS = BodyModelSelectionCatalog.LOCAL_SKINS;
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher,
                                 CommandRegistryAccess registryAccess,

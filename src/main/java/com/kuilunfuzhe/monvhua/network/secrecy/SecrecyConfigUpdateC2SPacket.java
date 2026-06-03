@@ -1,0 +1,47 @@
+package com.kuilunfuzhe.monvhua.network.secrecy;
+
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.minecraft.network.RegistryByteBuf;
+import net.minecraft.network.codec.PacketCodec;
+import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.util.Identifier;
+
+/**
+ * 客户端 -> 服务端：隐身配置更新。
+ * 客户端将修改后的隐身功能配置以 JSON 字符串形式发送给服务端保存。
+ */
+public record SecrecyConfigUpdateC2SPacket(String json) implements CustomPayload {
+    public static final Id<SecrecyConfigUpdateC2SPacket> ID = new Id<>(Identifier.of("monvhua", "secrecy_config_update"));
+    public static final PacketCodec<RegistryByteBuf, SecrecyConfigUpdateC2SPacket> CODEC = PacketCodec.of(SecrecyConfigUpdateC2SPacket::write, SecrecyConfigUpdateC2SPacket::new);
+
+    /**
+     * 从网络缓冲区读取 JSON 字符串构造数据包。
+     */
+    private SecrecyConfigUpdateC2SPacket(RegistryByteBuf buf) {
+        this(buf.readString());
+    }
+
+    /**
+     * 将 JSON 字符串写入网络缓冲区。
+     */
+    private void write(RegistryByteBuf buf) {
+        buf.writeString(json);
+    }
+
+    @Override
+    public Id<? extends CustomPayload> getId() {
+        return ID;
+    }
+
+    private static boolean registered = false;
+
+    /**
+     * 注册此数据包到 C2S 负载类型注册表。
+     */
+    public static void register() {
+        if (!registered) {
+            PayloadTypeRegistry.playC2S().register(ID, CODEC);
+            registered = true;
+        }
+    }
+}

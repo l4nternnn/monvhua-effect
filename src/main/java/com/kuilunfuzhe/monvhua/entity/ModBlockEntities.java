@@ -14,6 +14,11 @@ import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.util.Identifier;
 
+/**
+ * 方块实体类型注册中心。
+ * 为身体的五个部位（躯干、左臂、右臂、左腿、右腿）和头部注册对应的 BlockEntityType，
+ * 方块实体负责在渲染时提供模型数据和动画状态。
+ */
 public class ModBlockEntities {
     public static final BlockEntityType<TorsoBlockEntity> TORSO_BLOCK_ENTITY = Registry.register(
             Registries.BLOCK_ENTITY_TYPE,
@@ -49,6 +54,10 @@ public class ModBlockEntities {
             FabricBlockEntityTypeBuilder.create(HeadBlockEntity::new, ModBlocks.HEAD).build()
     );
 
+    /**
+     * 模组初始化入口，目前留空。
+     * 保留方法以维持统一的初始化调用约定。
+     */
     public static void initialize() {
 //        System.out.println("Registered TORSO_BLOCK_ENTITY: " + TORSO_BLOCK_ENTITY.getRegistryEntry().getIdAsString());
     }

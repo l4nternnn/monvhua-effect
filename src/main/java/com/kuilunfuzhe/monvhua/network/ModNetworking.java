@@ -1,12 +1,24 @@
 package com.kuilunfuzhe.monvhua.network;
 
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
+import com.kuilunfuzhe.monvhua.network.action.*;
+import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
+import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
+import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
+import com.kuilunfuzhe.monvhua.network.floating.FloatingEnergySyncS2CPacket;
+import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeC2SPacket;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorToggleC2SPacket;
 import com.kuilunfuzhe.monvhua.network.openback.*;
+import com.kuilunfuzhe.monvhua.network.secrecy.RequestSecrecyConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigS2CPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigUpdateC2SPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyStateS2CPacket;
 
 public class ModNetworking {
 	// 注册所有 S2C 包（客户端和服务端都需要）
@@ -19,6 +31,8 @@ public class ModNetworking {
 		MarkParticleS2CPacket.register();
 		SyncConfigS2CPacket.register();
 		EnergySyncPacket.register();
+		FloatingEnergySyncS2CPacket.register();
+		FullWitchTagSyncS2CPacket.register();
 		MarkCountPacket.register();
 		FocusStatusPacket.register();
 		ParticlePacket.register();
@@ -31,13 +45,22 @@ public class ModNetworking {
 		CameraUpdateS2CPacket.register();
 		MirrorStateS2CPacket.register();
 		MirrorConfigS2CPacket.register();
+		MirrorChargeSyncS2CPacket.register();
+		SecrecyConfigS2CPacket.register();
+		SecrecyStateS2CPacket.register();
+		CarryPoseSyncS2CPacket.register();
+		ActionsConfigS2CPacket.register();
+		ActionFilesListS2CPacket.register();
+		PreviewResultS2CPacket.register();
+		PreviewTimelineResultS2CPacket.register();
+		TimelineStateS2CPacket.register();
 	}
 
 	// 注册所有 C2S 包（只需要服务端）
 	public static void registerC2SPackets() {
 		MarkEntityPayload.register();
 		UnmarkEntityPayload.register();
-		SelectViewPayload.register();  // 注意：你的 SelectViewPayload 实际上是 S2C？请确认
+		SelectViewPayload.register();
 		ExitViewPayload.register();
 		MagicPacket.register();
 		RightClickActionPacket.register();
@@ -50,8 +73,20 @@ public class ModNetworking {
 		OpenOtherInventoryPayload.register();
 		CarryEntityPayload.register();
 		PlaceCarriedEntityPayload.register();
+		PlacePoseEditorItemsC2SPacket.register();
+		PlacePosedBodyC2SPacket.register();
 		CameraWatchStartC2SPacket.register();
 		CameraWatchStopC2SPacket.register();
 		MirrorToggleC2SPacket.register();
+		MirrorChargeC2SPacket.register();
+		RequestSecrecyConfigC2SPacket.register();
+		SecrecyConfigUpdateC2SPacket.register();
+		RequestActionsConfigC2SPacket.register();
+		UpdateActionsConfigC2SPacket.register();
+		PreviewActionC2SPacket.register();
+		PreviewTimelineC2SPacket.register();
+		TimelineControlC2SPacket.register();
+		ListActionFilesC2SPacket.register();
+		LoadActionFileC2SPacket.register();
 	}
 }

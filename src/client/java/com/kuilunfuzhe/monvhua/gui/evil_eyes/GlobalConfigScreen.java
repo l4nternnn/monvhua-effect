@@ -12,10 +12,17 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.gui.widget.TextWidget;
 import net.minecraft.text.Text;
 
+/**
+ * 千里眼全局阶段配置编辑界面。
+ * 左侧7个阶段按钮，右侧编辑选中阶段的各项参数（使用次数、标记数、触发区间等）。
+ * 支持鼠标滚轮快速切换阶段。
+ */
 public class GlobalConfigScreen extends Screen {
+    /** 千里眼共7个阶段 */
     private static final int STAGES = 7;
     private int currentStage = 1;
     private TextFieldWidget dailyField, marksField, minScoreField, maxScoreField, watchTimeField;
+    /** 以下两个字段为后续扩展预留（鹦鹉相关功能） */
     private TextFieldWidget parrotDailyField, maxActiveParrotsField;  // 新增
     private ButtonWidget saveButton;
     private int panelWidth, panelHeight, panelX, panelY;
@@ -28,6 +35,9 @@ public class GlobalConfigScreen extends Screen {
         ClientPlayNetworking.send(new RequestGlobalConfigC2SPacket());
     }
 
+    /**
+     * 接收服务器下发的全局配置数据并刷新当前阶段UI。
+     */
     public void receiveConfigs(GlobalConfigS2CPacket.StageConfig[] configs) {
         for (int i = 0; i < configs.length && i < STAGES; i++) {
             this.configs[i + 1] = configs[i];
@@ -40,12 +50,14 @@ public class GlobalConfigScreen extends Screen {
         super.init();
         int sw = this.client.getWindow().getScaledWidth();
         int sh = this.client.getWindow().getScaledHeight();
+        // 面板占屏幕宽度一半，16:9比例
         panelWidth = sw / 2;
         panelHeight = (int)(panelWidth * 9f / 16f);
         panelX = (sw - panelWidth) / 2;
         panelY = (sh - panelHeight) / 2;
+        // 左侧阶段按钮占1/5宽度，右侧为配置编辑区
         leftWidth = panelWidth / 5;
-        rightWidth = panelWidth - leftWidth - 10;
+        rightWidth = panelWidth - leftWidth - 10;  // 10px 分隔间距
 
         // 左侧阶段按钮
         for (int i = 1; i <= STAGES; i++) {
@@ -103,6 +115,7 @@ public class GlobalConfigScreen extends Screen {
         marksField.setText(String.valueOf(configs[currentStage].maxMarks()));
         minScoreField.setText(String.valueOf(configs[currentStage].minScore()));
         maxScoreField.setText(String.valueOf(configs[currentStage].maxScore()));
+        // watchTimeField 在 CombinedConfigScreen 中使用，此处保留兼容
         watchTimeField.setText(String.valueOf(configs[currentStage].watchRequiredTicks() / 20));
         parrotDailyField.setText(String.valueOf(configs[currentStage].parrotDailyLimit()));
         maxActiveParrotsField.setText(String.valueOf(configs[currentStage].maxActiveParrots()));
@@ -130,6 +143,9 @@ public class GlobalConfigScreen extends Screen {
         }
     }
 
+    /**
+     * 鼠标滚轮切换阶段：向上滚 = 上一阶段，向下滚 = 下一阶段。
+     */
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         int delta = (int)Math.signum(verticalAmount);
@@ -144,9 +160,13 @@ public class GlobalConfigScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        // 半透明黑色遮罩
         context.fill(0, 0, width, height, 0xAA000000);
+        // 面板外边框
         context.fill(panelX - 1, panelY - 1, panelX + panelWidth + 1, panelY + panelHeight + 1, 0xFF444444);
+        // 左右分栏分隔线
         context.fill(panelX + leftWidth, panelY, panelX + leftWidth + 1, panelY + panelHeight, 0xFF444444);
+        // 左侧阶段列表背景和右侧配置区背景
         context.fill(panelX, panelY, panelX + leftWidth, panelY + panelHeight, 0xAA222222);
         context.fill(panelX + leftWidth + 1, panelY, panelX + panelWidth, panelY + panelHeight, 0xAA222222);
         context.drawText(textRenderer, Text.literal("当前编辑: 阶段 " + currentStage), panelX + leftWidth + 5, panelY + 5, 0xFFFFFF, false);

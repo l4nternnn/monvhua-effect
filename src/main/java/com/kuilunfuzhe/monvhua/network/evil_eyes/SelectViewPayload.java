@@ -9,6 +9,10 @@ import net.minecraft.util.Identifier;
 
 import java.util.UUID;
 
+/**
+ * 双向（C2S / S2C）：选择或确认观察指定实体。
+ * 客户端发送以请求观察目标，服务端发送以确认允许观察；同时注册了两端以支持双向通信。
+ */
 public record SelectViewPayload(UUID entityUuid) implements CustomPayload {
     public static final Id<SelectViewPayload> ID = new Id<>(Identifier.of("monvhua", "select_view"));
     public static final PacketCodec<PacketByteBuf, SelectViewPayload> CODEC = PacketCodec.tuple(
@@ -17,6 +21,7 @@ public record SelectViewPayload(UUID entityUuid) implements CustomPayload {
     );
 
     private static boolean registered = false;
+    /** 注册数据包类型到 C2S 和 S2C 载荷注册表（幂等，双向通信） */
     public static void register() {
         if (!registered) {
             registered = true;

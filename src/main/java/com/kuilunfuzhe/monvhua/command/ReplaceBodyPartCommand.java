@@ -25,13 +25,21 @@ import net.minecraft.util.math.Box;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * /clairvoyance-肢体替换 命令，将玩家附近 3 格范围内的肢体展示实体的皮肤替换为内置皮肤或指定玩家的皮肤。
+ * 支持 slim 手臂模型选项和分离整体肢体功能。
+ */
 public class ReplaceBodyPartCommand {
+    /** 所有肢体物品（头、躯干、左/右臂、左/右腿），用于筛选附近的 ItemDisplayEntity */
     private static final Set<Item> BODY_PART_ITEMS = Set.of(
             Assembly_ModItems.HEAD_ITEM, Assembly_ModItems.TORSO_ITEM,
             Assembly_ModItems.LEFT_ARM_ITEM, Assembly_ModItems.RIGHT_ARM_ITEM,
             Assembly_ModItems.LEFT_LEG_ITEM, Assembly_ModItems.RIGHT_LEG_ITEM
     );
 
+    /**
+     * 注册 /clairvoyance-肢体替换 命令及其子命令（localskin / player / split）。
+     */
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher,
                                 CommandRegistryAccess registryAccess,
                                 CommandManager.RegistrationEnvironment environment) {
@@ -60,6 +68,10 @@ public class ReplaceBodyPartCommand {
         );
     }
 
+    /**
+     * 将附近肢体展示实体替换为指定内置皮肤。
+     * @param slim 是否使用 slim 手臂模型
+     */
     private static int replaceWithLocalSkin(CommandContext<ServerCommandSource> ctx, boolean slim) throws CommandSyntaxException {
         ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
         String skinName = StringArgumentType.getString(ctx, "skinName");
@@ -68,6 +80,10 @@ public class ReplaceBodyPartCommand {
         return count;
     }
 
+    /**
+     * 将附近肢体展示实体替换为指定在线玩家的皮肤。
+     * @param slim 是否使用 slim 手臂模型
+     */
     private static int replaceWithPlayer(CommandContext<ServerCommandSource> ctx, boolean slim) throws CommandSyntaxException {
         ServerCommandSource source = ctx.getSource();
         ServerPlayerEntity player = source.getPlayerOrThrow();
@@ -82,6 +98,12 @@ public class ReplaceBodyPartCommand {
         return count;
     }
 
+    /**
+     * 替换玩家周围 3 格范围内的肢体 ItemDisplayEntity 为内置皮肤。
+     * @param localSkin 内置皮肤名称
+     * @param slim 是否使用 slim 模型
+     * @return 替换的实体数量
+     */
     private static int replaceItemDisplays(ServerPlayerEntity player, String localSkin, boolean slim) {
         ServerWorld world = (ServerWorld) player.getWorld();
         Box box = new Box(player.getBlockPos()).expand(3);
@@ -96,6 +118,12 @@ public class ReplaceBodyPartCommand {
         return entities.size();
     }
 
+    /**
+     * 替换玩家周围 3 格范围内的肢体 ItemDisplayEntity 为目标玩家的皮肤（使用 PROFILE 组件）。
+     * @param target 皮肤来源玩家
+     * @param slim 是否使用 slim 模型
+     * @return 替换的实体数量
+     */
     private static int replaceItemDisplays(ServerPlayerEntity player, ServerPlayerEntity target, boolean slim) {
         ServerWorld world = (ServerWorld) player.getWorld();
         Box box = new Box(player.getBlockPos()).expand(3);
@@ -111,6 +139,9 @@ public class ReplaceBodyPartCommand {
         return entities.size();
     }
 
+    /**
+     * 创建带有内置皮肤 NBT 数据的 ItemStack，通过 CUSTOM_DATA 组件存储 local_skin 和 arm_model。
+     */
     private static ItemStack createStackWithLocalSkin(Item item, String skinName, boolean slim) {
         ItemStack stack = new ItemStack(item);
         NbtCompound nbt = new NbtCompound();
@@ -123,6 +154,9 @@ public class ReplaceBodyPartCommand {
         return stack;
     }
 
+    /**
+     * 创建带有 PROFILE 组件的 ItemStack，使其显示目标玩家的皮肤。
+     */
     private static ItemStack createStackWithProfile(Item item, ProfileComponent profile, boolean slim) {
         ItemStack stack = new ItemStack(item);
         stack.set(DataComponentTypes.PROFILE, profile);
@@ -138,6 +172,10 @@ public class ReplaceBodyPartCommand {
         return stack;
     }
 
+    /**
+     * 根据肢体物品返回其中文名称。
+     * @return 中文名称，非肢体物品返回空字符串
+     */
     private static String chineseName(Item item) {
         if (item == Assembly_ModItems.HEAD_ITEM) return "头";
         if (item == Assembly_ModItems.TORSO_ITEM) return "躯干";
@@ -148,6 +186,9 @@ public class ReplaceBodyPartCommand {
         return "";
     }
 
+    /**
+     * 将玩家附近的整体肢体展示实体分离为单独的头/躯干/四肢展示实体。
+     */
     private static int splitCombined(CommandContext<ServerCommandSource> ctx) throws CommandSyntaxException {
         ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
         int count = BodyPartManager.splitCombinedBody(player);

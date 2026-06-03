@@ -27,8 +27,15 @@ import net.minecraft.world.BlockView;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
+/**
+ * 躯干方块，继承自 {@link BlockWithEntity}，关联 {@link TorsoBlockEntity} 进行自定义渲染。
+ * 方块本身不可见（{@link BlockRenderType#INVISIBLE}），通过 BlockEntity 渲染玩家躯干模型。
+ * 放置时从物品 NBT 读取皮肤类型（arm_model、local_skin）并传递给方块实体。
+ */
 public class TorsoBlock extends BlockWithEntity {
+    /** 水平朝向属性，放置时面向玩家的相反方向 */
     public static final EnumProperty<Direction> FACING = Properties.HORIZONTAL_FACING;
+    /** 碰撞箱：宽0.5格（x/z方向居中），高0.75格，底部对齐 */
     private static final VoxelShape SHAPE = VoxelShapes.cuboid(0.25, 0, 0.25, 0.75, 0.75, 0.75);
 
     public TorsoBlock(Settings settings) {
@@ -44,6 +51,9 @@ public class TorsoBlock extends BlockWithEntity {
     }
 
     // 去掉注释，并添加上日志
+    /**
+     * 右键交互：在服务端打开方块实体的配置界面。
+     */
     @Override
     public ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, BlockHitResult hit) {
 //        System.out.println("TorsoBlock.onUse called on " + (world.isClient ? "client" : "server"));
@@ -98,6 +108,10 @@ public class TorsoBlock extends BlockWithEntity {
         return new TorsoBlockEntity(pos, state);
     }
 
+    /**
+     * 方块放置回调：将放置者的皮肤信息（Profile）和模型覆盖标记（arm_model、local_skin）
+     * 从物品 NBT 写入方块实体，用于后续渲染。
+     */
     @Override
     public void onPlaced(World world, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack itemStack) {
         super.onPlaced(world, pos, state, placer, itemStack);

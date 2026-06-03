@@ -1,12 +1,17 @@
 package com.kuilunfuzhe.monvhua;
 
 import com.google.gson.JsonObject;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.kuilunfuzhe.monvhua.command.*;
 import com.kuilunfuzhe.monvhua.command.mirror.MirrorCommand;
 import com.kuilunfuzhe.monvhua.command.mirror.MirrorDataStore;
 import com.kuilunfuzhe.monvhua.config.GlobalConfigManager;
 import com.kuilunfuzhe.monvhua.effect.DisplayOnlyEffect;
 import com.kuilunfuzhe.monvhua.entity.ModBlockEntities;
+import com.kuilunfuzhe.monvhua.features.action.ActionConfig;
+import com.kuilunfuzhe.monvhua.features.action.ActionEngine;
+import com.kuilunfuzhe.monvhua.features.action.ActionExecutor;
+import com.kuilunfuzhe.monvhua.features.action.TimelineScheduler;
 import com.kuilunfuzhe.monvhua.features.block.body.BodyPartManager;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryEvents;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
@@ -15,15 +20,21 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
 import com.kuilunfuzhe.monvhua.features.guidance.Gazeguidance;
 import com.kuilunfuzhe.monvhua.item.ModItemGroups;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
+import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
+import com.kuilunfuzhe.monvhua.item.secrecy.SecrecyItem;
 import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
+import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
+import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
+import com.kuilunfuzhe.monvhua.network.action.*;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigUpdateC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
@@ -32,6 +43,10 @@ import com.kuilunfuzhe.monvhua.network.mirror.RequestMirrorConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.openback.CarryEntityPayload;
 import com.kuilunfuzhe.monvhua.network.openback.OpenOtherInventoryPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
+import com.kuilunfuzhe.monvhua.network.secrecy.RequestSecrecyConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigS2CPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigUpdateC2SPacket;
+import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyStateS2CPacket;
 import com.kuilunfuzhe.monvhua.screen.ModScreenHandlers;
 import com.kuilunfuzhe.monvhua.screen.OtherPlayerInventoryScreenHandler;
 import com.kuilunfuzhe.monvhua.screen.OtherPlayerInventoryScreenHandlerFactory;
@@ -41,11 +56,13 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.entity.damage.DamageTypes;
 import net.minecraft.entity.effect.StatusEffect;
 import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.component.type.ProfileComponent;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.entry.RegistryEntry;
@@ -64,8 +81,12 @@ import net.minecraft.world.World;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import com.kuilunfuzhe.monvhua.event.ServerTickHandler;
 
 public class MonvhuaMod implements ModInitializer {
     public static final String MOD_ID = "monvhua";
@@ -84,6 +105,9 @@ public class MonvhuaMod implements ModInitializer {
 
     // 飘浮飞行能力追踪
     private static final Set<UUID> floatingPlayers = new HashSet<>();
+
+    // ===== 漂浮魔法系统（服务端）=====
+    public static final Set<UUID> floatingPlayersServer = new HashSet<>();
 
     // ===== 千里眼共享状态 =====
     public static ScreenHandlerType<OtherPlayerInventoryScreenHandler> OTHER_INVENTORY_HANDLER =
@@ -136,6 +160,8 @@ public class MonvhuaMod implements ModInitializer {
         CameraUpdateS2CPacket.register();
         MirrorStateS2CPacket.register();
         MirrorConfigS2CPacket.register();
+        SecrecyConfigS2CPacket.register();
+        SecrecyStateS2CPacket.register();
 
         ModNetworking.registerC2SPackets();
         MarkEntityPayload.register();
@@ -151,14 +177,30 @@ public class MonvhuaMod implements ModInitializer {
         OpenOtherInventoryPayload.register();
         CarryEntityPayload.register();
         PlaceCarriedEntityPayload.register();
+        PlacePosedBodyC2SPacket.register();
         CameraWatchStartC2SPacket.register();
         CameraWatchStopC2SPacket.register();
         MirrorToggleC2SPacket.register();
         MirrorConfigUpdateC2SPacket.register();
         RequestMirrorConfigC2SPacket.register();
+        RequestSecrecyConfigC2SPacket.register();
+        SecrecyConfigUpdateC2SPacket.register();
 
         ServerPlayNetworking.registerGlobalReceiver(MirrorToggleC2SPacket.ID, (packet, context) -> {
             MirrorCommand.toggleViewport(context.player());
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(MirrorChargeC2SPacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity player = context.player();
+                if (player.getMainHandStack().getItem() == mirror_of_then_and_now.MIRROR_ITEM) {
+                    if (packet.start()) {
+                        MirrorCommand.startCharging(player);
+                    } else {
+                        MirrorCommand.stopCharging(player);
+                    }
+                }
+            });
         });
 
         ServerPlayNetworking.registerGlobalReceiver(MirrorConfigUpdateC2SPacket.ID, (packet, context) -> {
@@ -181,12 +223,73 @@ public class MonvhuaMod implements ModInitializer {
             ServerPlayNetworking.send(context.player(), new MirrorConfigS2CPacket(config.toJson()));
         });
 
+        ServerPlayNetworking.registerGlobalReceiver(RequestSecrecyConfigC2SPacket.ID, (packet, context) -> {
+            ServerPlayNetworking.send(context.player(), new SecrecyConfigS2CPacket(SecrecyConfig.getInstance().toJson()));
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(PlacePosedBodyC2SPacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity player = context.player();
+                if (!player.isCreative() && !player.hasPermissionLevel(2)) {
+                    player.sendMessage(Text.literal("No permission to place posed body model"), true);
+                    return;
+                }
+                if (packet.playerSkin()) {
+                    ServerPlayerEntity source = context.server().getPlayerManager().getPlayer(packet.playerName());
+                    if (source == null) {
+                        player.sendMessage(Text.literal("Player " + packet.playerName() + " is not online"), true);
+                        return;
+                    }
+                    BodyPartManager.createPosedCombinedDisplay(player, new ProfileComponent(source.getGameProfile()), packet.slimModel(), packet.poseValues(),
+                            packet.offsetX(), packet.offsetY(), packet.offsetZ(),
+                            packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
+                } else {
+                    BodyPartManager.createPosedCombinedDisplay(player, packet.skinName(), packet.slimModel(), packet.poseValues(),
+                            packet.offsetX(), packet.offsetY(), packet.offsetZ(),
+                            packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
+                }
+            });
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(PlacePoseEditorItemsC2SPacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity player = context.player();
+                if (!player.isCreative() && !player.hasPermissionLevel(2)) {
+                    player.sendMessage(Text.literal("No permission to place pose editor items"), true);
+                    return;
+                }
+                BodyPartManager.createPoseEditorItemDisplays(player, packet.items());
+            });
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(SecrecyConfigUpdateC2SPacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                if (!context.player().hasPermissionLevel(2) && !context.player().isCreative()) {
+                    context.player().sendMessage(Text.literal("§c你没有权限修改窃密配置"), true);
+                    return;
+                }
+                SecrecyConfig newConfig = SecrecyConfig.fromJson(packet.json());
+                SecrecyConfig.setInstance(newConfig);
+                for (int stage = 1; stage <= newConfig.stages.length; stage++) {
+                    int range = newConfig.getRange(stage);
+                    double probability = newConfig.getProbability(stage);
+                    String command = "mindreading " + stage + " " + range + " " + probability;
+                    context.server().getCommandManager().executeWithPrefix(context.server().getCommandSource().withLevel(4), command);
+                }
+                for (ServerPlayerEntity p : context.server().getPlayerManager().getPlayerList()) {
+                    ServerPlayNetworking.send(p, new SecrecyConfigS2CPacket(newConfig.toJson()));
+                }
+                context.player().sendMessage(Text.literal("§a窃密配置已更新，并已同步 mindreading 范围/概率"), true);
+            });
+        });
+
         // ===== 3. 命令注册 =====
         CommandRegistrationCallback.EVENT.register(GiveBodyPartCommand::register);
         CommandRegistrationCallback.EVENT.register(ReplaceBodyPartCommand::register);
         CommandRegistrationCallback.EVENT.register(WatchCommand::register);
         CommandRegistrationCallback.EVENT.register(MirrorCommand::register);
         CommandRegistrationCallback.EVENT.register(ClairvoyanceCommand::register);
+        CommandRegistrationCallback.EVENT.register(ActionCommand::register);
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("clairvoyance-肢体|合并")
@@ -197,10 +300,21 @@ public class MonvhuaMod implements ModInitializer {
                     return BodyPartManager.mergeBodyParts(player);
                 })
             );
+            dispatcher.register(CommandManager.literal("clairvoyance-肢体|清除背包实体")
+                .requires(source -> source.hasPermissionLevel(2))
+                .executes(context -> clearBodyBackpackInteractions(context.getSource(), 4.0D))
+                .then(CommandManager.argument("radius", DoubleArgumentType.doubleArg(0.5D, 64.0D))
+                    .executes(context -> clearBodyBackpackInteractions(context.getSource(), DoubleArgumentType.getDouble(context, "radius")))
+                )
+            );
         });
 
         // ===== 4. 配置系统 =====
         GlobalConfigManager configManager = new GlobalConfigManager();
+        ActionConfig actionConfig = ActionConfig.getInstance();
+        ActionEngine.initialize(actionConfig);
+        TimelineScheduler.initialize(actionConfig);
+        ServerTickEvents.END_SERVER_TICK.register(TimelineScheduler::tick);
 
         ServerPlayNetworking.registerGlobalReceiver(RequestGlobalConfigC2SPacket.ID, (packet, context) -> {
             sendGlobalConfigToPlayer(context.player(), configManager);
@@ -226,12 +340,15 @@ public class MonvhuaMod implements ModInitializer {
             }
         });
 
+        registerActionEditorReceivers();
+
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
             sendGlobalConfigToPlayer(player, configManager);
             int stage = Evil_Eyes.getPlayerStage(player, configManager);
             ServerPlayNetworking.send(player, new PlayerStageS2CPacket(stage));
             MirrorCommand.syncToClient(player);
+            ServerPlayNetworking.send(player, new SecrecyConfigS2CPacket(SecrecyConfig.getInstance().toJson()));
         });
 
         // ===== 5. 持久化加载 =====
@@ -242,6 +359,7 @@ public class MonvhuaMod implements ModInitializer {
             CameraWatchManager.tick(server);
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                 MirrorCommand.tickViewports(player);
+                MirrorCommand.tickCharging(player);
             }
         });
 
@@ -261,6 +379,7 @@ public class MonvhuaMod implements ModInitializer {
         Evil_Eyes.initialize(configManager);
         Gazeguidance.initialize();
         ModItems.initialize();
+        SecrecyItem.initialize(configManager);
         ModBlocks.initialize();
         Assembly_ModItems.initialize();
         mirror_of_then_and_now.initialize();
@@ -336,24 +455,6 @@ public class MonvhuaMod implements ModInitializer {
 
                 // 先处理待发送的腐化消息
                 processPendingTainted(player, uuid);
-
-                // 飘浮飞行能力
-                boolean canFloat = player.getCommandTags().contains("Floating")
-                        && player.getCommandTags().contains("MonvhuaFull");
-                if (canFloat && !floatingPlayers.contains(uuid)) {
-                    player.getAbilities().allowFlying = true;
-                    player.sendAbilitiesUpdate();
-                    floatingPlayers.add(uuid);
-                    player.sendMessage(
-                            Text.literal("您已获得飞行能力，尽情杀戮吧！")
-                                    .formatted(Formatting.DARK_RED)
-                    );
-                } else if (!canFloat && floatingPlayers.remove(uuid)) {
-                    player.getAbilities().allowFlying = false;
-                    player.getAbilities().flying = false;
-                    player.sendAbilitiesUpdate();
-                    player.fallDistance = 0;
-                }
 
                 if (role == null) {
                     RegistryEntry<StatusEffect> prev = lastEffect.remove(uuid);
@@ -436,6 +537,8 @@ public class MonvhuaMod implements ModInitializer {
             VIEWING_MAP.values().removeIf(v -> v == player);
             VIEW_MODE_PREFERENCE.remove(uuid);
             MirrorCommand.cleanup(uuid);
+            TimelineScheduler.cleanupPlayer(uuid);
+            SecrecyItem.exitSecrecy(player);
         });
 
         // ===== 13. 死亡清理 =====
@@ -446,19 +549,199 @@ public class MonvhuaMod implements ModInitializer {
                 cancelPendingTainted(uuid);
                 floatingPlayers.remove(uuid);
                 MirrorCommand.cleanup(uuid);
+            SecrecyItem.exitSecrecy(player);
             }
         });
 
-        // ===== 14. 飘浮玩家免疫摔落伤害 =====
+        // ===== 14. 漂浮/缓降玩家免疫摔落伤害 =====
         ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> {
             if (entity instanceof ServerPlayerEntity player
-                    && floatingPlayers.contains(player.getUuid())
-                    && source.isOf(DamageTypes.FALL)) {
+                    && source.isOf(DamageTypes.FALL)
+                    && (floatingPlayers.contains(player.getUuid())
+                    || com.kuilunfuzhe.monvhua.features.floating.floating.shouldPreventFallDamage(player))) {
                 player.fallDistance = 0;
                 return false;
             }
             return true;
         });
+        // 注册漂浮魔法能量系统
+        ServerTickHandler.register();
+    }
+
+    private static int clearBodyBackpackInteractions(net.minecraft.server.command.ServerCommandSource source, double radius) {
+        ServerPlayerEntity player;
+        try {
+            player = source.getPlayerOrThrow();
+        } catch (Exception e) {
+            source.sendError(Text.literal("此命令只能由玩家执行"));
+            return 0;
+        }
+        int count = BodyPartManager.clearNearbyBackpackInteractions(player, radius);
+        source.sendFeedback(() -> Text.literal("已清除附近 " + count + " 个躯干背包交互实体"), true);
+        return count;
+    }
+
+    private static void registerActionEditorReceivers() {
+        ServerPlayNetworking.registerGlobalReceiver(RequestActionsConfigC2SPacket.ID, (packet, context) ->
+                context.server().execute(() -> sendActionsConfig(context.player())));
+
+        ServerPlayNetworking.registerGlobalReceiver(UpdateActionsConfigC2SPacket.ID, (packet, context) ->
+                context.server().execute(() -> {
+                    ServerPlayerEntity player = context.player();
+                    if (!canEditActions(player)) return;
+                    try {
+                        ActionConfig.setInstance(ActionConfig.fromJson(packet.json()));
+                        ActionEngine.reloadConfig();
+                        TimelineScheduler.reloadConfig();
+                        sendActionsConfig(player);
+                    } catch (Exception e) {
+                        player.sendMessage(Text.literal("Invalid action config json"), true);
+                    }
+                }));
+
+        ServerPlayNetworking.registerGlobalReceiver(PreviewActionC2SPacket.ID, (packet, context) ->
+                context.server().execute(() -> {
+                    try {
+                        ActionConfig.ActionDef def = ActionConfig.actionDefFromJson(packet.actionJson());
+                        String text = ActionExecutor.executePreviewText(def, context.player());
+                        String id = def != null && def.id != null ? def.id : "";
+                        ServerPlayNetworking.send(context.player(), new PreviewResultS2CPacket(id, text));
+                    } catch (Exception e) {
+                        ServerPlayNetworking.send(context.player(), new PreviewResultS2CPacket("", "Preview failed: " + e.getMessage()));
+                    }
+                }));
+
+        ServerPlayNetworking.registerGlobalReceiver(PreviewTimelineC2SPacket.ID, (packet, context) ->
+                context.server().execute(() -> {
+                    ActionConfig cfg = ActionConfig.getInstance();
+                    List<PreviewTimelineResultS2CPacket.PreviewEntry> entries = new ArrayList<>();
+                    List<Integer> seconds = new ArrayList<>(cfg.timelineSchedule.keySet());
+                    Collections.sort(seconds);
+                    for (int second : seconds) {
+                        List<String> ids = cfg.timelineSchedule.get(second);
+                        if (ids == null) continue;
+                        for (String actionId : ids) {
+                            if (actionId == null || actionId.isBlank()) continue;
+                            cfg.findById(actionId).ifPresent(def -> entries.add(
+                                    new PreviewTimelineResultS2CPacket.PreviewEntry(second, actionId,
+                                            ActionExecutor.executePreviewText(def, context.player()), def.actionType)));
+                        }
+                    }
+                    ServerPlayNetworking.send(context.player(), new PreviewTimelineResultS2CPacket(entries));
+                }));
+
+        ServerPlayNetworking.registerGlobalReceiver(TimelineControlC2SPacket.ID, (packet, context) ->
+                context.server().execute(() -> {
+                    ServerPlayerEntity player = context.player();
+                    String action = packet.action() == null ? "" : packet.action().toUpperCase(Locale.ROOT);
+                    boolean changedSchedule = false;
+                    switch (action) {
+                        case "START" -> TimelineScheduler.start(player);
+                        case "STOP" -> TimelineScheduler.stop(player);
+                        case "PAUSE" -> TimelineScheduler.pause(player);
+                        case "RESUME" -> TimelineScheduler.resume(player);
+                        case "SET_LOOP" -> TimelineScheduler.setLoop(player, true);
+                        case "SET_LOOP_OFF" -> TimelineScheduler.setLoop(player, false);
+                        case "JUMP", "SEEK" -> TimelineScheduler.jumpTo(player, packet.second());
+                        case "ADD" -> {
+                            if (!canEditActions(player)) return;
+                            if (packet.actionId() == null || packet.actionId().isBlank()) {
+                                createEmptyTimelineSecond(packet.second());
+                            } else {
+                                TimelineScheduler.addAction(player, Math.max(0, packet.second()), packet.actionId());
+                            }
+                            changedSchedule = true;
+                        }
+                        case "REMOVE" -> {
+                            if (!canEditActions(player)) return;
+                            TimelineScheduler.removeAction(player, packet.second(), packet.actionId());
+                            changedSchedule = true;
+                        }
+                        case "MOVE_UP" -> {
+                            if (!canEditActions(player)) return;
+                            TimelineScheduler.moveUp(player, packet.second(), packet.actionId());
+                            changedSchedule = true;
+                        }
+                        case "MOVE_DOWN" -> {
+                            if (!canEditActions(player)) return;
+                            TimelineScheduler.moveDown(player, packet.second(), packet.actionId());
+                            changedSchedule = true;
+                        }
+                        case "REMOVE_SECOND" -> {
+                            if (!canEditActions(player)) return;
+                            TimelineScheduler.removeSecond(player, packet.second());
+                            changedSchedule = true;
+                        }
+                    }
+                    if (changedSchedule) sendActionsConfig(player);
+                }));
+
+        ServerPlayNetworking.registerGlobalReceiver(ListActionFilesC2SPacket.ID, (packet, context) ->
+                context.server().execute(() ->
+                        ServerPlayNetworking.send(context.player(), new ActionFilesListS2CPacket(listActionFiles()))));
+
+        ServerPlayNetworking.registerGlobalReceiver(LoadActionFileC2SPacket.ID, (packet, context) ->
+                context.server().execute(() -> {
+                    ServerPlayerEntity player = context.player();
+                    if (!canEditActions(player)) return;
+                    Path path = resolveActionFile(packet.filename());
+                    if (path == null || !Files.isRegularFile(path)) {
+                        player.sendMessage(Text.literal("Action file not found: " + packet.filename()), true);
+                        return;
+                    }
+                    try {
+                        ActionConfig.setInstance(ActionConfig.fromJson(Files.readString(path)));
+                        ActionEngine.reloadConfig();
+                        TimelineScheduler.reloadConfig();
+                        sendActionsConfig(player);
+                    } catch (IOException e) {
+                        player.sendMessage(Text.literal("Failed to load action file: " + e.getMessage()), true);
+                    }
+                }));
+    }
+
+    private static boolean canEditActions(ServerPlayerEntity player) {
+        return player != null && (player.hasPermissionLevel(2) || player.isCreative());
+    }
+
+    private static void sendActionsConfig(ServerPlayerEntity player) {
+        ActionConfig cfg = ActionConfig.getInstance();
+        ServerPlayNetworking.send(player, new ActionsConfigS2CPacket(cfg.toJson()));
+        TimelineScheduler.PlayerTimelineState state = TimelineScheduler.getOrCreate(player);
+        ServerPlayNetworking.send(player, new TimelineStateS2CPacket(
+                state.currentTick / 20, state.running, state.paused, state.loop, TimelineScheduler.getMaxSecond()));
+    }
+
+    private static void createEmptyTimelineSecond(int second) {
+        ActionConfig cfg = ActionConfig.getInstance();
+        cfg.timelineSchedule.computeIfAbsent(Math.max(0, second), k -> new ArrayList<>());
+        cfg.save();
+        ActionEngine.reloadConfig();
+        TimelineScheduler.reloadConfig();
+    }
+
+    private static List<String> listActionFiles() {
+        Path base = FabricLoader.getInstance().getConfigDir().resolve("monvhua").normalize();
+        List<String> files = new ArrayList<>();
+        if (Files.isRegularFile(base.resolve("actions.json"))) files.add("actions.json");
+        Path actionDir = base.resolve("actions");
+        if (Files.isDirectory(actionDir)) {
+            try (java.util.stream.Stream<Path> stream = Files.list(actionDir)) {
+                stream.filter(Files::isRegularFile)
+                        .filter(path -> path.getFileName().toString().endsWith(".json"))
+                        .sorted()
+                        .forEach(path -> files.add("actions/" + path.getFileName()));
+            } catch (IOException ignored) {}
+        }
+        return files;
+    }
+
+    private static Path resolveActionFile(String filename) {
+        if (filename == null || filename.isBlank()) return null;
+        Path base = FabricLoader.getInstance().getConfigDir().resolve("monvhua").normalize();
+        Path path = base.resolve(filename).normalize();
+        if (!path.startsWith(base)) return null;
+        return path;
     }
 
     private static void processPendingTainted(ServerPlayerEntity player, UUID uuid) {
