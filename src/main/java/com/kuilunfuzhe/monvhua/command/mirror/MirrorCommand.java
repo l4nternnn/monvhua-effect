@@ -24,7 +24,11 @@ public class MirrorCommand {
 	public static final Map<UUID, Boolean> VIEWPORT_ACTIVE = new ConcurrentHashMap<>();
 	public static final Map<UUID, Integer> VIEWPORT_ACCUMULATED_TICKS = new ConcurrentHashMap<>();
 	public static final Map<UUID, Integer> VIEWPORT_USES_LEFT = new ConcurrentHashMap<>();
+	private static final Map<UUID, Integer> VIEWPORT_ACTIVATION_DELAY_TICKS = new ConcurrentHashMap<>();
+	private static final Map<UUID, Integer> VIEWPORT_CLOSE_PROTECTION_TICKS = new ConcurrentHashMap<>();
 	private static final Map<UUID, Integer> VIEWPORT_STAGE = new ConcurrentHashMap<>();
+	private static final int VIEWPORT_ACTIVATION_DELAY = 20;
+	private static final int VIEWPORT_CLOSE_PROTECTION = 20;
 
 	// Charging state
 	public static final Map<UUID, Integer> CHARGING_PLAYERS = new ConcurrentHashMap<>();
@@ -146,6 +150,25 @@ public class MirrorCommand {
 	public static void toggleViewport(ServerPlayerEntity player) {
 		UUID uuid = player.getUuid();
             if (player.getCommandTags().contains("Silenced")) { player.sendMessage(net.minecraft.text.Text.literal("§c你难以集中精神"), true); return; }
+		if (VIEWPORT_ACTIVE.getOrDefault(uuid, false)) {
+			if (VIEWPORT_CLOSE_PROTECTION_TICKS.containsKey(uuid)) {
+				player.sendMessage(Text.literal("§7镜像视角已启动"), true);
+				return;
+			}
+			VIEWPORT_ACTIVE.put(uuid, false);
+			VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
+			VIEWPORT_ACTIVATION_DELAY_TICKS.remove(uuid);
+			VIEWPORT_CLOSE_PROTECTION_TICKS.remove(uuid);
+			syncToClient(player);
+			player.sendMessage(Text.literal("§7镜像视角已关闭"), true);
+			return;
+		}
+
+		if (VIEWPORT_ACTIVATION_DELAY_TICKS.containsKey(uuid)) {
+			player.sendMessage(Text.literal("§7镜像视角正在启动"), true);
+			return;
+		}
+
 		MirrorDataStore.PlayerData data = MirrorDataStore.getOrCreate(uuid);
 
 		if (!hasAnySlot(data)) {
@@ -172,6 +195,7 @@ public class MirrorCommand {
 		if (current) {
 			VIEWPORT_ACTIVE.put(uuid, false);
 			VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
+			VIEWPORT_CLOSE_PROTECTION_TICKS.remove(uuid);
 			syncToClient(player);
 			player.sendMessage(Text.literal("§7昔日重现已不再，剩余 " + usesLeft + " 次"), true);
 			return;
@@ -189,8 +213,7 @@ public class MirrorCommand {
 			return;
 		}
 
-		VIEWPORT_ACCUMULATED_TICKS.put(uuid, 0);
-		VIEWPORT_ACTIVE.put(uuid, true);
+		scheduleViewportActivation(player);
 		syncToClient(player);
 		player.sendMessage(Text.literal("§a观看判定成功，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
 	}
@@ -201,8 +224,8 @@ public class MirrorCommand {
 		UUID uuid = player.getUuid();
         if (player.getCommandTags().contains("Silenced")) { player.sendMessage(net.minecraft.text.Text.literal("§c你难以集中精神"), true); return; }
 
-		// Don't start charging if viewport is already active
-		if (VIEWPORT_ACTIVE.getOrDefault(uuid, false)) return;
+		// Don't start charging if viewport is already active or waiting to activate.
+		if (VIEWPORT_ACTIVE.getOrDefault(uuid, false) || VIEWPORT_ACTIVATION_DELAY_TICKS.containsKey(uuid)) return;
 
 		// Don't start charging if already charging
 		if (CHARGING_PLAYERS.containsKey(uuid)) return;
@@ -304,8 +327,7 @@ public class MirrorCommand {
 			}
 
 			// Success — activate viewport
-			VIEWPORT_ACCUMULATED_TICKS.put(uuid, 0);
-			VIEWPORT_ACTIVE.put(uuid, true);
+			scheduleViewportActivation(player);
 			syncToClient(player);
 			player.sendMessage(Text.literal("§a观看判定成功，已消耗 1 次，剩余 " + usesLeft + " 次"), true);
 		}
@@ -319,12 +341,15 @@ public class MirrorCommand {
 
 	public static void tickViewports(ServerPlayerEntity player) {
 		UUID uuid = player.getUuid();
+		if (tickActivationDelay(player)) return;
 		if (!VIEWPORT_ACTIVE.getOrDefault(uuid, false)) return;
+		tickCloseProtection(uuid);
 
 		MirrorDataStore.PlayerData data = MirrorDataStore.getOrCreate(uuid);
 		if (!isInAnyRange(player, data)) {
 			VIEWPORT_ACTIVE.put(uuid, false);
 			VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
+			VIEWPORT_CLOSE_PROTECTION_TICKS.remove(uuid);
 			syncToClient(player);
 			player.sendMessage(Text.literal("§7已离开范围，"), true);
 			return;
@@ -340,6 +365,7 @@ public class MirrorCommand {
 		if (accumulated >= watchTimeTicks) {
 			VIEWPORT_ACTIVE.put(uuid, false);
 			VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
+			VIEWPORT_CLOSE_PROTECTION_TICKS.remove(uuid);
 			player.sendMessage(Text.literal("§a头昏脑涨了,"), true);
 			syncToClient(player);
 		}
@@ -348,10 +374,59 @@ public class MirrorCommand {
 	public static void cleanup(UUID uuid) {
 		VIEWPORT_ACTIVE.remove(uuid);
 		VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
+		VIEWPORT_ACTIVATION_DELAY_TICKS.remove(uuid);
+		VIEWPORT_CLOSE_PROTECTION_TICKS.remove(uuid);
 		VIEWPORT_USES_LEFT.remove(uuid);
 		VIEWPORT_STAGE.remove(uuid);
 		CHARGING_PLAYERS.remove(uuid);
 		CHARGING_STAGE.remove(uuid);
+	}
+
+	private static void scheduleViewportActivation(ServerPlayerEntity player) {
+		UUID uuid = player.getUuid();
+		VIEWPORT_ACTIVE.put(uuid, false);
+		VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
+		VIEWPORT_CLOSE_PROTECTION_TICKS.remove(uuid);
+		VIEWPORT_ACTIVATION_DELAY_TICKS.put(uuid, VIEWPORT_ACTIVATION_DELAY);
+	}
+
+	private static boolean tickActivationDelay(ServerPlayerEntity player) {
+		UUID uuid = player.getUuid();
+		Integer ticksLeft = VIEWPORT_ACTIVATION_DELAY_TICKS.get(uuid);
+		if (ticksLeft == null) return false;
+
+		MirrorDataStore.PlayerData data = MirrorDataStore.getOrCreate(uuid);
+		if (!isInAnyRange(player, data)) {
+			VIEWPORT_ACTIVATION_DELAY_TICKS.remove(uuid);
+			VIEWPORT_ACTIVE.put(uuid, false);
+			VIEWPORT_ACCUMULATED_TICKS.remove(uuid);
+			VIEWPORT_CLOSE_PROTECTION_TICKS.remove(uuid);
+			syncToClient(player);
+			player.sendMessage(Text.literal("§7已离开范围，镜像视角启动取消"), true);
+			return true;
+		}
+
+		if (ticksLeft <= 1) {
+			VIEWPORT_ACTIVATION_DELAY_TICKS.remove(uuid);
+			VIEWPORT_ACCUMULATED_TICKS.put(uuid, 0);
+			VIEWPORT_ACTIVE.put(uuid, true);
+			VIEWPORT_CLOSE_PROTECTION_TICKS.put(uuid, VIEWPORT_CLOSE_PROTECTION);
+			syncToClient(player);
+			return true;
+		}
+
+		VIEWPORT_ACTIVATION_DELAY_TICKS.put(uuid, ticksLeft - 1);
+		return true;
+	}
+
+	private static void tickCloseProtection(UUID uuid) {
+		Integer ticksLeft = VIEWPORT_CLOSE_PROTECTION_TICKS.get(uuid);
+		if (ticksLeft == null) return;
+		if (ticksLeft <= 1) {
+			VIEWPORT_CLOSE_PROTECTION_TICKS.remove(uuid);
+			return;
+		}
+		VIEWPORT_CLOSE_PROTECTION_TICKS.put(uuid, ticksLeft - 1);
 	}
 
 	public static void syncToClient(ServerPlayerEntity player) {
