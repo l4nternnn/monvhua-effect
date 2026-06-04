@@ -65,7 +65,6 @@ public final class EmfCompat {
 				return;
 			}
 
-			Object result = pauseCustomAnimationsForPartsMethod.invoke(null, parts.player(), new ModelPart[]{parts.body(), parts.rightArm(), parts.leftArm()});
 		} catch (Throwable throwable) {
 			MonvhuaMod.LOGGER.warn("[Monvhua] Failed to pause EMF carrier upper-body animations", throwable);
 		}
