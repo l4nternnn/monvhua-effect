@@ -3,7 +3,6 @@ package com.kuilunfuzhe.monvhua.features.mirror;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.kuilunfuzhe.monvhua.mixin.CameraAccessor;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.SimpleFramebuffer;
 import net.minecraft.client.gui.DrawContext;
@@ -18,7 +17,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MirrorViewportRenderer {
 	private static final AtomicBoolean renderingMirror = new AtomicBoolean(false);
-	private static final boolean IRIS_LOADED = FabricLoader.getInstance().isModLoaded("iris");
 	private static SimpleFramebuffer fullMirrorFbo;
 
 	/**
@@ -28,14 +26,7 @@ public class MirrorViewportRenderer {
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (client.world == null || client.player == null) return;
 		if (!MirrorClientManager.isActive()) return;
-		if (IRIS_LOADED) return;
 		if (renderingMirror.getAndSet(true)) return;
-
-		MirrorClientManager.CameraData slot0 = MirrorClientManager.getSlot(0);
-		if (!slot0.active()) {
-			renderingMirror.set(false);
-			return;
-		}
 
 		try {
 			int fbw = client.getFramebuffer().textureWidth;
@@ -47,12 +38,13 @@ public class MirrorViewportRenderer {
 			float yaw = mainCamera.getYaw();
 			float pitch = mainCamera.getPitch();
 			Vec3d playerPos = client.player.getPos();
-			Vec3d pos = MirrorClientManager.getSlotWorldPos(0, playerPos);
+			Vec3d pos = MirrorClientManager.getActiveSlotWorldPos(playerPos);
 			if (pos == null) return;
 
 			FramebufferOverride.setOverride(fullMirrorFbo);
 			try {
 				Camera cam = new Camera();
+				cam.update(client.world, client.player, false, false, tickCounter.getTickProgress(false));
 				CameraAccessor acc = (CameraAccessor) cam;
 				acc.invokeSetPos(pos.x, pos.y, pos.z);
 				acc.invokeSetRotation(yaw, pitch);

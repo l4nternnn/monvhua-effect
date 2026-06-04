@@ -22,7 +22,7 @@ public final class CosmicBoxSpecialModelRenderer implements SpecialModelRenderer
     public void render(@Nullable Void data, ItemDisplayContext displayContext, MatrixStack matrices,
                        VertexConsumerProvider vertexConsumers, int light, int overlay, boolean leftHanded) {
         matrices.push();
-        VertexConsumer vertices = vertexConsumers.getBuffer(CosmicBoxRenderLayers.cosmicBox());
+        VertexConsumer vertices = vertexConsumers.getBuffer(CosmicBoxRenderLayers.cosmicBoxForCurrentShaders());
         renderCube(matrices.peek().getPositionMatrix(), vertices);
         matrices.pop();
     }

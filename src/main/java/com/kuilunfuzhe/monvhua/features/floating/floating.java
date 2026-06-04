@@ -12,6 +12,7 @@ import com.kuilunfuzhe.monvhua.MonvhuaMod;
 public class floating {
 
     private static final String FULL_WITCH_TAG = "MonvhuaFull";
+    private static final String FLOATING_TAG = "Floating";  // ← 新增
 
     // 双击相关
     private static long lastJumpTime = 0;
@@ -31,6 +32,7 @@ public class floating {
     private static java.util.Map<java.util.UUID, Double> playerEnergy = new java.util.HashMap<>();
     private static boolean clientHasFullWitchTag = false;
     private static boolean clientHasFullWitchFlight = false;
+    private static boolean clientHasFloatingTag = false;  // ← 新增
     private static GlobalConfigManager configManager;
     private static final int STAGES = 7;
     private static final int[] DEFAULT_STAGE_MIN = {0, 0, 6, 21, 41, 61, 71, 81};
@@ -92,6 +94,14 @@ public class floating {
         return clientHasFullWitchTag;
     }
 
+    // ===== 新增：Floating 标签检测方法 =====
+    private static boolean hasFloatingTag(PlayerEntity player) {
+        if (player instanceof ServerPlayerEntity) {
+            return player.getCommandTags().contains(FLOATING_TAG);
+        }
+        return clientHasFloatingTag;
+    }
+
     public static void syncFullWitchTag(boolean hasTag) {
         syncFullWitchTag(hasTag, false);
     }
@@ -99,6 +109,11 @@ public class floating {
     public static void syncFullWitchTag(boolean hasTag, boolean hasFlight) {
         clientHasFullWitchTag = hasTag;
         clientHasFullWitchFlight = hasFlight;
+    }
+
+    // ===== 新增：Floating 标签同步方法 =====
+    public static void syncFloatingTag(boolean hasTag) {
+        clientHasFloatingTag = hasTag;
     }
 
     private static boolean hasFullWitchFlight(PlayerEntity player, int score, boolean hasTag) {
@@ -301,10 +316,16 @@ public class floating {
     }
 
     public static void onPlayerJump(PlayerEntity player) {
-        System.out.println("§e[调试] onPlayerJump 被调用，玩家：" + player.getName().getString());
+//        System.out.println("§e[调试] onPlayerJump 被调用，玩家：" + player.getName().getString());
 
         if (player.isCreative() || player.isSpectator()) {
-            System.out.println("§e[调试] 创造或旁观模式，跳过");
+//            System.out.println("§e[调试] 创造或旁观模式，跳过");
+            return;
+        }
+
+        // ===== 新增：检查是否有 Floating 标签 =====
+        if (!hasFloatingTag(player)) {
+//            System.out.println("§e[调试] 没有 Floating 标签，无法激活漂浮");
             return;
         }
 
@@ -313,7 +334,7 @@ public class floating {
 
         // 分数 >= 90 且没有 MonvhuaFull 标签时，无法使用飞行
         if (score >= FULL_WITCH_SCORE && !hasTag) {
-            System.out.println("§e[调试] 分数 >= 90 且无 MonvhuaFull 标签，禁止飞行");
+//            System.out.println("§e[调试] 分数 >= 90 且无 MonvhuaFull 标签，禁止飞行");
             if (isFloating) {
                 deactivateFloating(player);
                 setServerFloating(player.getUuid(), false);
@@ -328,10 +349,10 @@ public class floating {
         }
 
         long currentTime = System.currentTimeMillis();
-        System.out.println("§e[调试] 距离上次按空格：" + (currentTime - lastJumpTime) + "ms");
+//        System.out.println("§e[调试] 距离上次按空格：" + (currentTime - lastJumpTime) + "ms");
 
         if (currentTime - lastJumpTime < DOUBLE_JUMP_INTERVAL) {
-            System.out.println("§e[调试] 检测到双击！");
+//            System.out.println("§e[调试] 检测到双击！");
             if (isFloating) {
                 deactivateFloating(player);
                 setServerFloating(player.getUuid(), false);
@@ -340,7 +361,7 @@ public class floating {
                 double currentEnergy = getEnergy(player);
                 if (currentEnergy <= 0) {
                     player.sendMessage(Text.literal("§c[漂浮] §f能量不足，无法激活"), true);
-                    System.out.println("§e[调试] 能量不足，无法激活");
+//                    System.out.println("§e[调试] 能量不足，无法激活");
                     lastJumpTime = 0;
                     return;
                 }
@@ -349,7 +370,7 @@ public class floating {
             }
             lastJumpTime = 0;
         } else {
-            System.out.println("§e[调试] 第一次按空格，记录时间");
+//            System.out.println("§e[调试] 第一次按空格，记录时间");
             lastJumpTime = currentTime;
         }
     }

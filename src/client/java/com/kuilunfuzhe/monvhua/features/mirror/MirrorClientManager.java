@@ -1,7 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.mirror;
 
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.math.Vec3d;
 
 /**
@@ -70,6 +69,24 @@ public class MirrorClientManager {
 		CameraData data = getSlot(slot);
 		if (!data.active()) return null;
 		return data.mapPos().add(playerPos.subtract(data.hsPos())).add(VIEWPORT_OFFSET);
+	}
+
+	public static Vec3d getActiveSlotWorldPos(Vec3d playerPos) {
+		CameraData data = getActiveSlot(playerPos);
+		if (data == null) return null;
+		return data.mapPos().add(playerPos.subtract(data.hsPos())).add(VIEWPORT_OFFSET);
+	}
+
+	public static CameraData getActiveSlot(Vec3d playerPos) {
+		for (CameraData data : slots) {
+			if (data.active() && playerPos.distanceTo(data.hsPos()) <= data.radius()) {
+				return data;
+			}
+		}
+		for (CameraData data : slots) {
+			if (data.active()) return data;
+		}
+		return null;
 	}
 
 	/**

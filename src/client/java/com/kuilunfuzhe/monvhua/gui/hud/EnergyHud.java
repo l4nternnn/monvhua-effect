@@ -13,11 +13,14 @@ public class EnergyHud {
     private static double maxEnergy = 100;
 
     public static void register() {
-        // 接收服务端同步的漂浮能量数据
+        // 接收服务端同步的漂浮能量数据（同时接收 Floating 标签）
         ClientPlayNetworking.registerGlobalReceiver(FloatingEnergySyncS2CPacket.ID, (packet, context) -> {
             context.client().execute(() -> {
                 currentEnergy = packet.currentEnergy();
                 maxEnergy = packet.maxEnergy();
+                // 同步 Floating 标签到 floating 类
+                floating.syncFloatingTag(packet.hasFloatingTag());
+//                System.out.println("§e[调试] 收到能量+标签同步 - 能量: " + currentEnergy + ", Floating: " + packet.hasFloatingTag());
             });
         });
 

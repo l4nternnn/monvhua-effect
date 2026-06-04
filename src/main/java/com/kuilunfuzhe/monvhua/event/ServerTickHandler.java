@@ -25,10 +25,16 @@ public class ServerTickHandler {
                 for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                     double current = floating.getEnergy(player);
                     double max = 100;
-                    ServerPlayNetworking.send(player, new FloatingEnergySyncS2CPacket(current, max));
+                    boolean hasFloatingTag = player.getCommandTags().contains("Floating");
+
+                    // 同步能量（现在包含标签）
+                    ServerPlayNetworking.send(player, new FloatingEnergySyncS2CPacket(current, max, hasFloatingTag));
+
+                    // 同步标签（原有逻辑保留）
                     ServerPlayNetworking.send(player, new FullWitchTagSyncS2CPacket(
                             player.getCommandTags().contains("MonvhuaFull"),
-                            floating.hasFullWitchFlight(player)
+                            floating.hasFullWitchFlight(player),
+                            hasFloatingTag
                     ));
                 }
             }
