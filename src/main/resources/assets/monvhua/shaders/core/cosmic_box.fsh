@@ -89,8 +89,8 @@ vec3 galaxy(vec2 uv, float time) {
 
 vec3 projectedNebula(vec2 fixedUv, float time) {
     vec3 customNebula = texture(Sampler1, fixedUv).rgb;
-    vec3 color = texture(Sampler0, fixedUv).rgb * vec3(0.014, 0.018, 0.032);
-    color += customNebula * vec3(0.16, 0.12, 0.22);
+    vec3 color = texture(Sampler0, fixedUv).rgb * vec3(0.0035, 0.0035, 0.0040);
+    color += customNebula * vec3(0.72);
 
     for (int i = 0; i < COSMIC_LAYERS; i++) {
         float layer = float(i + 1);
@@ -100,8 +100,14 @@ vec3 projectedNebula(vec2 fixedUv, float time) {
         vec2 projected = mat2_rotate_z(angle) * centered * scale + 0.5;
 
         vec3 sampleColor = texture(Sampler1, projected).rgb;
-        vec3 tint = mix(vec3(0.42, 0.10, 0.72), vec3(0.95, 0.32, 0.18), fract(layer * 0.37));
-        color += sampleColor * tint / (layer * 1.85);
+        vec3 tintA = vec3(1.00, 0.46, 0.18);
+        vec3 tintB = vec3(0.38, 1.00, 0.42);
+        vec3 tintC = vec3(1.00, 0.22, 0.70);
+        vec3 tintD = vec3(0.25, 0.72, 1.00);
+        vec3 warmCool = mix(tintA, tintB, 0.5 + 0.5 * sin(layer * 1.71));
+        vec3 vivid = mix(tintC, tintD, 0.5 + 0.5 * cos(layer * 2.13));
+        vec3 tint = mix(warmCool, vivid, 0.38);
+        color += sampleColor * tint / (layer * 2.75);
     }
 
     return color;
@@ -116,14 +122,14 @@ void main() {
 
     vec3 color = projectedNebula(roomUv, time);
     color += galaxy(rotateUv, time) * 1.28;
-    color += vec3(0.88, 0.96, 1.00) * starLayer(screenUv + time * 0.002, 55.0, time, 0.982) * 1.65;
+    color += vec3(1.00, 0.94, 0.82) * starLayer(screenUv + time * 0.002, 55.0, time, 0.982) * 1.75;
     color += vec3(1.00, 0.78, 0.98) * starLayer(screenUv - time * 0.0013, 110.0, time * 1.4, 0.988) * 1.45;
-    color += vec3(0.82, 1.00, 1.00) * pointedStar(roomUv, 34.0, time, 0.976, 4.0, 0.020, 1.75) * 1.45;
+    color += vec3(0.92, 1.00, 0.72) * pointedStar(roomUv, 34.0, time, 0.976, 4.0, 0.020, 1.75) * 1.45;
     color += vec3(1.00, 0.86, 0.44) * pointedStar(roomUv, 26.0, time, 0.982, 5.0, -0.014, 1.15) * 1.60;
 
     float edge = 1.0 - min(min(localPos.x, 1.0 - localPos.x), min(localPos.y, 1.0 - localPos.y)) * 2.0;
     edge = max(edge, 1.0 - min(localPos.z, 1.0 - localPos.z) * 2.0);
-    color += vec3(0.32, 0.92, 1.00) * pow(clamp(edge, 0.0, 1.0), 5.0) * 0.22;
+    color += vec3(1.00, 0.48, 0.18) * pow(clamp(edge, 0.0, 1.0), 5.0) * 0.10;
 
     color = color / (color + vec3(1.0));
     color = pow(color, vec3(0.88));
