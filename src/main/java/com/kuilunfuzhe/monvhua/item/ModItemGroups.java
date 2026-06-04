@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.item;
 
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
+import com.kuilunfuzhe.monvhua.item.cosmic_box.CosmicBoxItems;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
@@ -32,6 +33,8 @@ public class ModItemGroups {
                 .entries((displayContext, entries) -> {
                     entries.add(Evil_Eyes.CLAIRVOYANCE_ITEM);
                     entries.add(ModItems.MAGIC_STICK);
+                    entries.add(CosmicBoxItems.COSMIC_BOX_ITEM);
+                    entries.add(CosmicBoxItems.COSMIC_BOX_RENDER_ITEM);
                     entries.add(mirror_of_then_and_now.MIRROR_ITEM);
                     entries.add(SecrecyItem.SECRECY_ITEM);
                     entries.add(Assembly_ModItems.TORSO_ITEM);

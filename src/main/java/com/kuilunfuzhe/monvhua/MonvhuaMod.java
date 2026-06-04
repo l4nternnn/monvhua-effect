@@ -14,6 +14,7 @@ import com.kuilunfuzhe.monvhua.features.action.ActionExecutor;
 import com.kuilunfuzhe.monvhua.features.action.TimelineScheduler;
 import com.kuilunfuzhe.monvhua.features.block.body.BodyPartManager;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryEvents;
+import com.kuilunfuzhe.monvhua.features.cosmic_box.CosmicBoxNetworking;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ViewingModeBlocker;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
@@ -23,6 +24,7 @@ import com.kuilunfuzhe.monvhua.item.ModItemGroups;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
+import com.kuilunfuzhe.monvhua.item.cosmic_box.CosmicBoxItems;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.imitate.ImitateItem;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
@@ -178,6 +180,7 @@ public class MonvhuaMod implements ModInitializer {
         SecrecyStateS2CPacket.register();
 
         ModNetworking.registerC2SPackets();
+        CosmicBoxNetworking.registerServerReceivers();
         MarkEntityPayload.register();
         ExitViewPayload.register();
         MagicPacket.register();
@@ -433,6 +436,7 @@ public class MonvhuaMod implements ModInitializer {
         com.kuilunfuzhe.monvhua.features.floating.floating.initialize(configManager);
         Gazeguidance.initialize();
         ModItems.initialize();
+        CosmicBoxItems.initialize();
         SecrecyItem.initialize(configManager);
         ModBlocks.initialize();
         Assembly_ModItems.initialize();

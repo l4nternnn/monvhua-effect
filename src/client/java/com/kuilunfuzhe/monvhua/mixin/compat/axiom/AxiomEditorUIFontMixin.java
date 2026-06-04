@@ -11,15 +11,15 @@ import java.util.Locale;
 @Mixin(targets = "com.moulberry.axiom.editor.EditorUI", remap = false)
 public class AxiomEditorUIFontMixin {
     @ModifyVariable(
-            method = "initFonts(Ljava/lang/String;)V",
+            method = "initFonts",
             at = @At("HEAD"),
             argsOnly = true,
             ordinal = 0,
             remap = false
     )
-    private static String monvhua$avoidAxiomChineseFontAtlasCrash(String languageCode) {
+    private static String monvhua$useCompactCjkFontAtlas(String languageCode) {
         if (languageCode != null && languageCode.toLowerCase(Locale.ROOT).startsWith("zh")) {
-            return "en_us";
+            return "ja_jp";
         }
         return languageCode;
     }

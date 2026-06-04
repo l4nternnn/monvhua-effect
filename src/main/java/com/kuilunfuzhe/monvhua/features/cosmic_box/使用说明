@@ -1,0 +1,62 @@
+cosmic_box.fsh
+星点层数 现在星点在 shader 末尾这两行：
+
+color += vec3(0.70, 0.86, 1.00) * starLayer(screenUv + time * 0.002, 55.0, time, 0.987);
+color += vec3(0.95, 0.72, 1.00) * starLayer(screenUv - time * 0.0013, 110.0, time * 1.4, 0.992);
+
+想增加层数，就继续加 starLayer：
+
+color += vec3(1.00, 0.95, 0.75) * starLayer(screenUv + time * 0.0008, 180.0, time * 1.8, 0.995);
+
+参数含义：
+
+55.0 / 110.0 / 180.0：星点网格密度，越大星越密、越细。
+0.987 / 0.992 / 0.995：出现阈值，越接近 1.0 星越少；越低星越多。
+time * 1.4 / 1.8：闪烁速度倍率。
+前面的 vec3(...)：星光颜色。
+建议：
+
+更密：scale 提高，threshold 略降低，例如 160.0, 0.990
+更稀疏高级：scale 提高，threshold 也提高，例如 220.0, 0.997
+更亮：整行后面乘倍率，例如 * 1.35
+星点大小 在 starLayer() 里：
+
+float core = smoothstep(0.046, 0.0, d);
+float glow = smoothstep(0.18, 0.0, d) * 0.16;
+
+0.046 控制星核大小。
+0.18 控制光晕范围。
+0.16 控制光晕强度。
+例如更细碎：
+
+float core = smoothstep(0.030, 0.0, d);
+float glow = smoothstep(0.12, 0.0, d) * 0.10;
+
+旋臂细节 在 galaxy() 里：
+
+float swirl = a * 3.0 - r * 18.0 + time * 1.15;
+float arms = pow(0.5 + 0.5 * cos(swirl), 4.0) * smoothstep(0.78, 0.05, r);
+float dust = pow(max(0.0, 1.0 - abs(sin(a * 2.0 + r * 9.0 - time * 0.35))), 3.0) * smoothstep(0.72, 0.08, r);
+
+参数含义：
+
+a * 3.0：旋臂数量感。提高到 4.0、5.0 会有更多旋臂。
+r * 18.0：旋臂卷曲程度。提高到 24.0 更卷，降低到 12.0 更松。
+time * 1.15：银河旋转速度。
+pow(..., 4.0)：旋臂锐利度。数值越高越细锐，越低越柔。
+dust 里的 a * 2.0 和 r * 9.0：尘埃带数量和细节密度。
+示例，更复杂更锐利：
+
+float swirl = a * 5.0 - r * 24.0 + time * 0.95;
+float arms = pow(0.5 + 0.5 * cos(swirl), 6.0) * smoothstep(0.82, 0.04, r);
+float dust = pow(max(0.0, 1.0 - abs(sin(a * 4.0 + r * 15.0 - time * 0.45))), 4.0) * smoothstep(0.76, 0.06, r);
+
+星云层数 这是纹理/星云旋转采样层数：
+
+.withShaderDefine("COSMIC_LAYERS", 9)
+
+在 CosmicBoxRenderPipelines.java 改：
+
+9 到 12：更丰富，性能影响小到中等。
+16：更厚重，但可能有明显采样成本。
+6：更轻量。

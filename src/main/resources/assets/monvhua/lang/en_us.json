@@ -1,5 +1,9 @@
 {
   "item.monvhua.secrecy": "|Magic: Secrecy|",
+  "item.monvhua.cosmic_box": "|Magic: Cosmic Box|",
+  "block.monvhua.cosmic_box": "|Magic: Cosmic Box|",
+  "item.monvhua.cosmic_box_render": "|Magic: Cosmic Box Render|",
+  "block.monvhua.cosmic_box_render": "|Magic: Cosmic Box Render|",
   "key.monvhua.body_pose_editor": "Body Pose Editor",
   "key.monvhua.body_pose_world_preview": "Body Pose World Preview",
   "key.monvhua.action_editor": "Action",
