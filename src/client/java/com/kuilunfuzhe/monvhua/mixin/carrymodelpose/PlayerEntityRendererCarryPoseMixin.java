@@ -1,16 +1,20 @@
 package com.kuilunfuzhe.monvhua.mixin.carrymodelpose;
 
+import com.kuilunfuzhe.monvhua.compat.EmfCompat;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryAttachedRenderMath;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryAttachmentRenderState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseModelApplier;
 import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.entity.LivingEntityRenderer;
 import net.minecraft.client.render.entity.model.EntityModel;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.render.entity.state.LivingEntityRenderState;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.PlayerEntity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -97,8 +101,35 @@ public abstract class PlayerEntityRendererCarryPoseMixin {
 			return;
 		}
 
+		monvhua$syncEmfCarrierUpperBodyAnimationState(playerState, playerModel);
 		CarryPoseModelApplier.beginRenderContext(playerModel, playerState);
 		CarryPoseModelApplier.apply(playerModel, playerState);
+	}
+
+	@Unique
+	private void monvhua$syncEmfCarrierUpperBodyAnimationState(PlayerEntityRenderState playerState, PlayerEntityModel playerModel) {
+		PlayerEntity player = monvhua$getRenderedPlayer(playerState.id);
+		if (player == null) {
+			return;
+		}
+
+		if (CarryPoseClientState.isCarrier(playerState.id)) {
+			EmfCompat.pauseCarrierUpperBodyAnimations(new EmfCompat.PlayerEntityModelParts(player, playerModel.body, playerModel.rightArm, playerModel.leftArm), playerState.id);
+			return;
+		}
+
+		EmfCompat.resumeCarrierAnimations(player);
+	}
+
+	@Unique
+	private static PlayerEntity monvhua$getRenderedPlayer(int entityId) {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client.world == null) {
+			return null;
+		}
+
+		Entity entity = client.world.getEntityById(entityId);
+		return entity instanceof PlayerEntity player ? player : null;
 	}
 
 	@Unique

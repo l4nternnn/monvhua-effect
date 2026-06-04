@@ -3,7 +3,7 @@ package com.kuilunfuzhe.monvhua.compat;
 import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.entity.Entity;
+import net.minecraft.client.model.ModelPart;
 import net.minecraft.entity.player.PlayerEntity;
 
 import java.lang.reflect.Method;
@@ -14,6 +14,11 @@ import java.util.function.Function;
  */
 public final class EmfCompat {
 	private static boolean loaded;
+
+	private static Method pauseCustomAnimationsForPartsMethod;
+	private static Method resumeAllCustomAnimationsMethod;
+	private static Class<?> emfEntityClass;
+	private static boolean loggedUpperBodyPauseAvailable;
 
 	private EmfCompat() {
 	}
@@ -26,11 +31,6 @@ public final class EmfCompat {
 		}
 	}
 
-	public static boolean isLoaded() {
-		return loaded;
-	}
-
-	@SuppressWarnings("unchecked")
 	private static void registerVanillaModelCondition() {
 		try {
 			Class<?> apiClass = Class.forName("traben.entity_model_features.EMFAnimationApi");
@@ -51,7 +51,56 @@ public final class EmfCompat {
 			return false;
 		}
 
-		int entityId = player.getId();
-		return CarryPoseClientState.isCarrier(entityId) || CarryPoseClientState.isCarried(entityId);
+		return CarryPoseClientState.isCarried(player.getId());
+	}
+
+	public static void pauseCarrierUpperBodyAnimations(PlayerEntityModelParts parts, int entityId) {
+		if (!loaded || !CarryPoseClientState.isCarrier(entityId)) {
+			return;
+		}
+
+		try {
+			ensureAnimationControlMethods();
+			if (pauseCustomAnimationsForPartsMethod == null || emfEntityClass == null || !emfEntityClass.isInstance(parts.player())) {
+				return;
+			}
+
+			Object result = pauseCustomAnimationsForPartsMethod.invoke(null, parts.player(), new ModelPart[]{parts.body(), parts.rightArm(), parts.leftArm()});
+		} catch (Throwable throwable) {
+			MonvhuaMod.LOGGER.warn("[Monvhua] Failed to pause EMF carrier upper-body animations", throwable);
+		}
+	}
+
+	public static void resumeCarrierAnimations(PlayerEntity player) {
+		if (!loaded || player == null) {
+			return;
+		}
+
+		try {
+			ensureAnimationControlMethods();
+			if (resumeAllCustomAnimationsMethod != null && emfEntityClass != null && emfEntityClass.isInstance(player)) {
+				resumeAllCustomAnimationsMethod.invoke(null, player);
+			}
+		} catch (Throwable throwable) {
+			MonvhuaMod.LOGGER.warn("[Monvhua] Failed to resume EMF carrier animations", throwable);
+		}
+	}
+
+	private static void ensureAnimationControlMethods() throws ClassNotFoundException, NoSuchMethodException {
+		if (pauseCustomAnimationsForPartsMethod != null && resumeAllCustomAnimationsMethod != null && emfEntityClass != null) {
+			return;
+		}
+
+		Class<?> apiClass = Class.forName("traben.entity_model_features.EMFAnimationApi");
+		emfEntityClass = Class.forName("traben.entity_model_features.utils.EMFEntity");
+		pauseCustomAnimationsForPartsMethod = apiClass.getMethod("pauseCustomAnimationsForThesePartsOfEntity", emfEntityClass, ModelPart[].class);
+		resumeAllCustomAnimationsMethod = apiClass.getMethod("resumeAllCustomAnimationsForEntity", emfEntityClass);
+		if (!loggedUpperBodyPauseAvailable) {
+			MonvhuaMod.LOGGER.info("[Monvhua] EMF carrier upper-body animation pause API is available");
+			loggedUpperBodyPauseAvailable = true;
+		}
+	}
+
+	public record PlayerEntityModelParts(PlayerEntity player, ModelPart body, ModelPart rightArm, ModelPart leftArm) {
 	}
 }
