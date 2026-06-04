@@ -20,7 +20,7 @@ public class EnergyHud {
                 maxEnergy = packet.maxEnergy();
                 // 同步 Floating 标签到 floating 类
                 floating.syncFloatingTag(packet.hasFloatingTag());
-                System.out.println("§e[调试] 收到能量+标签同步 - 能量: " + currentEnergy + ", Floating: " + packet.hasFloatingTag());
+//                System.out.println("§e[调试] 收到能量+标签同步 - 能量: " + currentEnergy + ", Floating: " + packet.hasFloatingTag());
             });
         });
 

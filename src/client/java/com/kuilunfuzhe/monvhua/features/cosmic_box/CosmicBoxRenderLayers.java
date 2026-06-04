@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.features.cosmic_box;
 import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderPhase;
+import net.minecraft.client.render.block.entity.BeaconBlockEntityRenderer;
 import net.minecraft.client.render.block.entity.EndPortalBlockEntityRenderer;
 import net.minecraft.util.Identifier;
 
@@ -22,11 +23,46 @@ public final class CosmicBoxRenderLayers {
                             .build())
                     .build(false)
     );
-
+    private static final RenderLayer COSMIC_BEAM_RAINBOW = RenderLayer.of(
+            "monvhua_cosmic_beam_rainbow",
+            RenderLayer.DEFAULT_BUFFER_SIZE,
+            false,
+            false,
+            CosmicBoxRenderPipelines.COSMIC_BEAM_RAINBOW,
+            RenderLayer.MultiPhaseParameters.builder().build(false)
+    );
+    private static final RenderLayer COSMIC_BEAM_WHITE = RenderLayer.of(
+            "monvhua_cosmic_beam_white",
+            RenderLayer.DEFAULT_BUFFER_SIZE,
+            false,
+            false,
+            CosmicBoxRenderPipelines.COSMIC_BEAM_WHITE,
+            RenderLayer.MultiPhaseParameters.builder().build(false)
+    );
     private CosmicBoxRenderLayers() {
     }
 
     public static RenderLayer cosmicBox() {
         return COSMIC_BOX;
     }
+
+    public static RenderLayer cosmicBoxForCurrentShaders() {
+        return CosmicBoxIrisCompat.isShaderPackInUse() ? RenderLayer.getEndPortal() : COSMIC_BOX;
+    }
+
+    public static RenderLayer cosmicBeamRainbow() {
+        return COSMIC_BEAM_RAINBOW;
+    }
+
+    public static RenderLayer cosmicBeamWhite() {
+        return COSMIC_BEAM_WHITE;
+    }
+
+    public static RenderLayer cosmicBeamForCurrentShaders() {
+        if (CosmicBoxIrisCompat.isShaderPackInUse()) {
+            return RenderLayer.getBeaconBeam(BeaconBlockEntityRenderer.BEAM_TEXTURE, false);
+        }
+        return COSMIC_BEAM_WHITE;
+    }
+
 }

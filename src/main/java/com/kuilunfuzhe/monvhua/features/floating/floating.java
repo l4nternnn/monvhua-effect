@@ -316,16 +316,16 @@ public class floating {
     }
 
     public static void onPlayerJump(PlayerEntity player) {
-        System.out.println("§e[调试] onPlayerJump 被调用，玩家：" + player.getName().getString());
+//        System.out.println("§e[调试] onPlayerJump 被调用，玩家：" + player.getName().getString());
 
         if (player.isCreative() || player.isSpectator()) {
-            System.out.println("§e[调试] 创造或旁观模式，跳过");
+//            System.out.println("§e[调试] 创造或旁观模式，跳过");
             return;
         }
 
         // ===== 新增：检查是否有 Floating 标签 =====
         if (!hasFloatingTag(player)) {
-            System.out.println("§e[调试] 没有 Floating 标签，无法激活漂浮");
+//            System.out.println("§e[调试] 没有 Floating 标签，无法激活漂浮");
             return;
         }
 
@@ -334,7 +334,7 @@ public class floating {
 
         // 分数 >= 90 且没有 MonvhuaFull 标签时，无法使用飞行
         if (score >= FULL_WITCH_SCORE && !hasTag) {
-            System.out.println("§e[调试] 分数 >= 90 且无 MonvhuaFull 标签，禁止飞行");
+//            System.out.println("§e[调试] 分数 >= 90 且无 MonvhuaFull 标签，禁止飞行");
             if (isFloating) {
                 deactivateFloating(player);
                 setServerFloating(player.getUuid(), false);
@@ -349,10 +349,10 @@ public class floating {
         }
 
         long currentTime = System.currentTimeMillis();
-        System.out.println("§e[调试] 距离上次按空格：" + (currentTime - lastJumpTime) + "ms");
+//        System.out.println("§e[调试] 距离上次按空格：" + (currentTime - lastJumpTime) + "ms");
 
         if (currentTime - lastJumpTime < DOUBLE_JUMP_INTERVAL) {
-            System.out.println("§e[调试] 检测到双击！");
+//            System.out.println("§e[调试] 检测到双击！");
             if (isFloating) {
                 deactivateFloating(player);
                 setServerFloating(player.getUuid(), false);
@@ -361,7 +361,7 @@ public class floating {
                 double currentEnergy = getEnergy(player);
                 if (currentEnergy <= 0) {
                     player.sendMessage(Text.literal("§c[漂浮] §f能量不足，无法激活"), true);
-                    System.out.println("§e[调试] 能量不足，无法激活");
+//                    System.out.println("§e[调试] 能量不足，无法激活");
                     lastJumpTime = 0;
                     return;
                 }
@@ -370,7 +370,7 @@ public class floating {
             }
             lastJumpTime = 0;
         } else {
-            System.out.println("§e[调试] 第一次按空格，记录时间");
+//            System.out.println("§e[调试] 第一次按空格，记录时间");
             lastJumpTime = currentTime;
         }
     }

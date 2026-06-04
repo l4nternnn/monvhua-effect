@@ -345,6 +345,7 @@ public class MonvhuaMod implements ModInitializer {
         CommandRegistrationCallback.EVENT.register(ClairvoyanceCommand::register);
         CommandRegistrationCallback.EVENT.register(ActionCommand::register);
         CommandRegistrationCallback.EVENT.register(SkeletalBodyPartCommand::register);
+        CommandRegistrationCallback.EVENT.register(CosmicBoxCommand::register);
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("clairvoyance-肢体|合并")

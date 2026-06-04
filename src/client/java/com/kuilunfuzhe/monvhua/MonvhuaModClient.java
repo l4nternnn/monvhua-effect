@@ -192,7 +192,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(FullWitchTagSyncS2CPacket.ID, (packet, context) -> {
             com.kuilunfuzhe.monvhua.features.floating.floating.syncFullWitchTag(packet.hasFullWitchTag(), packet.hasFullWitchFlight());
             com.kuilunfuzhe.monvhua.features.floating.floating.syncFloatingTag(packet.hasFloatingTag());
-            System.out.println("§e[调试] 收到标签同步 - 完全魔女化: " + packet.hasFullWitchTag() + ", 飞行: " + packet.hasFullWitchFlight() + ", Floating: " + packet.hasFloatingTag());
+//            System.out.println("§e[调试] 收到标签同步 - 完全魔女化: " + packet.hasFullWitchTag() + ", 飞行: " + packet.hasFullWitchFlight() + ", Floating: " + packet.hasFloatingTag());
         });
     }  // ← onInitializeClient 方法结束
 }  // ← 类结束

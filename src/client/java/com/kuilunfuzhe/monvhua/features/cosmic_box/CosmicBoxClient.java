@@ -22,6 +22,7 @@ public final class CosmicBoxClient {
         CosmicBoxNetworking.registerS2CPackets();
         CosmicBoxNetworking.registerC2SPackets();
         CosmicBoxRenderPipelines.initialize();
+        CosmicBoxIrisCompat.initialize();
         BlockEntityRendererFactories.register(
                 CosmicBoxBlockEntities.COSMIC_BOX_BLOCK_ENTITY,
                 context -> new CosmicBoxBlockEntityRenderer()

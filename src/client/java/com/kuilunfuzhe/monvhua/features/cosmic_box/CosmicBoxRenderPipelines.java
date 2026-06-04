@@ -20,7 +20,24 @@ public final class CosmicBoxRenderPipelines {
                     .withCull(false)
                     .build()
     );
-
+    public static final RenderPipeline COSMIC_BEAM_RAINBOW = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.TRANSFORMS_PROJECTION_FOG_SNIPPET, RenderPipelines.GLOBALS_SNIPPET)
+                    .withLocation(Identifier.of(MonvhuaMod.MOD_ID, "pipeline/cosmic_beam_rainbow"))
+                    .withVertexShader(Identifier.of(MonvhuaMod.MOD_ID, "core/cosmic_beam"))
+                    .withFragmentShader(Identifier.of(MonvhuaMod.MOD_ID, "core/cosmic_beam"))
+                    .withVertexFormat(VertexFormats.POSITION, VertexFormat.DrawMode.QUADS)
+                    .withCull(false)
+                    .build()
+    );
+    public static final RenderPipeline COSMIC_BEAM_WHITE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.TRANSFORMS_PROJECTION_FOG_SNIPPET, RenderPipelines.GLOBALS_SNIPPET)
+                    .withLocation(Identifier.of(MonvhuaMod.MOD_ID, "pipeline/cosmic_beam_white"))
+                    .withVertexShader(Identifier.of(MonvhuaMod.MOD_ID, "core/cosmic_beam"))
+                    .withFragmentShader(Identifier.of(MonvhuaMod.MOD_ID, "core/cosmic_beam_white"))
+                    .withVertexFormat(VertexFormats.POSITION, VertexFormat.DrawMode.QUADS)
+                    .withCull(false)
+                    .build()
+    );
     private CosmicBoxRenderPipelines() {
     }
 

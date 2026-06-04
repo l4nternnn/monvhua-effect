@@ -27,10 +27,14 @@ import java.util.UUID;
 
 public class CosmicBoxBlockEntity extends BlockEntity {
     private static final String TARGETS_KEY = "targets_json";
+    private static final String BEAM_STYLE_KEY = "beam_style";
+    private static final String BEAM_ACTIVE_START_TICK_KEY = "beam_active_start_tick";
     private static final int MAX_STORED_TARGETS = 128;
 
     private List<TargetRef> targets = List.of();
     private boolean beamActive;
+    private long beamActiveStartTick;
+    private CosmicBoxBeamStyle beamStyle = CosmicBoxBeamStyle.COSMIC;
 
     public CosmicBoxBlockEntity(BlockPos pos, BlockState state) {
         super(CosmicBoxBlockEntities.COSMIC_BOX_BLOCK_ENTITY, pos, state);
@@ -48,6 +52,19 @@ public class CosmicBoxBlockEntity extends BlockEntity {
         return beamActive;
     }
 
+    public long getBeamActiveStartTick() {
+        return beamActiveStartTick;
+    }
+
+    public CosmicBoxBeamStyle getBeamStyle() {
+        return beamStyle;
+    }
+
+    public void setBeamStyle(CosmicBoxBeamStyle beamStyle) {
+        this.beamStyle = beamStyle == null ? CosmicBoxBeamStyle.COSMIC : beamStyle;
+        sync();
+    }
+
     public void setTargets(List<TargetRef> targets) {
         List<TargetRef> sanitized = new ArrayList<>();
         for (TargetRef target : targets) {
@@ -60,6 +77,9 @@ public class CosmicBoxBlockEntity extends BlockEntity {
     }
 
     public void setBeamActive(boolean beamActive) {
+        if (beamActive && !this.beamActive && world != null) {
+            this.beamActiveStartTick = world.getTime();
+        }
         this.beamActive = beamActive;
         sync();
     }
@@ -90,6 +110,8 @@ public class CosmicBoxBlockEntity extends BlockEntity {
         super.readData(view);
         this.targets = readTargets(view);
         this.beamActive = view.read("beam_active", Codec.BOOL).orElse(false);
+        this.beamActiveStartTick = view.read(BEAM_ACTIVE_START_TICK_KEY, Codec.LONG).orElse(0L);
+        this.beamStyle = CosmicBoxBeamStyle.byId(view.read(BEAM_STYLE_KEY, Codec.STRING).orElse(CosmicBoxBeamStyle.COSMIC.id()));
     }
 
     @Override
@@ -97,6 +119,8 @@ public class CosmicBoxBlockEntity extends BlockEntity {
         super.writeData(view);
         view.put(TARGETS_KEY, Codec.STRING, writeTargetsJson(targets));
         view.put("beam_active", Codec.BOOL, beamActive);
+        view.put(BEAM_ACTIVE_START_TICK_KEY, Codec.LONG, beamActiveStartTick);
+        view.put(BEAM_STYLE_KEY, Codec.STRING, beamStyle.id());
     }
 
     private static List<TargetRef> readTargets(ReadView view) {
