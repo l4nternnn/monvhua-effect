@@ -37,6 +37,7 @@ import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
+import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateSelectPacket;
@@ -347,19 +348,19 @@ public class MonvhuaMod implements ModInitializer {
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("clairvoyance-肢体|合并")
-                .requires(source -> source.hasPermissionLevel(2))
-                .executes(context -> {
-                    ServerPlayerEntity player = context.getSource().getPlayer();
-                    if (player == null) return 0;
-                    return BodyPartManager.mergeBodyParts(player);
-                })
+                    .requires(source -> source.hasPermissionLevel(2))
+                    .executes(context -> {
+                        ServerPlayerEntity player = context.getSource().getPlayer();
+                        if (player == null) return 0;
+                        return BodyPartManager.mergeBodyParts(player);
+                    })
             );
             dispatcher.register(CommandManager.literal("clairvoyance-肢体|清除背包实体")
-                .requires(source -> source.hasPermissionLevel(2))
-                .executes(context -> clearBodyBackpackInteractions(context.getSource(), 4.0D))
-                .then(CommandManager.argument("radius", DoubleArgumentType.doubleArg(0.5D, 64.0D))
-                    .executes(context -> clearBodyBackpackInteractions(context.getSource(), DoubleArgumentType.getDouble(context, "radius")))
-                )
+                    .requires(source -> source.hasPermissionLevel(2))
+                    .executes(context -> clearBodyBackpackInteractions(context.getSource(), 4.0D))
+                    .then(CommandManager.argument("radius", DoubleArgumentType.doubleArg(0.5D, 64.0D))
+                            .executes(context -> clearBodyBackpackInteractions(context.getSource(), DoubleArgumentType.getDouble(context, "radius")))
+                    )
             );
         });
 
@@ -382,7 +383,7 @@ public class MonvhuaMod implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(UpdateGlobalConfigC2SPacket.ID, (packet, context) -> {
             if (context.player().hasPermissionLevel(2)) {
                 configManager.updateStageConfig(packet.stage(), packet.dailyLimit(), packet.maxMarks(),
-                    packet.minScore(), packet.maxScore(), packet.watchRequiredTicks(), packet.parrotDailyLimit(), packet.maxActiveParrots()
+                        packet.minScore(), packet.maxScore(), packet.watchRequiredTicks(), packet.parrotDailyLimit(), packet.maxActiveParrots()
                 );
                 for (ServerPlayerEntity player : context.player().getServer().getPlayerManager().getPlayerList()) {
                     sendGlobalConfigToPlayer(player, configManager);
@@ -396,6 +397,7 @@ public class MonvhuaMod implements ModInitializer {
 
         registerActionEditorReceivers();
 
+        // ===== 5. 玩家加入时同步 =====
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
             sendGlobalConfigToPlayer(player, configManager);
@@ -403,12 +405,19 @@ public class MonvhuaMod implements ModInitializer {
             ServerPlayNetworking.send(player, new PlayerStageS2CPacket(stage));
             MirrorCommand.syncToClient(player);
             ServerPlayNetworking.send(player, new SecrecyConfigS2CPacket(SecrecyConfig.getInstance().toJson()));
+
+            // 同步漂浮魔法标签（完全魔女化 + Floating）
+            ServerPlayNetworking.send(player, new FullWitchTagSyncS2CPacket(
+                    player.getCommandTags().contains("MonvhuaFull"),
+                    com.kuilunfuzhe.monvhua.features.floating.floating.hasFullWitchFlight(player),
+                    player.getCommandTags().contains("Floating")
+            ));
         });
 
-        // ===== 5. 持久化加载 =====
+        // ===== 6. 持久化加载 =====
         MirrorDataStore.load();
 
-        // ===== 6. 摄像机追踪 & 镜面视口 tick =====
+        // ===== 7. 摄像机追踪 & 镜面视口 tick =====
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             CameraWatchManager.tick(server);
             ImitateManager.tick(server);
@@ -431,7 +440,7 @@ public class MonvhuaMod implements ModInitializer {
             Evil_Eyes.forceStopWatching(player, server);
         });
 
-        // ===== 7. 模块初始化 =====
+        // ===== 8. 模块初始化 =====
         Evil_Eyes.initialize(configManager);
         com.kuilunfuzhe.monvhua.features.floating.floating.initialize(configManager);
         Gazeguidance.initialize();
@@ -455,12 +464,12 @@ public class MonvhuaMod implements ModInitializer {
         });
 
 
-        // ===== 8. 功能事件注册 =====
+        // ===== 9. 功能事件注册 =====
         CarryEvents.register();
         ViewingModeBlocker.register();
         BodyPartManager.registerEvents();
 
-        // ===== 9. 打开他人背包 =====
+        // ===== 10. 打开他人背包 =====
         ServerPlayNetworking.registerGlobalReceiver(OpenOtherInventoryPayload.ID, (payload, context) -> {
             ServerPlayerEntity requester = context.player();
             if (!requester.isCreative()) {
@@ -489,7 +498,7 @@ public class MonvhuaMod implements ModInitializer {
 
         Registry.register(Registries.SCREEN_HANDLER, Identifier.of(MOD_ID, "other_inventory"), OTHER_INVENTORY_HANDLER);
 
-        // ===== 10. 锚点破坏 =====
+        // ===== 11. 锚点破坏 =====
         ServerPlayNetworking.registerGlobalReceiver(AnchorDestroyC2SPacket.ID, (packet, context) -> {
             ServerPlayerEntity player = context.player();
             UUID standId = packet.standId();
@@ -510,7 +519,7 @@ public class MonvhuaMod implements ModInitializer {
             }
         });
 
-        // ===== 11. 魔女化效果 tick 循环 =====
+        // ===== 12. 魔女化效果 tick 循环 =====
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             tickCounter++;
             if (tickCounter < 20) return;
@@ -590,7 +599,7 @@ public class MonvhuaMod implements ModInitializer {
             }
         });
 
-        // ===== 12. 断线清理 =====
+        // ===== 13. 断线清理 =====
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
             UUID uuid = player.getUuid();
@@ -608,7 +617,7 @@ public class MonvhuaMod implements ModInitializer {
             SecrecyItem.exitSecrecy(player);
         });
 
-        // ===== 13. 死亡清理 =====
+        // ===== 14. 死亡清理 =====
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
             if (entity instanceof ServerPlayerEntity player) {
                 UUID uuid = player.getUuid();
@@ -616,11 +625,11 @@ public class MonvhuaMod implements ModInitializer {
                 cancelPendingTainted(uuid);
                 floatingPlayers.remove(uuid);
                 MirrorCommand.cleanup(uuid);
-            SecrecyItem.exitSecrecy(player);
+                SecrecyItem.exitSecrecy(player);
             }
         });
 
-        // ===== 14. 漂浮/缓降玩家免疫摔落伤害 =====
+        // ===== 15. 漂浮/缓降玩家免疫摔落伤害 =====
         ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> {
             if (entity instanceof ServerPlayerEntity player
                     && source.isOf(DamageTypes.FALL)

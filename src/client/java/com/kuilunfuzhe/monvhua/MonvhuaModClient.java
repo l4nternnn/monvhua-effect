@@ -19,6 +19,7 @@ import com.kuilunfuzhe.monvhua.gui.openback.OtherPlayerInventoryScreen;
 import com.kuilunfuzhe.monvhua.features.cosmic_box.CosmicBoxClient;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.AnchorDestroyC2SPacket;
+import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SilenceEffectS2CPacket;
 import com.kuilunfuzhe.monvhua.network.openback.CarryEntityPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
@@ -186,5 +187,12 @@ public class MonvhuaModClient implements ClientModInitializer {
 
         // 注册漂浮魔法能量条 HUD
         EnergyHud.register();
+
+        // ===== 接收标签同步包（完全魔女化 + Floating）=====
+        ClientPlayNetworking.registerGlobalReceiver(FullWitchTagSyncS2CPacket.ID, (packet, context) -> {
+            com.kuilunfuzhe.monvhua.features.floating.floating.syncFullWitchTag(packet.hasFullWitchTag(), packet.hasFullWitchFlight());
+            com.kuilunfuzhe.monvhua.features.floating.floating.syncFloatingTag(packet.hasFloatingTag());
+            System.out.println("§e[调试] 收到标签同步 - 完全魔女化: " + packet.hasFullWitchTag() + ", 飞行: " + packet.hasFullWitchFlight() + ", Floating: " + packet.hasFloatingTag());
+        });
     }  // ← onInitializeClient 方法结束
 }  // ← 类结束

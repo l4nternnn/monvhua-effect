@@ -12,6 +12,7 @@ import com.kuilunfuzhe.monvhua.MonvhuaMod;
 public class floating {
 
     private static final String FULL_WITCH_TAG = "MonvhuaFull";
+    private static final String FLOATING_TAG = "Floating";  // ← 新增
 
     // 双击相关
     private static long lastJumpTime = 0;
@@ -31,6 +32,7 @@ public class floating {
     private static java.util.Map<java.util.UUID, Double> playerEnergy = new java.util.HashMap<>();
     private static boolean clientHasFullWitchTag = false;
     private static boolean clientHasFullWitchFlight = false;
+    private static boolean clientHasFloatingTag = false;  // ← 新增
     private static GlobalConfigManager configManager;
     private static final int STAGES = 7;
     private static final int[] DEFAULT_STAGE_MIN = {0, 0, 6, 21, 41, 61, 71, 81};
@@ -92,6 +94,14 @@ public class floating {
         return clientHasFullWitchTag;
     }
 
+    // ===== 新增：Floating 标签检测方法 =====
+    private static boolean hasFloatingTag(PlayerEntity player) {
+        if (player instanceof ServerPlayerEntity) {
+            return player.getCommandTags().contains(FLOATING_TAG);
+        }
+        return clientHasFloatingTag;
+    }
+
     public static void syncFullWitchTag(boolean hasTag) {
         syncFullWitchTag(hasTag, false);
     }
@@ -99,6 +109,11 @@ public class floating {
     public static void syncFullWitchTag(boolean hasTag, boolean hasFlight) {
         clientHasFullWitchTag = hasTag;
         clientHasFullWitchFlight = hasFlight;
+    }
+
+    // ===== 新增：Floating 标签同步方法 =====
+    public static void syncFloatingTag(boolean hasTag) {
+        clientHasFloatingTag = hasTag;
     }
 
     private static boolean hasFullWitchFlight(PlayerEntity player, int score, boolean hasTag) {
@@ -305,6 +320,12 @@ public class floating {
 
         if (player.isCreative() || player.isSpectator()) {
             System.out.println("§e[调试] 创造或旁观模式，跳过");
+            return;
+        }
+
+        // ===== 新增：检查是否有 Floating 标签 =====
+        if (!hasFloatingTag(player)) {
+            System.out.println("§e[调试] 没有 Floating 标签，无法激活漂浮");
             return;
         }
 
