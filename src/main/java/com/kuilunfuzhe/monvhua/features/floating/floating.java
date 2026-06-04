@@ -103,7 +103,11 @@ public class floating {
 
     private static boolean hasFullWitchFlight(PlayerEntity player, int score, boolean hasTag) {
         if (player instanceof ServerPlayerEntity) {
-            return score >= FULL_WITCH_SCORE && hasTag && !player.isCreative() && !player.isSpectator();
+            return score >= FULL_WITCH_SCORE
+                    && hasTag
+                    && getEnergy(player) > 0
+                    && !player.isCreative()
+                    && !player.isSpectator();
         }
         return clientHasFullWitchFlight && !player.isCreative() && !player.isSpectator();
     }
@@ -136,16 +140,16 @@ public class floating {
             return;
         }
 
-        AbilitySnapshot snapshot = fullWitchFlightSnapshots.remove(uuid);
-        if (snapshot == null || player.isCreative() || player.isSpectator()) return;
+        boolean hadFullWitchFlight = fullWitchFlightSnapshots.remove(uuid) != null;
+        if (!hadFullWitchFlight || player.isCreative() || player.isSpectator()) return;
 
         if (isFloatingServer(uuid) || isFloating) {
             player.getAbilities().allowFlying = true;
             player.getAbilities().setFlySpeed(DEFAULT_FLY_SPEED * getFlySpeedMultiplier(player));
         } else {
-            player.getAbilities().allowFlying = snapshot.allowFlying();
-            player.getAbilities().flying = snapshot.flying();
-            player.getAbilities().setFlySpeed(snapshot.flySpeed());
+            player.getAbilities().allowFlying = false;
+            player.getAbilities().flying = false;
+            player.getAbilities().setFlySpeed(DEFAULT_FLY_SPEED);
         }
         player.sendAbilitiesUpdate();
     }
@@ -187,11 +191,6 @@ public class floating {
     private static double getEnergyDrainRate(PlayerEntity player) {
         int score = getMonvhuaScore(player);
 
-        // 分数 >= 90 时，能量消耗为 0
-        if (score >= FULL_WITCH_SCORE) {
-            return 0;
-        }
-
         int stage = getStageByScore(player, score);
         return STAGE_DRAIN_RATES[stage];
     }
@@ -227,9 +226,10 @@ public class floating {
         }
 
         boolean isServerFloating = isFloatingServer(uuid);
+        boolean fullWitchFlightActive = hasFullWitchFlight(player, score, hasTag) && player.getAbilities().flying;
         double currentEnergy = getEnergy(player);
 
-        if (isServerFloating) {
+        if (isServerFloating || fullWitchFlightActive) {
             double drainPerSecond = getEnergyDrainRate(player);
             double drainPerTick = drainPerSecond / 20.0;
             currentEnergy -= drainPerTick;
@@ -238,6 +238,7 @@ public class floating {
                 currentEnergy = 0;
                 setEnergy(player, currentEnergy);
                 setServerFloating(uuid, false);
+                updateFullWitchFlight(player, score, hasTag);
                 player.sendMessage(Text.literal("§c[漂浮] §f能量耗尽，漂浮解除"), true);
             } else {
                 setEnergy(player, currentEnergy);
