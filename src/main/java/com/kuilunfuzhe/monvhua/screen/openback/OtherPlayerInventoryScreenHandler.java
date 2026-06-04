@@ -1,4 +1,4 @@
-package com.kuilunfuzhe.monvhua.screen;
+package com.kuilunfuzhe.monvhua.screen.openback;
 
 import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import net.minecraft.entity.player.PlayerEntity;
@@ -15,6 +15,11 @@ import net.minecraft.screen.slot.Slot;
  * 底部同时显示查看者自己的快捷栏。快速移动功能被禁用。
  */
 public class OtherPlayerInventoryScreenHandler extends ScreenHandler {
+    private static final int TARGET_INVENTORY_START = 0;
+    private static final int TARGET_INVENTORY_END = 37;
+    private static final int VIEWER_INVENTORY_START = TARGET_INVENTORY_END;
+    private static final int VIEWER_INVENTORY_END = VIEWER_INVENTORY_START + 36;
+
     /** 目标玩家的物品栏（服务端为真实PlayerInventory引用，客户端为SimpleInventory占位） */
     private final Inventory otherInventory;
     /** 查看者（正在查看其他玩家背包的玩家） */
@@ -72,7 +77,7 @@ public class OtherPlayerInventoryScreenHandler extends ScreenHandler {
 //            });
 //        }
 //         副手 (索引 40)
-        this.addSlot(new Slot(targetInventory, 40, 8, 58));
+        this.addSlot(new Slot(targetInventory, 40, 8, 38));
 
         // 查看者自己的背包 (36 格)
         for (int row = 0; row < 3; ++row) {
@@ -92,7 +97,37 @@ public class OtherPlayerInventoryScreenHandler extends ScreenHandler {
      */
     @Override
     public ItemStack quickMove(PlayerEntity player, int slot) {
-        return ItemStack.EMPTY;
+        if (slot < 0 || slot >= this.slots.size()) {
+            return ItemStack.EMPTY;
+        }
+
+        Slot slotObj = this.slots.get(slot);
+        if (slotObj == null || !slotObj.hasStack()) {
+            return ItemStack.EMPTY;
+        }
+
+        ItemStack stack = slotObj.getStack();
+        ItemStack original = stack.copy();
+
+        if (slot >= TARGET_INVENTORY_START && slot < TARGET_INVENTORY_END) {
+            if (!this.insertItem(stack, VIEWER_INVENTORY_START, VIEWER_INVENTORY_END, false)) {
+                return ItemStack.EMPTY;
+            }
+        } else if (slot >= VIEWER_INVENTORY_START && slot < VIEWER_INVENTORY_END) {
+            if (!this.insertItem(stack, TARGET_INVENTORY_START, TARGET_INVENTORY_END, false)) {
+                return ItemStack.EMPTY;
+            }
+        } else {
+            return ItemStack.EMPTY;
+        }
+
+        if (stack.isEmpty()) {
+            slotObj.setStack(ItemStack.EMPTY);
+        } else {
+            slotObj.markDirty();
+        }
+
+        return original;
     }
 
     @Override
