@@ -24,14 +24,21 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.network.PlayerListEntry;
+import net.minecraft.client.render.entity.EntityRenderer;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
+import net.minecraft.client.render.entity.state.EntityRenderState;
 import net.minecraft.client.util.SkinTextures;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity;
 import net.minecraft.item.Item;
+import net.minecraft.item.ItemDisplayContext;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix3x2fStack;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
 import java.util.*;
 import java.util.function.Consumer;
@@ -63,6 +70,8 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final float PREVIEW_ZOOM_MIN = 0.08F;
     private static final float PREVIEW_ZOOM_MAX = 10.0F;
     private static final float PREVIEW_ZOOM_STEP = 0.16F;
+    private static final float ITEM_PREVIEW_BOUNDS_SCALE = 1.65F;
+    private static final float ITEM_PREVIEW_RENDER_SCALE = 0.72F;
     private static final long TRANSFORM_REPEAT_DELAY_MS = 320L;
     private static final long TRANSFORM_REPEAT_INTERVAL_MS = 65L;
     private static final long WORLD_PREVIEW_KEY_DEBOUNCE_MS = 200L;
@@ -78,6 +87,9 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final int RIGHT_PANEL_WIDTH = 500;
     private static final int PLAYER_LIST_VISIBLE_ROWS = 6;
     private static final int ITEM_LIST_VISIBLE_ROWS = 8;
+    private static final int PREVIEW_ITEM_SELECTOR_WIDTH = 180;
+    private static final int PREVIEW_ITEM_SELECTOR_HEIGHT = 18;
+    private static final int PREVIEW_ITEM_ROW_HEIGHT = 18;
 
     // ═══════════════════════════════════════════════════════
     //  静态状态 — 跨会话保持
@@ -86,7 +98,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private static String selectedSkin = BodyModelSelectionCatalog.LOCAL_SKINS[0];
     private static String selectedPlayerName = "";
     private static SkinSource selectedSkinSource = SkinSource.LOCAL;
-    private static String selectedPart = BodyModelSelectionCatalog.PARTS[0];
+    private static String selectedPart = getDefaultSelectedPart();
     private static boolean slimModel = true;
     private static float modelOffsetX;
     private static float modelOffsetY;
@@ -96,6 +108,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private static float modelRoll;
     private static float wholeBodyScale = 1.0F;
     private static PoseEditMode poseEditMode = PoseEditMode.STATIC_PART;
+    private static EditorItemDisplayMode defaultItemDisplayMode = EditorItemDisplayMode.BLOCK;
     private static final List<EditorItemModel> EDITOR_ITEMS = new ArrayList<>();
     private static final Map<String, PartPose> PART_POSES = createPartPoses();
     private static final Map<String, PartPose> SKELETAL_POSES = createPartPoses();
@@ -118,7 +131,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private MinecraftSurfaceView surfaceView;
 
     // 预览状态
-    private float previewPitch = 24.0F;
+    private float previewPitch = 0.0F;
     private float previewYaw;
     private float previewRoll;
     private float previewZoom = DEFAULT_PREVIEW_ZOOM;
@@ -151,6 +164,7 @@ public class BodyPoseEditorFragment extends Fragment {
     // 列表状态
     private boolean playerListOpen;
     private boolean itemListOpen;
+    private int itemListScroll;
     private int selectedEditorItemIndex = -1;
 
     // 模型实例（延迟创建）
@@ -184,6 +198,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private Button modelTypeButton;
     private Button poseModeButton;
     private Button itemButton;
+    private Button itemDisplayModeButton;
     private Button placeItemsButton;
     private Button clearSelectedItemButton;
     private Button clearAllItemsButton;
@@ -208,6 +223,8 @@ public class BodyPoseEditorFragment extends Fragment {
     public static void open() {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) return;
+        selectedPart = getDefaultSelectedPart();
+        showWholePreview = true;
         worldPreviewEnabled = true;
         Screen screen = MuiModApi.get().createScreen(new BodyPoseEditorFragment());
         client.setScreen(screen);
@@ -257,6 +274,13 @@ public class BodyPoseEditorFragment extends Fragment {
     public void onViewCreated(View view, icyllis.modernui.util.DataSet savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
         view.requestFocus();
+        view.post(() -> {
+            refreshButtonLabels();
+            refreshNumericValueBindings();
+            view.requestLayout();
+            view.invalidate();
+            invalidatePreview();
+        });
     }
 
     @Override
@@ -335,6 +359,8 @@ public class BodyPoseEditorFragment extends Fragment {
         rebuildSkinButtons();
 
         scrollView.addView(panel, new FrameLayout.LayoutParams(-1, -2));
+        refreshButtonLabels();
+        refreshNumericValueBindings();
         return scrollView;
     }
 
@@ -522,18 +548,16 @@ public class BodyPoseEditorFragment extends Fragment {
 
         // ── 物品 ──
         addSectionLabel(panel, ctx, "物品");
+        itemDisplayModeButton = new Button(ctx);
+        panel.addView(itemDisplayModeButton, new LinearLayout.LayoutParams(-1, -2));
+
         applySkeletalButton = new Button(ctx);
         panel.addView(applySkeletalButton, new LinearLayout.LayoutParams(-1, -2));
 
-        itemButton = new Button(ctx);
-        itemButton.setOnClickListener(v -> toggleItemList());
-        panel.addView(itemButton, new LinearLayout.LayoutParams(-1, -2));
+        
 
         // 物品列表容器
-        itemListContainer = new LinearLayout(ctx);
-        itemListContainer.setOrientation(LinearLayout.VERTICAL);
-        itemListContainer.setVisibility(View.GONE);
-        panel.addView(itemListContainer, new LinearLayout.LayoutParams(-1, -2));
+        
 
         placeItemsButton = new Button(ctx);
         panel.addView(placeItemsButton, new LinearLayout.LayoutParams(-1, -2));
@@ -559,6 +583,8 @@ public class BodyPoseEditorFragment extends Fragment {
         }
 
         scrollView.addView(panel, new FrameLayout.LayoutParams(-1, -2));
+        refreshButtonLabels();
+        refreshNumericValueBindings();
         return scrollView;
     }
 
@@ -906,10 +932,15 @@ public class BodyPoseEditorFragment extends Fragment {
         if (itemListOpen) {
             rebuildItemList();
         }
-        itemListContainer.setVisibility(itemListOpen ? View.VISIBLE : View.GONE);
+        clampItemListScroll(getAvailableItemStacks().size());
+        invalidatePreview();
     }
 
     private void rebuildItemList() {
+        if (itemListContainer == null) {
+            clampItemListScroll(getAvailableItemStacks().size());
+            return;
+        }
         itemListContainer.removeAllViews();
         Context ctx = getContext();
         if (ctx == null) return;
@@ -1011,6 +1042,8 @@ public class BodyPoseEditorFragment extends Fragment {
             if (showCoordinateAxes) {
                 renderModelTransformGizmos(dCtx);
             }
+
+            renderPreviewItemSelector(dCtx, localMouseX, localMouseY);
         }
     }
 
@@ -1026,6 +1059,14 @@ public class BodyPoseEditorFragment extends Fragment {
     private boolean handlePreviewScroll(MotionEvent event) {
         float scroll = getScrollAmount(event);
         if (Math.abs(scroll) < 0.001F) return false;
+        float x = toPreviewGuiCoord(event.getX());
+        float y = toPreviewGuiCoord(event.getY());
+        if (itemListOpen && isInsidePreviewItemList(x, y)) {
+            itemListScroll += scroll > 0.0F ? -1 : 1;
+            clampItemListScroll(getAvailableItemStacks().size());
+            invalidatePreview();
+            return true;
+        }
         previewZoom = clampPreview(previewZoom + scroll * PREVIEW_ZOOM_STEP, PREVIEW_ZOOM_MIN, PREVIEW_ZOOM_MAX);
         invalidatePreview();
         return true;
@@ -1072,6 +1113,10 @@ public class BodyPoseEditorFragment extends Fragment {
                     }
                     draggingPreview = false;
                     draggingRightPreview = false;
+
+                    if (handlePreviewItemSelectorClick(x, y)) {
+                        return true;
+                    }
 
                     int itemIndex = findPreviewItem(x, y);
                     if (itemIndex >= 0) {
@@ -1208,11 +1253,12 @@ public class BodyPoseEditorFragment extends Fragment {
                 : getPreviewBaseScale(previewAreaRight - previewAreaLeft, previewAreaBottom - previewAreaTop) * previewZoom;
         ScreenPoint modelCenter = projectPreviewPoint(modelOffsetX, modelOffsetY, modelOffsetZ);
         int modelWidth = Math.max(previewAreaRight - previewAreaLeft, Math.round(scale * 5.2F));
+        int modelHeight = Math.max(previewAreaBottom - previewAreaTop, Math.round(scale * 5.8F));
+        float pitchCos = (float) Math.cos(Math.toRadians(previewPitch));
         int x1 = Math.round(modelCenter.x - modelWidth * 0.5F);
         int x2 = x1 + modelWidth;
-        int y2 = Math.round(modelCenter.y + scale * PREVIEW_Y_PIVOT);
-        int y1 = Math.min(previewAreaTop,
-                Math.round(y2 - Math.max(previewAreaBottom - previewAreaTop, scale * 5.8F)));
+        int y1 = Math.round(modelCenter.y + scale * PREVIEW_Y_PIVOT - modelHeight * pitchCos);
+        int y2 = y1 + modelHeight;
         Identifier texture = getPreviewTexture();
 
         context.enableScissor(previewAreaLeft, previewAreaTop, previewAreaRight, previewAreaBottom);
@@ -1242,9 +1288,129 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
+    private void renderPreviewItemSelector(DrawContext context, float mouseX, float mouseY) {
+        int x = getPreviewItemSelectorX();
+        int y = getPreviewItemSelectorY();
+        int width = getPreviewItemSelectorWidth();
+        boolean hovered = isInsidePreviewItemSelector(mouseX, mouseY);
+        int bg = hovered ? 0xEE6F7A8A : 0xDD56616F;
+        context.fill(x, y, x + width, y + PREVIEW_ITEM_SELECTOR_HEIGHT, bg);
+        context.drawBorder(x, y, width, PREVIEW_ITEM_SELECTOR_HEIGHT, 0xCCFFFFFF);
+        String label = "Item: " + truncate(getSelectedItemLabel(), 22);
+        context.drawTextWithShadow(MinecraftClient.getInstance().textRenderer,
+                label, x + 5, y + 5, 0xFFE2E8F0);
+
+        if (!itemListOpen) return;
+
+        List<ItemStack> stacks = getAvailableItemStacks();
+        clampItemListScroll(stacks.size());
+        int listY = getPreviewItemListTop();
+        int visibleRows = Math.min(ITEM_LIST_VISIBLE_ROWS, Math.max(1, stacks.size()));
+        int listHeight = visibleRows * PREVIEW_ITEM_ROW_HEIGHT + 2;
+        context.fill(x, listY, x + width, listY + listHeight, 0xF05E6876);
+        context.drawBorder(x, listY, width, listHeight, 0xFFFFFFFF);
+        if (stacks.isEmpty()) {
+            context.drawTextWithShadow(MinecraftClient.getInstance().textRenderer,
+                    "No items", x + 6, listY + 6, 0xFFE2E8F0);
+            return;
+        }
+
+        context.enableScissor(x + 1, listY + 1, x + width - 1, listY + listHeight - 1);
+        try {
+            for (int row = 0; row < visibleRows; row++) {
+                int index = itemListScroll + row;
+                if (index >= stacks.size()) break;
+                ItemStack stack = stacks.get(index);
+                int rowTop = listY + 1 + row * PREVIEW_ITEM_ROW_HEIGHT;
+                boolean rowHovered = mouseX >= x + 1 && mouseX <= x + width - 1
+                        && mouseY >= rowTop && mouseY < rowTop + PREVIEW_ITEM_ROW_HEIGHT;
+                context.fill(x + 1, rowTop, x + width - 1, rowTop + PREVIEW_ITEM_ROW_HEIGHT,
+                        rowHovered ? 0xE08796AA : (row % 2 == 0 ? 0xE0727D8C : 0xE0677180));
+                context.drawItem(stack, x + 3, rowTop + 1);
+                context.drawTextWithShadow(MinecraftClient.getInstance().textRenderer,
+                        truncate(stack.getName().getString(), 22), x + 23, rowTop + 5, 0xFFE2E8F0);
+            }
+        } finally {
+            context.disableScissor();
+        }
+    }
+
+    private boolean handlePreviewItemSelectorClick(float mouseX, float mouseY) {
+        if (isInsidePreviewItemSelector(mouseX, mouseY)) {
+            toggleItemList();
+            return true;
+        }
+        if (!itemListOpen) {
+            return false;
+        }
+        if (!isInsidePreviewItemList(mouseX, mouseY)) {
+            itemListOpen = false;
+            invalidatePreview();
+            return true;
+        }
+
+        List<ItemStack> stacks = getAvailableItemStacks();
+        if (stacks.isEmpty()) {
+            return true;
+        }
+        int visibleRows = Math.min(ITEM_LIST_VISIBLE_ROWS, Math.max(1, stacks.size()));
+        int row = (int) ((mouseY - getPreviewItemListTop() - 1) / PREVIEW_ITEM_ROW_HEIGHT);
+        if (row < 0 || row >= visibleRows) {
+            return true;
+        }
+        int index = itemListScroll + row;
+        if (index >= stacks.size()) {
+            return true;
+        }
+        EditorItemModel model = new EditorItemModel(stacks.get(index).copyWithCount(1));
+        EDITOR_ITEMS.add(model);
+        selectedEditorItemIndex = EDITOR_ITEMS.size() - 1;
+        itemListOpen = false;
+        refreshButtonLabels();
+        refreshNumericValueBindings();
+        invalidatePreview();
+        return true;
+    }
+
+    private int getPreviewItemSelectorX() {
+        return previewAreaLeft + 4;
+    }
+
+    private int getPreviewItemSelectorY() {
+        return previewAreaTop + 32;
+    }
+
+    private int getPreviewItemSelectorWidth() {
+        return Math.min(PREVIEW_ITEM_SELECTOR_WIDTH,
+                Math.max(96, previewAreaRight - previewAreaLeft - 8));
+    }
+
+    private int getPreviewItemListTop() {
+        return getPreviewItemSelectorY() + PREVIEW_ITEM_SELECTOR_HEIGHT + 2;
+    }
+
+    private boolean isInsidePreviewItemSelector(float mouseX, float mouseY) {
+        int x = getPreviewItemSelectorX();
+        int y = getPreviewItemSelectorY();
+        int width = getPreviewItemSelectorWidth();
+        return mouseX >= x && mouseX <= x + width
+                && mouseY >= y && mouseY <= y + PREVIEW_ITEM_SELECTOR_HEIGHT;
+    }
+
+    private boolean isInsidePreviewItemList(float mouseX, float mouseY) {
+        List<ItemStack> stacks = getAvailableItemStacks();
+        int visibleRows = Math.min(ITEM_LIST_VISIBLE_ROWS, Math.max(1, stacks.size()));
+        int x = getPreviewItemSelectorX();
+        int y = getPreviewItemListTop();
+        int width = getPreviewItemSelectorWidth();
+        int height = visibleRows * PREVIEW_ITEM_ROW_HEIGHT + 2;
+        return mouseX >= x && mouseX <= x + width
+                && mouseY >= y && mouseY <= y + height;
+    }
+
     private void renderModelOffsetReadout(DrawContext context) {
         int x = previewAreaLeft + 4;
-        int y = previewAreaTop + 32;
+        int y = previewAreaTop + 56;
         context.drawTextWithShadow(MinecraftClient.getInstance().textRenderer,
                 getActiveModelLabel(), x, y, 0xFFE2E8F0);
         context.drawTextWithShadow(MinecraftClient.getInstance().textRenderer,
@@ -1262,15 +1428,74 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void renderEditorItemPreviews(DrawContext context) {
-        for (int i = 0; i < EDITOR_ITEMS.size(); i++) {
-            EditorItemModel item = EDITOR_ITEMS.get(i);
-            ScreenPoint point = projectPreviewPoint(item.offsetX, item.offsetY, item.offsetZ);
-            int ix = Math.round(point.x) - 8;
-            int iy = Math.round(point.y) - 8;
-            context.drawItem(item.stack, ix, iy);
-            context.drawBorder(ix - 1, iy - 1, 18, 18,
-                    i == selectedEditorItemIndex ? 0xFFFFFF55 : 0x99FFFFFF);
+        context.enableScissor(previewAreaLeft, previewAreaTop, previewAreaRight, previewAreaBottom);
+        try {
+            for (int i = 0; i < EDITOR_ITEMS.size(); i++) {
+                EditorItemModel item = EDITOR_ITEMS.get(i);
+                ScreenPoint point = projectPreviewPoint(item.offsetX, item.offsetY, item.offsetZ);
+                renderEditorItemPreview(context, item, point);
+                int size = getEditorItemPreviewBoundsSize();
+                int ix = Math.round(point.x) - size / 2;
+                int iy = Math.round(point.y) - size / 2;
+                context.drawBorder(ix, iy, size, size,
+                        i == selectedEditorItemIndex ? 0xFFFFFF55 : 0x99FFFFFF);
+            }
+        } finally {
+            context.disableScissor();
         }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private void renderEditorItemPreview(DrawContext context, EditorItemModel item, ScreenPoint point) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.world == null) {
+            context.drawItem(item.stack, Math.round(point.x) - 8, Math.round(point.y) - 8);
+            return;
+        }
+        ItemDisplayEntity entity = getPreviewItemDisplayEntity(item, client);
+        if (entity == null) {
+            context.drawItem(item.stack, Math.round(point.x) - 8, Math.round(point.y) - 8);
+            return;
+        }
+
+        EntityRenderer renderer = client.getEntityRenderDispatcher().getRenderer(entity);
+        EntityRenderState renderState = renderer.getAndUpdateRenderState(entity, 1.0F);
+        renderState.hitbox = null;
+
+        int size = getEditorItemPreviewBoundsSize();
+        int x1 = Math.round(point.x - size * 0.5F);
+        int y1 = Math.round(point.y - size * 0.5F);
+        int x2 = x1 + size;
+        int y2 = y1 + size;
+        float scale = getEditorItemPreviewRenderScale();
+        context.addEntity(renderState, scale, new Vector3f(0.0F, 0.0F, 0.0F),
+                createEditorItemPreviewRotation(item), null,
+                previewScreenLeft + x1, previewScreenTop + y1,
+                previewScreenLeft + x2, previewScreenTop + y2);
+    }
+
+    private ItemDisplayEntity getPreviewItemDisplayEntity(EditorItemModel item, MinecraftClient client) {
+        if (client.world == null) {
+            return null;
+        }
+        if (item.previewEntity == null || item.previewEntity.getWorld() != client.world) {
+            item.previewEntity = new ItemDisplayEntity(EntityType.ITEM_DISPLAY, client.world);
+        }
+        item.previewEntity.setItemStack(item.stack);
+        item.previewEntity.setItemDisplayContext(item.displayMode.context);
+        return item.previewEntity;
+    }
+
+    private Quaternionf createEditorItemPreviewRotation(EditorItemModel item) {
+        float r = (float) (Math.PI / 180.0D);
+        return new Quaternionf()
+                .rotateZ((float) Math.PI)
+                .rotateX(previewPitch * r)
+                .rotateY(-previewYaw * r)
+                .rotateZ(previewRoll * r)
+                .rotateX(item.pitch * r)
+                .rotateY(-item.yaw * r)
+                .rotateZ(item.roll * r);
     }
 
     private void renderModelTransformGizmos(DrawContext context) {
@@ -1516,7 +1741,7 @@ public class BodyPoseEditorFragment extends Fragment {
         double curAngle = Math.atan2(mouseY - center.y, mouseX - center.x);
         float degrees = -normalizeDegrees((float) Math.toDegrees(curAngle - prevAngle));
         switch (axis) {
-            case PITCH -> setActivePitch(clampPreview(getActivePitch() - degrees, -180.0F, 180.0F));
+            case PITCH -> setActivePitch(clampPreview(getActivePitch() + degrees, -180.0F, 180.0F));
             case YAW -> setActiveYaw(normalizeDegrees(getActiveYaw() + degrees));
             case ROLL -> setActiveRoll(normalizeDegrees(getActiveRoll() - degrees));
         }
@@ -1526,7 +1751,8 @@ public class BodyPoseEditorFragment extends Fragment {
         for (int i = EDITOR_ITEMS.size() - 1; i >= 0; i--) {
             EditorItemModel item = EDITOR_ITEMS.get(i);
             ScreenPoint pt = projectPreviewPoint(item.offsetX, item.offsetY, item.offsetZ);
-            if (px >= pt.x - 10 && px <= pt.x + 10 && py >= pt.y - 10 && py <= pt.y + 10) {
+            int halfSize = Math.max(12, getEditorItemPreviewBoundsSize() / 2);
+            if (px >= pt.x - halfSize && px <= pt.x + halfSize && py >= pt.y - halfSize && py <= pt.y + halfSize) {
                 return i;
             }
         }
@@ -1558,6 +1784,14 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private static float getPreviewBaseScale(int width, int height) {
         return Math.max(24.0F, Math.min(width, height) * PREVIEW_SCALE_FACTOR);
+    }
+
+    private int getEditorItemPreviewBoundsSize() {
+        return Math.max(42, Math.round(getPreviewPixelsPerGrid() * ITEM_PREVIEW_BOUNDS_SCALE));
+    }
+
+    private float getEditorItemPreviewRenderScale() {
+        return Math.max(18.0F, getPreviewPixelsPerGrid() * ITEM_PREVIEW_RENDER_SCALE);
     }
 
     private void updatePreviewScreenOrigin() {
@@ -1864,6 +2098,10 @@ public class BodyPoseEditorFragment extends Fragment {
         if (itemButton != null) {
             itemButton.setText("物品: " + getSelectedItemLabel());
         }
+        if (itemDisplayModeButton != null) {
+            itemDisplayModeButton.setText("物品显示: " + getActiveItemDisplayMode().label);
+            itemDisplayModeButton.setOnClickListener(v -> toggleActiveItemDisplayMode());
+        }
         if (placeItemsButton != null) {
             placeItemsButton.setText("放置物品模型(" + EDITOR_ITEMS.size() + ")");
             placeItemsButton.setEnabled(!EDITOR_ITEMS.isEmpty());
@@ -1955,7 +2193,7 @@ public class BodyPoseEditorFragment extends Fragment {
             if (itemId != null) {
                 placements.add(new PlacePoseEditorItemsC2SPacket.ItemPlacement(
                         itemId, item.offsetX, item.offsetY, item.offsetZ,
-                        item.pitch, item.yaw, item.roll));
+                        item.pitch, item.yaw, item.roll, item.displayMode.context));
             }
         }
         ClientPlayNetworking.send(new PlacePoseEditorItemsC2SPacket(placements));
@@ -2081,6 +2319,20 @@ public class BodyPoseEditorFragment extends Fragment {
         return inst != null ? inst.previewRoll : 0;
     }
 
+    public static List<EditorItemPreview> getWorldEditorItemPreviews() {
+        if (!isWorldPreviewActive() || EDITOR_ITEMS.isEmpty()) {
+            return List.of();
+        }
+        List<EditorItemPreview> previews = new ArrayList<>(EDITOR_ITEMS.size());
+        for (EditorItemModel item : EDITOR_ITEMS) {
+            previews.add(new EditorItemPreview(item.stack.copyWithCount(1),
+                    item.offsetX, item.offsetY, item.offsetZ,
+                    item.pitch, item.yaw, item.roll,
+                    item.displayMode.context));
+        }
+        return previews;
+    }
+
     // ── 实例方法（供 mixin 通过 activeInstance 访问） ──
 
     public boolean isShowingCoordinateAxes() { return showCoordinateAxes; }
@@ -2125,6 +2377,21 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private String getActiveModelLabel() {
         return hasSelectedItemModel() ? "Item " + (selectedEditorItemIndex + 1) : "Player";
+    }
+
+    private EditorItemDisplayMode getActiveItemDisplayMode() {
+        return hasSelectedItemModel() ? EDITOR_ITEMS.get(selectedEditorItemIndex).displayMode : defaultItemDisplayMode;
+    }
+
+    private void toggleActiveItemDisplayMode() {
+        if (hasSelectedItemModel()) {
+            EditorItemModel item = EDITOR_ITEMS.get(selectedEditorItemIndex);
+            item.displayMode = item.displayMode.next();
+        } else {
+            defaultItemDisplayMode = defaultItemDisplayMode.next();
+        }
+        refreshButtonLabels();
+        invalidatePreview();
     }
 
     private void clearSelectedItemModel() {
@@ -2426,6 +2693,19 @@ public class BodyPoseEditorFragment extends Fragment {
     //  工具方法
     // ═══════════════════════════════════════════════════════
 
+    private static String getDefaultSelectedPart() {
+        for (String part : BodyModelSelectionCatalog.PARTS) {
+            if ("all".equals(part)) return part;
+        }
+        return BodyModelSelectionCatalog.PARTS.length > 0 ? BodyModelSelectionCatalog.PARTS[0] : "all";
+    }
+
+    private void clampItemListScroll(int itemCount) {
+        int visibleRows = Math.min(ITEM_LIST_VISIBLE_ROWS, Math.max(1, itemCount));
+        int maxScroll = Math.max(0, itemCount - visibleRows);
+        itemListScroll = Math.max(0, Math.min(maxScroll, itemListScroll));
+    }
+
     private static String formatDegrees(float value) {
         return String.format("%.0f", value);
     }
@@ -2482,6 +2762,12 @@ public class BodyPoseEditorFragment extends Fragment {
     public enum PreviewMode {
         FOLLOW_PLAYER,
         FIXED
+    }
+
+    public record EditorItemPreview(ItemStack stack,
+                                    float offsetX, float offsetY, float offsetZ,
+                                    float pitch, float yaw, float roll,
+                                    ItemDisplayContext displayContext) {
     }
 
     private enum SkinSource {
@@ -2581,6 +2867,23 @@ public class BodyPoseEditorFragment extends Fragment {
         private float scale = 1.0F;
     }
 
+    private enum EditorItemDisplayMode {
+        HAND(ItemDisplayContext.THIRD_PERSON_RIGHT_HAND, "Hand"),
+        BLOCK(ItemDisplayContext.FIXED, "Block");
+
+        private final ItemDisplayContext context;
+        private final String label;
+
+        EditorItemDisplayMode(ItemDisplayContext context, String label) {
+            this.context = context;
+            this.label = label;
+        }
+
+        private EditorItemDisplayMode next() {
+            return this == HAND ? BLOCK : HAND;
+        }
+    }
+
     private static final class EditorItemModel {
         private final ItemStack stack;
         private float offsetX;
@@ -2589,9 +2892,12 @@ public class BodyPoseEditorFragment extends Fragment {
         private float pitch;
         private float yaw;
         private float roll;
+        private EditorItemDisplayMode displayMode;
+        private ItemDisplayEntity previewEntity;
 
         private EditorItemModel(ItemStack stack) {
             this.stack = stack;
+            this.displayMode = defaultItemDisplayMode;
         }
     }
 

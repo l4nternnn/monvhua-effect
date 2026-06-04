@@ -39,6 +39,7 @@ public class ClientTickHandler {
         // Main key handling tick
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             SecrecyClientAudioManager.tick();
+            ActionEditorFragment.tickActive();
             if (client.player == null) return;
             if (KeyBindingHandler.configKey.wasPressed() && client.player.isCreative()) {
                 client.setScreen(new CombinedConfigScreen());

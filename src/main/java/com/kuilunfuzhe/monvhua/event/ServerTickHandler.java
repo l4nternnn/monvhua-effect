@@ -27,7 +27,8 @@ public class ServerTickHandler {
                     double max = 100;
                     ServerPlayNetworking.send(player, new FloatingEnergySyncS2CPacket(current, max));
                     ServerPlayNetworking.send(player, new FullWitchTagSyncS2CPacket(
-                            player.getCommandTags().contains("MonvhuaFull")
+                            player.getCommandTags().contains("MonvhuaFull"),
+                            floating.hasFullWitchFlight(player)
                     ));
                 }
             }

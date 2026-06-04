@@ -12,6 +12,7 @@ import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import com.kuilunfuzhe.monvhua.features.action.ActionConfig;
 import com.kuilunfuzhe.monvhua.features.action.TimelineClientState;
+import com.kuilunfuzhe.monvhua.features.action.ActionPoseClientState;
 import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
@@ -73,6 +74,7 @@ public class ClientPacketHandler {
                     if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
                         screen.receiveEvilConfigs(configs);
                     }
+                    com.kuilunfuzhe.monvhua.features.floating.floating.syncStageRanges(configs);
                 } catch (Exception e) { e.printStackTrace(); }
             });
         });
@@ -171,7 +173,10 @@ public class ClientPacketHandler {
 
         // 漂浮：同步服务端玩家标签状态
         ClientPlayNetworking.registerGlobalReceiver(FullWitchTagSyncS2CPacket.ID, (packet, context) -> {
-            context.client().execute(() -> com.kuilunfuzhe.monvhua.features.floating.floating.syncFullWitchTag(packet.hasFullWitchTag()));
+            context.client().execute(() -> com.kuilunfuzhe.monvhua.features.floating.floating.syncFullWitchTag(
+                    packet.hasFullWitchTag(),
+                    packet.hasFullWitchFlight()
+            ));
         });
 
         // 10. 标记数量同步
@@ -301,13 +306,22 @@ public class ClientPacketHandler {
                 TimelineClientState.paused = packet.paused();
                 TimelineClientState.loop = packet.loop();
                 TimelineClientState.totalSeconds = packet.totalSeconds();
+                ActionEditorFragment inst = ActionEditorFragment.activeInstance;
+                if (inst != null) inst.syncTimelineClock();
                 ActionEditorFragment.tickActive();
             });
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(ActionPoseS2CPacket.ID, (packet, context) -> {
+            context.client().execute(() ->
+                    ActionPoseClientState.apply(packet.entityId(), packet.poseValues(), packet.durationTicks()));
+        });
+
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             CarryPoseClientState.clear();
-            com.kuilunfuzhe.monvhua.features.floating.floating.syncFullWitchTag(false);
+            ActionPoseClientState.clear();
+            com.kuilunfuzhe.monvhua.features.floating.floating.syncFullWitchTag(false, false);
+            com.kuilunfuzhe.monvhua.features.floating.floating.resetStageRanges();
         });
     }
 

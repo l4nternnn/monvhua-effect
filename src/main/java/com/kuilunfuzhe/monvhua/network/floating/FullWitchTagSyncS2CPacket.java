@@ -6,7 +6,7 @@ import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
-public record FullWitchTagSyncS2CPacket(boolean hasFullWitchTag) implements CustomPayload {
+public record FullWitchTagSyncS2CPacket(boolean hasFullWitchTag, boolean hasFullWitchFlight) implements CustomPayload {
     public static final Id<FullWitchTagSyncS2CPacket> ID = new Id<>(Identifier.of("monvhua", "full_witch_tag_sync"));
     public static final PacketCodec<RegistryByteBuf, FullWitchTagSyncS2CPacket> CODEC = PacketCodec.of(
             FullWitchTagSyncS2CPacket::write,
@@ -16,11 +16,12 @@ public record FullWitchTagSyncS2CPacket(boolean hasFullWitchTag) implements Cust
     private static boolean registered = false;
 
     private FullWitchTagSyncS2CPacket(RegistryByteBuf buf) {
-        this(buf.readBoolean());
+        this(buf.readBoolean(), buf.readBoolean());
     }
 
     private void write(RegistryByteBuf buf) {
         buf.writeBoolean(hasFullWitchTag);
+        buf.writeBoolean(hasFullWitchFlight);
     }
 
     @Override

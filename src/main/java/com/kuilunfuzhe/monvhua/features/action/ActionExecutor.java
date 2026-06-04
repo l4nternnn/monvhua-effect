@@ -1,6 +1,8 @@
 package com.kuilunfuzhe.monvhua.features.action;
 
 import com.kuilunfuzhe.monvhua.features.block.body.BodyPartManager;
+import com.kuilunfuzhe.monvhua.network.action.ActionPoseS2CPacket;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.player.HungerManager;
 import net.minecraft.item.Item;
@@ -267,7 +269,17 @@ public class ActionExecutor {
         String skinName = str(params, "skin_name");
         if (skinName.isEmpty()) skinName = "ema";
         boolean slim = bool(params, "slim_model");
-        BodyPartManager.createPosedCombinedDisplay(player, skinName, slim, poseValues);
+        int durationTicks = inum(params, "durationTicks");
+        if (durationTicks <= 0) durationTicks = 40;
+        ActionPoseS2CPacket packet = new ActionPoseS2CPacket(player.getId(), poseValues, durationTicks);
+        if (player.getServer() != null) {
+            for (ServerPlayerEntity target : player.getServer().getPlayerManager().getPlayerList()) {
+                ServerPlayNetworking.send(target, packet);
+            }
+        }
+        if (bool(params, "spawn_model")) {
+            BodyPartManager.createPosedCombinedDisplay(player, skinName, slim, poseValues);
+        }
     }
 
     public static String executePreviewText(ActionConfig.ActionDef action, ServerPlayerEntity player) {

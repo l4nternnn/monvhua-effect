@@ -133,6 +133,29 @@ public class BodyPoseWorldPreviewRenderer {
 			matrices.pop();
 		}
 
+		// 6. Editor item displays (same display context as placed ItemDisplayEntity)
+		for (BodyPoseEditorFragment.EditorItemPreview item : BodyPoseEditorFragment.getWorldEditorItemPreviews()) {
+			if (item.stack().isEmpty()) {
+				continue;
+			}
+			BlockPos lightPos = BlockPos.ofFloored(
+					worldPos.x + item.offsetX(),
+					worldPos.y + item.offsetY(),
+					worldPos.z + item.offsetZ());
+			int light = WorldRenderer.getLightmapCoordinates(client.world, lightPos);
+			matrices.push();
+			matrices.translate(dx, dy, dz);
+			applyFixedModeFlip(matrices, fixedMode);
+			matrices.translate(item.offsetX(), item.offsetY(), item.offsetZ());
+			matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(item.pitch()));
+			matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-item.yaw()));
+			matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(item.roll()));
+			matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0F));
+			client.getItemRenderer().renderItem(item.stack(), item.displayContext(), light, OverlayTexture.DEFAULT_UV,
+					matrices, vertexConsumers, client.world, 0);
+			matrices.pop();
+		}
+
 		vertexConsumers.draw();
 	}
 

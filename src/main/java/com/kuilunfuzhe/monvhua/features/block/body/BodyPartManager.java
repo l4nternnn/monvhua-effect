@@ -720,6 +720,7 @@ public class BodyPartManager {
 				continue;
 			}
 			display.setItemStack(new ItemStack(item));
+			display.setItemDisplayContext(placement.displayContext());
 			display.setPosition(basePos.x + placement.offsetX(), basePos.y + placement.offsetY(), basePos.z + placement.offsetZ());
 			if (LEFT_ROTATION_KEY != null) {
 				Quaternionf rotation = new Quaternionf()

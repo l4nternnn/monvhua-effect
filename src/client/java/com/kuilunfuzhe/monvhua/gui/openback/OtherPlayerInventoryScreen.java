@@ -1,6 +1,6 @@
 package com.kuilunfuzhe.monvhua.gui.openback;
 
-import com.kuilunfuzhe.monvhua.screen.OtherPlayerInventoryScreenHandler;
+import com.kuilunfuzhe.monvhua.screen.openback.OtherPlayerInventoryScreenHandler;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;

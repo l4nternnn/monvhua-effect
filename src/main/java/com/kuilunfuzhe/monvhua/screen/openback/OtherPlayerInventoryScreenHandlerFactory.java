@@ -1,4 +1,4 @@
-package com.kuilunfuzhe.monvhua.screen;
+package com.kuilunfuzhe.monvhua.screen.openback;
 
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;

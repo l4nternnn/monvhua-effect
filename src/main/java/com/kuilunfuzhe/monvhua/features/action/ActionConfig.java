@@ -87,7 +87,60 @@ public class ActionConfig {
                 if (t.params == null) t.params = new LinkedHashMap<>();
             }
         }
+        migrateTimelineScheduleInstances(config);
         return config;
+    }
+
+    private static void migrateTimelineScheduleInstances(ActionConfig config) {
+        if (config.timelineSchedule.isEmpty()) return;
+        for (Map.Entry<Integer, List<String>> entry : config.timelineSchedule.entrySet()) {
+            List<String> ids = entry.getValue();
+            if (ids == null || ids.isEmpty()) continue;
+            List<String> migrated = new ArrayList<>(ids.size());
+            for (String id : ids) {
+                if (id == null || id.isBlank()) {
+                    migrated.add(id);
+                    continue;
+                }
+                Optional<ActionDef> opt = config.findById(id);
+                if (opt.isEmpty() || isTimelineInstance(opt.get())) {
+                    migrated.add(id);
+                    continue;
+                }
+                ActionDef instance = createTimelineInstance(config, opt.get(), entry.getKey());
+                migrated.add(instance.id);
+            }
+            entry.setValue(migrated);
+        }
+    }
+
+    public static boolean isTimelineInstance(ActionDef def) {
+        return def != null && Boolean.TRUE.equals(def.actionParams.get("_timeline_instance"));
+    }
+
+    public static ActionDef createTimelineInstance(ActionConfig config, ActionDef source, int second) {
+        ActionDef instance = copyActionDef(source);
+        if (instance == null) return null;
+        String sourceId = source.id == null ? "" : source.id;
+        instance.id = nextTimelineInstanceId(config, sourceId, second);
+        instance.name = (source.name == null || source.name.isBlank() ? sourceId : source.name) + " @ " + Math.max(0, second) + "s";
+        instance.triggers = new ArrayList<>();
+        instance.actionParams.put("_timeline_instance", true);
+        instance.actionParams.put("_source_action_id", sourceId);
+        instance.actionParams.put("_timeline_second", Math.max(0, second));
+        config.actions.add(instance);
+        return instance;
+    }
+
+    private static String nextTimelineInstanceId(ActionConfig config, String sourceId, int second) {
+        String safeSource = sourceId == null || sourceId.isBlank() ? "action" : sourceId.replaceAll("[^A-Za-z0-9_\\-]", "_");
+        String base = "__tl_" + Math.max(0, second) + "_" + safeSource;
+        String id = base;
+        int suffix = 1;
+        while (config.findById(id).isPresent()) {
+            id = base + "_" + suffix++;
+        }
+        return id;
     }
 
     private static ActionConfig createDefault() {
@@ -138,5 +191,10 @@ public class ActionConfig {
         if (def.actionParams == null) def.actionParams = new LinkedHashMap<>();
         if (def.triggers == null) def.triggers = new ArrayList<>();
         return def;
+    }
+
+    public static ActionDef copyActionDef(ActionDef source) {
+        if (source == null) return null;
+        return actionDefFromJson(GSON.toJson(source));
     }
 }

@@ -1,4 +1,4 @@
-package com.kuilunfuzhe.monvhua.hud;
+package com.kuilunfuzhe.monvhua.gui.hud;
 
 import com.kuilunfuzhe.monvhua.features.floating.floating;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingEnergySyncS2CPacket;
