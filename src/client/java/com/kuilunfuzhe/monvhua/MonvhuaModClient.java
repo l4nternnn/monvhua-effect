@@ -6,6 +6,7 @@ import com.kuilunfuzhe.monvhua.event.ClientTickHandler;
 import com.kuilunfuzhe.monvhua.event.KeyBindingHandler;
 import com.kuilunfuzhe.monvhua.event.WorldRenderHandler;
 import com.kuilunfuzhe.monvhua.compat.DhCompat;
+import com.kuilunfuzhe.monvhua.compat.EmfCompat;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryTransformDebugCommand;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.ClientCameraWatchReceiver;
@@ -74,6 +75,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         // ===== 2. 功能模块客户端初始化 =====
         GazeguidanceClient.initialize();
         DhCompat.init(); // 远处地平线兼容初始化
+        EmfCompat.init(); // Entity Model Features 兼容初始化
 
         // ===== 3. 客户端处理器注册 =====
         KeyBindingHandler.register();

@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.mixin.carrymodelpose;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryAttachedRenderMath;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryAttachmentRenderState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
+import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseModelApplier;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.LivingEntityRenderer;
 import net.minecraft.client.render.entity.model.EntityModel;
@@ -57,6 +58,7 @@ public abstract class PlayerEntityRendererCarryPoseMixin {
 
 	@Inject(method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V", at = @At("RETURN"))
 	private void monvhua$restoreAttachedCarriedEntityRotation(LivingEntityRenderState state, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
+		monvhua$endCarryPoseRenderContext(state);
 		monvhua$restoreFirstPersonCarriedPlayerHead();
 
 		if (!lockedAttachedCarriedRotation) {
@@ -85,6 +87,24 @@ public abstract class PlayerEntityRendererCarryPoseMixin {
 	private void monvhua$restoreCarriedPlayerTransform(LivingEntityRenderState state, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
 		if (monvhua$shouldUseCarriedTransform(state)) {
 			matrices.pop();
+		}
+	}
+
+	@Inject(method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+			at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/entity/model/EntityModel;render(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumer;III)V", shift = At.Shift.BEFORE), require = 1)
+	private void monvhua$reapplyCarryPoseBeforeModelRender(LivingEntityRenderState state, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
+		if (!(state instanceof PlayerEntityRenderState playerState) || !(getModel() instanceof PlayerEntityModel playerModel)) {
+			return;
+		}
+
+		CarryPoseModelApplier.beginRenderContext(playerModel, playerState);
+		CarryPoseModelApplier.apply(playerModel, playerState);
+	}
+
+	@Unique
+	private void monvhua$endCarryPoseRenderContext(LivingEntityRenderState state) {
+		if (state instanceof PlayerEntityRenderState playerState && getModel() instanceof PlayerEntityModel playerModel) {
+			CarryPoseModelApplier.endRenderContext(playerModel, playerState);
 		}
 	}
 

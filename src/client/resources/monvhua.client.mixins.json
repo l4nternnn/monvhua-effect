@@ -11,6 +11,7 @@
 		"WorldRendererHookMixin",
 		"carrymodelpose.PlayerEntityModelCarryPoseMixin",
 		"carrymodelpose.PlayerEntityRendererCarryPoseMixin",
+		"carrymodelpose.ModelPartCarryPoseMixin",
 		"carrymodelpose.CarriedEntityDirectRenderCancelMixin",
 		"carrymodelpose.CarriedPlayerCameraMixin",
 		"carrymodelpose.CarriedPlayerLookClampMixin",
