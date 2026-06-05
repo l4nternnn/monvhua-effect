@@ -107,7 +107,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private static float modelYaw;
     private static float modelRoll;
     private static float wholeBodyScale = 1.0F;
-    private static PoseEditMode poseEditMode = PoseEditMode.STATIC_PART;
+    private static PoseEditMode poseEditMode = PoseEditMode.SKELETAL;
     private static EditorItemDisplayMode defaultItemDisplayMode = EditorItemDisplayMode.BLOCK;
     private static final List<EditorItemModel> EDITOR_ITEMS = new ArrayList<>();
     private static final Map<String, PartPose> PART_POSES = createPartPoses();
@@ -226,6 +226,7 @@ public class BodyPoseEditorFragment extends Fragment {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) return;
         selectedPart = getDefaultSelectedPart();
+        poseEditMode = PoseEditMode.SKELETAL;
         showWholePreview = true;
         worldPreviewEnabled = true;
         EDITOR_ITEMS.clear();
