@@ -12,9 +12,9 @@ public class FallDamageMixin {
 
     @ModifyVariable(method = "handleFallDamage", at = @At("HEAD"), argsOnly = true)
     private float onHandleFallDamage(float fallDistance) {
-        MonvhuaMod.LOGGER.info("注入生效，开始判断");
+//        MonvhuaMod.LOGGER.info("注入生效，开始判断");
         if (floating.isFloating()) {
-            MonvhuaMod.LOGGER.info("注入生效，当前伤害归零");
+//            MonvhuaMod.LOGGER.info("注入生效，当前伤害归零");
             return 0;
         }
         return fallDistance;

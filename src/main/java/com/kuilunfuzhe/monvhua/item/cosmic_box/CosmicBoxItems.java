@@ -23,6 +23,8 @@ public final class CosmicBoxItems {
     public static final BlockItem COSMIC_BOX_ITEM;
     public static final Block COSMIC_BOX_RENDER_BLOCK;
     public static final BlockItem COSMIC_BOX_RENDER_ITEM;
+    public static final Block COSMIC_BOX_DOOR_BLOCK;
+    public static final BlockItem COSMIC_BOX_DOOR_ITEM;
 
     static {
         Identifier id = Identifier.of(MonvhuaMod.MOD_ID, "cosmic_box");
@@ -54,6 +56,21 @@ public final class CosmicBoxItems {
         COSMIC_BOX_RENDER_ITEM = new BlockItem(COSMIC_BOX_RENDER_BLOCK, new Item.Settings()
                 .registryKey(renderItemKey)
                 .maxCount(64));
+
+        Identifier doorId = Identifier.of(MonvhuaMod.MOD_ID, "cosmic_box_door");
+        RegistryKey<Block> doorBlockKey = RegistryKey.of(RegistryKeys.BLOCK, doorId);
+        RegistryKey<Item> doorItemKey = RegistryKey.of(RegistryKeys.ITEM, doorId);
+
+        COSMIC_BOX_DOOR_BLOCK = new CosmicBoxVisualBlock(AbstractBlock.Settings.create()
+                .registryKey(doorBlockKey)
+                .mapColor(MapColor.BLACK)
+                .strength(2.0F, 6.0F)
+                .luminance(state -> 8)
+                .nonOpaque()
+                .pistonBehavior(PistonBehavior.DESTROY));
+        COSMIC_BOX_DOOR_ITEM = new BlockItem(COSMIC_BOX_DOOR_BLOCK, new Item.Settings()
+                .registryKey(doorItemKey)
+                .maxCount(64));
     }
 
     private CosmicBoxItems() {
@@ -66,11 +83,15 @@ public final class CosmicBoxItems {
         Identifier renderId = Identifier.of(MonvhuaMod.MOD_ID, "cosmic_box_render");
         Registry.register(Registries.BLOCK, renderId, COSMIC_BOX_RENDER_BLOCK);
         Registry.register(Registries.ITEM, renderId, COSMIC_BOX_RENDER_ITEM);
+        Identifier doorId = Identifier.of(MonvhuaMod.MOD_ID, "cosmic_box_door");
+        Registry.register(Registries.BLOCK, doorId, COSMIC_BOX_DOOR_BLOCK);
+        Registry.register(Registries.ITEM, doorId, COSMIC_BOX_DOOR_ITEM);
         CosmicBoxBlockEntities.initialize();
 
         ItemGroupEvents.modifyEntriesEvent(ItemGroups.BUILDING_BLOCKS).register(entries -> {
             entries.add(COSMIC_BOX_ITEM);
             entries.add(COSMIC_BOX_RENDER_ITEM);
+            entries.add(COSMIC_BOX_DOOR_ITEM);
         });
     }
 }

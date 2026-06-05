@@ -47,7 +47,7 @@ public final class CosmicBoxRenderLayers {
     }
 
     public static RenderLayer cosmicBoxForCurrentShaders() {
-        return CosmicBoxIrisCompat.isShaderPackInUse() ? RenderLayer.getEndPortal() : COSMIC_BOX;
+        return CosmicBoxIrisCompat.isShaderPackInUse() ? RenderLayer.getEntityTranslucentEmissive(SHADER_USE_TEXTURE) : COSMIC_BOX;
     }
 
     public static RenderLayer cosmicBeamRainbow() {
@@ -63,6 +63,10 @@ public final class CosmicBoxRenderLayers {
             return RenderLayer.getBeaconBeam(BeaconBlockEntityRenderer.BEAM_TEXTURE, false);
         }
         return COSMIC_BEAM_WHITE;
+    }
+
+    public static RenderLayer cosmicDoorCrack() {
+        return RenderLayer.getDebugQuads();
     }
 
 }

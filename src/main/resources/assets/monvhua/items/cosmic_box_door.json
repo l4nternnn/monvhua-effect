@@ -1,0 +1,9 @@
+{
+  "model": {
+    "type": "minecraft:special",
+    "base": "monvhua:item/cosmic_box_door",
+    "model": {
+      "type": "monvhua:cosmic_box"
+    }
+  }
+}

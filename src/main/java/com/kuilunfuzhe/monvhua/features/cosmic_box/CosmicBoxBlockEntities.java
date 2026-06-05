@@ -15,7 +15,8 @@ public final class CosmicBoxBlockEntities {
             FabricBlockEntityTypeBuilder.create(
                     CosmicBoxBlockEntity::new,
                     CosmicBoxItems.COSMIC_BOX_BLOCK,
-                    CosmicBoxItems.COSMIC_BOX_RENDER_BLOCK
+                    CosmicBoxItems.COSMIC_BOX_RENDER_BLOCK,
+                    CosmicBoxItems.COSMIC_BOX_DOOR_BLOCK
             ).build()
     );
 
