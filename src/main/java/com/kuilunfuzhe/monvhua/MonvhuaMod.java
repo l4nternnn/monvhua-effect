@@ -24,6 +24,7 @@ import com.kuilunfuzhe.monvhua.item.ModItemGroups;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
+import com.kuilunfuzhe.monvhua.item.block_hole.BlockHoleItems;
 import com.kuilunfuzhe.monvhua.item.cosmic_box.CosmicBoxItems;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.imitate.ImitateItem;
@@ -447,6 +448,7 @@ public class MonvhuaMod implements ModInitializer {
         Gazeguidance.initialize();
         ModItems.initialize();
         CosmicBoxItems.initialize();
+        BlockHoleItems.initialize();
         SecrecyItem.initialize(configManager);
         ModBlocks.initialize();
         Assembly_ModItems.initialize();
