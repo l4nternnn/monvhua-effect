@@ -14,7 +14,6 @@ import com.kuilunfuzhe.monvhua.features.action.ActionExecutor;
 import com.kuilunfuzhe.monvhua.features.action.TimelineScheduler;
 import com.kuilunfuzhe.monvhua.features.block.body.BodyPartManager;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryEvents;
-import com.kuilunfuzhe.monvhua.features.cosmic_box.CosmicBoxNetworking;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ViewingModeBlocker;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
@@ -25,7 +24,6 @@ import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
 import com.kuilunfuzhe.monvhua.item.block_hole.BlockHoleItems;
-import com.kuilunfuzhe.monvhua.item.cosmic_box.CosmicBoxItems;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.imitate.ImitateItem;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
@@ -182,7 +180,6 @@ public class MonvhuaMod implements ModInitializer {
         SecrecyStateS2CPacket.register();
 
         ModNetworking.registerC2SPackets();
-        CosmicBoxNetworking.registerServerReceivers();
         MarkEntityC2S.register();
         ExitViewC2S.register();
         MagicPacket.register();
@@ -346,7 +343,6 @@ public class MonvhuaMod implements ModInitializer {
         CommandRegistrationCallback.EVENT.register(ClairvoyanceCommand::register);
         CommandRegistrationCallback.EVENT.register(ActionCommand::register);
         CommandRegistrationCallback.EVENT.register(SkeletalBodyPartCommand::register);
-        CommandRegistrationCallback.EVENT.register(CosmicBoxCommand::register);
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("clairvoyance-肢体|合并")
@@ -447,7 +443,6 @@ public class MonvhuaMod implements ModInitializer {
         com.kuilunfuzhe.monvhua.features.floating.floating.initialize(configManager);
         Gazeguidance.initialize();
         ModItems.initialize();
-        CosmicBoxItems.initialize();
         BlockHoleItems.initialize();
         SecrecyItem.initialize(configManager);
         ModBlocks.initialize();

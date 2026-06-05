@@ -1,11 +1,5 @@
 {
   "item.monvhua.secrecy": "|Magic: Secrecy|",
-  "item.monvhua.cosmic_box": "|Magic: Cosmic Box|",
-  "block.monvhua.cosmic_box": "|Magic: Cosmic Box|",
-  "item.monvhua.cosmic_box_render": "|Magic: Cosmic Box Render|",
-  "block.monvhua.cosmic_box_render": "|Magic: Cosmic Box Render|",
-  "item.monvhua.cosmic_box_door": "|Magic: Cosmic Box Door|",
-  "block.monvhua.cosmic_box_door": "|Magic: Cosmic Box Door|",
   "item.monvhua.block_hole": "|Magic: Block Hole|",
   "block.monvhua.block_hole": "|Magic: Block Hole|",
   "key.monvhua.body_pose_editor": "Body Pose Editor",

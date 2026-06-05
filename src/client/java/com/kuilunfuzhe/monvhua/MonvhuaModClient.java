@@ -18,7 +18,6 @@ import com.kuilunfuzhe.monvhua.gui.body.bodyback.BodyPartScreen;
 import com.kuilunfuzhe.monvhua.gui.mirror.mirrorHUD;
 import com.kuilunfuzhe.monvhua.gui.openback.OtherPlayerInventoryScreen;
 import com.kuilunfuzhe.monvhua.features.block_hole.BlockHoleClient;
-import com.kuilunfuzhe.monvhua.features.cosmic_box.CosmicBoxClient;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.AnchorDestroyC2S;
@@ -72,7 +71,6 @@ public class MonvhuaModClient implements ClientModInitializer {
      */
     @Override
     public void onInitializeClient() {
-        CosmicBoxClient.register();
         BlockHoleClient.register();
 
         // ===== 1. 网络包接收器注册 =====

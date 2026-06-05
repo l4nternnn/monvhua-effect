@@ -7,7 +7,6 @@ import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets;
-import com.kuilunfuzhe.monvhua.features.cosmic_box.CosmicBoxNetworking;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingEnergySyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
@@ -52,7 +51,6 @@ public class ModNetworking {
         SoundWaveStartS2CPacket.register();
         ImitateConfigS2CPacket.register();
         ImitateSyncS2CPacket.register();
-        CosmicBoxNetworking.registerS2CPackets();
     }
 
     public static void registerC2SPackets() {
@@ -77,6 +75,5 @@ public class ModNetworking {
         RequestImitateConfigC2SPacket.register();
         UpdateImitateConfigC2SPacket.register();
         SilencePacket.register();
-        CosmicBoxNetworking.registerC2SPackets();
     }
 }
