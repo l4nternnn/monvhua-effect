@@ -19,6 +19,7 @@ import com.kuilunfuzhe.monvhua.gui.mirror.mirrorHUD;
 import com.kuilunfuzhe.monvhua.gui.openback.OtherPlayerInventoryScreen;
 import com.kuilunfuzhe.monvhua.features.cosmic_box.CosmicBoxClient;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
+import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.AnchorDestroyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SilenceEffectS2CPacket;
@@ -111,7 +112,7 @@ public class MonvhuaModClient implements ClientModInitializer {
             if (entity instanceof ArmorStandEntity armorStand) {
                 Text name = armorStand.getCustomName();
                 if (name != null && name.getString().equals("clairvoyance_evil_eyes")) {
-                    ClientPlayNetworking.send(new AnchorDestroyC2SPacket(armorStand.getUuid()));
+                    SafeClientNetworking.send(new AnchorDestroyC2SPacket(armorStand.getUuid()));
                     player.swingHand(hand); // 客户端侧挥手动效
                     player.sendMessage(Text.literal("§a锚点已破坏"), true);
                     return ActionResult.FAIL; // 取消原攻击逻辑
@@ -129,7 +130,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (player instanceof ClientPlayerEntity clientPlayer && clientPlayer.isSneaking() &&
                     clientPlayer.getMainHandStack().isEmpty() && clientPlayer.getOffHandStack().isEmpty()) {
-                ClientPlayNetworking.send(new PlaceCarriedEntityPayload());
+                SafeClientNetworking.send(new PlaceCarriedEntityPayload());
                 return ActionResult.SUCCESS;
             }
             return ActionResult.PASS;
@@ -139,7 +140,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         UseItemCallback.EVENT.register((player, world, hand) -> {
             if (player instanceof ClientPlayerEntity clientPlayer && hand == Hand.MAIN_HAND) {
                 if (clientPlayer.getMainHandStack().isEmpty() && clientPlayer.getOffHandStack().isEmpty()) {
-                    ClientPlayNetworking.send(new PlaceCarriedEntityPayload());
+                    SafeClientNetworking.send(new PlaceCarriedEntityPayload());
                 }
             }
             return ActionResult.PASS;
@@ -150,7 +151,7 @@ public class MonvhuaModClient implements ClientModInitializer {
             if (player instanceof ClientPlayerEntity clientPlayer &&
                     clientPlayer.getMainHandStack().isEmpty() && clientPlayer.getOffHandStack().isEmpty()) {
                 if (entity instanceof LivingEntity) {
-                    ClientPlayNetworking.send(new CarryEntityPayload(entity.getId()));
+                    SafeClientNetworking.send(new CarryEntityPayload(entity.getId()));
                     return ActionResult.SUCCESS;
                 }
             }
@@ -160,7 +161,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         // 打开物品栏屏幕时：尝试放置搬运中的实体
         ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
             if (screen instanceof net.minecraft.client.gui.screen.ingame.InventoryScreen) {
-                ClientPlayNetworking.send(new PlaceCarriedEntityPayload());
+                SafeClientNetworking.send(new PlaceCarriedEntityPayload());
             }
             ScreenEvents.afterRender(screen).register(ActionEditorFragment::renderVanillaPreview);
         });

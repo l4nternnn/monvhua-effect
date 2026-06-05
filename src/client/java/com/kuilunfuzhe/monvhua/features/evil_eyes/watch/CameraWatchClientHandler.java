@@ -1,9 +1,9 @@
 package com.kuilunfuzhe.monvhua.features.evil_eyes.watch;
 
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
+import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.network.camerawatch.CameraWatchStopC2SPacket;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
@@ -78,7 +78,7 @@ public class CameraWatchClientHandler {
             // Shift 退出观看（上升沿触发，防重复发送）
             if (hasValidTarget && client.player.isSneaking() && !lastSneak) {
                 lastSneak = true;
-                ClientPlayNetworking.send(new CameraWatchStopC2SPacket());
+                SafeClientNetworking.send(new CameraWatchStopC2SPacket());
                 return;
             }
             lastSneak = client.player.isSneaking();

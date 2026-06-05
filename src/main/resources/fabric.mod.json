@@ -22,13 +22,20 @@
 	},
 	"mixins": [
 		"monvhua.mixins.json",
-		"monvhua.client.mixins.json",
-		"monvhua.axiom_compat.mixins.json"
+		{
+			"config": "monvhua.client.mixins.json",
+			"environment": "client"
+		},
+		{
+			"config": "monvhua.axiom_compat.mixins.json",
+			"environment": "client"
+		}
 	],
 	"depends": {
 		"fabricloader": ">=0.16.0",
 		"minecraft": "~1.21.8",
 		"java": ">=21",
-		"fabric-api": "*"
+		"fabric-api": "*",
+		"modernui": "*"
 	}
 }

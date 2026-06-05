@@ -1,10 +1,10 @@
 package com.kuilunfuzhe.monvhua.features.gazeguidance;
 
+import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.RightClickActionPacket;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.toast.SystemToast;
@@ -99,7 +99,7 @@ public class GazeguidanceClient {
 				lastRightClickState = rightPressed;
 				ItemStack stack = client.player.getMainHandStack();
 				if (stack.getItem() == ModItems.MAGIC_STICK) {
-					ClientPlayNetworking.send(new RightClickActionPacket(rightPressed));
+					SafeClientNetworking.send(new RightClickActionPacket(rightPressed));
 				}
 			}
 			// K 键打开配置界面（仅创造模式）

@@ -14,10 +14,10 @@ import com.kuilunfuzhe.monvhua.network.gazeguidance.MagicPacket;
 import com.kuilunfuzhe.monvhua.network.openback.OpenOtherInventoryPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeC2SPacket;
+import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.renderer.Font_Render;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.AnchorButtonRenderer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
@@ -76,11 +76,11 @@ public class ClientTickHandler {
                         }
                     }
                     if (entityTarget != null && entityDist <= blockDist) {
-                        ClientPlayNetworking.send(new MarkEntityPayload(entityTarget.getId()));
+                        SafeClientNetworking.send(new MarkEntityPayload(entityTarget.getId()));
                     } else if (hit.getType() == HitResult.Type.BLOCK) {
                         BlockHitResult blockHit = (BlockHitResult) hit;
                         Vec3d pos = blockHit.getPos().add(0, 2.2, 0);
-                        ClientPlayNetworking.send(new PlaceParrotC2SPacket(pos));
+                        SafeClientNetworking.send(new PlaceParrotC2SPacket(pos));
                         for (int i = 0; i < 30; i++)
                             client.particleManager.addParticle(ParticleTypes.ENCHANT, pos.x, pos.y, pos.z, 0, 0.5, 0);
                     } else {
@@ -89,13 +89,13 @@ public class ClientTickHandler {
                 } else if (mainHand.getItem() == ModItems.MAGIC_STICK) {
                     Entity target = getTargetEntity(client, 50.0);
                     if (target instanceof LivingEntity) {
-                        ClientPlayNetworking.send(new MagicPacket(target.getId()));
+                        SafeClientNetworking.send(new MagicPacket(target.getId()));
                     }
                 } else {
                     if (client.player.isCreative()) {
                         Entity target = getTargetEntity(client, 50.0);
                         if (target instanceof PlayerEntity) {
-                            ClientPlayNetworking.send(new OpenOtherInventoryPayload(target.getId()));
+                            SafeClientNetworking.send(new OpenOtherInventoryPayload(target.getId()));
                             client.player.sendMessage(Text.literal("§a尝试打开目标玩家背包"), true);
                         } else {
                             client.player.sendMessage(Text.literal("§c请对准一名玩家"), true);
@@ -114,7 +114,7 @@ public class ClientTickHandler {
             if (rightPressed != lastMirrorRightClick) {
                 lastMirrorRightClick = rightPressed;
                 if (client.player.getMainHandStack().getItem() == mirror_of_then_and_now.MIRROR_ITEM) {
-                    ClientPlayNetworking.send(new MirrorChargeC2SPacket(rightPressed));
+                    SafeClientNetworking.send(new MirrorChargeC2SPacket(rightPressed));
                 }
             }
         });
@@ -123,7 +123,7 @@ public class ClientTickHandler {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player != null && !hasRequestedConfig) {
                 hasRequestedConfig = true;
-                ClientPlayNetworking.send(new RequestGlobalConfigC2SPacket());
+                SafeClientNetworking.send(new RequestGlobalConfigC2SPacket());
             }
         });
 
@@ -132,7 +132,7 @@ public class ClientTickHandler {
             if (client.player == null) return;
             boolean currentEmpty = client.player.getMainHandStack().isEmpty();
             if (lastMainHandEmpty && !currentEmpty) {
-                ClientPlayNetworking.send(new PlaceCarriedEntityPayload());
+                SafeClientNetworking.send(new PlaceCarriedEntityPayload());
             }
             lastMainHandEmpty = currentEmpty;
         });

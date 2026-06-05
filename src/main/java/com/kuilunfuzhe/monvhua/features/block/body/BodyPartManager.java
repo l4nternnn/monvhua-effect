@@ -20,9 +20,7 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.decoration.ArmorStandEntity;
-import net.minecraft.entity.decoration.DisplayEntity;
 import net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity;
-import net.minecraft.entity.data.TrackedData;
 import net.minecraft.entity.decoration.InteractionEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
@@ -43,14 +41,15 @@ import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.collection.DefaultedList;
+import net.minecraft.util.math.AffineTransformation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.registry.Registries;
 import net.minecraft.world.World;
 import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
-import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -65,17 +64,14 @@ public class BodyPartManager {
 		new Quaternionf(0.68573505f, 0.06322056f, -0.05999406f, 0.7226142f),
 		new Quaternionf(0.69693834f, -0.07450287f, 0.07333822f, 0.70947003f)
 	};
-	private static final TrackedData LEFT_ROTATION_KEY;
-	static {
-		TrackedData key = null;
-		try {
-			Field field = DisplayEntity.class.getDeclaredField("LEFT_ROTATION");
-			field.setAccessible(true);
-			key = (TrackedData) field.get(null);
-		} catch (Exception e) {
-			com.kuilunfuzhe.monvhua.MonvhuaMod.LOGGER.error("Failed to access DisplayEntity.LEFT_ROTATION", e);
-		}
-		LEFT_ROTATION_KEY = key;
+
+	private static void setLeftRotation(ItemDisplayEntity display, Quaternionf rotation) {
+		display.setTransformation(new AffineTransformation(
+				new Vector3f(),
+				new Quaternionf(rotation),
+				new Vector3f(1.0f, 1.0f, 1.0f),
+				new Quaternionf()
+		));
 	}
 
 	public static final Map<UUID, DefaultedList<ItemStack>> BODY_PART_DISPLAY_INVENTORIES = new ConcurrentHashMap<>();
@@ -136,15 +132,13 @@ public class BodyPartManager {
 						ItemDisplayEntity display = EntityType.ITEM_DISPLAY.create(world, SpawnReason.TRIGGERED);
 						if (display != null) {
 							display.setItemStack(stack);
-							if (LEFT_ROTATION_KEY != null) {
-								if (i == 0) {
-									float headYaw = player.getYaw();
-									float headPitch = player.getPitch();
-									Quaternionf headRot = new Quaternionf().rotateY((float) Math.toRadians(-headYaw)).rotateX((float) Math.toRadians(headPitch));
-									display.getDataTracker().set(LEFT_ROTATION_KEY, headRot);
-								} else {
-									display.getDataTracker().set(LEFT_ROTATION_KEY, new Quaternionf(PART_ROTATIONS[i]));
-								}
+							if (i == 0) {
+								float headYaw = player.getYaw();
+								float headPitch = player.getPitch();
+								Quaternionf headRot = new Quaternionf().rotateY((float) Math.toRadians(-headYaw)).rotateX((float) Math.toRadians(headPitch));
+								setLeftRotation(display, headRot);
+							} else {
+								setLeftRotation(display, PART_ROTATIONS[i]);
 							}
 							display.setPosition(
 								deathPos.getX() + 0.5 + offsetsX[i],
@@ -540,9 +534,7 @@ public class BodyPartManager {
 				ItemDisplayEntity partDisplay = EntityType.ITEM_DISPLAY.create(world, SpawnReason.TRIGGERED);
 				if (partDisplay != null) {
 					partDisplay.setItemStack(stack);
-					if (LEFT_ROTATION_KEY != null) {
-						partDisplay.getDataTracker().set(LEFT_ROTATION_KEY, new Quaternionf(PART_ROTATIONS[i]));
-					}
+					setLeftRotation(partDisplay, PART_ROTATIONS[i]);
 					partDisplay.setPosition(pos.x + offsetsX[i], pos.y + offsetsY[i], pos.z + offsetsZ[i]);
 					world.spawnEntity(partDisplay);
 
@@ -722,13 +714,11 @@ public class BodyPartManager {
 			display.setItemStack(new ItemStack(item));
 			display.setItemDisplayContext(placement.displayContext());
 			display.setPosition(basePos.x + placement.offsetX(), basePos.y + placement.offsetY(), basePos.z + placement.offsetZ());
-			if (LEFT_ROTATION_KEY != null) {
-				Quaternionf rotation = new Quaternionf()
-						.rotateX((float) Math.toRadians(placement.pitch()))
-						.rotateY((float) Math.toRadians(-placement.yaw()))
-						.rotateZ((float) Math.toRadians(placement.roll()));
-				display.getDataTracker().set(LEFT_ROTATION_KEY, rotation);
-			}
+			Quaternionf rotation = new Quaternionf()
+					.rotateX((float) Math.toRadians(placement.pitch()))
+					.rotateY((float) Math.toRadians(-placement.yaw()))
+					.rotateZ((float) Math.toRadians(placement.roll()));
+			setLeftRotation(display, rotation);
 			world.spawnEntity(display);
 			placed++;
 		}
@@ -770,8 +760,8 @@ public class BodyPartManager {
 		if (display != null) {
 			display.setItemStack(combinedStack);
 			display.setPosition(pos);
-			if (LEFT_ROTATION_KEY != null && lyingDown) {
-				display.getDataTracker().set(LEFT_ROTATION_KEY, new Quaternionf().rotateX((float) Math.toRadians(90)));
+			if (lyingDown) {
+				setLeftRotation(display, new Quaternionf().rotateX((float) Math.toRadians(90)));
 			}
 			world.spawnEntity(display);
 
