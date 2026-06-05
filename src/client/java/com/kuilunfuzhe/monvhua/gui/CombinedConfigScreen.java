@@ -4,16 +4,16 @@ import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.GlobalConfigS2CPacket;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.RequestGlobalConfigC2SPacket;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.UpdateGlobalConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.GlobalConfigS2C;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.RequestGlobalConfigC2S;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.UpdateGlobalConfigC2S;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.RequestConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.UpdateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.RequestImitateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.UpdateImitateConfigC2SPacket;
-import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigUpdateC2SPacket;
-import com.kuilunfuzhe.monvhua.network.mirror.RequestMirrorConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ConfigUpdateC2S;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.RequestConfigC2S;
 import com.kuilunfuzhe.monvhua.network.secrecy.RequestSecrecyConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigUpdateC2SPacket;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -47,7 +47,7 @@ public class CombinedConfigScreen extends Screen {
     private TextFieldWidget dailyField, marksField, watchTimeField, parrotDailyField, maxActiveField;
     private ButtonWidget saveEvilButton;
     /** 已缓存的千里眼全局配置数据，索引1-7对应阶段1-7 */
-    private static final GlobalConfigS2CPacket.StageConfig[] CACHED_EVIL_CONFIGS = new GlobalConfigS2CPacket.StageConfig[8];
+    private static final GlobalConfigS2C.StageConfig[] CACHED_EVIL_CONFIGS = new GlobalConfigS2C.StageConfig[8];
     private final List<TextWidget> evilLabels = new ArrayList<>();
 
     // ===== 视线诱导组件 =====
@@ -97,9 +97,9 @@ public class CombinedConfigScreen extends Screen {
      */
     public CombinedConfigScreen() {
         super(Text.literal("物品配置"));
-        ClientPlayNetworking.send(new RequestGlobalConfigC2SPacket());
+        ClientPlayNetworking.send(new RequestGlobalConfigC2S());
         ClientPlayNetworking.send(new RequestConfigC2SPacket());
-        ClientPlayNetworking.send(new RequestMirrorConfigC2SPacket());
+        ClientPlayNetworking.send(new RequestConfigC2S());
         ClientPlayNetworking.send(new RequestSecrecyConfigC2SPacket());
         ClientPlayNetworking.send(new RequestImitateConfigC2SPacket());
         if (cachedGazeConfig == null) {
@@ -569,7 +569,7 @@ public class CombinedConfigScreen extends Screen {
 
     // ========== 千里眼配置 ==========
     private void loadEvilStageUI() {
-        GlobalConfigS2CPacket.StageConfig cfg = CACHED_EVIL_CONFIGS[currentStage];
+        GlobalConfigS2C.StageConfig cfg = CACHED_EVIL_CONFIGS[currentStage];
         if (cfg == null) {
             dailyField.setText("10");
             marksField.setText("3");
@@ -595,15 +595,15 @@ public class CombinedConfigScreen extends Screen {
             int watchTicks = watchSec * 20;
 
             // Preserve existing minScore/maxScore from the currently stored config
-            GlobalConfigS2CPacket.StageConfig existing = CACHED_EVIL_CONFIGS[currentStage];
+            GlobalConfigS2C.StageConfig existing = CACHED_EVIL_CONFIGS[currentStage];
             int minScore = (existing != null) ? existing.minScore() : 0;
             int maxScore = (existing != null) ? existing.maxScore() : 5;
 
-            CACHED_EVIL_CONFIGS[currentStage] = new GlobalConfigS2CPacket.StageConfig(
+            CACHED_EVIL_CONFIGS[currentStage] = new GlobalConfigS2C.StageConfig(
                     daily, marks, minScore, maxScore, watchTicks, parrotDaily, maxActive
             );
 
-            ClientPlayNetworking.send(new UpdateGlobalConfigC2SPacket(
+            ClientPlayNetworking.send(new UpdateGlobalConfigC2S(
                     currentStage, daily, marks, minScore, maxScore, watchTicks, parrotDaily, maxActive
             ));
 
@@ -619,7 +619,7 @@ public class CombinedConfigScreen extends Screen {
      * 接收服务器发来的千里眼全局配置并更新缓存。
      * 如果当前正在查看千里眼或阶段区间标签页，同步刷新界面。
      */
-    public void receiveEvilConfigs(GlobalConfigS2CPacket.StageConfig[] configsArray) {
+    public void receiveEvilConfigs(GlobalConfigS2C.StageConfig[] configsArray) {
         if (configsArray == null) return;
         for (int i = 0; i < configsArray.length; i++) {
             CACHED_EVIL_CONFIGS[i + 1] = configsArray[i];
@@ -711,7 +711,7 @@ public class CombinedConfigScreen extends Screen {
             cachedMirrorConfig.setRadius(mirrorCurrentStage, radius);
             cachedMirrorConfig.setChargeTime(mirrorCurrentStage, chargeTime);
 
-            ClientPlayNetworking.send(new MirrorConfigUpdateC2SPacket(cachedMirrorConfig.toJson()));
+            ClientPlayNetworking.send(new ConfigUpdateC2S(cachedMirrorConfig.toJson()));
             if (client != null && client.player != null)
                 client.player.sendMessage(Text.literal("§e阶段 " + mirrorCurrentStage + " 镜子配置已提交，正在同步..."), true);
         } catch (NumberFormatException e) {
@@ -783,7 +783,7 @@ public class CombinedConfigScreen extends Screen {
 
     // ========== 阶段区间配置 ==========
     private void loadStageRangeUI() {
-        GlobalConfigS2CPacket.StageConfig cfg = CACHED_EVIL_CONFIGS[stageRangeCurrentStage];
+        GlobalConfigS2C.StageConfig cfg = CACHED_EVIL_CONFIGS[stageRangeCurrentStage];
         if (cfg == null) {
             stageRangeMinField.setText("0");
             stageRangeMaxField.setText("5");
@@ -798,18 +798,18 @@ public class CombinedConfigScreen extends Screen {
             int minScore = Integer.parseInt(stageRangeMinField.getText().trim());
             int maxScore = Integer.parseInt(stageRangeMaxField.getText().trim());
 
-            GlobalConfigS2CPacket.StageConfig existing = CACHED_EVIL_CONFIGS[stageRangeCurrentStage];
+            GlobalConfigS2C.StageConfig existing = CACHED_EVIL_CONFIGS[stageRangeCurrentStage];
             int daily = (existing != null) ? existing.dailyLimit() : 10;
             int marks = (existing != null) ? existing.maxMarks() : 3;
             int watchTicks = (existing != null) ? existing.watchRequiredTicks() : 40;
             int parrotDaily = (existing != null) ? existing.parrotDailyLimit() : 5;
             int maxActive = (existing != null) ? existing.maxActiveParrots() : 1;
 
-            CACHED_EVIL_CONFIGS[stageRangeCurrentStage] = new GlobalConfigS2CPacket.StageConfig(
+            CACHED_EVIL_CONFIGS[stageRangeCurrentStage] = new GlobalConfigS2C.StageConfig(
                     daily, marks, minScore, maxScore, watchTicks, parrotDaily, maxActive
             );
 
-            ClientPlayNetworking.send(new UpdateGlobalConfigC2SPacket(
+            ClientPlayNetworking.send(new UpdateGlobalConfigC2S(
                     stageRangeCurrentStage, daily, marks, minScore, maxScore, watchTicks, parrotDaily, maxActive
             ));
 

@@ -1,6 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.mirror;
 
-import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.StateS2C;
 import net.minecraft.util.math.Vec3d;
 
 /**
@@ -40,7 +40,7 @@ public class MirrorClientManager {
 	 * 接收服务器推送的镜像状态数据包，更新所有槽位和视口状态。
 	 * @param packet 镜面状态S2C数据包
 	 */
-	public static void onStatePacket(MirrorStateS2CPacket packet) {
+	public static void onStatePacket(StateS2C packet) {
 		viewportActive = packet.viewportActive();
 
 		slots[0] = new CameraData(

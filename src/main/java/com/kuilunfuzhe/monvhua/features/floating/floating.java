@@ -1,7 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.floating;
 
 import com.kuilunfuzhe.monvhua.config.GlobalConfigManager;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.GlobalConfigS2CPacket;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.GlobalConfigS2C;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
@@ -50,10 +50,10 @@ public class floating {
         configManager = manager;
     }
 
-    public static void syncStageRanges(GlobalConfigS2CPacket.StageConfig[] configs) {
+    public static void syncStageRanges(GlobalConfigS2C.StageConfig[] configs) {
         if (configs == null) return;
         for (int i = 0; i < configs.length && i < STAGES; i++) {
-            GlobalConfigS2CPacket.StageConfig cfg = configs[i];
+            GlobalConfigS2C.StageConfig cfg = configs[i];
             if (cfg == null) continue;
             clientStageMin[i + 1] = cfg.minScore();
             clientStageMax[i + 1] = cfg.maxScore();

@@ -1,8 +1,8 @@
 package com.kuilunfuzhe.monvhua.gui.evil_eyes;
 
-import com.kuilunfuzhe.monvhua.network.evil_eyes.GlobalConfigS2CPacket;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.RequestGlobalConfigC2SPacket;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.UpdateGlobalConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.GlobalConfigS2C;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.RequestGlobalConfigC2S;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.UpdateGlobalConfigC2S;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -28,17 +28,17 @@ public class GlobalConfigScreen extends Screen {
     private int panelWidth, panelHeight, panelX, panelY;
     private int leftWidth, rightWidth;
 
-    private GlobalConfigS2CPacket.StageConfig[] configs = new GlobalConfigS2CPacket.StageConfig[STAGES + 1];
+    private GlobalConfigS2C.StageConfig[] configs = new GlobalConfigS2C.StageConfig[STAGES + 1];
 
     public GlobalConfigScreen() {
         super(Text.literal("全局阶段配置"));
-        ClientPlayNetworking.send(new RequestGlobalConfigC2SPacket());
+        ClientPlayNetworking.send(new RequestGlobalConfigC2S());
     }
 
     /**
      * 接收服务器下发的全局配置数据并刷新当前阶段UI。
      */
-    public void receiveConfigs(GlobalConfigS2CPacket.StageConfig[] configs) {
+    public void receiveConfigs(GlobalConfigS2C.StageConfig[] configs) {
         for (int i = 0; i < configs.length && i < STAGES; i++) {
             this.configs[i + 1] = configs[i];
         }
@@ -132,7 +132,7 @@ public class GlobalConfigScreen extends Screen {
             int parrotDaily = Integer.parseInt(parrotDailyField.getText().trim());
             int maxActive = Integer.parseInt(maxActiveParrotsField.getText().trim());
 
-            ClientPlayNetworking.send(new UpdateGlobalConfigC2SPacket(currentStage, daily, marks, minScore, maxScore, watchTicks,parrotDaily, maxActive
+            ClientPlayNetworking.send(new UpdateGlobalConfigC2S(currentStage, daily, marks, minScore, maxScore, watchTicks,parrotDaily, maxActive
             ));
 
             if (client != null && client.player != null)

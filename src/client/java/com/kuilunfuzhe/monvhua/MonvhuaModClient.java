@@ -20,7 +20,7 @@ import com.kuilunfuzhe.monvhua.gui.openback.OtherPlayerInventoryScreen;
 import com.kuilunfuzhe.monvhua.features.cosmic_box.CosmicBoxClient;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.AnchorDestroyC2SPacket;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.AnchorDestroyC2S;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SilenceEffectS2CPacket;
 import com.kuilunfuzhe.monvhua.network.openback.CarryEntityPayload;
@@ -112,7 +112,7 @@ public class MonvhuaModClient implements ClientModInitializer {
             if (entity instanceof ArmorStandEntity armorStand) {
                 Text name = armorStand.getCustomName();
                 if (name != null && name.getString().equals("clairvoyance_evil_eyes")) {
-                    SafeClientNetworking.send(new AnchorDestroyC2SPacket(armorStand.getUuid()));
+                    SafeClientNetworking.send(new AnchorDestroyC2S(armorStand.getUuid()));
                     player.swingHand(hand); // 客户端侧挥手动效
                     player.sendMessage(Text.literal("§a锚点已破坏"), true);
                     return ActionResult.FAIL; // 取消原攻击逻辑

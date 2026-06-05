@@ -1,7 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.action;
 
 import com.kuilunfuzhe.monvhua.features.block.body.BodyPartManager;
-import com.kuilunfuzhe.monvhua.network.action.ActionPoseS2CPacket;
+import com.kuilunfuzhe.monvhua.network.action.ActionPackets.ActionPoseS2C;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.player.HungerManager;
@@ -271,7 +271,7 @@ public class ActionExecutor {
         boolean slim = bool(params, "slim_model");
         int durationTicks = inum(params, "durationTicks");
         if (durationTicks <= 0) durationTicks = 40;
-        ActionPoseS2CPacket packet = new ActionPoseS2CPacket(player.getId(), poseValues, durationTicks);
+        ActionPoseS2C packet = new ActionPoseS2C(player.getId(), poseValues, durationTicks);
         if (player.getServer() != null) {
             for (ServerPlayerEntity target : player.getServer().getPlayerManager().getPlayerList()) {
                 ServerPlayNetworking.send(target, packet);

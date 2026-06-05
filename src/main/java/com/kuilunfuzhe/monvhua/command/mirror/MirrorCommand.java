@@ -2,8 +2,8 @@ package com.kuilunfuzhe.monvhua.command.mirror;
 
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
-import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeSyncS2CPacket;
-import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ChargeSyncS2C;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.StateS2C;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -335,7 +335,7 @@ public class MirrorCommand {
 
 	public static void syncChargeToClient(ServerPlayerEntity player, int currentTicks, int maxTicks) {
 		if (player.networkHandler != null) {
-			ServerPlayNetworking.send(player, new MirrorChargeSyncS2CPacket(currentTicks, maxTicks));
+			ServerPlayNetworking.send(player, new ChargeSyncS2C(currentTicks, maxTicks));
 		}
 	}
 
@@ -437,7 +437,7 @@ public class MirrorCommand {
 		MirrorDataStore.SlotData s2 = (data.slots != null && data.slots.length > 1) ? data.slots[1] : null;
 		boolean active = VIEWPORT_ACTIVE.getOrDefault(uuid, false);
 
-		ServerPlayNetworking.send(player, new MirrorStateS2CPacket(
+		ServerPlayNetworking.send(player, new StateS2C(
 			s1 != null, s1 != null ? s1.hsPos().x : 0, s1 != null ? s1.hsPos().y : 0, s1 != null ? s1.hsPos().z : 0,
 			s1 != null ? s1.mapPos().x : 0, s1 != null ? s1.mapPos().y : 0, s1 != null ? s1.mapPos().z : 0,
 			s1 != null ? s1.radius() : 0,

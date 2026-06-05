@@ -5,7 +5,7 @@ import icyllis.modernui.graphics.drawable.ColorDrawable;
 import com.kuilunfuzhe.monvhua.features.action.ActionConfig;
 import com.kuilunfuzhe.monvhua.features.action.TimelineClientState;
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
-import com.kuilunfuzhe.monvhua.network.action.*;
+import com.kuilunfuzhe.monvhua.network.action.ActionPackets.*;
 import icyllis.modernui.core.Context;
 import icyllis.modernui.fragment.Fragment;
 import icyllis.modernui.mc.MuiModApi;
@@ -91,7 +91,7 @@ public class ActionEditorFragment extends Fragment {
     // ── 自动保存 ──
     private final Runnable autoSaveRunnable = () -> {
         if (dirty && System.currentTimeMillis() - lastChangeTime >= SAVE_DEBOUNCE) {
-            ClientPlayNetworking.send(new UpdateActionsConfigC2SPacket(localConfig.toJson()));
+            ClientPlayNetworking.send(new UpdateActionsConfigC2S(localConfig.toJson()));
         }
     };
 
@@ -156,7 +156,7 @@ public class ActionEditorFragment extends Fragment {
     public void onResume() {
         super.onResume();
         activeInstance = this;
-        ClientPlayNetworking.send(new RequestActionsConfigC2SPacket());
+        ClientPlayNetworking.send(new RequestActionsConfigC2S());
     }
 
     @Override
@@ -232,7 +232,7 @@ public class ActionEditorFragment extends Fragment {
         fileListOpen = !fileListOpen;
         fileBtn.setText(fileListOpen ? "▲ 文件" : "▼ 文件");
         if (fileListOpen) {
-            ClientPlayNetworking.send(new ListActionFilesC2SPacket());
+            ClientPlayNetworking.send(new ListActionFilesC2S());
         }
         rebuildFileList();
     }
@@ -250,7 +250,7 @@ public class ActionEditorFragment extends Fragment {
             Button b = new Button(ctx);
             b.setText(trunc(fn, 18));
             b.setOnClickListener(v -> {
-                ClientPlayNetworking.send(new LoadActionFileC2SPacket(fn));
+                ClientPlayNetworking.send(new LoadActionFileC2S(fn));
                 fileListOpen = false;
             });
             fileListContainer.addView(b, new LinearLayout.LayoutParams(-1, -2));
@@ -298,21 +298,21 @@ public class ActionEditorFragment extends Fragment {
 
         Button startBtn = new Button(ctx);
         startBtn.setText("▶开始");
-        startBtn.setOnClickListener(v -> ClientPlayNetworking.send(new TimelineControlC2SPacket("START", 0, "")));
+        startBtn.setOnClickListener(v -> ClientPlayNetworking.send(new TimelineControlC2S("START", 0, "")));
         ctrlBar.addView(startBtn, new LinearLayout.LayoutParams(0, -2, 1f));
 
         Button stopBtn = new Button(ctx);
         stopBtn.setText("■停止");
-        stopBtn.setOnClickListener(v -> ClientPlayNetworking.send(new TimelineControlC2SPacket("STOP", 0, "")));
+        stopBtn.setOnClickListener(v -> ClientPlayNetworking.send(new TimelineControlC2S("STOP", 0, "")));
         ctrlBar.addView(stopBtn, new LinearLayout.LayoutParams(0, -2, 1f));
 
         pauseBtn = new Button(ctx);
         pauseBtn.setText("⏸暂停");
         pauseBtn.setOnClickListener(v -> {
             if (TimelineClientState.paused)
-                ClientPlayNetworking.send(new TimelineControlC2SPacket("RESUME", 0, ""));
+                ClientPlayNetworking.send(new TimelineControlC2S("RESUME", 0, ""));
             else
-                ClientPlayNetworking.send(new TimelineControlC2SPacket("PAUSE", 0, ""));
+                ClientPlayNetworking.send(new TimelineControlC2S("PAUSE", 0, ""));
         });
         ctrlBar.addView(pauseBtn, new LinearLayout.LayoutParams(0, -2, 1f));
 
@@ -320,7 +320,7 @@ public class ActionEditorFragment extends Fragment {
         loopBtn.setText("循环:关");
         loopBtn.setOnClickListener(v -> {
             boolean newLoop = !TimelineClientState.loop;
-            ClientPlayNetworking.send(new TimelineControlC2SPacket(newLoop ? "SET_LOOP" : "SET_LOOP_OFF", 0, ""));
+            ClientPlayNetworking.send(new TimelineControlC2S(newLoop ? "SET_LOOP" : "SET_LOOP_OFF", 0, ""));
         });
         ctrlBar.addView(loopBtn, new LinearLayout.LayoutParams(0, -2, 1f));
 
@@ -344,7 +344,7 @@ public class ActionEditorFragment extends Fragment {
         timelinePreviewBtn.setText("▶ 预览时间轴");
         timelinePreviewBtn.setOnClickListener(v -> {
             appendLog("Timeline preview requested...");
-            ClientPlayNetworking.send(new PreviewTimelineC2SPacket());
+            ClientPlayNetworking.send(new PreviewTimelineC2S());
         });
         previewBar.addView(timelinePreviewBtn, new LinearLayout.LayoutParams(0, -2, 1f));
 
@@ -440,7 +440,7 @@ public class ActionEditorFragment extends Fragment {
         selectTimelineSecond(second, false);
         TimelineClientState.currentSecond = second;
         TimelineClientState.totalSeconds = Math.max(TimelineClientState.totalSeconds, maxSecond);
-        ClientPlayNetworking.send(new TimelineControlC2SPacket("JUMP", second, ""));
+        ClientPlayNetworking.send(new TimelineControlC2S("JUMP", second, ""));
         updateTimelineStatus();
     }
 
@@ -623,7 +623,7 @@ public class ActionEditorFragment extends Fragment {
         addTimelineBtn.setOnClickListener(v -> {
             if (def.id != null && !def.id.isEmpty()) {
                 applyLocalTimelineAdd(timelineAssignSecond, def.id);
-                ClientPlayNetworking.send(new TimelineControlC2SPacket("ADD", timelineAssignSecond, def.id));
+                ClientPlayNetworking.send(new TimelineControlC2S("ADD", timelineAssignSecond, def.id));
             }
         });
         assignBar.addView(addTimelineBtn, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -952,7 +952,7 @@ public class ActionEditorFragment extends Fragment {
                 rmBtn.setText("×");
                 rmBtn.setOnClickListener(v -> {
                     applyLocalTimelineRemove(sec, aid);
-                    ClientPlayNetworking.send(new TimelineControlC2SPacket("REMOVE", sec, aid));
+                    ClientPlayNetworking.send(new TimelineControlC2S("REMOVE", sec, aid));
                 });
                 row.addView(rmBtn, new LinearLayout.LayoutParams(-2, -2));
 
@@ -962,14 +962,14 @@ public class ActionEditorFragment extends Fragment {
                     upBtn.setText("↑");
                     upBtn.setOnClickListener(v -> {
                         applyLocalTimelineMove(sec, aid, -1);
-                        ClientPlayNetworking.send(new TimelineControlC2SPacket("MOVE_UP", sec, aid));
+                        ClientPlayNetworking.send(new TimelineControlC2S("MOVE_UP", sec, aid));
                     });
                     row.addView(upBtn, new LinearLayout.LayoutParams(-2, -2));
                     Button downBtn = new Button(ctx);
                     downBtn.setText("↓");
                     downBtn.setOnClickListener(v -> {
                         applyLocalTimelineMove(sec, aid, 1);
-                        ClientPlayNetworking.send(new TimelineControlC2SPacket("MOVE_DOWN", sec, aid));
+                        ClientPlayNetworking.send(new TimelineControlC2S("MOVE_DOWN", sec, aid));
                     });
                     row.addView(downBtn, new LinearLayout.LayoutParams(-2, -2));
                 }
@@ -980,7 +980,7 @@ public class ActionEditorFragment extends Fragment {
             delSecBtn.setText("⊗");
             delSecBtn.setOnClickListener(v -> {
                 applyLocalTimelineRemoveSecond(sec);
-                ClientPlayNetworking.send(new TimelineControlC2SPacket("REMOVE_SECOND", sec, ""));
+                ClientPlayNetworking.send(new TimelineControlC2S("REMOVE_SECOND", sec, ""));
             });
             row.addView(delSecBtn, new LinearLayout.LayoutParams(-2, -2));
 
@@ -1003,7 +1003,7 @@ public class ActionEditorFragment extends Fragment {
             try {
                 int sec = Integer.parseInt(addSecField.getText().toString());
                 applyLocalTimelineAdd(sec, "");
-                ClientPlayNetworking.send(new TimelineControlC2SPacket("ADD", sec, ""));
+                ClientPlayNetworking.send(new TimelineControlC2S("ADD", sec, ""));
                 addSecField.getText().clear();
                 addSecField.getText().append("0");
             } catch (Exception ignored) {}
@@ -1256,7 +1256,7 @@ public class ActionEditorFragment extends Fragment {
             TextView delSec = compactTimelineText(ctx, "x", 0xFFFF7777);
             delSec.setOnClickListener(v -> {
                 applyLocalTimelineRemoveSecond(rowSec);
-                ClientPlayNetworking.send(new TimelineControlC2SPacket("REMOVE_SECOND", rowSec, ""));
+                ClientPlayNetworking.send(new TimelineControlC2S("REMOVE_SECOND", rowSec, ""));
             });
             header.addView(delSec, new LinearLayout.LayoutParams(-2, -2));
             block.addView(header, new LinearLayout.LayoutParams(-1, -2));
@@ -1286,7 +1286,7 @@ public class ActionEditorFragment extends Fragment {
                     up.setOnClickListener(v -> {
                         selectTimelineSecond(rowSec, false);
                         applyLocalTimelineMove(rowSec, actionId, -1);
-                        ClientPlayNetworking.send(new TimelineControlC2SPacket("MOVE_UP", rowSec, actionId));
+                        ClientPlayNetworking.send(new TimelineControlC2S("MOVE_UP", rowSec, actionId));
                     });
                     actionRow.addView(up, new LinearLayout.LayoutParams(-2, -2));
 
@@ -1294,7 +1294,7 @@ public class ActionEditorFragment extends Fragment {
                     down.setOnClickListener(v -> {
                         selectTimelineSecond(rowSec, false);
                         applyLocalTimelineMove(rowSec, actionId, 1);
-                        ClientPlayNetworking.send(new TimelineControlC2SPacket("MOVE_DOWN", rowSec, actionId));
+                        ClientPlayNetworking.send(new TimelineControlC2S("MOVE_DOWN", rowSec, actionId));
                     });
                     actionRow.addView(down, new LinearLayout.LayoutParams(-2, -2));
                 }
@@ -1303,7 +1303,7 @@ public class ActionEditorFragment extends Fragment {
                 remove.setOnClickListener(v -> {
                     selectTimelineSecond(rowSec, false);
                     applyLocalTimelineRemove(rowSec, actionId);
-                    ClientPlayNetworking.send(new TimelineControlC2SPacket("REMOVE", rowSec, actionId));
+                    ClientPlayNetworking.send(new TimelineControlC2S("REMOVE", rowSec, actionId));
                 });
                 actionRow.addView(remove, new LinearLayout.LayoutParams(-2, -2));
                 block.addView(actionRow, new LinearLayout.LayoutParams(-1, -2));
@@ -1318,7 +1318,7 @@ public class ActionEditorFragment extends Fragment {
             int sec = getDefaultNewTimelineSecond();
             selectTimelineSecond(sec, false);
             applyLocalTimelineAdd(sec, "");
-            ClientPlayNetworking.send(new TimelineControlC2SPacket("ADD", sec, ""));
+            ClientPlayNetworking.send(new TimelineControlC2S("ADD", sec, ""));
         });
         timelineRowsContainer.addView(addBtn, new LinearLayout.LayoutParams(-1, -2));
     }
@@ -1403,7 +1403,7 @@ public class ActionEditorFragment extends Fragment {
     private void doPreview() {
         if (selectedIndex < 0) return;
         ActionConfig.ActionDef def = localConfig.actions.get(selectedIndex);
-        ClientPlayNetworking.send(new PreviewActionC2SPacket(GSON.toJson(def)));
+        ClientPlayNetworking.send(new PreviewActionC2S(GSON.toJson(def)));
     }
 
     // ══════════════════════════════════════════════════
@@ -1425,7 +1425,7 @@ public class ActionEditorFragment extends Fragment {
         dirty = false;
         lastChangeTime = 0;
         if (rootView != null) rootView.removeCallbacks(autoSaveRunnable);
-        ClientPlayNetworking.send(new UpdateActionsConfigC2SPacket(localConfig.toJson()));
+        ClientPlayNetworking.send(new UpdateActionsConfigC2S(localConfig.toJson()));
         if (MinecraftClient.getInstance().player != null)
             MinecraftClient.getInstance().player.sendMessage(Text.literal("§a已保存"), true);
     }
@@ -1499,7 +1499,7 @@ public class ActionEditorFragment extends Fragment {
         }
     }
 
-    public void receiveTimelinePreviewResult(List<PreviewTimelineResultS2CPacket.PreviewEntry> entries) {
+    public void receiveTimelinePreviewResult(List<PreviewTimelineResultS2C.PreviewEntry> entries) {
         StringBuilder sb = new StringBuilder(logTextView.getText());
         sb.append("§6===== 时间轴预览 =====\n");
         int currentSec = -1;

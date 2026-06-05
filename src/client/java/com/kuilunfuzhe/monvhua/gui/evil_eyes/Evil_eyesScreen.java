@@ -1,7 +1,7 @@
 package com.kuilunfuzhe.monvhua.gui.evil_eyes;
 
-import com.kuilunfuzhe.monvhua.network.evil_eyes.SelectViewPayload;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.UnmarkEntityPayload;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.SelectView;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.UnmarkEntityC2S;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -100,7 +100,7 @@ public class Evil_eyesScreen extends Screen {
             int btnWidth = leftWidth - 10 - 20;
             // 实体名称按钮 - 点击选择观看
             ButtonWidget nameBtn = ButtonWidget.builder(Text.literal(name), button -> {
-                        ClientPlayNetworking.send(new SelectViewPayload(uuid));
+                        ClientPlayNetworking.send(new SelectView(uuid));
                         if (client != null && client.player != null) {
                             client.player.sendMessage(Text.literal("§a正在切换到 " + name), true);
                         }
@@ -111,7 +111,7 @@ public class Evil_eyesScreen extends Screen {
             // 删除按钮 - 点击取消标记（立即本地移除 + 服务端同步）
             ButtonWidget delBtn = ButtonWidget.builder(Text.literal("✕"), button -> {
                         removeFromLocalList(uuid);
-                        ClientPlayNetworking.send(new UnmarkEntityPayload(uuid));
+                        ClientPlayNetworking.send(new UnmarkEntityC2S(uuid));
                     })
                     .dimensions(panelX + 5 + btnWidth + 2, panelY + yOffset, 18, 20)
                     .build();

@@ -3,7 +3,7 @@ package com.kuilunfuzhe.monvhua.features.evil_eyes;
 import com.kuilunfuzhe.monvhua.config.GlobalConfigManager;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
 import com.kuilunfuzhe.monvhua.item.evil_eyes.ClairvoyanceItem;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
 //import com.shushuwonie.client.network.clairvoyance.*;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -134,14 +134,14 @@ public class Evil_Eyes {
     private static final UUID CLEAR_SIGNAL = new UUID(0, 0);
 
     private static void sendMarkedListToClient(ServerPlayerEntity player, Map<UUID, Long> marks, int maxDisplayCount) {
-        ServerPlayNetworking.send(player, new EntityMarkedPayload(CLEAR_SIGNAL, ""));
+        ServerPlayNetworking.send(player, new EntityMarkedS2C(CLEAR_SIGNAL, ""));
         for (Map.Entry<UUID, Long> entry : marks.entrySet()) {
             UUID uuid = entry.getKey();
             Entity e = player.getWorld().getEntity(uuid);
             // 过滤锚点盔甲架
             if (isAnchorStand(e)) continue;
             String name = (e != null) ? e.getName().getString() : "未知";
-            ServerPlayNetworking.send(player, new EntityMarkedPayload(uuid, name));
+            ServerPlayNetworking.send(player, new EntityMarkedS2C(uuid, name));
         }
     }
 
@@ -199,7 +199,7 @@ public class Evil_Eyes {
         // 向半径64格（64^2=4096）内的所有玩家发送爆炸包
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             if (player.squaredDistanceTo(pos) < PARTICLE_BROADCAST_RANGE_SQ) {
-                ServerPlayNetworking.send(player, new ExplosionParticleS2CPacket(pos));
+                ServerPlayNetworking.send(player, new ExplosionParticleS2C(pos));
             }
         }
     }
@@ -234,7 +234,7 @@ public class Evil_Eyes {
      */
     public static void forceStopWatching(ServerPlayerEntity player, MinecraftServer server) {
         watchingPlayers.remove(player.getUuid());
-        ServerPlayNetworking.send(player, new ForceExitViewPayload());
+        ServerPlayNetworking.send(player, new ForceExitViewS2C());
     }
 
     /**
@@ -339,10 +339,10 @@ public class Evil_Eyes {
         Evil_Eyes.configManager = configManager;
 
 
-//        SelectViewPayload.register();      // 客户端到服务端
-//        MarkEntityPayload.register();      // 客户端到服务端
-//        ExitViewPayload.register();        // 客户端到服务端
-//        ForceExitViewPayload.register();   // 客户端到服务端
+//        SelectView.register();      // 客户端到服务端
+//        MarkEntityC2S.register();      // 客户端到服务端
+//        ExitViewC2S.register();        // 客户端到服务端
+//        ForceExitViewS2C.register();   // 客户端到服务端
 
         Identifier id = Identifier.of("monvhua", "clairvoyance");
         RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM, id);
@@ -358,14 +358,14 @@ public class Evil_Eyes {
 
 
         // 处理客户端请求全局配置
-        ServerPlayNetworking.registerGlobalReceiver(RequestGlobalConfigC2SPacket.ID, (packet, context) -> {
+        ServerPlayNetworking.registerGlobalReceiver(RequestGlobalConfigC2S.ID, (packet, context) -> {
             ServerPlayerEntity player = context.player();
             String configJson = configManager.getConfigJson(); // 你需要实现这个方法，将当前配置序列化为 JSON
-            ServerPlayNetworking.send(player, new GlobalConfigS2CPacket(configJson));
+            ServerPlayNetworking.send(player, new GlobalConfigS2C(configJson));
         });
 
 // 处理客户端更新配置（仅允许 OP 或创造模式玩家执行）
-        ServerPlayNetworking.registerGlobalReceiver(UpdateGlobalConfigC2SPacket.ID, (packet, context) -> {
+        ServerPlayNetworking.registerGlobalReceiver(UpdateGlobalConfigC2S.ID, (packet, context) -> {
             ServerPlayerEntity player = context.player();
             // 权限检查：建议只允许服主或拥有特定权限的玩家修改
             if (!player.hasPermissionLevel(2)) {
@@ -387,7 +387,7 @@ public class Evil_Eyes {
             configManager.save();
             // 广播给所有在线玩家
             String newConfigJson = configManager.getConfigJson();
-            GlobalConfigS2CPacket configPacket = new GlobalConfigS2CPacket(newConfigJson);
+            GlobalConfigS2C configPacket = new GlobalConfigS2C(newConfigJson);
             for (ServerPlayerEntity onlinePlayer : player.getServer().getPlayerManager().getPlayerList()) {
                 ServerPlayNetworking.send(onlinePlayer, configPacket);
             }
@@ -397,7 +397,7 @@ public class Evil_Eyes {
 
 
         // 1. 手动标记/取消标记（不消耗每日次数）
-        ServerPlayNetworking.registerGlobalReceiver(MarkEntityPayload.ID, (payload, context) -> {
+        ServerPlayNetworking.registerGlobalReceiver(MarkEntityC2S.ID, (payload, context) -> {
             ServerPlayerEntity player = context.player();
             World world = player.getWorld();
             Entity target = world.getEntityById(payload.entityId());
@@ -432,7 +432,7 @@ public class Evil_Eyes {
         });
 
 // 1.5 手动取消标记（从GUI点击删除）
-        ServerPlayNetworking.registerGlobalReceiver(UnmarkEntityPayload.ID, (payload, context) -> {
+        ServerPlayNetworking.registerGlobalReceiver(UnmarkEntityC2S.ID, (payload, context) -> {
             ServerPlayerEntity player = context.player();
             UUID targetUuid = payload.entityUuid();
             Map<UUID, Long> marks = playerMarkedEntities.get(player.getUuid());
@@ -468,7 +468,7 @@ public class Evil_Eyes {
                     }
                     // 无论是否已扣除，只要达到时长就强制退出观看
                     CameraWatchManager.stopWatching(player, server);
-                    ServerPlayNetworking.send(player, new ForceExitViewPayload());
+                    ServerPlayNetworking.send(player, new ForceExitViewS2C());
                     watchingPlayers.remove(playerUuid);
                     player.sendMessage(Text.literal("§8头昏脑胀，看来只能看到这了"), true);
                 }
@@ -476,17 +476,17 @@ public class Evil_Eyes {
         });
 
         // 3. 退出观看
-        ServerPlayNetworking.registerGlobalReceiver(ExitViewPayload.ID, (payload, context) -> {
+        ServerPlayNetworking.registerGlobalReceiver(ExitViewC2S.ID, (payload, context) -> {
             ServerPlayerEntity player = context.player();
             playerMarkedEntities.remove(player.getUuid());
             CameraWatchManager.stopWatching(player, player.getServer());
             watchingPlayers.remove(player.getUuid());
-            ServerPlayNetworking.send(player, new ForceExitViewPayload());
+            ServerPlayNetworking.send(player, new ForceExitViewS2C());
             player.sendMessage(Text.literal("§e已退出观看"), true);
         });
 
         // 4. 选择观看实体（需在锚点30格范围内）
-        ServerPlayNetworking.registerGlobalReceiver(SelectViewPayload.ID, (payload, context) -> {
+        ServerPlayNetworking.registerGlobalReceiver(SelectView.ID, (payload, context) -> {
             ServerPlayerEntity player = context.player();
             UUID selected = payload.entityUuid();
             Map<UUID, Long> marks = playerMarkedEntities.get(player.getUuid());
@@ -525,7 +525,7 @@ public class Evil_Eyes {
             String mode = com.kuilunfuzhe.monvhua.MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "modern");
             if ("legacy".equals(mode)) {
                 // 旧系统：通知客户端使用本地盔甲架相机
-                ServerPlayNetworking.send(player, new SelectViewPayload(selected));
+                ServerPlayNetworking.send(player, new SelectView(selected));
             } else {
                 // 新系统（默认）：服务端 CameraWatch
                 CameraWatchManager.startWatching(player, selected, player.getServer());
@@ -538,7 +538,7 @@ public class Evil_Eyes {
                 if (playerMarkedEntities.containsKey(player.getUuid())) {
                     playerMarkedEntities.remove(player.getUuid());
                     CameraWatchManager.stopWatching(player, player.getServer());
-                    ServerPlayNetworking.send(player, new ForceExitViewPayload());
+                    ServerPlayNetworking.send(player, new ForceExitViewS2C());
                     player.sendMessage(Text.literal("§c受到攻击，观看中断"), true);
                 }
             }
@@ -642,7 +642,7 @@ public class Evil_Eyes {
         });
 
         // ==================== 盔甲架锚点功能 ====================
-        ServerPlayNetworking.registerGlobalReceiver(PlaceParrotC2SPacket.ID, (packet, context) -> {
+        ServerPlayNetworking.registerGlobalReceiver(PlaceParrotC2S.ID, (packet, context) -> {
             ServerPlayerEntity player = context.player();
             World world = player.getWorld();
             Vec3d pos = packet.pos();
@@ -721,8 +721,8 @@ public class Evil_Eyes {
                     // 广播给所有附近玩家
                     for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                         if (player.squaredDistanceTo(stand) < PARTICLE_BROADCAST_RANGE_SQ) { // 64格半径
-                            ServerPlayNetworking.send(player, new AnchorParticleS2CPacket(standId, chestPos, 0));
-                            ServerPlayNetworking.send(player, new AnchorParticleS2CPacket(standId, chestPos, 1));
+                            ServerPlayNetworking.send(player, new AnchorParticleS2C(standId, chestPos, 0));
+                            ServerPlayNetworking.send(player, new AnchorParticleS2C(standId, chestPos, 1));
                         }
                     }
                     // 也可广播给所有玩家，根据需要
@@ -798,7 +798,7 @@ public class Evil_Eyes {
             if (server.getTicks() % TICKS_PER_SECOND == 0) { // 每秒同步一次阶段
                 for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                     int stage = getPlayerStage(player, configManager);
-                    ServerPlayNetworking.send(player, new PlayerStageS2CPacket(stage));
+                    ServerPlayNetworking.send(player, new PlayerStageS2C(stage));
                 }
             }
         });

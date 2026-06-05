@@ -9,11 +9,11 @@ import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.MagicPacket;
 import com.kuilunfuzhe.monvhua.network.openback.OpenOtherInventoryPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
-import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeC2SPacket;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ChargeC2S;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.renderer.Font_Render;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.AnchorButtonRenderer;
@@ -76,11 +76,11 @@ public class ClientTickHandler {
                         }
                     }
                     if (entityTarget != null && entityDist <= blockDist) {
-                        SafeClientNetworking.send(new MarkEntityPayload(entityTarget.getId()));
+                        SafeClientNetworking.send(new MarkEntityC2S(entityTarget.getId()));
                     } else if (hit.getType() == HitResult.Type.BLOCK) {
                         BlockHitResult blockHit = (BlockHitResult) hit;
                         Vec3d pos = blockHit.getPos().add(0, 2.2, 0);
-                        SafeClientNetworking.send(new PlaceParrotC2SPacket(pos));
+                        SafeClientNetworking.send(new PlaceParrotC2S(pos));
                         for (int i = 0; i < 30; i++)
                             client.particleManager.addParticle(ParticleTypes.ENCHANT, pos.x, pos.y, pos.z, 0, 0.5, 0);
                     } else {
@@ -114,7 +114,7 @@ public class ClientTickHandler {
             if (rightPressed != lastMirrorRightClick) {
                 lastMirrorRightClick = rightPressed;
                 if (client.player.getMainHandStack().getItem() == mirror_of_then_and_now.MIRROR_ITEM) {
-                    SafeClientNetworking.send(new MirrorChargeC2SPacket(rightPressed));
+                    SafeClientNetworking.send(new ChargeC2S(rightPressed));
                 }
             }
         });
@@ -123,7 +123,7 @@ public class ClientTickHandler {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player != null && !hasRequestedConfig) {
                 hasRequestedConfig = true;
-                SafeClientNetworking.send(new RequestGlobalConfigC2SPacket());
+                SafeClientNetworking.send(new RequestGlobalConfigC2S());
             }
         });
 

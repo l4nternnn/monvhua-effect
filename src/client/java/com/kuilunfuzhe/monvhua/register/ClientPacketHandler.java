@@ -18,16 +18,16 @@ import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
-import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeSyncS2CPacket;
-import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigS2CPacket;
-import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ChargeSyncS2C;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ConfigS2C;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.StateS2C;
 import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
-import com.kuilunfuzhe.monvhua.network.action.*;
+import com.kuilunfuzhe.monvhua.network.action.ActionPackets.*;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.AnchorButtonRenderer;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.BackTextureRenderer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -54,14 +54,14 @@ public class ClientPacketHandler {
      */
     public static void register() {
         // 1. 千里眼全局配置接收
-        ClientPlayNetworking.registerGlobalReceiver(GlobalConfigS2CPacket.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(GlobalConfigS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 try {
                     JsonObject root = JsonParser.parseString(packet.json()).getAsJsonObject();
-                    GlobalConfigS2CPacket.StageConfig[] configs = new GlobalConfigS2CPacket.StageConfig[7];
+                    GlobalConfigS2C.StageConfig[] configs = new GlobalConfigS2C.StageConfig[7];
                     for (int i = 1; i <= 7; i++) {
                         JsonObject stageObj = root.getAsJsonObject("stage" + i);
-                        configs[i - 1] = new GlobalConfigS2CPacket.StageConfig(
+                        configs[i - 1] = new GlobalConfigS2C.StageConfig(
                                 stageObj.get("dailyLimit").getAsInt(),
                                 stageObj.get("maxMarks").getAsInt(),
                                 stageObj.get("minScore").getAsInt(),
@@ -80,7 +80,7 @@ public class ClientPacketHandler {
         });
 
         // 2. 打开/关闭 UI（旧系统）
-        ClientPlayNetworking.registerGlobalReceiver(OpenUIPacket.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(OpenUIS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 if (context.client().currentScreen instanceof com.kuilunfuzhe.monvhua.gui.evil_eyes.Evil_eyesScreen) context.client().setScreen(null);
                 else context.client().setScreen(new com.kuilunfuzhe.monvhua.gui.evil_eyes.Evil_eyesScreen());
@@ -88,7 +88,7 @@ public class ClientPacketHandler {
         });
 
         // 3. 实体标记更新
-        ClientPlayNetworking.registerGlobalReceiver(EntityMarkedPayload.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(EntityMarkedS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 UUID uuid = packet.entityUuid();
                 if (uuid.getMostSignificantBits() == 0 && uuid.getLeastSignificantBits() == 0) {
@@ -108,7 +108,7 @@ public class ClientPacketHandler {
         });
 
         // 5. 选择观看
-        ClientPlayNetworking.registerGlobalReceiver(SelectViewPayload.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(SelectView.ID, (packet, context) -> {
             context.client().execute(() -> {
                 CameraWatchClientHandler.onUnbind();
                 Evil_EyesClient.onSelectView(packet.entityUuid());
@@ -116,7 +116,7 @@ public class ClientPacketHandler {
         });
 
         // 6. 强制退出观看（旧系统）
-        ClientPlayNetworking.registerGlobalReceiver(ForceExitViewPayload.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(ForceExitViewS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 CameraWatchClientHandler.onUnbind();
                 Evil_EyesClient.exitViewMode(context.client());
@@ -144,7 +144,7 @@ public class ClientPacketHandler {
         });
 
         // mirror config sync S2C
-        ClientPlayNetworking.registerGlobalReceiver(MirrorConfigS2CPacket.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(ConfigS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 MirrorConfig config = MirrorConfig.fromJson(packet.json());
                 if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
@@ -202,7 +202,7 @@ public class ClientPacketHandler {
         });
 
         // 13. 锚点粒子接收（同时缓存位置）
-        ClientPlayNetworking.registerGlobalReceiver(AnchorParticleS2CPacket.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(AnchorParticleS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 MinecraftClient client = context.client();
                 if (client.world == null) return;
@@ -224,7 +224,7 @@ public class ClientPacketHandler {
         });
 
         // 14. 玩家阶段同步
-        ClientPlayNetworking.registerGlobalReceiver(PlayerStageS2CPacket.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(PlayerStageS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 int newStage = packet.stage();
                 MonvhuaModClient.currentPlayerStage = newStage;
@@ -242,7 +242,7 @@ public class ClientPacketHandler {
         });
 
         // 15. 爆炸粒子接收
-        ClientPlayNetworking.registerGlobalReceiver(ExplosionParticleS2CPacket.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(ExplosionParticleS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 MinecraftClient client = context.client();
                 if (client.world == null) return;
@@ -258,12 +258,12 @@ public class ClientPacketHandler {
         });
 
         // 镜像视图 S2C 接收
-        ClientPlayNetworking.registerGlobalReceiver(MirrorStateS2CPacket.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(StateS2C.ID, (packet, context) -> {
             context.client().execute(() -> MirrorClientManager.onStatePacket(packet));
         });
 
         // 镜像充能同步接收
-        ClientPlayNetworking.registerGlobalReceiver(MirrorChargeSyncS2CPacket.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(ChargeSyncS2C.ID, (packet, context) -> {
             context.client().execute(() -> MirrorClientManager.setCharge(packet.currentTicks(), packet.maxTicks()));
         });
 
@@ -271,35 +271,35 @@ public class ClientPacketHandler {
             context.client().execute(() -> CarryPoseClientState.apply(packet));
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(ActionsConfigS2CPacket.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(ActionsConfigS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 ActionEditorFragment inst = ActionEditorFragment.activeInstance;
                 if (inst != null) inst.receiveConfig(ActionConfig.fromJson(packet.json()));
             });
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(ActionFilesListS2CPacket.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(ActionFilesListS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 ActionEditorFragment inst = ActionEditorFragment.activeInstance;
                 if (inst != null) inst.receiveFileList(packet.files());
             });
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(PreviewResultS2CPacket.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(PreviewResultS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 ActionEditorFragment inst = ActionEditorFragment.activeInstance;
                 if (inst != null) inst.receivePreviewResult(packet.actionId(), packet.previewText());
             });
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(PreviewTimelineResultS2CPacket.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(PreviewTimelineResultS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 ActionEditorFragment inst = ActionEditorFragment.activeInstance;
                 if (inst != null) inst.receiveTimelinePreviewResult(packet.entries());
             });
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(TimelineStateS2CPacket.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(TimelineStateS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 TimelineClientState.currentSecond = packet.currentSecond();
                 TimelineClientState.running = packet.running();
@@ -312,7 +312,7 @@ public class ClientPacketHandler {
             });
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(ActionPoseS2CPacket.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(ActionPoseS2C.ID, (packet, context) -> {
             context.client().execute(() ->
                     ActionPoseClientState.apply(packet.entityId(), packet.poseValues(), packet.durationTicks()));
         });

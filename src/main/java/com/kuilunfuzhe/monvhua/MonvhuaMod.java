@@ -36,7 +36,7 @@ import com.kuilunfuzhe.monvhua.network.bodypose.ApplySkeletalPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.*;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
@@ -49,13 +49,13 @@ import com.kuilunfuzhe.monvhua.network.imitate.SilencePacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SoundWavePacket;
 import com.kuilunfuzhe.monvhua.network.imitate.UpdateImitateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
-import com.kuilunfuzhe.monvhua.network.action.*;
-import com.kuilunfuzhe.monvhua.network.mirror.MirrorChargeC2SPacket;
-import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigS2CPacket;
-import com.kuilunfuzhe.monvhua.network.mirror.MirrorConfigUpdateC2SPacket;
-import com.kuilunfuzhe.monvhua.network.mirror.MirrorStateS2CPacket;
-import com.kuilunfuzhe.monvhua.network.mirror.MirrorToggleC2SPacket;
-import com.kuilunfuzhe.monvhua.network.mirror.RequestMirrorConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.action.ActionPackets.*;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ChargeC2S;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ConfigS2C;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ConfigUpdateC2S;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.StateS2C;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ToggleC2S;
+import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.RequestConfigC2S;
 import com.kuilunfuzhe.monvhua.network.openback.CarryEntityPayload;
 import com.kuilunfuzhe.monvhua.network.openback.OpenOtherInventoryPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
@@ -156,12 +156,12 @@ public class MonvhuaMod implements ModInitializer {
 
         // ===== 2. 网络包注册 =====
         ModNetworking.registerS2CPackets();
-        GlobalConfigS2CPacket.register();
-        OpenUIPacket.register();
-        EntityMarkedPayload.register();
+        GlobalConfigS2C.register();
+        OpenUIS2C.register();
+        EntityMarkedS2C.register();
         ToggleImagesS2CPacket.register();
-        SelectViewPayload.register();
-        ForceExitViewPayload.register();
+        SelectView.register();
+        ForceExitViewS2C.register();
         MarkParticleS2CPacket.register();
         SyncConfigS2CPacket.register();
         EnergySyncPacket.register();
@@ -169,38 +169,38 @@ public class MonvhuaMod implements ModInitializer {
         FocusStatusPacket.register();
         ParticlePacket.register();
         StrengthPacket.register();
-        AnchorParticleS2CPacket.register();
-        PlayerStageS2CPacket.register();
-        ExplosionParticleS2CPacket.register();
+        AnchorParticleS2C.register();
+        PlayerStageS2C.register();
+        ExplosionParticleS2C.register();
         CameraWatchBindS2CPacket.register();
         CameraWatchUnbindS2CPacket.register();
         CameraUpdateS2CPacket.register();
-        MirrorStateS2CPacket.register();
-        MirrorConfigS2CPacket.register();
+        StateS2C.register();
+        ConfigS2C.register();
         SecrecyConfigS2CPacket.register();
         SecrecyStateS2CPacket.register();
 
         ModNetworking.registerC2SPackets();
         CosmicBoxNetworking.registerServerReceivers();
-        MarkEntityPayload.register();
-        ExitViewPayload.register();
+        MarkEntityC2S.register();
+        ExitViewC2S.register();
         MagicPacket.register();
         RightClickActionPacket.register();
         RequestConfigC2SPacket.register();
         UpdateConfigC2SPacket.register();
-        RequestGlobalConfigC2SPacket.register();
-        UpdateGlobalConfigC2SPacket.register();
-        PlaceParrotC2SPacket.register();
-        AnchorDestroyC2SPacket.register();
+        RequestGlobalConfigC2S.register();
+        UpdateGlobalConfigC2S.register();
+        PlaceParrotC2S.register();
+        AnchorDestroyC2S.register();
         OpenOtherInventoryPayload.register();
         CarryEntityPayload.register();
         PlaceCarriedEntityPayload.register();
         PlacePosedBodyC2SPacket.register();
         CameraWatchStartC2SPacket.register();
         CameraWatchStopC2SPacket.register();
-        MirrorToggleC2SPacket.register();
-        MirrorConfigUpdateC2SPacket.register();
-        RequestMirrorConfigC2SPacket.register();
+        ToggleC2S.register();
+        ConfigUpdateC2S.register();
+        RequestConfigC2S.register();
         RequestSecrecyConfigC2SPacket.register();
         SecrecyConfigUpdateC2SPacket.register();
         ImitateSelectPacket.register();
@@ -208,11 +208,11 @@ public class MonvhuaMod implements ModInitializer {
         SilencePacket.register();
         SilenceEffectS2CPacket.register();
 
-        ServerPlayNetworking.registerGlobalReceiver(MirrorToggleC2SPacket.ID, (packet, context) -> {
+        ServerPlayNetworking.registerGlobalReceiver(ToggleC2S.ID, (packet, context) -> {
             MirrorCommand.toggleViewport(context.player());
         });
 
-        ServerPlayNetworking.registerGlobalReceiver(MirrorChargeC2SPacket.ID, (packet, context) -> {
+        ServerPlayNetworking.registerGlobalReceiver(ChargeC2S.ID, (packet, context) -> {
             context.server().execute(() -> {
                 ServerPlayerEntity player = context.player();
                 if (player.getMainHandStack().getItem() == mirror_of_then_and_now.MIRROR_ITEM) {
@@ -225,13 +225,13 @@ public class MonvhuaMod implements ModInitializer {
             });
         });
 
-        ServerPlayNetworking.registerGlobalReceiver(MirrorConfigUpdateC2SPacket.ID, (packet, context) -> {
+        ServerPlayNetworking.registerGlobalReceiver(ConfigUpdateC2S.ID, (packet, context) -> {
             context.server().execute(() -> {
                 MirrorConfig newConfig = MirrorConfig.fromJson(packet.json());
                 if (newConfig != null) {
                     MirrorConfig.setInstance(newConfig);
                     for (ServerPlayerEntity p : context.server().getPlayerManager().getPlayerList()) {
-                        ServerPlayNetworking.send(p, new MirrorConfigS2CPacket(newConfig.toJson()));
+                        ServerPlayNetworking.send(p, new ConfigS2C(newConfig.toJson()));
                     }
                     if (context.player() != null) {
                         context.player().sendMessage(Text.literal("§a镜子配置已更新并同步"), true);
@@ -240,9 +240,9 @@ public class MonvhuaMod implements ModInitializer {
             });
         });
 
-        ServerPlayNetworking.registerGlobalReceiver(RequestMirrorConfigC2SPacket.ID, (packet, context) -> {
+        ServerPlayNetworking.registerGlobalReceiver(RequestConfigC2S.ID, (packet, context) -> {
             MirrorConfig config = MirrorConfig.getInstance();
-            ServerPlayNetworking.send(context.player(), new MirrorConfigS2CPacket(config.toJson()));
+            ServerPlayNetworking.send(context.player(), new ConfigS2C(config.toJson()));
         });
 
         ServerPlayNetworking.registerGlobalReceiver(RequestSecrecyConfigC2SPacket.ID, (packet, context) -> {
@@ -372,7 +372,7 @@ public class MonvhuaMod implements ModInitializer {
         TimelineScheduler.initialize(actionConfig);
         ServerTickEvents.END_SERVER_TICK.register(TimelineScheduler::tick);
 
-        ServerPlayNetworking.registerGlobalReceiver(RequestGlobalConfigC2SPacket.ID, (packet, context) -> {
+        ServerPlayNetworking.registerGlobalReceiver(RequestGlobalConfigC2S.ID, (packet, context) -> {
             sendGlobalConfigToPlayer(context.player(), configManager);
         });
 
@@ -381,7 +381,7 @@ public class MonvhuaMod implements ModInitializer {
             ServerPlayNetworking.send(player, new SyncConfigS2CPacket(GazeConfig.getInstance().toJson()));
         });
 
-        ServerPlayNetworking.registerGlobalReceiver(UpdateGlobalConfigC2SPacket.ID, (packet, context) -> {
+        ServerPlayNetworking.registerGlobalReceiver(UpdateGlobalConfigC2S.ID, (packet, context) -> {
             if (context.player().hasPermissionLevel(2)) {
                 configManager.updateStageConfig(packet.stage(), packet.dailyLimit(), packet.maxMarks(),
                         packet.minScore(), packet.maxScore(), packet.watchRequiredTicks(), packet.parrotDailyLimit(), packet.maxActiveParrots()
@@ -403,7 +403,7 @@ public class MonvhuaMod implements ModInitializer {
             ServerPlayerEntity player = handler.getPlayer();
             sendGlobalConfigToPlayer(player, configManager);
             int stage = Evil_Eyes.getPlayerStage(player, configManager);
-            ServerPlayNetworking.send(player, new PlayerStageS2CPacket(stage));
+            ServerPlayNetworking.send(player, new PlayerStageS2C(stage));
             MirrorCommand.syncToClient(player);
             ServerPlayNetworking.send(player, new SecrecyConfigS2CPacket(SecrecyConfig.getInstance().toJson()));
 
@@ -500,7 +500,7 @@ public class MonvhuaMod implements ModInitializer {
         Registry.register(Registries.SCREEN_HANDLER, Identifier.of(MOD_ID, "other_inventory"), OTHER_INVENTORY_HANDLER);
 
         // ===== 11. 锚点破坏 =====
-        ServerPlayNetworking.registerGlobalReceiver(AnchorDestroyC2SPacket.ID, (packet, context) -> {
+        ServerPlayNetworking.registerGlobalReceiver(AnchorDestroyC2S.ID, (packet, context) -> {
             ServerPlayerEntity player = context.player();
             UUID standId = packet.standId();
             World world = player.getWorld();
@@ -659,10 +659,10 @@ public class MonvhuaMod implements ModInitializer {
     }
 
     private static void registerActionEditorReceivers() {
-        ServerPlayNetworking.registerGlobalReceiver(RequestActionsConfigC2SPacket.ID, (packet, context) ->
+        ServerPlayNetworking.registerGlobalReceiver(RequestActionsConfigC2S.ID, (packet, context) ->
                 context.server().execute(() -> sendActionsConfig(context.player())));
 
-        ServerPlayNetworking.registerGlobalReceiver(UpdateActionsConfigC2SPacket.ID, (packet, context) ->
+        ServerPlayNetworking.registerGlobalReceiver(UpdateActionsConfigC2S.ID, (packet, context) ->
                 context.server().execute(() -> {
                     ServerPlayerEntity player = context.player();
                     if (!canEditActions(player)) return;
@@ -676,22 +676,22 @@ public class MonvhuaMod implements ModInitializer {
                     }
                 }));
 
-        ServerPlayNetworking.registerGlobalReceiver(PreviewActionC2SPacket.ID, (packet, context) ->
+        ServerPlayNetworking.registerGlobalReceiver(PreviewActionC2S.ID, (packet, context) ->
                 context.server().execute(() -> {
                     try {
                         ActionConfig.ActionDef def = ActionConfig.actionDefFromJson(packet.actionJson());
                         String text = ActionExecutor.executePreviewText(def, context.player());
                         String id = def != null && def.id != null ? def.id : "";
-                        ServerPlayNetworking.send(context.player(), new PreviewResultS2CPacket(id, text));
+                        ServerPlayNetworking.send(context.player(), new PreviewResultS2C(id, text));
                     } catch (Exception e) {
-                        ServerPlayNetworking.send(context.player(), new PreviewResultS2CPacket("", "Preview failed: " + e.getMessage()));
+                        ServerPlayNetworking.send(context.player(), new PreviewResultS2C("", "Preview failed: " + e.getMessage()));
                     }
                 }));
 
-        ServerPlayNetworking.registerGlobalReceiver(PreviewTimelineC2SPacket.ID, (packet, context) ->
+        ServerPlayNetworking.registerGlobalReceiver(PreviewTimelineC2S.ID, (packet, context) ->
                 context.server().execute(() -> {
                     ActionConfig cfg = ActionConfig.getInstance();
-                    List<PreviewTimelineResultS2CPacket.PreviewEntry> entries = new ArrayList<>();
+                    List<PreviewTimelineResultS2C.PreviewEntry> entries = new ArrayList<>();
                     List<Integer> seconds = new ArrayList<>(cfg.timelineSchedule.keySet());
                     Collections.sort(seconds);
                     for (int second : seconds) {
@@ -700,18 +700,18 @@ public class MonvhuaMod implements ModInitializer {
                         for (String actionId : ids) {
                             if (actionId == null || actionId.isBlank()) continue;
                             cfg.findById(actionId).ifPresent(def -> entries.add(
-                                    new PreviewTimelineResultS2CPacket.PreviewEntry(second, actionId,
+                                    new PreviewTimelineResultS2C.PreviewEntry(second, actionId,
                                             ActionExecutor.executePreviewText(def, context.player()), def.actionType)));
                         }
                     }
                     if (entries.isEmpty()) {
-                        entries.add(new PreviewTimelineResultS2CPacket.PreviewEntry(0, "timeline",
+                        entries.add(new PreviewTimelineResultS2C.PreviewEntry(0, "timeline",
                                 "No timeline actions. Add actions to the timeline first, or check action ids.", "INFO"));
                     }
-                    ServerPlayNetworking.send(context.player(), new PreviewTimelineResultS2CPacket(entries));
+                    ServerPlayNetworking.send(context.player(), new PreviewTimelineResultS2C(entries));
                 }));
 
-        ServerPlayNetworking.registerGlobalReceiver(TimelineControlC2SPacket.ID, (packet, context) ->
+        ServerPlayNetworking.registerGlobalReceiver(TimelineControlC2S.ID, (packet, context) ->
                 context.server().execute(() -> {
                     ServerPlayerEntity player = context.player();
                     String action = packet.action() == null ? "" : packet.action().toUpperCase(Locale.ROOT);
@@ -757,11 +757,11 @@ public class MonvhuaMod implements ModInitializer {
                     if (changedSchedule) sendActionsConfig(player);
                 }));
 
-        ServerPlayNetworking.registerGlobalReceiver(ListActionFilesC2SPacket.ID, (packet, context) ->
+        ServerPlayNetworking.registerGlobalReceiver(ListActionFilesC2S.ID, (packet, context) ->
                 context.server().execute(() ->
-                        ServerPlayNetworking.send(context.player(), new ActionFilesListS2CPacket(listActionFiles()))));
+                        ServerPlayNetworking.send(context.player(), new ActionFilesListS2C(listActionFiles()))));
 
-        ServerPlayNetworking.registerGlobalReceiver(LoadActionFileC2SPacket.ID, (packet, context) ->
+        ServerPlayNetworking.registerGlobalReceiver(LoadActionFileC2S.ID, (packet, context) ->
                 context.server().execute(() -> {
                     ServerPlayerEntity player = context.player();
                     if (!canEditActions(player)) return;
@@ -787,9 +787,9 @@ public class MonvhuaMod implements ModInitializer {
 
     private static void sendActionsConfig(ServerPlayerEntity player) {
         ActionConfig cfg = ActionConfig.getInstance();
-        ServerPlayNetworking.send(player, new ActionsConfigS2CPacket(cfg.toJson()));
+        ServerPlayNetworking.send(player, new ActionsConfigS2C(cfg.toJson()));
         TimelineScheduler.PlayerTimelineState state = TimelineScheduler.getOrCreate(player);
-        ServerPlayNetworking.send(player, new TimelineStateS2CPacket(
+        ServerPlayNetworking.send(player, new TimelineStateS2C(
                 state.currentTick / 20, state.running, state.paused, state.loop, TimelineScheduler.getMaxSecond()));
     }
 
@@ -869,6 +869,6 @@ public class MonvhuaMod implements ModInitializer {
             root.add("stage" + i, stageObj);
         }
         String json = root.toString();
-        ServerPlayNetworking.send(player, new GlobalConfigS2CPacket(json));
+        ServerPlayNetworking.send(player, new GlobalConfigS2C(json));
     }
 }

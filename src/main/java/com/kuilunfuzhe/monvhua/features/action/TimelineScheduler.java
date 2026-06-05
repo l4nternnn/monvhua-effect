@@ -1,6 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.action;
 
-import com.kuilunfuzhe.monvhua.network.action.TimelineStateS2CPacket;
+import com.kuilunfuzhe.monvhua.network.action.ActionPackets.TimelineStateS2C;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -183,7 +183,7 @@ public class TimelineScheduler {
 
     private static void sendState(ServerPlayerEntity player, PlayerTimelineState state, int maxSecond) {
         try {
-            ServerPlayNetworking.send(player, new TimelineStateS2CPacket(
+            ServerPlayNetworking.send(player, new TimelineStateS2C(
                     state.currentTick / 20, state.running, state.paused, state.loop, maxSecond));
         } catch (Exception ignored) {}
     }
