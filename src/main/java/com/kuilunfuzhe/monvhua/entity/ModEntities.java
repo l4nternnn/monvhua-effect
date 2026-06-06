@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.entity;
 
+import com.kuilunfuzhe.monvhua.features.gravity.GravityBlockEntity;
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.SpawnGroup;
@@ -22,10 +23,21 @@ public class ModEntities {
                     .build(RegistryKey.of(RegistryKeys.ENTITY_TYPE, Identifier.of("monvhua", "test_mannequin"))) ; // 不需要传 Identifier，build() 会生成一个临时 ID，后面再注册
 
     // 2. 显式注册到注册表（这是标准做法）
+    public static final EntityType<GravityBlockEntity> GRAVITY_BLOCK =
+            EntityType.Builder.<GravityBlockEntity>create(GravityBlockEntity::new, SpawnGroup.MISC)
+                    .dimensions(0.98f, 0.98f)
+                    .maxTrackingRange(96)
+                    .trackingTickInterval(1)
+                    .build(RegistryKey.of(RegistryKeys.ENTITY_TYPE, Identifier.of("monvhua", "gravity_block")));
+
     public static void register() {
         Registry.register(Registries.ENTITY_TYPE,
                 Identifier.of("monvhua", "test_mannequin"),
                 TEST_MANNEQUIN
+        );
+        Registry.register(Registries.ENTITY_TYPE,
+                Identifier.of("monvhua", "gravity_block"),
+                GRAVITY_BLOCK
         );
 
         // 3. 关键：注册实体属性（生命值、移动速度等）
