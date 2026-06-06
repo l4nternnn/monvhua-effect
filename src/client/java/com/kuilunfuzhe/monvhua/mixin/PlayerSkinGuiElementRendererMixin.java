@@ -1,15 +1,19 @@
 package com.kuilunfuzhe.monvhua.mixin;
 
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorScreen;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.gui.render.PlayerSkinGuiElementRenderer;
 import net.minecraft.client.gui.render.state.special.PlayerSkinGuiElementRenderState;
 import net.minecraft.client.render.BufferBuilderStorage;
+import net.minecraft.client.render.DiffuseLighting;
+import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.math.RotationAxis;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -58,6 +62,38 @@ public abstract class PlayerSkinGuiElementRendererMixin {
 
 	@Unique
 	private static final int RING_PLANE_XY = 2;
+
+	@Inject(method = "render(Lnet/minecraft/client/gui/render/state/special/PlayerSkinGuiElementRenderState;Lnet/minecraft/client/util/math/MatrixStack;)V", at = @At("HEAD"), cancellable = true)
+	private void renderBodyPoseEditorPreview(PlayerSkinGuiElementRenderState state, MatrixStack matrixStack, CallbackInfo ci) {
+		if (BodyPoseEditorFragment.activeInstance == null) {
+			return;
+		}
+
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client == null) {
+			return;
+		}
+		client.gameRenderer.getDiffuseLighting().setShaderLights(DiffuseLighting.Type.PLAYER_SKIN);
+		VertexConsumerProvider.Immediate vertexConsumers = client.getBufferBuilders().getEntityVertexConsumers();
+		if (vertexConsumers == null) {
+			return;
+		}
+
+		matrixStack.push();
+		try {
+			matrixStack.translate(0.0F, -state.yPivot(), 0.0F);
+			matrixStack.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-state.xRotation()));
+			matrixStack.translate(0.0F, state.yPivot(), 0.0F);
+			matrixStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-state.yRotation()));
+			matrixStack.translate(0.0F, -1.6010001F, 0.0F);
+			RenderLayer renderLayer = state.playerModel().getLayer(state.texture());
+			state.playerModel().render(matrixStack, vertexConsumers.getBuffer(renderLayer), 15728880, OverlayTexture.DEFAULT_UV);
+			vertexConsumers.draw();
+		} finally {
+			matrixStack.pop();
+		}
+		ci.cancel();
+	}
 
 	@Inject(method = "render(Lnet/minecraft/client/gui/render/state/special/PlayerSkinGuiElementRenderState;Lnet/minecraft/client/util/math/MatrixStack;)V", at = @At("TAIL"))
 	private void renderCoordinateAxes3D(PlayerSkinGuiElementRenderState state, MatrixStack matrixStack, CallbackInfo ci) {

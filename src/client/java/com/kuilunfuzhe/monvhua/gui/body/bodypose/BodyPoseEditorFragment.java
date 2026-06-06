@@ -67,6 +67,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final float DEFAULT_PREVIEW_PAN_X = 0.0F;
     private static final float DEFAULT_PREVIEW_ZOOM = 0.65F;
     private static final float PREVIEW_SCALE_FACTOR = 0.36F;
+    private static final float PREVIEW_PITCH_BOUNDS_EXTRA_SCALE = 3.2F;
     private static final float PREVIEW_ZOOM_MIN = 0.08F;
     private static final float PREVIEW_ZOOM_MAX = 10.0F;
     private static final float PREVIEW_ZOOM_STEP = 0.16F;
@@ -1178,12 +1179,13 @@ public class BodyPoseEditorFragment extends Fragment {
                 : getPreviewBaseScale(previewAreaRight - previewAreaLeft, previewAreaBottom - previewAreaTop) * previewZoom;
         ScreenPoint modelCenter = projectPreviewPoint(modelOffsetX, modelOffsetY, modelOffsetZ);
         int modelWidth = Math.max(previewAreaRight - previewAreaLeft, Math.round(scale * 5.2F));
-        int modelHeight = Math.max(previewAreaBottom - previewAreaTop, Math.round(scale * 5.8F));
-        float pitchCos = (float) Math.cos(Math.toRadians(previewPitch));
+        float pitchSin = Math.abs((float) Math.sin(Math.toRadians(previewPitch)));
+        int modelHeight = Math.max(previewAreaBottom - previewAreaTop, Math.round(scale * 5.8F))
+                + Math.round(scale * PREVIEW_PITCH_BOUNDS_EXTRA_SCALE * pitchSin);
         int x1 = Math.round(modelCenter.x - modelWidth * 0.5F);
         int x2 = x1 + modelWidth;
-        int y1 = Math.round(modelCenter.y + scale * PREVIEW_Y_PIVOT - modelHeight * pitchCos);
-        int y2 = y1 + modelHeight;
+        int y2 = Math.round(modelCenter.y + scale * PREVIEW_Y_PIVOT);
+        int y1 = y2 - modelHeight;
         Identifier texture = getPreviewTexture();
 
         context.enableScissor(previewAreaLeft, previewAreaTop, previewAreaRight, previewAreaBottom);

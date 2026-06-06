@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.floating;
 
 import com.kuilunfuzhe.monvhua.config.GlobalConfigManager;
+import com.kuilunfuzhe.monvhua.item.config.FloatingConfig;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.GlobalConfigS2C;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -26,7 +27,6 @@ public class floating {
 
     // 能量系统
     private static final int MAX_ENERGY = 100;
-    private static final double REGEN_RATE = 10.0;
     private static final float DEFAULT_FLY_SPEED = 0.05f;
     private static final float CREATIVE_FLY_SPEED = 0.1f;
     private static java.util.Map<java.util.UUID, Double> playerEnergy = new java.util.HashMap<>();
@@ -37,10 +37,10 @@ public class floating {
     private static final int STAGES = 7;
     private static final int[] DEFAULT_STAGE_MIN = {0, 0, 6, 21, 41, 61, 71, 81};
     private static final int[] DEFAULT_STAGE_MAX = {0, 5, 20, 40, 60, 70, 80, 100};
-    private static final double[] STAGE_DRAIN_RATES = {0.0, 30.0, 24.0, 18.0, 12.0, 6.0, 4.0, 1.5};
-    private static final float[] STAGE_SPEED_MULTIPLIERS = {0.0f, 0.05f, 0.1f, 0.15f, 0.20f, 0.25f, 0.30f, 0.35f};
     private static final int[] clientStageMin = DEFAULT_STAGE_MIN.clone();
     private static final int[] clientStageMax = DEFAULT_STAGE_MAX.clone();
+    private static boolean clientServerFloating = false;
+    private static boolean clientNeedsFloatingStopSync = false;
 
     private record AbilitySnapshot(boolean allowFlying, boolean flying, float flySpeed) {}
 
@@ -116,6 +116,16 @@ public class floating {
         clientHasFloatingTag = hasTag;
     }
 
+    public static void syncFloatingActive(boolean active) {
+        clientServerFloating = active;
+    }
+
+    public static boolean consumeFloatingStopSync() {
+        boolean result = clientNeedsFloatingStopSync;
+        clientNeedsFloatingStopSync = false;
+        return result;
+    }
+
     private static boolean hasFullWitchFlight(PlayerEntity player, int score, boolean hasTag) {
         if (player instanceof ServerPlayerEntity) {
             return score >= FULL_WITCH_SCORE
@@ -160,7 +170,7 @@ public class floating {
 
         if (isFloatingServer(uuid) || isFloating) {
             player.getAbilities().allowFlying = true;
-            player.getAbilities().setFlySpeed(DEFAULT_FLY_SPEED * getFlySpeedMultiplier(player));
+            player.getAbilities().setFlySpeed(getConfiguredFlySpeed(player));
         } else {
             player.getAbilities().allowFlying = false;
             player.getAbilities().flying = false;
@@ -193,12 +203,17 @@ public class floating {
 
     // ==================== 能量系统方法 ====================
 
+    public static double getMaxEnergy() {
+        return FloatingConfig.getInstance().maxEnergy;
+    }
+
     public static double getEnergy(PlayerEntity player) {
-        return playerEnergy.getOrDefault(player.getUuid(), (double) MAX_ENERGY);
+        return playerEnergy.getOrDefault(player.getUuid(), getMaxEnergy());
     }
 
     public static void setEnergy(PlayerEntity player, double energy) {
-        if (energy > MAX_ENERGY) energy = MAX_ENERGY;
+        double maxEnergy = getMaxEnergy();
+        if (energy > maxEnergy) energy = maxEnergy;
         if (energy < 0) energy = 0;
         playerEnergy.put(player.getUuid(), energy);
     }
@@ -207,7 +222,25 @@ public class floating {
         int score = getMonvhuaScore(player);
 
         int stage = getStageByScore(player, score);
-        return STAGE_DRAIN_RATES[stage];
+        return FloatingConfig.getInstance().getEnergyDrain(stage);
+    }
+
+    private static double getEnergyRegenRate(PlayerEntity player) {
+        int score = getMonvhuaScore(player);
+        int stage = getStageByScore(player, score);
+        return FloatingConfig.getInstance().getEnergyRegen(stage);
+    }
+
+    private static float getConfiguredFlySpeed(PlayerEntity player) {
+        int score = getMonvhuaScore(player);
+        boolean hasTag = hasFullWitchTag(player);
+
+        if (score >= FULL_WITCH_SCORE && hasTag) {
+            return CREATIVE_FLY_SPEED;
+        }
+
+        int stage = getStageByScore(player, score);
+        return FloatingConfig.getInstance().getFlightSpeed(stage);
     }
 
     public static void tickEnergy(net.minecraft.server.network.ServerPlayerEntity player) {
@@ -252,18 +285,49 @@ public class floating {
             if (currentEnergy <= 0) {
                 currentEnergy = 0;
                 setEnergy(player, currentEnergy);
-                setServerFloating(uuid, false);
-                updateFullWitchFlight(player, score, hasTag);
+                applyServerFloating(player, false);
                 player.sendMessage(Text.literal("§c[漂浮] §f能量耗尽，漂浮解除"), true);
             } else {
                 setEnergy(player, currentEnergy);
             }
         } else {
-            double regenPerTick = REGEN_RATE / 20.0;
+            double regenPerTick = getEnergyRegenRate(player) / 20.0;
             currentEnergy += regenPerTick;
-            if (currentEnergy > MAX_ENERGY) currentEnergy = MAX_ENERGY;
             setEnergy(player, currentEnergy);
         }
+    }
+
+    public static boolean canStartFloating(ServerPlayerEntity player) {
+        if (player.isCreative() || player.isSpectator()) return false;
+        if (!hasFloatingTag(player)) return false;
+
+        int score = getMonvhuaScore(player);
+        boolean hasTag = hasFullWitchTag(player);
+        if (score >= FULL_WITCH_SCORE && !hasTag) return false;
+        if (hasFullWitchFlight(player, score, hasTag)) return false;
+
+        return getEnergy(player) > 0;
+    }
+
+    public static void applyServerFloating(ServerPlayerEntity player, boolean active) {
+        java.util.UUID uuid = player.getUuid();
+        if (active && !canStartFloating(player)) {
+            active = false;
+        }
+
+        setServerFloating(uuid, active);
+        if (active) {
+            player.fallDistance = 0;
+            player.getAbilities().allowFlying = true;
+            player.getAbilities().flying = true;
+            player.getAbilities().setFlySpeed(getConfiguredFlySpeed(player));
+        } else {
+            boolean keepFullWitchFlight = hasFullWitchFlight(player, getMonvhuaScore(player), hasFullWitchTag(player));
+            player.getAbilities().allowFlying = keepFullWitchFlight;
+            player.getAbilities().flying = false;
+            player.getAbilities().setFlySpeed(keepFullWitchFlight ? CREATIVE_FLY_SPEED : DEFAULT_FLY_SPEED);
+        }
+        player.sendAbilitiesUpdate();
     }
 
     // ==================== 核心逻辑（客户端）====================
@@ -282,14 +346,16 @@ public class floating {
         if (score >= FULL_WITCH_SCORE && !hasTag) {
             if (isFloating) {
                 deactivateFloating(player);
-                setServerFloating(player.getUuid(), false);
+                clientServerFloating = false;
                 player.sendMessage(Text.literal("§c[漂浮] §f无法使用（需要完全魔女化）"), true);
             }
             return;
         }
 
         // 检查服务端漂浮状态，如果不一致则同步关闭
-        boolean serverFloating = isFloatingServer(player.getUuid());
+        boolean serverFloating = player instanceof ServerPlayerEntity
+                ? isFloatingServer(player.getUuid())
+                : clientServerFloating;
         if (isFloating && !serverFloating) {
             isFloating = false;
             player.setVelocity(player.getVelocity().x, 0, player.getVelocity().z);
@@ -315,18 +381,18 @@ public class floating {
         }
     }
 
-    public static void onPlayerJump(PlayerEntity player) {
+    public static Boolean onPlayerJump(PlayerEntity player) {
 //        System.out.println("§e[调试] onPlayerJump 被调用，玩家：" + player.getName().getString());
 
         if (player.isCreative() || player.isSpectator()) {
 //            System.out.println("§e[调试] 创造或旁观模式，跳过");
-            return;
+            return null;
         }
 
         // ===== 新增：检查是否有 Floating 标签 =====
         if (!hasFloatingTag(player)) {
 //            System.out.println("§e[调试] 没有 Floating 标签，无法激活漂浮");
-            return;
+            return null;
         }
 
         int score = getMonvhuaScore(player);
@@ -337,15 +403,16 @@ public class floating {
 //            System.out.println("§e[调试] 分数 >= 90 且无 MonvhuaFull 标签，禁止飞行");
             if (isFloating) {
                 deactivateFloating(player);
-                setServerFloating(player.getUuid(), false);
+                clientServerFloating = false;
+                return false;
             }
-            return;
+            return null;
         }
 
         if (hasFullWitchFlight(player, score, hasTag)) {
             updateFullWitchFlight(player, score, hasTag);
             lastJumpTime = 0;
-            return;
+            return null;
         }
 
         long currentTime = System.currentTimeMillis();
@@ -355,7 +422,9 @@ public class floating {
 //            System.out.println("§e[调试] 检测到双击！");
             if (isFloating) {
                 deactivateFloating(player);
-                setServerFloating(player.getUuid(), false);
+                clientServerFloating = false;
+                lastJumpTime = 0;
+                return false;
             } else {
                 // 检查能量是否足够
                 double currentEnergy = getEnergy(player);
@@ -363,16 +432,18 @@ public class floating {
                     player.sendMessage(Text.literal("§c[漂浮] §f能量不足，无法激活"), true);
 //                    System.out.println("§e[调试] 能量不足，无法激活");
                     lastJumpTime = 0;
-                    return;
+                    return null;
                 }
                 activateFloating(player);
-                setServerFloating(player.getUuid(), true);
+                clientServerFloating = true;
+                lastJumpTime = 0;
+                return true;
             }
-            lastJumpTime = 0;
         } else {
 //            System.out.println("§e[调试] 第一次按空格，记录时间");
             lastJumpTime = currentTime;
         }
+        return null;
     }
 
     private static float getFlySpeedMultiplier(PlayerEntity player) {
@@ -384,8 +455,7 @@ public class floating {
             return 1.0f;
         }
 
-        int stage = getStageByScore(player, score);
-        return STAGE_SPEED_MULTIPLIERS[stage];
+        return getConfiguredFlySpeed(player) / DEFAULT_FLY_SPEED;
     }
 
     public static void activateFloating(PlayerEntity player) {
@@ -395,8 +465,7 @@ public class floating {
         player.fallDistance = 0;
         player.setVelocity(player.getVelocity().x, 0, player.getVelocity().z);
 
-        float multiplier = getFlySpeedMultiplier(player);
-        float flySpeed = DEFAULT_FLY_SPEED * multiplier;
+        float flySpeed = getConfiguredFlySpeed(player);
 
         player.getAbilities().allowFlying = true;
         player.getAbilities().flying = true;
@@ -419,7 +488,8 @@ public class floating {
         player.getAbilities().setFlySpeed(keepFullWitchFlight ? CREATIVE_FLY_SPEED : DEFAULT_FLY_SPEED);
         player.sendAbilitiesUpdate();
 
-        setServerFloating(player.getUuid(), false);
+        clientServerFloating = false;
+        clientNeedsFloatingStopSync = true;
 
         player.sendMessage(Text.literal("§c[漂浮] §f已关闭"), true);
     }

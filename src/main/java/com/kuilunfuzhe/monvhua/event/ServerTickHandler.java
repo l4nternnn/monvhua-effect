@@ -24,11 +24,12 @@ public class ServerTickHandler {
                 syncTick = 0;
                 for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                     double current = floating.getEnergy(player);
-                    double max = 100;
+                    double max = floating.getMaxEnergy();
                     boolean hasFloatingTag = player.getCommandTags().contains("Floating");
+                    boolean floatingActive = floating.isFloatingServer(player.getUuid());
 
                     // 同步能量（现在包含标签）
-                    ServerPlayNetworking.send(player, new FloatingEnergySyncS2CPacket(current, max, hasFloatingTag));
+                    ServerPlayNetworking.send(player, new FloatingEnergySyncS2CPacket(current, max, hasFloatingTag, floatingActive));
 
                     // 同步标签（原有逻辑保留）
                     ServerPlayNetworking.send(player, new FullWitchTagSyncS2CPacket(

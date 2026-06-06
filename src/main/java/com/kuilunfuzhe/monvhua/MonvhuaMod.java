@@ -23,6 +23,7 @@ import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import com.kuilunfuzhe.monvhua.features.imitate.ImitateManager;
 import com.kuilunfuzhe.monvhua.item.ModItemGroups;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
+import com.kuilunfuzhe.monvhua.item.config.FloatingConfig;
 import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
 import com.kuilunfuzhe.monvhua.item.block_hole.BlockHoleItems;
@@ -39,6 +40,8 @@ import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
+import com.kuilunfuzhe.monvhua.network.floating.FloatingEnergySyncS2CPacket;
+import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
@@ -339,6 +342,38 @@ public class MonvhuaMod implements ModInitializer {
         });
 
         // ===== 3. 命令注册 =====
+        ServerPlayNetworking.registerGlobalReceiver(FloatingPackets.RequestConfigC2S.ID, (packet, context) ->
+                ServerPlayNetworking.send(context.player(), new FloatingPackets.ConfigS2C(FloatingConfig.getInstance().toJson())));
+
+        ServerPlayNetworking.registerGlobalReceiver(FloatingPackets.UpdateConfigC2S.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity player = context.player();
+                if (!player.hasPermissionLevel(2) && !player.isCreative()) {
+                    player.sendMessage(Text.literal("\u00a7cNo permission to update floating config"), true);
+                    return;
+                }
+                FloatingConfig newConfig = FloatingConfig.fromJson(packet.json());
+                FloatingConfig.setInstance(newConfig);
+                for (ServerPlayerEntity p : context.server().getPlayerManager().getPlayerList()) {
+                    ServerPlayNetworking.send(p, new FloatingPackets.ConfigS2C(newConfig.toJson()));
+                }
+                player.sendMessage(Text.literal("\u00a7aFloating config updated"), true);
+            });
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(FloatingPackets.ToggleC2S.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity player = context.player();
+                com.kuilunfuzhe.monvhua.features.floating.floating.applyServerFloating(player, packet.active());
+                ServerPlayNetworking.send(player, new FloatingEnergySyncS2CPacket(
+                        com.kuilunfuzhe.monvhua.features.floating.floating.getEnergy(player),
+                        com.kuilunfuzhe.monvhua.features.floating.floating.getMaxEnergy(),
+                        player.getCommandTags().contains("Floating"),
+                        com.kuilunfuzhe.monvhua.features.floating.floating.isFloatingServer(player.getUuid())
+                ));
+            });
+        });
+
         CommandRegistrationCallback.EVENT.register(GiveBodyPartCommand::register);
         CommandRegistrationCallback.EVENT.register(ReplaceBodyPartCommand::register);
         CommandRegistrationCallback.EVENT.register(WatchCommand::register);
@@ -406,6 +441,7 @@ public class MonvhuaMod implements ModInitializer {
             ServerPlayNetworking.send(player, new PlayerStageS2C(stage));
             MirrorCommand.syncToClient(player);
             ServerPlayNetworking.send(player, new SecrecyConfigS2CPacket(SecrecyConfig.getInstance().toJson()));
+            ServerPlayNetworking.send(player, new FloatingPackets.ConfigS2C(FloatingConfig.getInstance().toJson()));
 
             // 同步漂浮魔法标签（完全魔女化 + Floating）
             ServerPlayNetworking.send(player, new FullWitchTagSyncS2CPacket(
@@ -610,6 +646,7 @@ public class MonvhuaMod implements ModInitializer {
             lastEffect.remove(uuid);
             cancelPendingTainted(uuid);
             floatingPlayers.remove(uuid);
+            floatingPlayersServer.remove(uuid);
             CameraWatchManager.stopWatching(player, server);
             Evil_Eyes.forceStopWatching(player, server);
             Evil_Eyes.clearPlayerMarks(uuid);
@@ -628,6 +665,7 @@ public class MonvhuaMod implements ModInitializer {
                 lastEffect.remove(uuid);
                 cancelPendingTainted(uuid);
                 floatingPlayers.remove(uuid);
+                floatingPlayersServer.remove(uuid);
                 MirrorCommand.cleanup(uuid);
                 SecrecyItem.exitSecrecy(player);
             }

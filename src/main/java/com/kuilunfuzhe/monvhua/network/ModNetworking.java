@@ -8,9 +8,9 @@ import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingEnergySyncS2CPacket;
+import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
-import com.kuilunfuzhe.monvhua.network.gravity.GravityPackets;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateOpenUIPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateSyncS2CPacket;
@@ -35,6 +35,7 @@ public class ModNetworking {
         SyncConfigS2CPacket.register();
         EnergySyncPacket.register();
         FloatingEnergySyncS2CPacket.register();
+        FloatingPackets.registerS2C();
         FullWitchTagSyncS2CPacket.register();
         MarkCountPacket.register();
         FocusStatusPacket.register();
@@ -72,7 +73,7 @@ public class ModNetworking {
         RequestSecrecyConfigC2SPacket.register();
         SecrecyConfigUpdateC2SPacket.register();
         ActionPackets.registerC2S();
-        GravityPackets.registerC2S();
+        FloatingPackets.registerC2S();
         SoundWavePacket.register();
         RequestImitateConfigC2SPacket.register();
         UpdateImitateConfigC2SPacket.register();

@@ -23,6 +23,7 @@ import com.kuilunfuzhe.monvhua.network.ModNetworking;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.AnchorDestroyC2S;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
+import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
 import com.kuilunfuzhe.monvhua.network.imitate.SilenceEffectS2CPacket;
 import com.kuilunfuzhe.monvhua.network.openback.CarryEntityPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
@@ -180,10 +181,16 @@ public class MonvhuaModClient implements ClientModInitializer {
                 net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
                 if (client.player != null) {
                     com.kuilunfuzhe.monvhua.features.floating.floating.tick(client.player);
+                    if (com.kuilunfuzhe.monvhua.features.floating.floating.consumeFloatingStopSync()) {
+                        SafeClientNetworking.send(new FloatingPackets.ToggleC2S(false));
+                    }
 
                     boolean jumpPressed = client.options.jumpKey.isPressed();
                     if (jumpPressed && !lastJumpPressed) {
-                        com.kuilunfuzhe.monvhua.features.floating.floating.onPlayerJump(client.player);
+                        Boolean active = com.kuilunfuzhe.monvhua.features.floating.floating.onPlayerJump(client.player);
+                        if (active != null) {
+                            SafeClientNetworking.send(new FloatingPackets.ToggleC2S(active));
+                        }
                     }
                     lastJumpPressed = jumpPressed;
                 }
