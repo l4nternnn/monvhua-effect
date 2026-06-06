@@ -105,8 +105,8 @@ public final class GravityClient {
         int height = 24;
 
         context.fill(x, y, x + width, y + height, 0x66000000);
-        context.drawText(client.textRenderer, Text.literal(line1), x + 5, y + 4, 0xFFFFFF, false);
-        context.drawText(client.textRenderer, Text.literal(line2), x + 5, y + 14, 0x88CCFF, false);
+        context.drawText(client.textRenderer, Text.literal(line1), x + 5, y + 4, 0xFFFFFFFF, false);
+        context.drawText(client.textRenderer, Text.literal(line2), x + 5, y + 14, 0xFF88CCFF, false);
     }
 
     private static String describeTarget(MinecraftClient client) {
