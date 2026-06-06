@@ -103,9 +103,9 @@ public final class CarryPoseTuning {
 	// 开启后，被抱者第一人称视角固定到下面的 local yaw/pitch，不再由鼠标控制；模型头部也不再跟随视角，改由 HEAD_* / CUSTOM_HEAD_* 手调。
 	public static boolean CARRIED_FIXED_VIEW_ENABLED = true;
 	// 固定视角的本地 yaw，单位：度；取自调试输出 localViewYawDegrees。
-	public static float CARRIED_FIXED_VIEW_LOCAL_YAW_DEGREES = 180.0F;
+	public static float CARRIED_FIXED_VIEW_LOCAL_YAW_DEGREES = 210.0F;
 	// 固定视角的本地 pitch，单位：度；取自调试输出 localViewPitchDegrees。
-	public static float CARRIED_FIXED_VIEW_LOCAL_PITCH_DEGREES = -76.799957F;
+	public static float CARRIED_FIXED_VIEW_LOCAL_PITCH_DEGREES = -10F;
 	// 被抱者第一人称视角限制中心相对基础头部世界朝向的左右偏移，单位：度；只移动限制/追踪零点，不直接改变基础头部姿势。
 	public static float CARRIED_VIEW_CENTER_YAW_OFFSET_DEGREES = 0F;//-135.0F;
 	// 被抱者第一人称视角限制中心相对基础头部世界朝向的上下偏移，单位：度；正负方向按游戏内效果微调。
