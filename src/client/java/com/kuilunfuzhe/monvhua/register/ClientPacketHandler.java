@@ -16,10 +16,12 @@ import com.kuilunfuzhe.monvhua.features.action.ActionPoseClientState;
 import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
+import com.kuilunfuzhe.monvhua.item.config.FloatingConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
+import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ChargeSyncS2C;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ConfigS2C;
@@ -158,6 +160,16 @@ public class ClientPacketHandler {
                 SecrecyConfig config = SecrecyConfig.fromJson(packet.json());
                 if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
                     screen.receiveSecrecyConfig(config);
+                }
+            });
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(FloatingPackets.ConfigS2C.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                FloatingConfig config = FloatingConfig.fromJson(packet.json());
+                FloatingConfig.syncInstance(config);
+                if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
+                    screen.receiveFloatingConfig(config);
                 }
             });
         });

@@ -6,7 +6,7 @@ import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
-public record FloatingEnergySyncS2CPacket(double currentEnergy, double maxEnergy, boolean hasFloatingTag) implements CustomPayload {
+public record FloatingEnergySyncS2CPacket(double currentEnergy, double maxEnergy, boolean hasFloatingTag, boolean floatingActive) implements CustomPayload {
     public static final Id<FloatingEnergySyncS2CPacket> ID = new Id<>(Identifier.of("monvhua", "floating_energy_sync"));
     public static final PacketCodec<RegistryByteBuf, FloatingEnergySyncS2CPacket> CODEC = PacketCodec.of(
             FloatingEnergySyncS2CPacket::write,
@@ -16,13 +16,14 @@ public record FloatingEnergySyncS2CPacket(double currentEnergy, double maxEnergy
     private static boolean registered = false;
 
     private FloatingEnergySyncS2CPacket(RegistryByteBuf buf) {
-        this(buf.readDouble(), buf.readDouble(), buf.readBoolean());
+        this(buf.readDouble(), buf.readDouble(), buf.readBoolean(), buf.readBoolean());
     }
 
     private void write(RegistryByteBuf buf) {
         buf.writeDouble(currentEnergy);
         buf.writeDouble(maxEnergy);
         buf.writeBoolean(hasFloatingTag);
+        buf.writeBoolean(floatingActive);
     }
 
     @Override

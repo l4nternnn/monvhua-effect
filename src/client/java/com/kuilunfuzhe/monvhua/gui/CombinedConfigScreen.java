@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.gui;
 
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
+import com.kuilunfuzhe.monvhua.item.config.FloatingConfig;
 import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
@@ -9,6 +10,7 @@ import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.RequestGlobalCo
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.UpdateGlobalConfigC2S;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.RequestConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.UpdateConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.RequestImitateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.UpdateImitateConfigC2SPacket;
@@ -34,10 +36,10 @@ import java.util.List;
  */
 public class CombinedConfigScreen extends Screen {
     /** 配置类型枚举，对应顶部五个标签页 */
-    private enum ConfigType { EVIL_EYES, GAZE_GUIDANCE, MIRROR, SECRECY, STAGE_RANGE, IMITATE }
+    private enum ConfigType { EVIL_EYES, GAZE_GUIDANCE, MIRROR, SECRECY, STAGE_RANGE, IMITATE, FLOATING }
     private ConfigType currentType = ConfigType.EVIL_EYES;
 
-    private ButtonWidget btnEvilEyes, btnGaze, btnMirror, btnSecrecy, btnStageRange, btnImitate;
+    private ButtonWidget btnEvilEyes, btnGaze, btnMirror, btnSecrecy, btnStageRange, btnImitate, btnFloating;
     private int panelX, panelY, panelWidth, panelHeight;
     private int leftWidth, rightWidth;
 
@@ -91,6 +93,13 @@ public class CombinedConfigScreen extends Screen {
     private final List<TextWidget> imitateLabels = new ArrayList<>();
     private static ImitateConfig cachedImitateConfig = null;
 
+    private final List<ButtonWidget> floatingStageButtons = new ArrayList<>();
+    private int floatingCurrentStage = 1;
+    private TextFieldWidget floatingDrainField, floatingSpeedField, floatingRegenField;
+    private ButtonWidget saveFloatingButton;
+    private final List<TextWidget> floatingLabels = new ArrayList<>();
+    private static FloatingConfig cachedFloatingConfig = null;
+
     /**
      * 构造聚合配置界面，初始化时向服务器请求四种配置数据，
      * 本地缓存未就绪时使用默认值填充。
@@ -102,6 +111,7 @@ public class CombinedConfigScreen extends Screen {
         ClientPlayNetworking.send(new RequestConfigC2S());
         ClientPlayNetworking.send(new RequestSecrecyConfigC2SPacket());
         ClientPlayNetworking.send(new RequestImitateConfigC2SPacket());
+        ClientPlayNetworking.send(new FloatingPackets.RequestConfigC2S());
         if (cachedGazeConfig == null) {
             cachedGazeConfig = createDefaultGazeConfig();
         }
@@ -113,6 +123,9 @@ public class CombinedConfigScreen extends Screen {
         }
         if (cachedImitateConfig == null) {
             cachedImitateConfig = createDefaultImitateConfig();
+        }
+        if (cachedFloatingConfig == null) {
+            cachedFloatingConfig = new FloatingConfig();
         }
     }
 
@@ -197,29 +210,34 @@ public class CombinedConfigScreen extends Screen {
         rightWidth = panelWidth - leftWidth - 15;  // 15px 分隔线间距
 
         // 顶部标签按钮尺寸
-        int btnWidth = 76, btnHeight = 20;
+        int btnWidth = 68, btnHeight = 20;
         // 按钮放在面板上方5px处
         int btnY = panelY - btnHeight - 5;
         int centerX = panelX + panelWidth / 2;
+        int tabGap = 4;
+        int tabStartX = centerX - (btnWidth * 7 + tabGap * 6) / 2;
 
         btnEvilEyes = ButtonWidget.builder(Text.literal("千里眼"), btn -> switchTo(ConfigType.EVIL_EYES))
-                .dimensions(centerX - btnWidth * 2 - 38, btnY, btnWidth, btnHeight).build();
+                .dimensions(tabStartX, btnY, btnWidth, btnHeight).build();
         btnGaze = ButtonWidget.builder(Text.literal("视线诱导"), btn -> switchTo(ConfigType.GAZE_GUIDANCE))
-                .dimensions(centerX - btnWidth - 34, btnY, btnWidth, btnHeight).build();
+                .dimensions(tabStartX + (btnWidth + tabGap), btnY, btnWidth, btnHeight).build();
         btnMirror = ButtonWidget.builder(Text.literal("镜子"), btn -> switchTo(ConfigType.MIRROR))
-                .dimensions(centerX - 30, btnY, btnWidth, btnHeight).build();
+                .dimensions(tabStartX + (btnWidth + tabGap) * 2, btnY, btnWidth, btnHeight).build();
         btnSecrecy = ButtonWidget.builder(Text.literal("窃密"), btn -> switchTo(ConfigType.SECRECY))
-                .dimensions(centerX + btnWidth - 26, btnY, btnWidth, btnHeight).build();
+                .dimensions(tabStartX + (btnWidth + tabGap) * 3, btnY, btnWidth, btnHeight).build();
         btnStageRange = ButtonWidget.builder(Text.literal("阶段区间"), btn -> switchTo(ConfigType.STAGE_RANGE))
-                .dimensions(centerX + btnWidth * 2 - 22, btnY, btnWidth, btnHeight).build();
+                .dimensions(tabStartX + (btnWidth + tabGap) * 6, btnY, btnWidth, btnHeight).build();
         btnImitate = ButtonWidget.builder(Text.literal("模仿"), btn -> switchTo(ConfigType.IMITATE))
-                .dimensions(centerX + btnWidth * 3 - 18, btnY, btnWidth, btnHeight).build();
+                .dimensions(tabStartX + (btnWidth + tabGap) * 4, btnY, btnWidth, btnHeight).build();
+        btnFloating = ButtonWidget.builder(Text.literal("\u6f02\u6d6e"), btn -> switchTo(ConfigType.FLOATING))
+                .dimensions(tabStartX + (btnWidth + tabGap) * 5, btnY, btnWidth, btnHeight).build();
         addDrawableChild(btnEvilEyes);
         addDrawableChild(btnGaze);
         addDrawableChild(btnMirror);
         addDrawableChild(btnSecrecy);
         addDrawableChild(btnStageRange);
         addDrawableChild(btnImitate);
+        addDrawableChild(btnFloating);
 
         buildEvilEyesUI();
         buildGazeGuidanceUI();
@@ -227,11 +245,18 @@ public class CombinedConfigScreen extends Screen {
         buildSecrecyUI();
         buildStageRangeUI();
         buildImitateUI();
+        buildFloatingUI();
 
         switchTo(ConfigType.EVIL_EYES);
     }
 
     // ==================== 千里眼 UI ====================
+    private int stageButtonY(int stage) {
+        int top = panelY + 12;
+        int bottom = panelY + panelHeight - 32;
+        return top + (stage - 1) * (bottom - top) / 6;
+    }
+
     private void buildEvilEyesUI() {
         int leftX = panelX + 5;
         for (int i = 1; i <= 7; i++) {
@@ -239,7 +264,7 @@ public class CombinedConfigScreen extends Screen {
             ButtonWidget btn = ButtonWidget.builder(Text.literal("阶段 " + i), button -> {
                 currentStage = stage;
                 loadEvilStageUI();
-            }).dimensions(leftX, panelY + 10 + (i-1)*25, leftWidth - 10, 20).build();
+            }).dimensions(leftX, stageButtonY(i), leftWidth - 10, 20).build();
             addDrawableChild(btn);
             stageButtons.add(btn);
         }
@@ -278,7 +303,7 @@ public class CombinedConfigScreen extends Screen {
             ButtonWidget btn = ButtonWidget.builder(Text.literal("阶段 " + i), button -> {
                 gazeCurrentStage = stage;
                 loadGazeStageUI();
-            }).dimensions(leftX, panelY + 10 + (i-1)*25, leftWidth - 10, 20).build();
+            }).dimensions(leftX, stageButtonY(i), leftWidth - 10, 20).build();
             addDrawableChild(btn);
             gazeStageButtons.add(btn);
         }
@@ -314,7 +339,7 @@ public class CombinedConfigScreen extends Screen {
             ButtonWidget btn = ButtonWidget.builder(Text.literal("阶段 " + i), button -> {
                 mirrorCurrentStage = stage;
                 loadMirrorStageUI();
-            }).dimensions(leftX, panelY + 10 + (i-1)*25, leftWidth - 10, 20).build();
+            }).dimensions(leftX, stageButtonY(i), leftWidth - 10, 20).build();
             addDrawableChild(btn);
             mirrorStageButtons.add(btn);
         }
@@ -351,7 +376,7 @@ public class CombinedConfigScreen extends Screen {
             ButtonWidget btn = ButtonWidget.builder(Text.literal("阶段 " + i), button -> {
                 secrecyCurrentStage = stage;
                 loadSecrecyStageUI();
-            }).dimensions(leftX, panelY + 10 + (i-1)*25, leftWidth - 10, 20).build();
+            }).dimensions(leftX, stageButtonY(i), leftWidth - 10, 20).build();
             addDrawableChild(btn);
             secrecyStageButtons.add(btn);
         }
@@ -387,7 +412,7 @@ public class CombinedConfigScreen extends Screen {
             ButtonWidget btn = ButtonWidget.builder(Text.literal("阶段 " + i), button -> {
                 stageRangeCurrentStage = stage;
                 loadStageRangeUI();
-            }).dimensions(leftX, panelY + 10 + (i-1)*25, leftWidth - 10, 20).build();
+            }).dimensions(leftX, stageButtonY(i), leftWidth - 10, 20).build();
             addDrawableChild(btn);
             stageRangeStageButtons.add(btn);
         }
@@ -420,7 +445,7 @@ public class CombinedConfigScreen extends Screen {
             ButtonWidget btn = ButtonWidget.builder(Text.literal("阶段 " + i), button -> {
                 imitateCurrentStage = stage;
                 loadImitateStageUI();
-            }).dimensions(leftX, panelY + 10 + (i-1)*25, leftWidth - 10, 20).build();
+            }).dimensions(leftX, stageButtonY(i), leftWidth - 10, 20).build();
             addDrawableChild(btn);
             imitateStageButtons.add(btn);
         }
@@ -466,6 +491,44 @@ public class CombinedConfigScreen extends Screen {
     /**
      * 创建一个限制最大输入长度为6的文本输入框。
      */
+    private void buildFloatingUI() {
+        int leftX = panelX + 5;
+        for (int i = 1; i <= 7; i++) {
+            int stage = i;
+            ButtonWidget btn = ButtonWidget.builder(Text.literal("\u9636\u6bb5 " + i), button -> {
+                floatingCurrentStage = stage;
+                loadFloatingStageUI();
+            }).dimensions(leftX, stageButtonY(i), leftWidth - 10, 20).build();
+            addDrawableChild(btn);
+            floatingStageButtons.add(btn);
+        }
+
+        int rightX = panelX + leftWidth + 5;
+        int rowY = panelY + 10;
+        int rowHeight = 22;
+        int labelWidth = 120;
+        int inputWidth = 80;
+
+        String[] labels = {
+                "\u80fd\u91cf\u6d88\u8017(/s):",
+                "\u98de\u884c\u901f\u5ea6:",
+                "\u6062\u590d\u901f\u5ea6(/s):"
+        };
+        for (int i = 0; i < labels.length; i++) {
+            TextWidget label = new TextWidget(rightX, rowY + i * rowHeight + 4, labelWidth, 9, Text.literal(labels[i]), textRenderer);
+            addDrawableChild(label);
+            floatingLabels.add(label);
+        }
+
+        floatingDrainField = createField(rightX + labelWidth, rowY, inputWidth);
+        floatingSpeedField = createField(rightX + labelWidth, rowY + rowHeight, inputWidth);
+        floatingRegenField = createField(rightX + labelWidth, rowY + 2 * rowHeight, inputWidth);
+
+        saveFloatingButton = ButtonWidget.builder(Text.literal("\u4fdd\u5b58"), btn -> saveFloatingConfig())
+                .dimensions(rightX, rowY + 3 * rowHeight + 10, 80, 20).build();
+        addDrawableChild(saveFloatingButton);
+    }
+
     private TextFieldWidget createField(int x, int y, int width) {
         TextFieldWidget field = new TextFieldWidget(textRenderer, x, y, width, 18, Text.empty());
         field.setMaxLength(6);
@@ -485,12 +548,15 @@ public class CombinedConfigScreen extends Screen {
         btnStageRange.setMessage(currentType == ConfigType.STAGE_RANGE ? Text.literal("§l§a阶段区间") : Text.literal("阶段区间"));
         btnImitate.setMessage(currentType == ConfigType.IMITATE ? Text.literal("§l§a模仿") : Text.literal("模仿"));
 
+        btnFloating.setMessage(currentType == ConfigType.FLOATING ? Text.literal("\u00a7l\u00a7a\u6f02\u6d6e") : Text.literal("\u6f02\u6d6e"));
+
         setEvilComponentsVisible(currentType == ConfigType.EVIL_EYES);
         setGazeComponentsVisible(currentType == ConfigType.GAZE_GUIDANCE);
         setMirrorComponentsVisible(currentType == ConfigType.MIRROR);
         setSecrecyComponentsVisible(currentType == ConfigType.SECRECY);
         setStageRangeComponentsVisible(currentType == ConfigType.STAGE_RANGE);
         setImitateComponentsVisible(currentType == ConfigType.IMITATE);
+        setFloatingComponentsVisible(currentType == ConfigType.FLOATING);
 
         switch (currentType) {
             case EVIL_EYES -> loadEvilStageUI();
@@ -499,6 +565,7 @@ public class CombinedConfigScreen extends Screen {
             case SECRECY -> loadSecrecyStageUI();
             case STAGE_RANGE -> loadStageRangeUI();
             case IMITATE -> loadImitateStageUI();
+            case FLOATING -> loadFloatingStageUI();
         }
     }
 
@@ -568,6 +635,15 @@ public class CombinedConfigScreen extends Screen {
     }
 
     // ========== 千里眼配置 ==========
+    private void setFloatingComponentsVisible(boolean visible) {
+        for (ButtonWidget btn : floatingStageButtons) btn.visible = visible;
+        for (TextWidget label : floatingLabels) label.visible = visible;
+        if (floatingDrainField != null) floatingDrainField.visible = visible;
+        if (floatingSpeedField != null) floatingSpeedField.visible = visible;
+        if (floatingRegenField != null) floatingRegenField.visible = visible;
+        if (saveFloatingButton != null) saveFloatingButton.visible = visible;
+    }
+
     private void loadEvilStageUI() {
         GlobalConfigS2C.StageConfig cfg = CACHED_EVIL_CONFIGS[currentStage];
         if (cfg == null) {
@@ -881,6 +957,48 @@ public class CombinedConfigScreen extends Screen {
         }
     }
 
+    private void loadFloatingStageUI() {
+        if (cachedFloatingConfig == null) {
+            floatingDrainField.setText("10");
+            floatingSpeedField.setText("0.005");
+            floatingRegenField.setText("10");
+            return;
+        }
+        floatingDrainField.setText(String.valueOf(cachedFloatingConfig.getEnergyDrain(floatingCurrentStage)));
+        floatingSpeedField.setText(String.valueOf(cachedFloatingConfig.getFlightSpeed(floatingCurrentStage)));
+        floatingRegenField.setText(String.valueOf(cachedFloatingConfig.getEnergyRegen(floatingCurrentStage)));
+    }
+
+    private void saveFloatingConfig() {
+        try {
+            double drain = Double.parseDouble(floatingDrainField.getText().trim());
+            float speed = Float.parseFloat(floatingSpeedField.getText().trim());
+            double regen = Double.parseDouble(floatingRegenField.getText().trim());
+
+            if (cachedFloatingConfig == null) cachedFloatingConfig = new FloatingConfig();
+            cachedFloatingConfig.setEnergyDrain(floatingCurrentStage, drain);
+            cachedFloatingConfig.setFlightSpeed(floatingCurrentStage, speed);
+            cachedFloatingConfig.setEnergyRegen(floatingCurrentStage, regen);
+
+            ClientPlayNetworking.send(new FloatingPackets.UpdateConfigC2S(cachedFloatingConfig.toJson()));
+            if (client != null && client.player != null) {
+                client.player.sendMessage(Text.literal("\u00a7aFloating config submitted"), true);
+            }
+        } catch (NumberFormatException e) {
+            if (client != null && client.player != null) {
+                client.player.sendMessage(Text.literal("\u00a7cInvalid number"), true);
+            }
+        }
+    }
+
+    public void receiveFloatingConfig(FloatingConfig config) {
+        if (config == null) return;
+        cachedFloatingConfig = config;
+        if (currentType == ConfigType.FLOATING) {
+            loadFloatingStageUI();
+        }
+    }
+
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         // 半透明黑色遮罩背景
@@ -918,6 +1036,11 @@ public class CombinedConfigScreen extends Screen {
                 context.drawText(textRenderer, "模仿魔法配置", panelX + 5, panelY + 5, 0xFFAAFF, false);
                 context.drawText(textRenderer, "当前编辑: 阶段 " + imitateCurrentStage, panelX + leftWidth + 5, panelY + 5, 0xFFAAFF, false);
             }
+        }
+
+        if (currentType == ConfigType.FLOATING) {
+            context.drawText(textRenderer, "\u6f02\u6d6e\u914d\u7f6e", panelX + 5, panelY + 5, 0x55AAFF, false);
+            context.drawText(textRenderer, "\u5f53\u524d\u7f16\u8f91: \u9636\u6bb5 " + floatingCurrentStage, panelX + leftWidth + 5, panelY + 5, 0x55AAFF, false);
         }
 
         super.render(context, mouseX, mouseY, delta);

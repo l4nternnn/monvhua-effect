@@ -20,6 +20,7 @@ public class EnergyHud {
                 maxEnergy = packet.maxEnergy();
                 // 同步 Floating 标签到 floating 类
                 floating.syncFloatingTag(packet.hasFloatingTag());
+                floating.syncFloatingActive(packet.floatingActive());
 //                System.out.println("§e[调试] 收到能量+标签同步 - 能量: " + currentEnergy + ", Floating: " + packet.hasFloatingTag());
             });
         });
@@ -54,7 +55,8 @@ public class EnergyHud {
                 color = 0xFFFF5555; // 红色
             }
 
-            int fillWidth = (int) (barWidth * percent);
+            int fillWidth = (int) (barWidth * Math.clamp(percent, 0.0, 1.0));
+            if (percent > 0 && fillWidth == 0) fillWidth = 1;
             if (fillWidth > 0) {
                 drawContext.fill(x, y, x + fillWidth, y + barHeight, color);
             }
