@@ -79,6 +79,12 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final float DEFAULT_PREVIEW_PAN_X = 0.0F;
     private static final float DEFAULT_PREVIEW_ZOOM = 0.65F;
     private static final float PREVIEW_SCALE_FACTOR = 0.36F;
+    private static final float PREVIEW_CAMERA_DISTANCE = 24.0F;
+    private static final float PREVIEW_NEAR_DEPTH = 3.0F;
+    private static final float PREVIEW_MIN_PERSPECTIVE_SCALE = 0.38F;
+    private static final float PREVIEW_MAX_PERSPECTIVE_SCALE = 2.25F;
+    private static final float PREVIEW_ITEM_MIN_PERSPECTIVE_SCALE = 0.55F;
+    private static final float PREVIEW_ITEM_MAX_PERSPECTIVE_SCALE = 1.85F;
     private static final double REEDIT_TARGET_DISTANCE = 8.0D;
     private static final double REEDIT_DISPLAY_PICK_EXPAND = 0.45D;
     private static final double REEDIT_INTERACTION_DISPLAY_RADIUS_SQUARED = 9.0D;
@@ -1370,19 +1376,20 @@ public class BodyPoseEditorFragment extends Fragment {
                 ? previewScale
                 : getPreviewBaseScale(previewAreaRight - previewAreaLeft, previewAreaBottom - previewAreaTop) * previewZoom;
         ScreenPoint modelCenter = projectPreviewPoint(modelOffsetX, modelOffsetY, modelOffsetZ);
-        int modelWidth = Math.max(previewAreaRight - previewAreaLeft, Math.round(scale * 5.2F));
+        float renderScale = scale * modelCenter.scale;
+        int modelWidth = Math.max(previewAreaRight - previewAreaLeft, Math.round(renderScale * 5.2F));
         float pitchSin = Math.abs((float) Math.sin(Math.toRadians(previewPitch)));
-        int modelHeight = Math.max(previewAreaBottom - previewAreaTop, Math.round(scale * 5.8F))
-                + Math.round(scale * PREVIEW_PITCH_BOUNDS_EXTRA_SCALE * pitchSin);
+        int modelHeight = Math.max(previewAreaBottom - previewAreaTop, Math.round(renderScale * 5.8F))
+                + Math.round(renderScale * PREVIEW_PITCH_BOUNDS_EXTRA_SCALE * pitchSin);
         int x1 = Math.round(modelCenter.x - modelWidth * 0.5F);
         int x2 = x1 + modelWidth;
-        int y2 = Math.round(modelCenter.y + scale * PREVIEW_Y_PIVOT);
+        int y2 = Math.round(modelCenter.y + renderScale * PREVIEW_Y_PIVOT);
         int y1 = y2 - modelHeight;
         Identifier texture = getPreviewTexture();
 
         context.enableScissor(previewAreaLeft, previewAreaTop, previewAreaRight, previewAreaBottom);
         try {
-            context.addPlayerSkin(model, texture, scale, previewPitch, -previewYaw, PREVIEW_Y_PIVOT,
+            context.addPlayerSkin(model, texture, renderScale, previewPitch, -previewYaw, PREVIEW_Y_PIVOT,
                     previewScreenLeft + x1, previewScreenTop + y1,
                     previewScreenLeft + x2, previewScreenTop + y2);
         } finally {
@@ -1553,7 +1560,7 @@ public class BodyPoseEditorFragment extends Fragment {
                 EditorItemModel item = EDITOR_ITEMS.get(i);
                 ScreenPoint point = projectPreviewPoint(item.offsetX, item.offsetY, item.offsetZ);
                 renderEditorItemPreview(context, item, point);
-                int size = getEditorItemPreviewBoundsSize();
+                int size = getEditorItemPreviewBoundsSize(point);
                 int ix = Math.round(point.x) - size / 2;
                 int iy = Math.round(point.y) - size / 2;
                 context.drawBorder(ix, iy, size, size,
@@ -1565,7 +1572,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void renderEditorItemPreview(DrawContext context, EditorItemModel item, ScreenPoint point) {
-        int boundsSize = getEditorItemPreviewBoundsSize();
+        int boundsSize = getEditorItemPreviewBoundsSize(point);
         renderEditorItemIconPreview(context, item, point, boundsSize);
         renderEditorItemDisplayPreview(context, item, point, boundsSize);
     }
@@ -1772,6 +1779,7 @@ public class BodyPoseEditorFragment extends Fragment {
         float pitchCos = (float) Math.cos(pitchRad);
         float pitchSin = (float) Math.sin(pitchRad);
         float pitchY = y * pitchCos - yawZ * pitchSin;
+        float pitchZ = yawZ * pitchCos + y * pitchSin;
         float pitchX = yawX;
 
         float rollRad = (float) Math.toRadians(previewRoll);
@@ -1779,10 +1787,15 @@ public class BodyPoseEditorFragment extends Fragment {
         float rollSin = (float) Math.sin(rollRad);
         float rollX = pitchX * rollCos - pitchY * rollSin;
         float rollY = pitchX * rollSin + pitchY * rollCos;
+        float depth = Math.max(PREVIEW_NEAR_DEPTH, PREVIEW_CAMERA_DISTANCE - pitchZ);
+        float perspectiveScale = clampPreview(PREVIEW_CAMERA_DISTANCE / depth,
+                PREVIEW_MIN_PERSPECTIVE_SCALE, PREVIEW_MAX_PERSPECTIVE_SCALE);
 
         return new ScreenPoint(
-                previewCenterX + rollX * previewScale,
-                previewCenterY + rollY * previewScale);
+                previewCenterX + rollX * previewScale * perspectiveScale,
+                previewCenterY + rollY * previewScale * perspectiveScale,
+                perspectiveScale,
+                depth);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -1858,7 +1871,7 @@ public class BodyPoseEditorFragment extends Fragment {
         for (int i = EDITOR_ITEMS.size() - 1; i >= 0; i--) {
             EditorItemModel item = EDITOR_ITEMS.get(i);
             ScreenPoint pt = projectPreviewPoint(item.offsetX, item.offsetY, item.offsetZ);
-            int halfSize = Math.max(12, getEditorItemPreviewBoundsSize() / 2);
+            int halfSize = Math.max(12, getEditorItemPreviewBoundsSize(pt) / 2);
             if (px >= pt.x - halfSize && px <= pt.x + halfSize && py >= pt.y - halfSize && py <= pt.y + halfSize) {
                 return i;
             }
@@ -1895,6 +1908,12 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private int getEditorItemPreviewBoundsSize() {
         return Math.max(42, Math.round(getPreviewPixelsPerGrid() * ITEM_PREVIEW_BOUNDS_SCALE));
+    }
+
+    private int getEditorItemPreviewBoundsSize(ScreenPoint point) {
+        float perspectiveScale = clampPreview(point.scale,
+                PREVIEW_ITEM_MIN_PERSPECTIVE_SCALE, PREVIEW_ITEM_MAX_PERSPECTIVE_SCALE);
+        return Math.max(28, Math.round(getEditorItemPreviewBoundsSize() * perspectiveScale));
     }
 
     private void updatePreviewScreenOrigin() {
@@ -3071,10 +3090,18 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final class ScreenPoint {
         private final float x;
         private final float y;
+        private final float scale;
+        private final float depth;
 
         private ScreenPoint(float x, float y) {
+            this(x, y, 1.0F, PREVIEW_CAMERA_DISTANCE);
+        }
+
+        private ScreenPoint(float x, float y, float scale, float depth) {
             this.x = x;
             this.y = y;
+            this.scale = scale;
+            this.depth = depth;
         }
     }
 }
