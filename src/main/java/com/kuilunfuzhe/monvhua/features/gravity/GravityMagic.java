@@ -1,6 +1,11 @@
 package com.kuilunfuzhe.monvhua.features.gravity;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.kuilunfuzhe.monvhua.network.gravity.GravityPackets;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.block.Block;
@@ -13,18 +18,33 @@ import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityPose;
 import net.minecraft.entity.MovementType;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.RegistryKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.state.property.Properties;
 import net.minecraft.text.Text;
+import net.minecraft.util.ActionResult;
 import net.minecraft.util.PlayerInput;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.WorldSavePath;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.BlockView;
 import net.minecraft.world.World;
 
+import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -35,6 +55,7 @@ public final class GravityMagic {
     public static final double DEFAULT_GRAVITY = 0.04D;
     public static final double MIN_GRAVITY = 0.0D;
     public static final double MAX_GRAVITY = 0.30D;
+    public static final int INFINITE_AREA_TICKS = -1;
 
     private static final int AREA_RADIUS = 10;
     private static final int ISLAND_VERTICAL_RADIUS = 8;
@@ -61,10 +82,14 @@ public final class GravityMagic {
     private static final Map<UUID, InvertedPlayerState> SERVER_INVERTED_PLAYER_STATES = new ConcurrentHashMap<>();
     private static final Map<UUID, InvertedPlayerState> CLIENT_INVERTED_PLAYER_STATES = new ConcurrentHashMap<>();
     private static final List<AreaGravityField> AREA_FIELDS = new CopyOnWriteArrayList<>();
+    private static boolean serverAreasLoaded = false;
 
     public enum LaunchMode {
         UP,
         RIGHT
+    }
+
+    public record AreaGravityView(BlockPos center, int radius, int ticks) {
     }
 
     private GravityMagic() {
@@ -80,12 +105,15 @@ public final class GravityMagic {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            ensureServerAreasLoaded(server);
             for (ServerWorld world : server.getWorlds()) {
                 tickAreaGravity(world);
                 tickInvertedServerPlayerStates(world);
                 applyEntityGravity(world);
             }
         });
+
+        UseBlockCallback.EVENT.register(GravityMagic::useInvertedBlockSurface);
     }
 
     public static LaunchMode toggleMode(ServerPlayerEntity player) {
@@ -154,12 +182,122 @@ public final class GravityMagic {
 
     public static int activateAreaGravity(ServerWorld world, ServerPlayerEntity player, BlockPos origin) {
         double gravity = getSelectedGravity(player);
-        AreaGravityField field = new AreaGravityField(world.getRegistryKey(), origin.toImmutable(), AREA_RADIUS, AREA_DURATION_TICKS, gravity, false);
-        AREA_FIELDS.add(field);
-        broadcastAreaGravity(world, field);
+        addAreaGravity(world, origin, AREA_RADIUS, AREA_DURATION_TICKS, gravity);
         player.sendMessage(Text.literal("\u00a7b[Gravity] Inverted walk area r=" + AREA_RADIUS
                 + " ticks=" + AREA_DURATION_TICKS), true);
         return 1;
+    }
+
+    public static int addAreaGravity(ServerWorld world, BlockPos center, int radius, int ticks, double gravity) {
+        ensureServerAreasLoaded(world.getServer());
+        AreaGravityField field = new AreaGravityField(world.getRegistryKey(), center.toImmutable(), radius, ticks, gravity, false);
+        AREA_FIELDS.add(field);
+        broadcastAreaGravity(world, field);
+        saveServerAreas(world.getServer());
+        return 1;
+    }
+
+    public static int clearNearestAreaGravity(ServerWorld world, Vec3d pos) {
+        AreaGravityField nearest = null;
+        double nearestDistanceSq = Double.MAX_VALUE;
+        for (AreaGravityField field : AREA_FIELDS) {
+            if (field.clientSynced || !field.world.equals(world.getRegistryKey())) {
+                continue;
+            }
+            double distanceSq = Vec3d.ofCenter(field.center).squaredDistanceTo(pos);
+            if (distanceSq < nearestDistanceSq) {
+                nearest = field;
+                nearestDistanceSq = distanceSq;
+            }
+        }
+
+        if (nearest == null) {
+            return 0;
+        }
+
+        AREA_FIELDS.remove(nearest);
+        broadcastClearAreaGravity(world, nearest.center, nearest.radius, false);
+        saveServerAreas(world.getServer());
+        return 1;
+    }
+
+    public static int clearAllAreaGravity(ServerWorld world) {
+        int removed = 0;
+        for (AreaGravityField field : AREA_FIELDS) {
+            if (!field.clientSynced && field.world.equals(world.getRegistryKey()) && AREA_FIELDS.remove(field)) {
+                removed++;
+            }
+        }
+        if (removed > 0) {
+            broadcastClearAreaGravity(world, BlockPos.ORIGIN, 0, true);
+            saveServerAreas(world.getServer());
+        }
+        return removed;
+    }
+
+    public static void syncAreaGravityTo(ServerPlayerEntity player) {
+        ensureServerAreasLoaded(player.getServer());
+        for (AreaGravityField field : AREA_FIELDS) {
+            if (!field.clientSynced && field.world.equals(player.getWorld().getRegistryKey())) {
+                ServerPlayNetworking.send(player, new GravityPackets.AreaGravityS2C(field.center, field.radius, field.ticks, field.gravity));
+            }
+        }
+    }
+
+    public static boolean canCropSurviveInverted(BlockState cropState, BlockView world, BlockPos cropPos) {
+        if (!(world instanceof World realWorld)) {
+            return false;
+        }
+        return isInInvertedArea(realWorld.getRegistryKey(), Vec3d.ofCenter(cropPos))
+                && world.getBlockState(cropPos.up()).isOf(Blocks.FARMLAND);
+    }
+
+    private static ActionResult useInvertedBlockSurface(PlayerEntity player, World world, net.minecraft.util.Hand hand, net.minecraft.util.hit.BlockHitResult hit) {
+        if (!isInInvertedArea(world.getRegistryKey(), hit.getPos()) || hit.getSide() != Direction.DOWN) {
+            return ActionResult.PASS;
+        }
+
+        BlockPos farmlandPos = hit.getBlockPos();
+        if (!world.getBlockState(farmlandPos).isOf(Blocks.FARMLAND)) {
+            return ActionResult.PASS;
+        }
+
+        BlockState crop = cropForSeed(player.getStackInHand(hand));
+        if (crop == null) {
+            return ActionResult.PASS;
+        }
+
+        BlockPos cropPos = farmlandPos.down();
+        if (!world.getBlockState(cropPos).isAir()) {
+            return ActionResult.PASS;
+        }
+
+        if (world.isClient()) {
+            return ActionResult.SUCCESS;
+        }
+
+        world.setBlockState(cropPos, crop, Block.NOTIFY_ALL);
+        if (!player.getAbilities().creativeMode) {
+            player.getStackInHand(hand).decrement(1);
+        }
+        return ActionResult.SUCCESS_SERVER;
+    }
+
+    private static BlockState cropForSeed(ItemStack stack) {
+        Item item = stack.getItem();
+        if (item == Items.WHEAT_SEEDS) {
+            return Blocks.WHEAT.getDefaultState();
+        }
+        if (item == Items.CARROT) {
+            return Blocks.CARROTS.getDefaultState();
+        }
+        if (item == Items.POTATO) {
+            return Blocks.POTATOES.getDefaultState();
+        }
+        if (item == Items.BEETROOT_SEEDS) {
+            return Blocks.BEETROOTS.getDefaultState();
+        }
+        return null;
     }
 
     private static boolean launchOne(ServerWorld world, BlockPos pos, Vec3d velocity, double gravityY, double riseLimit) {
@@ -233,11 +371,92 @@ public final class GravityMagic {
             if (field.clientSynced || !field.world.equals(world.getRegistryKey())) {
                 continue;
             }
+            if (field.ticks == INFINITE_AREA_TICKS) {
+                continue;
+            }
             field.ticks--;
             if (field.ticks <= 0) {
                 AREA_FIELDS.remove(field);
+                broadcastClearAreaGravity(world, field.center, field.radius, false);
+                saveServerAreas(world.getServer());
             }
         }
+    }
+
+    private static void ensureServerAreasLoaded(MinecraftServer server) {
+        if (serverAreasLoaded) {
+            return;
+        }
+        serverAreasLoaded = true;
+        Path path = areaSavePath(server);
+        if (!Files.exists(path)) {
+            return;
+        }
+
+        try (Reader reader = Files.newBufferedReader(path)) {
+            JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
+            JsonArray areas = root.getAsJsonArray("areas");
+            if (areas == null) {
+                return;
+            }
+
+            for (JsonElement element : areas) {
+                if (!element.isJsonObject()) {
+                    continue;
+                }
+                JsonObject area = element.getAsJsonObject();
+                RegistryKey<World> world = RegistryKey.of(RegistryKeys.WORLD, Identifier.of(area.get("world").getAsString()));
+                BlockPos center = new BlockPos(area.get("x").getAsInt(), area.get("y").getAsInt(), area.get("z").getAsInt());
+                int radius = area.get("radius").getAsInt();
+                int ticks = area.get("ticks").getAsInt();
+                double gravity = area.get("gravity").getAsDouble();
+                AREA_FIELDS.add(new AreaGravityField(world, center, radius, ticks, gravity, false));
+            }
+        } catch (RuntimeException | IOException ignored) {
+            // Corrupt debug-area data should not prevent a world from loading.
+        }
+
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            syncAreaGravityTo(player);
+        }
+    }
+
+    private static void saveServerAreas(MinecraftServer server) {
+        if (!serverAreasLoaded) {
+            return;
+        }
+
+        JsonObject root = new JsonObject();
+        JsonArray areas = new JsonArray();
+        for (AreaGravityField field : AREA_FIELDS) {
+            if (field.clientSynced) {
+                continue;
+            }
+            JsonObject area = new JsonObject();
+            area.addProperty("world", field.world.getValue().toString());
+            area.addProperty("x", field.center.getX());
+            area.addProperty("y", field.center.getY());
+            area.addProperty("z", field.center.getZ());
+            area.addProperty("radius", field.radius);
+            area.addProperty("ticks", field.ticks);
+            area.addProperty("gravity", field.gravity);
+            areas.add(area);
+        }
+        root.add("areas", areas);
+
+        Path path = areaSavePath(server);
+        try {
+            Files.createDirectories(path.getParent());
+            try (Writer writer = Files.newBufferedWriter(path)) {
+                writer.write(root.toString());
+            }
+        } catch (IOException ignored) {
+            // The active areas remain in memory even if disk persistence fails.
+        }
+    }
+
+    private static Path areaSavePath(MinecraftServer server) {
+        return server.getSavePath(WorldSavePath.ROOT).resolve("monvhua_gravity_areas.json");
     }
 
     private static void tickInvertedServerPlayerStates(ServerWorld world) {
@@ -414,6 +633,13 @@ public final class GravityMagic {
         }
     }
 
+    private static void broadcastClearAreaGravity(ServerWorld world, BlockPos center, int radius, boolean all) {
+        GravityPackets.ClearAreaGravityS2C packet = new GravityPackets.ClearAreaGravityS2C(center, radius, all);
+        for (ServerPlayerEntity target : world.getPlayers()) {
+            ServerPlayNetworking.send(target, packet);
+        }
+    }
+
     public static boolean shouldSuppressVanillaGravity(Entity entity) {
         return ENTITY_GRAVITY.containsKey(entity.getUuid()) || isInInvertedArea(entity);
     }
@@ -422,9 +648,23 @@ public final class GravityMagic {
         AREA_FIELDS.add(new AreaGravityField(world, center.toImmutable(), radius, ticks, gravity, true));
     }
 
+    public static void clearClientSyncedAreaGravity(RegistryKey<World> world, BlockPos center, int radius, boolean all) {
+        for (AreaGravityField field : AREA_FIELDS) {
+            if (!field.clientSynced || !field.world.equals(world)) {
+                continue;
+            }
+            if (all || field.center.equals(center) && field.radius == radius) {
+                AREA_FIELDS.remove(field);
+            }
+        }
+    }
+
     public static void tickClientSyncedAreaGravity() {
         for (AreaGravityField field : AREA_FIELDS) {
             if (!field.clientSynced) {
+                continue;
+            }
+            if (field.ticks == INFINITE_AREA_TICKS) {
                 continue;
             }
             field.ticks--;
@@ -432,6 +672,16 @@ public final class GravityMagic {
                 AREA_FIELDS.remove(field);
             }
         }
+    }
+
+    public static List<AreaGravityView> getClientAreaGravityViews(RegistryKey<World> world) {
+        List<AreaGravityView> views = new java.util.ArrayList<>();
+        for (AreaGravityField field : AREA_FIELDS) {
+            if (field.clientSynced && field.world.equals(world)) {
+                views.add(new AreaGravityView(field.center, field.radius, field.ticks));
+            }
+        }
+        return views;
     }
 
     public static double getInvertedAreaGravity(Entity entity) {

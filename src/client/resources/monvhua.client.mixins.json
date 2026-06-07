@@ -10,6 +10,8 @@
 		"GravityCameraMixin",
 		"GravityEyePositionMixin",
 		"InvertedBlockTextureMixin",
+		"SodiumInvertedBlockCullMixin",
+		"SodiumInvertedBlockTextureMixin",
 		"InvertedClientPlayerTravelMixin",
 		"GravityLookDirectionMixin",
 		"GravityLivingEntityRendererMixin",

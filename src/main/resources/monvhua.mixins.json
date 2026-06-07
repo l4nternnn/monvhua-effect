@@ -6,6 +6,7 @@
 		"ExampleMixin",
 		"EntityGravityMixin",
 		"FallDamageMixin",
+		"InvertedCropSupportMixin",
 		"InvertedPlayerTravelMixin",
 		"ServerPlayNetworkHandlerMixin",
 		"StyledChatStylesMixin"

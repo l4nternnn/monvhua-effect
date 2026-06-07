@@ -17,6 +17,7 @@ public final class GravityPackets {
 
     public static void registerS2C() {
         AreaGravityS2C.register();
+        ClearAreaGravityS2C.register();
         EntityGravityS2C.register();
     }
 
@@ -61,6 +62,34 @@ public final class GravityPackets {
             buf.writeInt(radius);
             buf.writeInt(ticks);
             buf.writeDouble(gravity);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record ClearAreaGravityS2C(BlockPos center, int radius, boolean all) implements CustomPayload {
+        public static final Id<ClearAreaGravityS2C> ID = new Id<>(Identifier.of("monvhua", "clear_area_gravity"));
+        public static final PacketCodec<RegistryByteBuf, ClearAreaGravityS2C> CODEC = PacketCodec.of(ClearAreaGravityS2C::write, ClearAreaGravityS2C::new);
+        private static boolean registered = false;
+
+        private ClearAreaGravityS2C(RegistryByteBuf buf) {
+            this(buf.readBlockPos(), buf.readInt(), buf.readBoolean());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeBlockPos(center);
+            buf.writeInt(radius);
+            buf.writeBoolean(all);
         }
 
         @Override

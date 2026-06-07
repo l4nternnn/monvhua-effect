@@ -381,6 +381,7 @@ public class MonvhuaMod implements ModInitializer {
         CommandRegistrationCallback.EVENT.register(ClairvoyanceCommand::register);
         CommandRegistrationCallback.EVENT.register(ActionCommand::register);
         CommandRegistrationCallback.EVENT.register(SkeletalBodyPartCommand::register);
+        CommandRegistrationCallback.EVENT.register(GravityCommand::register);
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("clairvoyance-肢体|合并")
@@ -442,6 +443,7 @@ public class MonvhuaMod implements ModInitializer {
             MirrorCommand.syncToClient(player);
             ServerPlayNetworking.send(player, new SecrecyConfigS2CPacket(SecrecyConfig.getInstance().toJson()));
             ServerPlayNetworking.send(player, new FloatingPackets.ConfigS2C(FloatingConfig.getInstance().toJson()));
+            GravityMagic.syncAreaGravityTo(player);
 
             // 同步漂浮魔法标签（完全魔女化 + Floating）
             ServerPlayNetworking.send(player, new FullWitchTagSyncS2CPacket(

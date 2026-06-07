@@ -48,9 +48,39 @@ public final class GravityClient {
                             packet.ticks(),
                             packet.gravity()
                     );
+                    scheduleAreaRerender(client, packet.center(), packet.radius());
                 }
             });
         });
+        ClientPlayNetworking.registerGlobalReceiver(GravityPackets.ClearAreaGravityS2C.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                MinecraftClient client = MinecraftClient.getInstance();
+                if (client.world != null) {
+                    GravityMagic.clearClientSyncedAreaGravity(
+                            client.world.getRegistryKey(),
+                            packet.center(),
+                            packet.radius(),
+                            packet.all()
+                    );
+                    if (packet.all()) {
+                        client.worldRenderer.reload();
+                    } else {
+                        scheduleAreaRerender(client, packet.center(), packet.radius());
+                    }
+                }
+            });
+        });
+    }
+
+    private static void scheduleAreaRerender(MinecraftClient client, net.minecraft.util.math.BlockPos center, int radius) {
+        client.worldRenderer.scheduleBlockRenders(
+                center.getX() - radius,
+                center.getY() - radius,
+                center.getZ() - radius,
+                center.getX() + radius,
+                center.getY() + radius,
+                center.getZ() + radius
+        );
     }
 
     private static void registerScrollCallback(MinecraftClient client) {
