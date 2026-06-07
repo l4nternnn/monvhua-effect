@@ -958,16 +958,18 @@ public class BodyPoseEditorScreen extends Screen {
 	}
 
 	private static void applyTorsoPartPose(PlayerEntityModel model, PartPose pose) {
-		applyPose(model.body, pose);
 		ModelPart blendPart = getBlendPart("torso", model.body);
 		if (blendPart != null) {
 			blendPart.visible = false;
 		}
-		if (pose != null && poseEditMode == PoseEditMode.SKELETAL && hasBendPose(pose)) {
-			if (blendPart != null) {
-				blendPart.visible = true;
+		if (pose != null) {
+			TorsoBendFollower.applyPose(model, pose.pitch, pose.yaw, pose.roll, pose.scale);
+			if (poseEditMode == PoseEditMode.SKELETAL && hasBendPose(pose)) {
+				if (blendPart != null) {
+					blendPart.visible = true;
+				}
+				TorsoBendFollower.apply(model, pose.bendPitch, pose.bendYaw, pose.bendRoll);
 			}
-			TorsoBendFollower.apply(model, pose.bendPitch, pose.bendYaw, pose.bendRoll);
 		}
 	}
 

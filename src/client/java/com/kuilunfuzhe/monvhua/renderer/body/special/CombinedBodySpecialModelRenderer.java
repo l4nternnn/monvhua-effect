@@ -205,11 +205,15 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
     }
 
     private static void applyTorsoPose(PlayerEntityModel model, NbtCompound data) {
-        applyPose(model.body, data, "torso");
         ModelPart blendPart = getBlendPart(model.body, "torso");
         if (blendPart != null) {
             blendPart.visible = false;
         }
+        TorsoBendFollower.applyPose(model,
+                data.getFloat("pose_torso_pitch", 0.0F),
+                data.getFloat("pose_torso_yaw", 0.0F),
+                data.getFloat("pose_torso_roll", 0.0F),
+                Math.max(0.1F, data.getFloat("pose_torso_scale", 1.0F)));
         if (hasBendPose(data, "torso")) {
             if (blendPart != null) {
                 blendPart.visible = true;

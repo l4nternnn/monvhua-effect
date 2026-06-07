@@ -45,7 +45,9 @@ public class ClientTickHandler {
                 client.setScreen(new CombinedConfigScreen());
             }
             if (KeyBindingHandler.bodyPoseEditorKey.wasPressed() && client.player.isCreative()) {
-                BodyPoseEditorFragment.open();
+                if (!BodyPoseEditorFragment.tryOpenFromTargetedEditorEntity()) {
+                    BodyPoseEditorFragment.open();
+                }
             }
             if (KeyBindingHandler.bodyPoseWorldPreviewKey.wasPressed() && client.player.isCreative()) {
                 BodyPoseEditorFragment.toggleWorldPreviewModeFromKey();

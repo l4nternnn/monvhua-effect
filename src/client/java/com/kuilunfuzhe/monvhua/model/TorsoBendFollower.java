@@ -7,8 +7,30 @@ import org.joml.Vector3f;
 
 public final class TorsoBendFollower {
     private static final float TORSO_BEND_PIVOT_Y = 6.0F;
+    private static final float TORSO_POSE_PIVOT_Y = 12.0F;
 
     private TorsoBendFollower() {
+    }
+
+    public static void applyPose(PlayerEntityModel model, float posePitch, float poseYaw, float poseRoll, float scale) {
+        if (model == null) {
+            return;
+        }
+
+        if (hasBend(posePitch, poseYaw, poseRoll)) {
+            float pitch = degreesToRadians(posePitch);
+            float yaw = degreesToRadians(poseYaw);
+            float roll = degreesToRadians(poseRoll);
+            Vector3f pivot = getBodyPivot(model.body, TORSO_POSE_PIVOT_Y);
+            Quaternionf poseRotation = createModelPartRotation(pitch, yaw, roll);
+
+            rotateRootPartAroundPivot(model.body, pivot, poseRotation, pitch, yaw, roll);
+            rotateRootPartAroundPivot(model.head, pivot, poseRotation, pitch, yaw, roll);
+            rotateRootPartAroundPivot(model.leftArm, pivot, poseRotation, pitch, yaw, roll);
+            rotateRootPartAroundPivot(model.rightArm, pivot, poseRotation, pitch, yaw, roll);
+        }
+
+        setUniformScale(model.body, scale);
     }
 
     public static void apply(PlayerEntityModel model, float bendPitch, float bendYaw, float bendRoll) {
@@ -19,7 +41,7 @@ public final class TorsoBendFollower {
         float pitch = degreesToRadians(bendPitch);
         float yaw = degreesToRadians(bendYaw);
         float roll = degreesToRadians(bendRoll);
-        Vector3f pivot = getWaistPivot(model.body);
+        Vector3f pivot = getBodyPivot(model.body, TORSO_BEND_PIVOT_Y);
         Quaternionf bendRotation = createModelPartRotation(pitch, yaw, roll);
 
         rotateRootPartAroundPivot(model.body, pivot, bendRotation, pitch, yaw, roll);
@@ -37,8 +59,8 @@ public final class TorsoBendFollower {
         }
     }
 
-    private static Vector3f getWaistPivot(ModelPart body) {
-        Vector3f pivot = new Vector3f(0.0F, TORSO_BEND_PIVOT_Y, 0.0F);
+    private static Vector3f getBodyPivot(ModelPart body, float localY) {
+        Vector3f pivot = new Vector3f(0.0F, localY, 0.0F);
         if (body == null) {
             return pivot;
         }
@@ -64,6 +86,15 @@ public final class TorsoBendFollower {
         part.pitch += pitch;
         part.yaw += yaw;
         part.roll += roll;
+    }
+
+    private static void setUniformScale(ModelPart part, float scale) {
+        if (part == null) {
+            return;
+        }
+        part.xScale *= scale;
+        part.yScale *= scale;
+        part.zScale *= scale;
     }
 
     private static Quaternionf createModelPartRotation(float pitch, float yaw, float roll) {

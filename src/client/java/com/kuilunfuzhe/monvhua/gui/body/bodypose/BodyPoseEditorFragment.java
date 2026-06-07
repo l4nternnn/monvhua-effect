@@ -20,6 +20,9 @@ import icyllis.modernui.view.View;
 import icyllis.modernui.view.ViewGroup;
 import icyllis.modernui.widget.*;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.NbtComponent;
+import net.minecraft.component.type.ProfileComponent;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -28,15 +31,23 @@ import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.render.entity.state.ItemDisplayEntityRenderState;
 import net.minecraft.client.util.SkinTextures;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.decoration.DisplayEntity;
+import net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity;
+import net.minecraft.entity.decoration.InteractionEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemDisplayContext;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.registry.Registries;
+import net.minecraft.text.Text;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.AffineTransformation;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix3x2fStack;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -68,6 +79,13 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final float DEFAULT_PREVIEW_PAN_X = 0.0F;
     private static final float DEFAULT_PREVIEW_ZOOM = 0.65F;
     private static final float PREVIEW_SCALE_FACTOR = 0.36F;
+    private static final double REEDIT_TARGET_DISTANCE = 8.0D;
+    private static final double REEDIT_DISPLAY_PICK_EXPAND = 0.45D;
+    private static final double REEDIT_INTERACTION_DISPLAY_RADIUS_SQUARED = 9.0D;
+    private static final Identifier COMBINED_BODY_MODEL_ID = Identifier.of("monvhua", "combined_body");
+    private static final String[] POSE_PART_ORDER = {
+            "head", "torso", "left_arm", "right_arm", "left_leg", "right_leg"
+    };
     private static final float PREVIEW_PITCH_BOUNDS_EXTRA_SCALE = 3.2F;
     private static final float PREVIEW_ZOOM_MIN = 0.08F;
     private static final float PREVIEW_ZOOM_MAX = 10.0F;
@@ -225,15 +243,188 @@ public class BodyPoseEditorFragment extends Fragment {
     // ═══════════════════════════════════════════════════════
 
     public static void open() {
+        resetEditorOpenState();
+        openEditorScreen();
+    }
+
+    public static boolean tryOpenFromTargetedEditorEntity() {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null) return;
+        if (client == null || client.player == null || client.world == null) {
+            return false;
+        }
+        ItemStack stack = findTargetedCombinedBodyStack(client);
+        if (stack == null || stack.isEmpty()) {
+            return false;
+        }
+
+        resetEditorOpenState();
+        loadEditorStateFromCombinedBodyStack(stack);
+        openEditorScreen();
+        client.player.sendMessage(Text.literal("已载入已放置躯体姿态"), true);
+        return true;
+    }
+
+    private static void resetEditorOpenState() {
         selectedPart = getDefaultSelectedPart();
         poseEditMode = PoseEditMode.SKELETAL;
         showWholePreview = true;
         worldPreviewEnabled = true;
         EDITOR_ITEMS.clear();
+    }
+
+    private static void openEditorScreen() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null) return;
         Screen screen = MuiModApi.get().createScreen(new BodyPoseEditorFragment());
         client.setScreen(screen);
+    }
+
+    private static ItemStack findTargetedCombinedBodyStack(MinecraftClient client) {
+        Vec3d eye = client.player.getEyePos();
+        Vec3d look = client.player.getRotationVec(1.0F);
+        Vec3d end = eye.add(look.multiply(REEDIT_TARGET_DISTANCE));
+        double nearestDistance = REEDIT_TARGET_DISTANCE;
+        HitResult blockHit = client.player.raycast(REEDIT_TARGET_DISTANCE, 0.0F, false);
+        if (blockHit.getType() == HitResult.Type.BLOCK) {
+            nearestDistance = blockHit.getPos().distanceTo(eye);
+        }
+
+        Entity targetedEntity = null;
+        for (Entity entity : client.world.getEntities()) {
+            if (entity == client.player || !(entity instanceof ItemDisplayEntity || entity instanceof InteractionEntity)) {
+                continue;
+            }
+            Box box = entity.getBoundingBox().expand(entity instanceof ItemDisplayEntity ? REEDIT_DISPLAY_PICK_EXPAND : 0.0D);
+            Optional<Vec3d> hit = box.raycast(eye, end);
+            if (hit.isEmpty()) {
+                continue;
+            }
+            double distance = eye.distanceTo(hit.get());
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                targetedEntity = entity;
+            }
+        }
+
+        if (targetedEntity instanceof ItemDisplayEntity display && isCombinedBodyDisplay(display)) {
+            return display.getItemStack().copy();
+        }
+        if (targetedEntity instanceof InteractionEntity interaction) {
+            ItemDisplayEntity display = findNearestCombinedBodyDisplay(client, interaction.getPos());
+            return display != null ? display.getItemStack().copy() : null;
+        }
+        return null;
+    }
+
+    private static ItemDisplayEntity findNearestCombinedBodyDisplay(MinecraftClient client, Vec3d pos) {
+        ItemDisplayEntity nearest = null;
+        double nearestDistanceSquared = REEDIT_INTERACTION_DISPLAY_RADIUS_SQUARED;
+        for (Entity entity : client.world.getEntities()) {
+            if (!(entity instanceof ItemDisplayEntity display) || !isCombinedBodyDisplay(display)) {
+                continue;
+            }
+            double distanceSquared = display.getPos().squaredDistanceTo(pos);
+            if (distanceSquared <= nearestDistanceSquared) {
+                nearestDistanceSquared = distanceSquared;
+                nearest = display;
+            }
+        }
+        return nearest;
+    }
+
+    private static boolean isCombinedBodyDisplay(ItemDisplayEntity display) {
+        return isCombinedBodyStack(display.getItemStack());
+    }
+
+    private static boolean isCombinedBodyStack(ItemStack stack) {
+        Identifier model = stack.get(DataComponentTypes.ITEM_MODEL);
+        return COMBINED_BODY_MODEL_ID.equals(model);
+    }
+
+    private static void loadEditorStateFromCombinedBodyStack(ItemStack stack) {
+        NbtComponent customData = stack.get(DataComponentTypes.CUSTOM_DATA);
+        NbtCompound nbt = customData != null ? customData.copyNbt() : new NbtCompound();
+
+        loadSkinState(stack, nbt);
+        resetPoseMap(PART_POSES);
+        resetPoseMap(SKELETAL_POSES);
+        loadPoseMap(PART_POSES, nbt);
+        loadPoseMap(SKELETAL_POSES, nbt);
+        loadBendMap(SKELETAL_POSES, nbt);
+        loadPlacementState(nbt);
+    }
+
+    private static void loadSkinState(ItemStack stack, NbtCompound nbt) {
+        Optional<String> localSkin = nbt.getString("local_skin");
+        if (localSkin.isPresent() && !localSkin.get().isBlank()) {
+            selectedSkin = localSkin.get();
+            selectedSkinSource = SkinSource.LOCAL;
+            selectedPlayerName = "";
+        } else {
+            ProfileComponent profile = stack.get(DataComponentTypes.PROFILE);
+            String profileName = getProfileName(profile);
+            if (!profileName.isBlank()) {
+                selectedPlayerName = profileName;
+                selectedSkinSource = SkinSource.PLAYER;
+            }
+        }
+        slimModel = "slim".equals(nbt.getString("arm_model").orElse("default"));
+        if (selectedSkinSource == SkinSource.PLAYER && !slimModel) {
+            PlayerListEntry entry = getSelectedPlayerEntry();
+            if (entry != null) {
+                slimModel = entry.getSkinTextures().model() == SkinTextures.Model.SLIM;
+            }
+        }
+    }
+
+    private static String getProfileName(ProfileComponent profile) {
+        if (profile == null) {
+            return "";
+        }
+        Optional<String> name = profile.name();
+        if (name.isPresent()) {
+            return name.get();
+        }
+        return profile.gameProfile() != null && profile.gameProfile().getName() != null
+                ? profile.gameProfile().getName() : "";
+    }
+
+    private static void resetPoseMap(Map<String, PartPose> poses) {
+        poses.clear();
+        for (String part : BodyModelSelectionCatalog.PARTS) {
+            if (!part.equals("all")) {
+                poses.put(part, new PartPose());
+            }
+        }
+    }
+
+    private static void loadPoseMap(Map<String, PartPose> poses, NbtCompound nbt) {
+        for (String part : POSE_PART_ORDER) {
+            PartPose pose = poses.computeIfAbsent(part, ignored -> new PartPose());
+            pose.pitch = clampPreview(nbt.getFloat("pose_" + part + "_pitch", 0.0F), -180.0F, 180.0F);
+            pose.yaw = normalizeDegrees(nbt.getFloat("pose_" + part + "_yaw", 0.0F));
+            pose.roll = normalizeDegrees(nbt.getFloat("pose_" + part + "_roll", 0.0F));
+            pose.scale = clampPreview(nbt.getFloat("pose_" + part + "_scale", 1.0F), MODEL_SCALE_MIN, MODEL_SCALE_MAX);
+        }
+    }
+
+    private static void loadBendMap(Map<String, PartPose> poses, NbtCompound nbt) {
+        for (String part : POSE_PART_ORDER) {
+            PartPose pose = poses.computeIfAbsent(part, ignored -> new PartPose());
+            pose.bendPitch = clampPreview(nbt.getFloat("bend_" + part + "_pitch", 0.0F), -180.0F, 180.0F);
+            pose.bendYaw = normalizeDegrees(nbt.getFloat("bend_" + part + "_yaw", 0.0F));
+            pose.bendRoll = normalizeDegrees(nbt.getFloat("bend_" + part + "_roll", 0.0F));
+        }
+    }
+
+    private static void loadPlacementState(NbtCompound nbt) {
+        modelOffsetX = clampPreview(nbt.getFloat("pose_model_offset_x", 0.0F), MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+        modelOffsetY = clampPreview(nbt.getFloat("pose_model_offset_y", 0.0F), MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+        modelOffsetZ = clampPreview(nbt.getFloat("pose_model_offset_z", 0.0F), MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+        modelPitch = clampPreview(nbt.getFloat("pose_model_pitch", 0.0F), -180.0F, 180.0F);
+        modelYaw = normalizeDegrees(nbt.getFloat("pose_model_yaw", 0.0F));
+        modelRoll = normalizeDegrees(nbt.getFloat("pose_model_roll", 0.0F));
+        wholeBodyScale = clampPreview(nbt.getFloat("pose_model_scale", 1.0F), MODEL_SCALE_MIN, MODEL_SCALE_MAX);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -1879,16 +2070,18 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private static void applyTorsoPartPose(PlayerEntityModel model, PartPose pose) {
-        applyPose(model.body, pose);
         ModelPart blendPart = getBlendPart("torso", model.body);
         if (blendPart != null) {
             blendPart.visible = false;
         }
-        if (pose != null && poseEditMode == PoseEditMode.SKELETAL && hasBendPose(pose)) {
-            if (blendPart != null) {
-                blendPart.visible = true;
+        if (pose != null) {
+            TorsoBendFollower.applyPose(model, pose.pitch, pose.yaw, pose.roll, pose.scale);
+            if (poseEditMode == PoseEditMode.SKELETAL && hasBendPose(pose)) {
+                if (blendPart != null) {
+                    blendPart.visible = true;
+                }
+                TorsoBendFollower.apply(model, pose.bendPitch, pose.bendYaw, pose.bendRoll);
             }
-            TorsoBendFollower.apply(model, pose.bendPitch, pose.bendYaw, pose.bendRoll);
         }
     }
 
