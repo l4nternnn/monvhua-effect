@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.renderer.body.special;
 
 import com.kuilunfuzhe.monvhua.model.CombinedBodyModelData;
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
+import com.kuilunfuzhe.monvhua.model.TorsoBendFollower;
 import com.kuilunfuzhe.monvhua.renderer.body.SkinOuterLayerVoxelRenderer;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.client.model.ModelPart;
@@ -195,12 +196,29 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         if (data == null) {
             return;
         }
+        applyTorsoPose(model, data);
         applyPartPose(model.head, data, "head");
-        applyPartPose(model.body, data, "torso");
         applyPartPose(model.leftArm, data, "left_arm");
         applyPartPose(model.rightArm, data, "right_arm");
         applyPartPose(model.leftLeg, data, "left_leg");
         applyPartPose(model.rightLeg, data, "right_leg");
+    }
+
+    private static void applyTorsoPose(PlayerEntityModel model, NbtCompound data) {
+        applyPose(model.body, data, "torso");
+        ModelPart blendPart = getBlendPart(model.body, "torso");
+        if (blendPart != null) {
+            blendPart.visible = false;
+        }
+        if (hasBendPose(data, "torso")) {
+            if (blendPart != null) {
+                blendPart.visible = true;
+            }
+            TorsoBendFollower.apply(model,
+                    data.getFloat("bend_torso_pitch", 0.0F),
+                    data.getFloat("bend_torso_yaw", 0.0F),
+                    data.getFloat("bend_torso_roll", 0.0F));
+        }
     }
 
     private static void applyPartPose(ModelPart part, NbtCompound data, String partName) {

@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.gui.body.bodypose;
 import com.kuilunfuzhe.monvhua.features.block.body.BodyModelSelectionCatalog;
 import com.kuilunfuzhe.monvhua.model.CombinedBodyModelData;
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
+import com.kuilunfuzhe.monvhua.model.TorsoBendFollower;
 import com.kuilunfuzhe.monvhua.network.bodypose.ApplySkeletalPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
@@ -1785,12 +1786,7 @@ public class BodyPoseEditorFragment extends Fragment {
         }
 
         Map<String, PartPose> previewPoses = getActivePoseMap();
-        applyPartPose("head", model.head, previewPoses.get("head"));
-        applyPartPose("torso", model.body, previewPoses.get("torso"));
-        applyPartPose("left_arm", model.leftArm, previewPoses.get("left_arm"));
-        applyPartPose("right_arm", model.rightArm, previewPoses.get("right_arm"));
-        applyPartPose("left_leg", model.leftLeg, previewPoses.get("left_leg"));
-        applyPartPose("right_leg", model.rightLeg, previewPoses.get("right_leg"));
+        applyPreviewPoses(model, previewPoses, showAll);
     }
 
     public static PlayerEntityModel getPreparedWorldPreviewModel() {
@@ -1838,14 +1834,22 @@ public class BodyPoseEditorFragment extends Fragment {
         }
 
         Map<String, PartPose> previewPoses = getActivePoseMap();
+        applyPreviewPoses(model, previewPoses, showAll);
+
+        return model;
+    }
+
+    private static void applyPreviewPoses(PlayerEntityModel model, Map<String, PartPose> previewPoses, boolean showAll) {
+        if (showAll || selectedPart.equals("torso")) {
+            applyTorsoPartPose(model, previewPoses.get("torso"));
+        } else {
+            applyPartPose("torso", model.body, previewPoses.get("torso"));
+        }
         applyPartPose("head", model.head, previewPoses.get("head"));
-        applyPartPose("torso", model.body, previewPoses.get("torso"));
         applyPartPose("left_arm", model.leftArm, previewPoses.get("left_arm"));
         applyPartPose("right_arm", model.rightArm, previewPoses.get("right_arm"));
         applyPartPose("left_leg", model.leftLeg, previewPoses.get("left_leg"));
         applyPartPose("right_leg", model.rightLeg, previewPoses.get("right_leg"));
-
-        return model;
     }
 
     private static void centerSelectedPart(PlayerEntityModel model) {
@@ -1872,6 +1876,20 @@ public class BodyPoseEditorFragment extends Fragment {
         part.originX = x;
         part.originY = y;
         part.originZ = z;
+    }
+
+    private static void applyTorsoPartPose(PlayerEntityModel model, PartPose pose) {
+        applyPose(model.body, pose);
+        ModelPart blendPart = getBlendPart("torso", model.body);
+        if (blendPart != null) {
+            blendPart.visible = false;
+        }
+        if (pose != null && poseEditMode == PoseEditMode.SKELETAL && hasBendPose(pose)) {
+            if (blendPart != null) {
+                blendPart.visible = true;
+            }
+            TorsoBendFollower.apply(model, pose.bendPitch, pose.bendYaw, pose.bendRoll);
+        }
     }
 
     private static void applyPartPose(String partName, ModelPart part, PartPose pose) {
