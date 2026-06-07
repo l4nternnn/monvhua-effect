@@ -50,6 +50,7 @@ public class ModNetworking {
         SecrecyStateS2CPacket.register();
         CarryPoseSyncS2CPacket.register();
         ActionPackets.registerS2C();
+        GravityPackets.registerS2C();
         ImitateOpenUIPacket.register();
         SoundWaveStartS2CPacket.register();
         ImitateConfigS2CPacket.register();

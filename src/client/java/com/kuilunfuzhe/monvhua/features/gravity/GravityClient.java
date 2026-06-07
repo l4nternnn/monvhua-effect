@@ -5,6 +5,7 @@ import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.network.gravity.GravityPackets;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.block.BlockState;
@@ -33,8 +34,23 @@ public final class GravityClient {
             if (!scrollCallbackRegistered && client.getWindow() != null) {
                 registerScrollCallback(client);
             }
+            GravityMagic.tickClientSyncedAreaGravity();
         });
         HudRenderCallback.EVENT.register(GravityClient::renderHud);
+        ClientPlayNetworking.registerGlobalReceiver(GravityPackets.AreaGravityS2C.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                MinecraftClient client = MinecraftClient.getInstance();
+                if (client.world != null) {
+                    GravityMagic.addClientSyncedAreaGravity(
+                            client.world.getRegistryKey(),
+                            packet.center(),
+                            packet.radius(),
+                            packet.ticks(),
+                            packet.gravity()
+                    );
+                }
+            });
+        });
     }
 
     private static void registerScrollCallback(MinecraftClient client) {
@@ -122,5 +138,9 @@ public final class GravityClient {
             }
         }
         return null;
+    }
+
+    public static boolean isEntityInInvertedField(Entity entity) {
+        return GravityMagic.isInInvertedArea(entity);
     }
 }
