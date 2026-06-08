@@ -5,6 +5,7 @@ import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
+import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
 import com.kuilunfuzhe.monvhua.item.secrecy.SecrecyItem;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.minecraft.item.ItemGroup;
@@ -34,6 +35,10 @@ public class ModItemGroups {
                     entries.add(Evil_Eyes.CLAIRVOYANCE_ITEM);
                     entries.add(ModItems.MAGIC_STICK);
                     entries.add(GravityItems.GRAVITY_WAND);
+                    entries.add(PaintItems.PAINT_BRUSH);
+                    entries.add(PaintItems.ERASER);
+                    entries.add(PaintItems.PAINT_PAPER);
+                    entries.add(PaintItems.PAINT_BUCKET);
                     entries.add(mirror_of_then_and_now.MIRROR_ITEM);
                     entries.add(SecrecyItem.SECRECY_ITEM);
                     entries.add(Assembly_ModItems.TORSO_ITEM);

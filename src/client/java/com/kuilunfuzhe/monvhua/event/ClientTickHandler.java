@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.event;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
+import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
 import com.kuilunfuzhe.monvhua.features.secrecy.SecrecyClientAudioManager;
 import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorFragment;
@@ -44,9 +45,11 @@ public class ClientTickHandler {
             if (KeyBindingHandler.configKey.wasPressed() && client.player.isCreative()) {
                 client.setScreen(new CombinedConfigScreen());
             }
-            if (KeyBindingHandler.bodyPoseEditorKey.wasPressed() && client.player.isCreative()) {
-                if (!BodyPoseEditorFragment.tryOpenFromTargetedEditorEntity()) {
-                    BodyPoseEditorFragment.open();
+            if (KeyBindingHandler.bodyPoseEditorKey.wasPressed()) {
+                if (!PaintOverlayClient.tryOpenColorScreen(client) && client.player.isCreative()) {
+                    if (!BodyPoseEditorFragment.tryOpenFromTargetedEditorEntity()) {
+                        BodyPoseEditorFragment.open();
+                    }
                 }
             }
             if (KeyBindingHandler.bodyPoseWorldPreviewKey.wasPressed() && client.player.isCreative()) {

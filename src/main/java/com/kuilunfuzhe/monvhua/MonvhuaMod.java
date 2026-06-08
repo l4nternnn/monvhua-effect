@@ -21,6 +21,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
 import com.kuilunfuzhe.monvhua.features.guidance.Gazeguidance;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import com.kuilunfuzhe.monvhua.features.imitate.ImitateManager;
+import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayFeature;
 import com.kuilunfuzhe.monvhua.item.ModItemGroups;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.FloatingConfig;
@@ -31,6 +32,7 @@ import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
 import com.kuilunfuzhe.monvhua.item.imitate.ImitateItem;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
+import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
 import com.kuilunfuzhe.monvhua.item.secrecy.SecrecyItem;
 import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
@@ -382,6 +384,7 @@ public class MonvhuaMod implements ModInitializer {
         CommandRegistrationCallback.EVENT.register(ActionCommand::register);
         CommandRegistrationCallback.EVENT.register(SkeletalBodyPartCommand::register);
         CommandRegistrationCallback.EVENT.register(GravityCommand::register);
+        CommandRegistrationCallback.EVENT.register(PaintGraffitiCommand::register);
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("clairvoyance-肢体|合并")
@@ -487,6 +490,8 @@ public class MonvhuaMod implements ModInitializer {
         GravityItems.initialize();
         GravityMagic.initialize();
         BlockHoleItems.initialize();
+        PaintItems.initialize();
+        PaintOverlayFeature.initialize();
         SecrecyItem.initialize(configManager);
         ModBlocks.initialize();
         Assembly_ModItems.initialize();
