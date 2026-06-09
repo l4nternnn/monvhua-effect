@@ -6,9 +6,15 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerEntityWorldChangeEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.NbtComponent;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
@@ -55,6 +61,8 @@ public final class PaintOverlayFeature {
                 context.server().execute(() -> setPaperSize(context.player(), packet.size())));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PaintStrokeC2S.ID, (packet, context) ->
                 context.server().execute(() -> handlePaintStroke(context.player(), packet)));
+        ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.ModelPaintStrokeC2S.ID, (packet, context) ->
+                context.server().execute(() -> handleModelPaintStroke(context.player(), packet)));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.FillPaintBucketC2S.ID, (packet, context) ->
                 context.server().execute(() -> handleFillPaintBucket(context.player(), packet)));
         ServerTickEvents.END_WORLD_TICK.register(PaintBucketBlock::tickKicks);
@@ -132,6 +140,53 @@ public final class PaintOverlayFeature {
         if (world.getBlockEntity(packet.pos()) instanceof PaintBucketBlockEntity bucket) {
             bucket.fill(packet.color());
         }
+    }
+
+    private static void handleModelPaintStroke(ServerPlayerEntity player, PaintOverlayPackets.ModelPaintStrokeC2S packet) {
+        if (!(player.getWorld() instanceof ServerWorld world)) {
+            return;
+        }
+        Entity entity = world.getEntityById(packet.entityId());
+        if (!(entity instanceof ItemDisplayEntity display)) {
+            return;
+        }
+        if (display.getPos().squaredDistanceTo(player.getEyePos()) > 64.0D) {
+            return;
+        }
+        ItemStack stack = display.getItemStack().copy();
+        if (!isCombinedBodyStack(stack)) {
+            return;
+        }
+
+        boolean clear;
+        int color;
+        int radius;
+        if (isHoldingPaintBrush(player)) {
+            BrushSettings settings = getBrushSettings(player);
+            clear = false;
+            color = settings.color();
+            radius = settings.radius();
+        } else if (isHoldingEraser(player)) {
+            clear = true;
+            color = 0;
+            radius = getBrushSettings(player).radius();
+        } else {
+            return;
+        }
+
+        NbtComponent component = stack.get(DataComponentTypes.CUSTOM_DATA);
+        NbtCompound root = component == null ? new NbtCompound() : component.copyNbt();
+        boolean changed = ModelPaintData.paint(root, packet.surface(), packet.face(), packet.x(), packet.y(), radius, color, clear && packet.clearFace());
+        if (!changed) {
+            return;
+        }
+        stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        display.setItemStack(stack);
+    }
+
+    private static boolean isCombinedBodyStack(ItemStack stack) {
+        Identifier model = stack.get(DataComponentTypes.ITEM_MODEL);
+        return model != null && model.equals(Identifier.of("monvhua", "combined_body"));
     }
 
     public static void paintAt(ServerWorld world, BlockPos pos, Direction face, int x, int y, BrushSettings settings) {

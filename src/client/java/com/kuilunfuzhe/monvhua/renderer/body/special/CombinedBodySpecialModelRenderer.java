@@ -3,9 +3,13 @@ package com.kuilunfuzhe.monvhua.renderer.body.special;
 import com.kuilunfuzhe.monvhua.model.CombinedBodyModelData;
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.model.TorsoBendFollower;
+import com.kuilunfuzhe.monvhua.features.paint.ModelPaintData;
+import com.kuilunfuzhe.monvhua.features.paint.PaintRenderLayers;
 import com.kuilunfuzhe.monvhua.renderer.body.SkinOuterLayerVoxelRenderer;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.client.model.ModelPart;
+import net.minecraft.client.render.LightmapTextureManager;
+import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
@@ -13,7 +17,9 @@ import net.minecraft.client.render.entity.model.LoadedEntityModels;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.RotationAxis;
+import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
 import java.util.Set;
@@ -117,6 +123,8 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
                 activeModel.rightLeg, rightLowerLeg);
         matrices.pop();
 
+        renderModelPaint(matrices, vertexConsumers, activeModel, slim, data.customData(), light);
+
         matrices.pop();
     }
 
@@ -182,6 +190,165 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
     /** 体素渲染回调接口：执行体素渲染并返回是否成功 */
     private interface VoxelRenderCall {
         boolean render(MatrixStack matrices, VertexConsumer vertexConsumer);
+    }
+
+    private void renderModelPaint(MatrixStack matrices, VertexConsumerProvider vertexConsumers, PlayerEntityModel model,
+                                  boolean slim, NbtCompound customData, int light) {
+        if (customData == null || !customData.contains(ModelPaintData.MODEL_PAINT_KEY)) {
+            return;
+        }
+        VertexConsumer vertices = vertexConsumers.getBuffer(PaintRenderLayers.paintOverlay());
+        for (ModelPaintData.ModelFace face : ModelPaintData.readFaces(customData)) {
+            SurfaceTarget target = surfaceTarget(model, slim, face.surface());
+            if (target == null) {
+                continue;
+            }
+            matrices.push();
+            model.getRootPart().applyTransform(matrices);
+            for (ModelPart part : target.path()) {
+                if (part == null) {
+                    matrices.pop();
+                    return;
+                }
+                part.applyTransform(matrices);
+            }
+            renderPaintFace(vertices, matrices.peek().getPositionMatrix(), target.cuboid(), face.face(), face.pixels(), light);
+            matrices.pop();
+        }
+    }
+
+    private SurfaceTarget surfaceTarget(PlayerEntityModel model, boolean slim, String surface) {
+        ModelPart waist = getChild(model.body, CombinedBodyModelData.WAIST);
+        ModelPart leftForearm = getChild(model.leftArm, CombinedBodyModelData.LEFT_FOREARM);
+        ModelPart rightForearm = getChild(model.rightArm, CombinedBodyModelData.RIGHT_FOREARM);
+        ModelPart leftLowerLeg = getChild(model.leftLeg, CombinedBodyModelData.LEFT_LOWER_LEG);
+        ModelPart rightLowerLeg = getChild(model.rightLeg, CombinedBodyModelData.RIGHT_LOWER_LEG);
+        float armWidth = slim ? 3.0F : 4.0F;
+        float leftArmX = slim ? -1.0F : -1.0F;
+        float rightArmX = slim ? -2.0F : -3.0F;
+        return switch (surface) {
+            case "head" -> new SurfaceTarget(new ModelPart[]{model.head}, new Cuboid(-4.0F, -8.0F, -4.0F, 8.0F, 8.0F, 8.0F));
+            case "body_upper" -> new SurfaceTarget(new ModelPart[]{model.body}, new Cuboid(-4.0F, 0.0F, -2.0F, 8.0F, 6.0F, 4.0F));
+            case "body_lower" -> new SurfaceTarget(new ModelPart[]{model.body, waist}, new Cuboid(-4.0F, 0.0F, -2.0F, 8.0F, 6.0F, 4.0F));
+            case "left_arm_upper" -> new SurfaceTarget(new ModelPart[]{model.leftArm}, new Cuboid(leftArmX, -2.0F, -2.0F, armWidth, 6.0F, 4.0F));
+            case "left_arm_lower" -> new SurfaceTarget(new ModelPart[]{model.leftArm, leftForearm}, new Cuboid(leftArmX, 0.0F, -2.0F, armWidth, 6.0F, 4.0F));
+            case "right_arm_upper" -> new SurfaceTarget(new ModelPart[]{model.rightArm}, new Cuboid(rightArmX, -2.0F, -2.0F, armWidth, 6.0F, 4.0F));
+            case "right_arm_lower" -> new SurfaceTarget(new ModelPart[]{model.rightArm, rightForearm}, new Cuboid(rightArmX, 0.0F, -2.0F, armWidth, 6.0F, 4.0F));
+            case "left_leg_upper" -> new SurfaceTarget(new ModelPart[]{model.leftLeg}, new Cuboid(-2.0F, 0.0F, -2.0F, 4.0F, 6.0F, 4.0F));
+            case "left_leg_lower" -> new SurfaceTarget(new ModelPart[]{model.leftLeg, leftLowerLeg}, new Cuboid(-2.0F, 0.0F, -2.0F, 4.0F, 6.0F, 4.0F));
+            case "right_leg_upper" -> new SurfaceTarget(new ModelPart[]{model.rightLeg}, new Cuboid(-2.0F, 0.0F, -2.0F, 4.0F, 6.0F, 4.0F));
+            case "right_leg_lower" -> new SurfaceTarget(new ModelPart[]{model.rightLeg, rightLowerLeg}, new Cuboid(-2.0F, 0.0F, -2.0F, 4.0F, 6.0F, 4.0F));
+            default -> null;
+        };
+    }
+
+    private static void renderPaintFace(VertexConsumer vertices, Matrix4f matrix, Cuboid cuboid, Direction face, int[] pixels, int light) {
+        for (int y = 0; y < ModelPaintData.SIZE; y++) {
+            for (int x = 0; x < ModelPaintData.SIZE; x++) {
+                int color = pixels[y * ModelPaintData.SIZE + x];
+                if (color == 0) {
+                    continue;
+                }
+                appendPaintPixel(vertices, matrix, cuboid, face, x, y, color, light);
+            }
+        }
+    }
+
+    private static void appendPaintPixel(VertexConsumer vertices, Matrix4f matrix, Cuboid cuboid, Direction face, int x, int y, int color, int light) {
+        float u0 = x / (float) ModelPaintData.SIZE;
+        float u1 = (x + 1) / (float) ModelPaintData.SIZE;
+        float v0 = y / (float) ModelPaintData.SIZE;
+        float v1 = (y + 1) / (float) ModelPaintData.SIZE;
+        float minX = cuboid.x() / 16.0F;
+        float minY = cuboid.y() / 16.0F;
+        float minZ = cuboid.z() / 16.0F;
+        float maxX = (cuboid.x() + cuboid.width()) / 16.0F;
+        float maxY = (cuboid.y() + cuboid.height()) / 16.0F;
+        float maxZ = (cuboid.z() + cuboid.depth()) / 16.0F;
+        float px0;
+        float px1;
+        float py0;
+        float py1;
+        float pz0;
+        float pz1;
+        float offset = 0.002F;
+        switch (face) {
+            case UP -> {
+                px0 = lerp(minX, maxX, u0); px1 = lerp(minX, maxX, u1);
+                pz0 = lerp(minZ, maxZ, v0); pz1 = lerp(minZ, maxZ, v1);
+                py0 = py1 = minY - offset;
+                vertex(vertices, matrix, px0, py0, pz0, color, 0, -1, 0, light);
+                vertex(vertices, matrix, px1, py0, pz0, color, 0, -1, 0, light);
+                vertex(vertices, matrix, px1, py0, pz1, color, 0, -1, 0, light);
+                vertex(vertices, matrix, px0, py0, pz1, color, 0, -1, 0, light);
+            }
+            case DOWN -> {
+                px0 = lerp(minX, maxX, u0); px1 = lerp(minX, maxX, u1);
+                pz0 = lerp(minZ, maxZ, v0); pz1 = lerp(minZ, maxZ, v1);
+                py0 = py1 = maxY + offset;
+                vertex(vertices, matrix, px0, py0, pz1, color, 0, 1, 0, light);
+                vertex(vertices, matrix, px1, py0, pz1, color, 0, 1, 0, light);
+                vertex(vertices, matrix, px1, py0, pz0, color, 0, 1, 0, light);
+                vertex(vertices, matrix, px0, py0, pz0, color, 0, 1, 0, light);
+            }
+            case NORTH -> {
+                px0 = lerp(minX, maxX, u0); px1 = lerp(minX, maxX, u1);
+                py0 = lerp(minY, maxY, v0); py1 = lerp(minY, maxY, v1);
+                pz0 = pz1 = minZ - offset;
+                vertex(vertices, matrix, px0, py0, pz0, color, 0, 0, -1, light);
+                vertex(vertices, matrix, px1, py0, pz0, color, 0, 0, -1, light);
+                vertex(vertices, matrix, px1, py1, pz0, color, 0, 0, -1, light);
+                vertex(vertices, matrix, px0, py1, pz0, color, 0, 0, -1, light);
+            }
+            case SOUTH -> {
+                px0 = lerp(minX, maxX, u0); px1 = lerp(minX, maxX, u1);
+                py0 = lerp(minY, maxY, v0); py1 = lerp(minY, maxY, v1);
+                pz0 = pz1 = maxZ + offset;
+                vertex(vertices, matrix, px1, py0, pz0, color, 0, 0, 1, light);
+                vertex(vertices, matrix, px0, py0, pz0, color, 0, 0, 1, light);
+                vertex(vertices, matrix, px0, py1, pz0, color, 0, 0, 1, light);
+                vertex(vertices, matrix, px1, py1, pz0, color, 0, 0, 1, light);
+            }
+            case WEST -> {
+                pz0 = lerp(minZ, maxZ, u0); pz1 = lerp(minZ, maxZ, u1);
+                py0 = lerp(minY, maxY, v0); py1 = lerp(minY, maxY, v1);
+                px0 = px1 = minX - offset;
+                vertex(vertices, matrix, px0, py0, pz1, color, -1, 0, 0, light);
+                vertex(vertices, matrix, px0, py0, pz0, color, -1, 0, 0, light);
+                vertex(vertices, matrix, px0, py1, pz0, color, -1, 0, 0, light);
+                vertex(vertices, matrix, px0, py1, pz1, color, -1, 0, 0, light);
+            }
+            case EAST -> {
+                pz0 = lerp(minZ, maxZ, u0); pz1 = lerp(minZ, maxZ, u1);
+                py0 = lerp(minY, maxY, v0); py1 = lerp(minY, maxY, v1);
+                px0 = px1 = maxX + offset;
+                vertex(vertices, matrix, px0, py0, pz0, color, 1, 0, 0, light);
+                vertex(vertices, matrix, px0, py0, pz1, color, 1, 0, 0, light);
+                vertex(vertices, matrix, px0, py1, pz1, color, 1, 0, 0, light);
+                vertex(vertices, matrix, px0, py1, pz0, color, 1, 0, 0, light);
+            }
+        }
+    }
+
+    private static float lerp(float min, float max, float value) {
+        return min + (max - min) * value;
+    }
+
+    private static void vertex(VertexConsumer vertices, Matrix4f matrix, float x, float y, float z, int color,
+                               float normalX, float normalY, float normalZ, int light) {
+        int alpha = (color >>> 24) & 0xFF;
+        vertices.vertex(matrix, x, y, z)
+                .color((color >>> 16) & 0xFF, (color >>> 8) & 0xFF, color & 0xFF, alpha == 0 ? 0 : Math.max(alpha, 240))
+                .texture(0.0F, 0.0F)
+                .overlay(OverlayTexture.DEFAULT_UV)
+                .light(light == 0 ? LightmapTextureManager.MAX_LIGHT_COORDINATE : light)
+                .normal(normalX, normalY, normalZ);
+    }
+
+    private record SurfaceTarget(ModelPart[] path, Cuboid cuboid) {
+    }
+
+    private record Cuboid(float x, float y, float z, float width, float height, float depth) {
     }
 
     private static void resetModel(PlayerEntityModel model) {

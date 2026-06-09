@@ -64,7 +64,7 @@ public final class PaintOverlayClient {
     private static int selectedColor = 0xFFFF2A4F;
     private static boolean eraserFaceMode = false;
     private static boolean wasUsePressed = false;
-    private static StrokeKey lastStrokeKey;
+    private static Object lastStrokeKey;
     private static int repeatedStrokeTicks;
 
     private PaintOverlayClient() {
@@ -261,10 +261,24 @@ public final class PaintOverlayClient {
             return;
         }
         boolean eraser = isHoldingEraser(client);
-        if (eraser && useStarted && shouldToggleEraserMode(client)) {
+        PaintModelOverlayClient.ModelHit modelHit = PaintModelOverlayClient.raycastCombinedBody(client);
+        if (eraser && useStarted && shouldToggleEraserMode(client, modelHit)) {
             toggleEraserMode(client);
             lastStrokeKey = null;
             repeatedStrokeTicks = 0;
+            return;
+        }
+        if (modelHit != null) {
+            boolean clear = eraser && eraserFaceMode;
+            ModelStrokeKey key = new ModelStrokeKey(modelHit.entityId(), modelHit.surface(), modelHit.face(), modelHit.x(), modelHit.y(), clear);
+            repeatedStrokeTicks++;
+            if (key.equals(lastStrokeKey) && repeatedStrokeTicks < 3) {
+                return;
+            }
+            lastStrokeKey = key;
+            repeatedStrokeTicks = 0;
+            SafeClientNetworking.send(new PaintOverlayPackets.ModelPaintStrokeC2S(
+                    modelHit.entityId(), modelHit.surface(), modelHit.face(), modelHit.x(), modelHit.y(), clear));
             return;
         }
         if (!(client.crosshairTarget instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK) {
@@ -287,10 +301,17 @@ public final class PaintOverlayClient {
         SafeClientNetworking.send(new PaintOverlayPackets.PaintStrokeC2S(pos, face, pixel[0], pixel[1], clear));
     }
 
-    private static boolean shouldToggleEraserMode(MinecraftClient client) {
-        return client.player != null && (client.player.isSneaking()
-                || !(client.crosshairTarget instanceof BlockHitResult hit)
-                || hit.getType() != HitResult.Type.BLOCK);
+    private static boolean shouldToggleEraserMode(MinecraftClient client, PaintModelOverlayClient.ModelHit modelHit) {
+        if (client.player == null) {
+            return false;
+        }
+        if (client.player.isSneaking()) {
+            return true;
+        }
+        if (modelHit != null) {
+            return false;
+        }
+        return !(client.crosshairTarget instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK;
     }
 
     private static void toggleEraserMode(MinecraftClient client) {
@@ -827,5 +848,8 @@ public final class PaintOverlayClient {
         private StrokeKey {
             pos = pos.toImmutable();
         }
+    }
+
+    private record ModelStrokeKey(int entityId, String surface, Direction face, int x, int y, boolean clear) {
     }
 }
