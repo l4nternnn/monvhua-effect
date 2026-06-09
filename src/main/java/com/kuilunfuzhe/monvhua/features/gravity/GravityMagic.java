@@ -229,6 +229,7 @@ public final class GravityMagic {
 
         AREA_FIELDS.remove(nearest);
         broadcastClearAreaGravity(world, nearest.center, nearest.radius, nearest.height, false);
+        resetInvertedPlayersOutsideAreas(world);
         saveServerAreas(world.getServer());
         return 1;
     }
@@ -242,6 +243,7 @@ public final class GravityMagic {
         }
         if (removed > 0) {
             broadcastClearAreaGravity(world, BlockPos.ORIGIN, 0, 0, true);
+            resetInvertedPlayersOutsideAreas(world);
             saveServerAreas(world.getServer());
         }
         return removed;
@@ -509,6 +511,7 @@ public final class GravityMagic {
             if (field.ticks <= 0) {
                 AREA_FIELDS.remove(field);
                 broadcastClearAreaGravity(world, field.center, field.radius, field.height, false);
+                resetInvertedPlayersOutsideAreas(world);
                 saveServerAreas(world.getServer());
             }
         }
@@ -602,14 +605,15 @@ public final class GravityMagic {
                     player.setPose(EntityPose.STANDING);
                 }
                 player.fallDistance = 0.0D;
-            } else if (SERVER_INVERTED_PLAYER_STATES.remove(player.getUuid()) != null) {
-                player.setNoGravity(false);
+            } else {
+                resetInvertedPlayerIfInactive(player);
             }
         }
     }
 
     public static boolean cancelServerInvertedTravel(Entity entity) {
         if (!isInInvertedArea(entity)) {
+            resetInvertedPlayerIfInactive(entity);
             return false;
         }
         entity.setNoGravity(true);
@@ -620,9 +624,8 @@ public final class GravityMagic {
     public static boolean tickInvertedPlayer(Entity entity, PlayerInput input) {
         Map<UUID, InvertedPlayerState> stateMap = invertedPlayerStates(entity);
         if (entity == null || input == null || getInvertedAreaGravity(entity) <= 0.0D) {
-            InvertedPlayerState removed = entity == null ? null : stateMap.remove(entity.getUuid());
-            if (removed != null && entity != null) {
-                entity.setNoGravity(false);
+            if (entity != null) {
+                resetInvertedPlayerState(entity);
             }
             return false;
         }
@@ -685,6 +688,34 @@ public final class GravityMagic {
 
         entity.setVelocity(velocity);
         return true;
+    }
+
+    public static void resetInvertedPlayerIfInactive(Entity entity) {
+        if (entity != null && !isInInvertedArea(entity)) {
+            resetInvertedPlayerState(entity);
+        }
+    }
+
+    private static void resetInvertedPlayerState(Entity entity) {
+        InvertedPlayerState removed = invertedPlayerStates(entity).remove(entity.getUuid());
+        if (removed == null) {
+            return;
+        }
+
+        entity.setNoGravity(false);
+        entity.fallDistance = 0.0D;
+        entity.setOnGround(false);
+
+        Vec3d velocity = entity.getVelocity();
+        if (velocity.y > 0.0D) {
+            entity.setVelocity(velocity.x, 0.0D, velocity.z);
+        }
+    }
+
+    private static void resetInvertedPlayersOutsideAreas(ServerWorld world) {
+        for (ServerPlayerEntity player : world.getPlayers()) {
+            resetInvertedPlayerIfInactive(player);
+        }
     }
 
     private static double groundAcceleration(PlayerInput input) {

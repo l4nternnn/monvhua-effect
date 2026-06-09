@@ -35,6 +35,7 @@ public final class GravityClient {
                 registerScrollCallback(client);
             }
             GravityMagic.tickClientSyncedAreaGravity();
+            GravityMagic.resetInvertedPlayerIfInactive(client.player);
         });
         HudRenderCallback.EVENT.register(GravityClient::renderHud);
         ClientPlayNetworking.registerGlobalReceiver(GravityPackets.AreaGravityS2C.ID, (packet, context) -> {
@@ -69,6 +70,7 @@ public final class GravityClient {
                     } else {
                         scheduleAreaRerender(client, packet.center(), packet.radius(), packet.height());
                     }
+                    GravityMagic.resetInvertedPlayerIfInactive(client.player);
                 }
             });
         });

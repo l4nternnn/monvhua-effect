@@ -16,8 +16,11 @@ public abstract class InvertedClientPlayerTravelMixin {
     private void monvhua$runClientInvertedTravel(Vec3d movementInput, CallbackInfo ci) {
         MinecraftClient client = MinecraftClient.getInstance();
         Entity entity = (Entity) (Object) this;
-        if (client.player == entity && GravityMagic.isInInvertedArea(entity)) {
-            GravityMagic.tickInvertedPlayer(entity, client.player.input.playerInput);
+        if (client.player != entity) {
+            return;
+        }
+
+        if (GravityMagic.tickInvertedPlayer(entity, client.player.input.playerInput)) {
             ci.cancel();
         }
     }
