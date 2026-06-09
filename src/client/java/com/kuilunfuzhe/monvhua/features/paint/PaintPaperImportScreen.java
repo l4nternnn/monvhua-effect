@@ -9,8 +9,8 @@ import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.WorldSavePath;
 import net.minecraft.util.math.MathHelper;
+import net.fabricmc.loader.api.FabricLoader;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -101,11 +101,7 @@ public class PaintPaperImportScreen extends Screen {
         scroll = 0;
         closePreviewTexture();
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.getServer() == null) {
-            return;
-        }
-        folder = client.getServer().getSavePath(WorldSavePath.ROOT).resolve("graffiti").normalize();
+        folder = FabricLoader.getInstance().getGameDir().resolve("graffiti").normalize();
         try {
             Files.createDirectories(folder);
             try (Stream<Path> stream = Files.list(folder)) {

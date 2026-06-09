@@ -12,7 +12,7 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
-import net.minecraft.util.WorldSavePath;
+import net.fabricmc.loader.api.FabricLoader;
 
 import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
@@ -157,7 +157,7 @@ public final class PaintGraffitiCommand {
     }
 
     private static Path graffitiFolder(ServerCommandSource source) {
-        return source.getServer().getSavePath(WorldSavePath.ROOT).resolve("graffiti").normalize();
+        return FabricLoader.getInstance().getGameDir().resolve("graffiti").normalize();
     }
 
     private static List<PaintPaperStore.Cell> paperCells(BufferedImage image, int paperX, int paperY, int tileColumns, int tileRows) {
