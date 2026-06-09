@@ -166,7 +166,7 @@ public class PaintBucketBlock extends BlockWithEntity {
         }
         double fX = velocity.x / length;
         double fZ = velocity.z / length;
-        spill(world, pos, fX, fZ, 0xCC000000 | bucket.getColor());
+        spill(world, pos, fX, fZ, 0xFF000000 | bucket.getColor());
         spawnSpillParticles(world, pos, fX, fZ, bucket.getColor());
         bucket.empty();
     }

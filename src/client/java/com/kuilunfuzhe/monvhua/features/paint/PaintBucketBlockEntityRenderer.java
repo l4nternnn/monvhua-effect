@@ -1,5 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.paint;
 
+import net.minecraft.client.render.LightmapTextureManager;
+import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.block.entity.BlockEntityRenderer;
@@ -20,7 +22,7 @@ public class PaintBucketBlockEntityRenderer implements BlockEntityRenderer<Paint
         int r = (color >>> 16) & 0xFF;
         int g = (color >>> 8) & 0xFF;
         int b = color & 0xFF;
-        int a = 210;
+        int a = 255;
 
         float min = 0.25F;
         float max = 0.75F;
@@ -32,6 +34,11 @@ public class PaintBucketBlockEntityRenderer implements BlockEntityRenderer<Paint
     }
 
     private static void vertex(VertexConsumer vertices, Matrix4f matrix, float x, float y, float z, int r, int g, int b, int a) {
-        vertices.vertex(matrix, x, y, z).color(r, g, b, a);
+        vertices.vertex(matrix, x, y, z)
+                .color(r, g, b, a)
+                .texture(0.0F, 0.0F)
+                .overlay(OverlayTexture.DEFAULT_UV)
+                .light(LightmapTextureManager.MAX_LIGHT_COORDINATE)
+                .normal(0.0F, 1.0F, 0.0F);
     }
 }

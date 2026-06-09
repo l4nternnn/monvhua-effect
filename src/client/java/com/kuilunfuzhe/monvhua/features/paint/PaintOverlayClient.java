@@ -9,18 +9,15 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.minecraft.client.render.LightmapTextureManager;
+import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.Frustum;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BuiltBuffer;
-import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
@@ -33,7 +30,6 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
-import com.mojang.blaze3d.vertex.VertexFormat;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWScrollCallbackI;
@@ -55,7 +51,7 @@ public final class PaintOverlayClient {
     private static final int DENSE_CHUNK_VERTEX_THRESHOLD = 24_000;
     private static final double FULL_DETAIL_DISTANCE_SQUARED = 12.0D * 12.0D;
     private static final double MEDIUM_DETAIL_DISTANCE_SQUARED = 32.0D * 32.0D;
-    private static final MeshData EMPTY_MESH = new MeshData(new float[0], new int[0]);
+    private static final MeshData EMPTY_MESH = new MeshData(new float[0], new int[0], new float[0]);
     private static final Map<PaintOverlayStore.FaceKey, FaceMesh> FACE_MESHES = new HashMap<>();
     private static final Map<ChunkPos, ChunkMesh> CHUNK_MESHES = new HashMap<>();
     private static final Map<ChunkPos, Set<PaintOverlayStore.FaceKey>> CHUNK_FACE_KEYS = new HashMap<>();
@@ -65,7 +61,7 @@ public final class PaintOverlayClient {
     private static boolean scrollCallbackRegistered = false;
     private static int selectedRadius = 1;
     private static int selectedPaperSize = PaintOverlayFeature.DEFAULT_PAPER_SIZE;
-    private static int selectedColor = 0xCCFF2A4F;
+    private static int selectedColor = 0xFFFF2A4F;
     private static boolean eraserFaceMode = false;
     private static boolean wasUsePressed = false;
     private static StrokeKey lastStrokeKey;
@@ -75,7 +71,6 @@ public final class PaintOverlayClient {
     }
 
     public static void initialize() {
-        PaintRenderPipelines.initialize();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (!scrollCallbackRegistered && client.getWindow() != null) {
                 registerScrollCallback(client);
@@ -124,7 +119,7 @@ public final class PaintOverlayClient {
         }
         BlockEntity blockEntity = client.world.getBlockEntity(pos);
         if (blockEntity instanceof PaintBucketBlockEntity bucket && bucket.isFilled()) {
-            setSelectedColor(0xCC000000 | bucket.getColor());
+            setSelectedColor(0xFF000000 | bucket.getColor());
         }
         client.setScreen(new PaintBrushColorScreen(pos));
     }
@@ -183,15 +178,12 @@ public final class PaintOverlayClient {
 
         Vec3d camera = context.camera().getPos();
         Frustum frustum = context.frustum();
-        MatrixStack matrices = context.matrixStack();
-        if (matrices == null) {
+        if (context.consumers() == null || context.matrixStack() == null) {
             return;
         }
-        Matrix4f matrix = matrices.peek().getPositionMatrix();
-        RenderLayer layer = PaintRenderLayers.paintOverlay();
-        BufferBuilder vertices = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        Matrix4f matrix = context.matrixStack().peek().getPositionMatrix();
+        VertexConsumer vertices = context.consumers().getBuffer(PaintRenderLayers.paintOverlay());
         List<VisibleChunk> visibleChunks = new ArrayList<>();
-        boolean rendered = false;
 
         for (ChunkMesh mesh : CHUNK_MESHES.values()) {
             Box bounds = mesh.bounds();
@@ -213,15 +205,8 @@ public final class PaintOverlayClient {
             if (meshData.isEmpty()) {
                 continue;
             }
-            drawMesh(vertices, matrix, mesh.originX() - camera.x, -camera.y, mesh.originZ() - camera.z, meshData.positions(), meshData.colors());
-            rendered = true;
+            drawMesh(vertices, matrix, mesh.originX() - camera.x, -camera.y, mesh.originZ() - camera.z, meshData.positions(), meshData.colors(), meshData.normals());
             remainingVertices -= meshData.vertexCount();
-        }
-        BuiltBuffer buffer = vertices.endNullable();
-        if (rendered && buffer != null) {
-            layer.draw(buffer);
-        } else if (buffer != null) {
-            buffer.close();
         }
     }
 
@@ -406,7 +391,7 @@ public final class PaintOverlayClient {
     }
 
     private static int ensureAlpha(int color) {
-        return (color >>> 24) == 0 ? color | 0xCC000000 : color;
+        return (color >>> 24) == 0 ? color | 0xFF000000 : color;
     }
 
     private static String toHex(int color) {
@@ -513,7 +498,7 @@ public final class PaintOverlayClient {
                 appendRect(builder, face, x * cellSize, y * cellSize, (x + width) * cellSize, (y + height) * cellSize, color);
             }
         }
-        return new MeshData(builder.positions(), builder.colors());
+        return new MeshData(builder.positions(), builder.colors(), builder.normals());
     }
 
     private static int cellColor(int[] pixels, int startX, int startY, int cellSize) {
@@ -543,7 +528,7 @@ public final class PaintOverlayClient {
         if (cellSize > 1 && filled * 4 < total) {
             return 0;
         }
-        int alpha = MathHelper.clamp((alphaTotal / filled) * filled / total, 32, 204);
+        int alpha = MathHelper.clamp((alphaTotal / filled) * filled / total, 64, 255);
         int red = quantizeLodColor(redTotal / filled, cellSize);
         int green = quantizeLodColor(greenTotal / filled, cellSize);
         int blue = quantizeLodColor(blueTotal / filled, cellSize);
@@ -560,42 +545,45 @@ public final class PaintOverlayClient {
         float maxU = x1 * STEP;
         float minV = y0 * STEP;
         float maxV = y1 * STEP;
+        float normalX = face.getOffsetX();
+        float normalY = face.getOffsetY();
+        float normalZ = face.getOffsetZ();
         switch (face) {
             case UP -> {
-                builder.vertex(minU, 1.0F + OFFSET, minV, color);
-                builder.vertex(maxU, 1.0F + OFFSET, minV, color);
-                builder.vertex(maxU, 1.0F + OFFSET, maxV, color);
-                builder.vertex(minU, 1.0F + OFFSET, maxV, color);
+                builder.vertex(minU, 1.0F + OFFSET, minV, color, normalX, normalY, normalZ);
+                builder.vertex(maxU, 1.0F + OFFSET, minV, color, normalX, normalY, normalZ);
+                builder.vertex(maxU, 1.0F + OFFSET, maxV, color, normalX, normalY, normalZ);
+                builder.vertex(minU, 1.0F + OFFSET, maxV, color, normalX, normalY, normalZ);
             }
             case DOWN -> {
-                builder.vertex(minU, -OFFSET, 1.0F - minV, color);
-                builder.vertex(maxU, -OFFSET, 1.0F - minV, color);
-                builder.vertex(maxU, -OFFSET, 1.0F - maxV, color);
-                builder.vertex(minU, -OFFSET, 1.0F - maxV, color);
+                builder.vertex(minU, -OFFSET, 1.0F - minV, color, normalX, normalY, normalZ);
+                builder.vertex(maxU, -OFFSET, 1.0F - minV, color, normalX, normalY, normalZ);
+                builder.vertex(maxU, -OFFSET, 1.0F - maxV, color, normalX, normalY, normalZ);
+                builder.vertex(minU, -OFFSET, 1.0F - maxV, color, normalX, normalY, normalZ);
             }
             case NORTH -> {
-                builder.vertex(1.0F - minU, 1.0F - minV, -OFFSET, color);
-                builder.vertex(1.0F - maxU, 1.0F - minV, -OFFSET, color);
-                builder.vertex(1.0F - maxU, 1.0F - maxV, -OFFSET, color);
-                builder.vertex(1.0F - minU, 1.0F - maxV, -OFFSET, color);
+                builder.vertex(1.0F - minU, 1.0F - minV, -OFFSET, color, normalX, normalY, normalZ);
+                builder.vertex(1.0F - maxU, 1.0F - minV, -OFFSET, color, normalX, normalY, normalZ);
+                builder.vertex(1.0F - maxU, 1.0F - maxV, -OFFSET, color, normalX, normalY, normalZ);
+                builder.vertex(1.0F - minU, 1.0F - maxV, -OFFSET, color, normalX, normalY, normalZ);
             }
             case SOUTH -> {
-                builder.vertex(minU, 1.0F - minV, 1.0F + OFFSET, color);
-                builder.vertex(maxU, 1.0F - minV, 1.0F + OFFSET, color);
-                builder.vertex(maxU, 1.0F - maxV, 1.0F + OFFSET, color);
-                builder.vertex(minU, 1.0F - maxV, 1.0F + OFFSET, color);
+                builder.vertex(minU, 1.0F - minV, 1.0F + OFFSET, color, normalX, normalY, normalZ);
+                builder.vertex(maxU, 1.0F - minV, 1.0F + OFFSET, color, normalX, normalY, normalZ);
+                builder.vertex(maxU, 1.0F - maxV, 1.0F + OFFSET, color, normalX, normalY, normalZ);
+                builder.vertex(minU, 1.0F - maxV, 1.0F + OFFSET, color, normalX, normalY, normalZ);
             }
             case WEST -> {
-                builder.vertex(-OFFSET, 1.0F - minV, minU, color);
-                builder.vertex(-OFFSET, 1.0F - minV, maxU, color);
-                builder.vertex(-OFFSET, 1.0F - maxV, maxU, color);
-                builder.vertex(-OFFSET, 1.0F - maxV, minU, color);
+                builder.vertex(-OFFSET, 1.0F - minV, minU, color, normalX, normalY, normalZ);
+                builder.vertex(-OFFSET, 1.0F - minV, maxU, color, normalX, normalY, normalZ);
+                builder.vertex(-OFFSET, 1.0F - maxV, maxU, color, normalX, normalY, normalZ);
+                builder.vertex(-OFFSET, 1.0F - maxV, minU, color, normalX, normalY, normalZ);
             }
             case EAST -> {
-                builder.vertex(1.0F + OFFSET, 1.0F - minV, 1.0F - minU, color);
-                builder.vertex(1.0F + OFFSET, 1.0F - minV, 1.0F - maxU, color);
-                builder.vertex(1.0F + OFFSET, 1.0F - maxV, 1.0F - maxU, color);
-                builder.vertex(1.0F + OFFSET, 1.0F - maxV, 1.0F - minU, color);
+                builder.vertex(1.0F + OFFSET, 1.0F - minV, 1.0F - minU, color, normalX, normalY, normalZ);
+                builder.vertex(1.0F + OFFSET, 1.0F - minV, 1.0F - maxU, color, normalX, normalY, normalZ);
+                builder.vertex(1.0F + OFFSET, 1.0F - maxV, 1.0F - maxU, color, normalX, normalY, normalZ);
+                builder.vertex(1.0F + OFFSET, 1.0F - maxV, 1.0F - minU, color, normalX, normalY, normalZ);
             }
             default -> {
             }
@@ -668,6 +656,7 @@ public final class PaintOverlayClient {
         }
         float[] positions = new float[vertexCount * 3];
         int[] colors = new int[vertexCount];
+        float[] normals = new float[vertexCount * 3];
         int vertexIndex = 0;
         for (PaintOverlayStore.FaceKey key : keys) {
             FaceMesh mesh = FACE_MESHES.get(key);
@@ -677,6 +666,7 @@ public final class PaintOverlayClient {
             MeshData faceMesh = meshSelector.apply(mesh);
             float[] facePositions = faceMesh.positions();
             int[] faceColors = faceMesh.colors();
+            float[] faceNormals = faceMesh.normals();
             float offsetX = mesh.pos().getX() - originX;
             float offsetY = mesh.pos().getY();
             float offsetZ = mesh.pos().getZ() - originZ;
@@ -686,11 +676,14 @@ public final class PaintOverlayClient {
                 positions[targetPositionIndex] = offsetX + facePositions[sourcePositionIndex];
                 positions[targetPositionIndex + 1] = offsetY + facePositions[sourcePositionIndex + 1];
                 positions[targetPositionIndex + 2] = offsetZ + facePositions[sourcePositionIndex + 2];
+                normals[targetPositionIndex] = faceNormals[sourcePositionIndex];
+                normals[targetPositionIndex + 1] = faceNormals[sourcePositionIndex + 1];
+                normals[targetPositionIndex + 2] = faceNormals[sourcePositionIndex + 2];
                 colors[vertexIndex] = faceColors[i];
                 vertexIndex++;
             }
         }
-        return new MeshData(positions, colors);
+        return new MeshData(positions, colors, normals);
     }
 
     private static MeshData selectRenderMesh(ChunkMesh mesh, double distanceSquared, int remainingVertices) {
@@ -735,7 +728,8 @@ public final class PaintOverlayClient {
         );
     }
 
-    private static void drawMesh(VertexConsumer vertices, Matrix4f matrix, double originX, double originY, double originZ, float[] positions, int[] colors) {
+    private static void drawMesh(VertexConsumer vertices, Matrix4f matrix, double originX, double originY, double originZ,
+                                 float[] positions, int[] colors, float[] normals) {
         for (int i = 0; i < colors.length; i++) {
             int color = colors[i];
             int positionIndex = i * 3;
@@ -743,14 +737,23 @@ public final class PaintOverlayClient {
                             (float) (originX + positions[positionIndex]),
                             (float) (originY + positions[positionIndex + 1]),
                             (float) (originZ + positions[positionIndex + 2]))
-                    .color((color >>> 16) & 0xFF, (color >>> 8) & 0xFF, color & 0xFF, (color >>> 24) & 0xFF);
+                    .color((color >>> 16) & 0xFF, (color >>> 8) & 0xFF, color & 0xFF, renderAlpha(color))
+                    .texture(0.0F, 0.0F)
+                    .overlay(OverlayTexture.DEFAULT_UV)
+                    .light(LightmapTextureManager.MAX_LIGHT_COORDINATE)
+                    .normal(normals[positionIndex], normals[positionIndex + 1], normals[positionIndex + 2]);
         }
+    }
+
+    private static int renderAlpha(int color) {
+        int alpha = (color >>> 24) & 0xFF;
+        return alpha == 0 ? 0 : Math.max(alpha, 240);
     }
 
     private record VisibleChunk(ChunkMesh mesh, double distanceSquared) {
     }
 
-    private record MeshData(float[] positions, int[] colors) {
+    private record MeshData(float[] positions, int[] colors, float[] normals) {
         private int vertexCount() {
             return colors.length;
         }
@@ -769,14 +772,18 @@ public final class PaintOverlayClient {
     private static class MeshBuilder {
         private float[] positions = new float[64 * 3];
         private int[] colors = new int[64];
+        private float[] normals = new float[64 * 3];
         private int vertexIndex;
 
-        private void vertex(float x, float y, float z, int color) {
+        private void vertex(float x, float y, float z, int color, float normalX, float normalY, float normalZ) {
             ensureCapacity(vertexIndex + 1);
             int positionIndex = vertexIndex * 3;
             positions[positionIndex] = x;
             positions[positionIndex + 1] = y;
             positions[positionIndex + 2] = z;
+            normals[positionIndex] = normalX;
+            normals[positionIndex + 1] = normalY;
+            normals[positionIndex + 2] = normalZ;
             colors[vertexIndex] = color;
             vertexIndex++;
         }
@@ -788,10 +795,13 @@ public final class PaintOverlayClient {
             int nextVertices = Math.max(requiredVertices, colors.length * 2);
             float[] nextPositions = new float[nextVertices * 3];
             int[] nextColors = new int[nextVertices];
+            float[] nextNormals = new float[nextVertices * 3];
             System.arraycopy(positions, 0, nextPositions, 0, vertexIndex * 3);
             System.arraycopy(colors, 0, nextColors, 0, vertexIndex);
+            System.arraycopy(normals, 0, nextNormals, 0, vertexIndex * 3);
             positions = nextPositions;
             colors = nextColors;
+            normals = nextNormals;
         }
 
         private float[] positions() {
@@ -803,6 +813,12 @@ public final class PaintOverlayClient {
         private int[] colors() {
             int[] result = new int[vertexIndex];
             System.arraycopy(colors, 0, result, 0, result.length);
+            return result;
+        }
+
+        private float[] normals() {
+            float[] result = new float[vertexIndex * 3];
+            System.arraycopy(normals, 0, result, 0, result.length);
             return result;
         }
     }

@@ -36,7 +36,7 @@ public class WorldRenderHandler {
             // 身体姿势编辑器世界3D预览
             BodyPoseWorldPreviewRenderer.render(context.matrixStack(), context.consumers());
             GravityAreaBoundaryRenderer.render(context);
+            PaintOverlayClient.render(context);
         });
-        WorldRenderEvents.LAST.register(PaintOverlayClient::render);
     }
 }

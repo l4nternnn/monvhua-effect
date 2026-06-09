@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiPredicate;
 
 public final class PaintOverlayFeature {
-    public static final int DEFAULT_COLOR = 0xCCFF2A4F;
+    public static final int DEFAULT_COLOR = 0xFFFF2A4F;
     public static final int DEFAULT_RADIUS = 1;
     public static final int MIN_RADIUS = 1;
     public static final int MAX_RADIUS = 8;
@@ -289,7 +289,7 @@ public final class PaintOverlayFeature {
 
         public BrushSettings {
             if ((color >>> 24) == 0) {
-                color |= 0xCC000000;
+                color |= 0xFF000000;
             }
             radius = MathHelper.clamp(radius, MIN_RADIUS, MAX_RADIUS);
         }

@@ -1,20 +1,11 @@
 package com.kuilunfuzhe.monvhua.features.paint;
 
 import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.RenderPhase;
+import net.minecraft.util.Identifier;
 
 public final class PaintRenderLayers {
-    private static final RenderLayer PAINT_OVERLAY = RenderLayer.of(
-            "monvhua_paint_overlay",
-            RenderLayer.DEFAULT_BUFFER_SIZE,
-            false,
-            true,
-            PaintRenderPipelines.PAINT_OVERLAY,
-            RenderLayer.MultiPhaseParameters.builder()
-                    .texture(RenderPhase.NO_TEXTURE)
-                    .target(RenderPhase.MAIN_TARGET)
-                    .build(false)
-    );
+    private static final Identifier WHITE_TEXTURE = Identifier.ofVanilla("textures/block/white_concrete.png");
+    private static final RenderLayer PAINT_OVERLAY = RenderLayer.getEntityTranslucent(WHITE_TEXTURE);
 
     private PaintRenderLayers() {
     }

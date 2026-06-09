@@ -308,7 +308,7 @@ public class PaintBrushColorScreen extends Screen {
     private void selectColor(int color, boolean record) {
         int rgb = color & 0xFFFFFF;
         loadColor(rgb);
-        PaintOverlayClient.setSelectedColor(0xCC000000 | rgb);
+        PaintOverlayClient.setSelectedColor(0xFF000000 | rgb);
         updateHexField();
         uploadedHue = -1.0F;
         if (record) {
@@ -317,7 +317,7 @@ public class PaintBrushColorScreen extends Screen {
     }
 
     private void syncSelectedColor() {
-        PaintOverlayClient.setSelectedColor(0xCC000000 | hsvToRgb(hue, saturation, value));
+        PaintOverlayClient.setSelectedColor(0xFF000000 | hsvToRgb(hue, saturation, value));
         updateHexField();
     }
 
