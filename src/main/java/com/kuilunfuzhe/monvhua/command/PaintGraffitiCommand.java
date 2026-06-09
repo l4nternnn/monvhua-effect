@@ -2,10 +2,16 @@ package com.kuilunfuzhe.monvhua.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
+import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayFeature;
+import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayStore;
 import com.kuilunfuzhe.monvhua.features.paint.PaintPaperStore;
 import com.kuilunfuzhe.monvhua.item.paint.PaintPaperItem;
 import net.minecraft.command.CommandRegistryAccess;
+import net.minecraft.command.argument.BlockPosArgumentType;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.CommandManager;
@@ -14,6 +20,8 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 
 import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
@@ -26,6 +34,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class PaintGraffitiCommand {
     private static final int TILE_SIZE = 16;
@@ -35,6 +44,9 @@ public final class PaintGraffitiCommand {
     private static final int IMPORT_ALPHA_THRESHOLD = 24;
     private static final int IMPORT_ALPHA = 0xCC;
     private static final int IMPORT_COLOR_STEP = 16;
+    private static final int MAX_GRID_CLEAR_RADIUS = 2048;
+    private static final int MAX_CHUNK_CLEAR_RADIUS = 128;
+    private static final ConcurrentHashMap<Path, CachedImportImage> IMPORT_IMAGE_CACHE = new ConcurrentHashMap<>();
 
     private PaintGraffitiCommand() {
     }
@@ -55,7 +67,81 @@ public final class PaintGraffitiCommand {
                                         .executes(context -> importImage(
                                                 context.getSource(),
                                                 StringArgumentType.getString(context, "file"),
-                                                DoubleArgumentType.getDouble(context, "scale")))))));
+                                                DoubleArgumentType.getDouble(context, "scale"))))))
+                .then(CommandManager.literal("clear")
+                        .then(clearGridCommand("grid"))
+                        .then(clearGridCommand("block-方块"))
+                        .then(clearChunkCommand())));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> clearGridCommand(String name) {
+        return CommandManager.literal(name)
+                .then(CommandManager.argument("radius-半径", IntegerArgumentType.integer(0, MAX_GRID_CLEAR_RADIUS))
+                        .executes(context -> clearGrid(context, sourceBlockPos(context.getSource())))
+                        .then(CommandManager.argument("center", BlockPosArgumentType.blockPos())
+                                .executes(context -> clearGrid(context, BlockPosArgumentType.getLoadedBlockPos(context, "center")))));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> clearChunkCommand() {
+        return CommandManager.literal("chunk")
+                .then(CommandManager.argument("radius", IntegerArgumentType.integer(0, MAX_CHUNK_CLEAR_RADIUS))
+                        .executes(context -> clearChunk(context, sourceBlockPos(context.getSource())))
+                        .then(CommandManager.argument("center", BlockPosArgumentType.blockPos())
+                                .executes(context -> clearChunk(context, BlockPosArgumentType.getLoadedBlockPos(context, "center")))));
+    }
+
+    private static int clearGrid(CommandContext<ServerCommandSource> context, BlockPos center) {
+        int radius = IntegerArgumentType.getInteger(context, "radius");
+        ServerWorld world = context.getSource().getWorld();
+        int removed = clearStoredFaces(world, face -> isInsideGridRadius(face.pos(), center, radius));
+        context.getSource().sendFeedback(
+                () -> Text.literal("Cleared " + removed + " paint face(s) in grid radius " + radius
+                        + " around " + center.toShortString() + "."),
+                true
+        );
+        return removed;
+    }
+
+    private static int clearChunk(CommandContext<ServerCommandSource> context, BlockPos center) {
+        int radius = IntegerArgumentType.getInteger(context, "radius");
+        ServerWorld world = context.getSource().getWorld();
+        ChunkPos centerChunk = new ChunkPos(center.getX() >> 4, center.getZ() >> 4);
+        int removed = clearStoredFaces(world, face -> isInsideChunkRadius(face.pos(), centerChunk, radius));
+        context.getSource().sendFeedback(
+                () -> Text.literal("Cleared " + removed + " paint face(s) in chunk radius " + radius
+                        + " around chunk [" + centerChunk.x + ", " + centerChunk.z + "]."),
+                true
+        );
+        return removed;
+    }
+
+    private static int clearStoredFaces(ServerWorld world, java.util.function.Predicate<PaintOverlayStore.StoredFace> predicate) {
+        int removed = 0;
+        for (PaintOverlayStore.StoredFace face : PaintOverlayStore.get(world).toStoredFaces()) {
+            if (!predicate.test(face)) {
+                continue;
+            }
+            PaintOverlayFeature.clearFace(world, face.pos(), face.face());
+            removed++;
+        }
+        return removed;
+    }
+
+    private static boolean isInsideGridRadius(BlockPos pos, BlockPos center, int radius) {
+        return Math.abs(pos.getX() - center.getX()) <= radius
+                && Math.abs(pos.getY() - center.getY()) <= radius
+                && Math.abs(pos.getZ() - center.getZ()) <= radius;
+    }
+
+    private static boolean isInsideChunkRadius(BlockPos pos, ChunkPos centerChunk, int radius) {
+        int chunkX = pos.getX() >> 4;
+        int chunkZ = pos.getZ() >> 4;
+        return Math.abs(chunkX - centerChunk.x) <= radius
+                && Math.abs(chunkZ - centerChunk.z) <= radius;
+    }
+
+    private static BlockPos sourceBlockPos(ServerCommandSource source) {
+        return BlockPos.ofFloored(source.getPosition());
     }
 
     private static int showFolder(ServerCommandSource source) {
@@ -107,7 +193,7 @@ public final class PaintGraffitiCommand {
     private static ImportResult loadImport(Path imagePath, double scale) {
         BufferedImage image;
         try {
-            image = ImageIO.read(imagePath.toFile());
+            image = cachedImportImage(imagePath).image();
         } catch (IOException e) {
             return ImportResult.error("Failed to read image: " + e.getMessage());
         }
@@ -143,6 +229,22 @@ public final class PaintGraffitiCommand {
         }
 
         return new ImportResult(null, imagePath.getFileName().toString(), scale, paperColumns, paperRows, papers);
+    }
+
+    private static CachedImportImage cachedImportImage(Path imagePath) throws IOException {
+        long lastModified = Files.getLastModifiedTime(imagePath).toMillis();
+        long size = Files.size(imagePath);
+        CachedImportImage cached = IMPORT_IMAGE_CACHE.get(imagePath);
+        if (cached != null && cached.lastModified() == lastModified && cached.size() == size) {
+            return cached;
+        }
+        BufferedImage image = ImageIO.read(imagePath.toFile());
+        if (image == null) {
+            throw new IOException("Unsupported image file: " + imagePath.getFileName());
+        }
+        CachedImportImage next = new CachedImportImage(lastModified, size, image);
+        IMPORT_IMAGE_CACHE.put(imagePath, next);
+        return next;
     }
 
     private static void finishImport(MinecraftServer server, UUID playerId, ImportResult result) {
@@ -254,6 +356,9 @@ public final class PaintGraffitiCommand {
     }
 
     private record ImportedPaper(String name, int size, List<PaintPaperStore.Cell> cells) {
+    }
+
+    private record CachedImportImage(long lastModified, long size, BufferedImage image) {
     }
 
     private record ImportResult(String error, String filename, double scale, int paperColumns, int paperRows, List<ImportedPaper> papers) {

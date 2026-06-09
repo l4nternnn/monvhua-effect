@@ -14,9 +14,13 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.Frustum;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
+import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
@@ -29,6 +33,7 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWScrollCallbackI;
@@ -70,6 +75,7 @@ public final class PaintOverlayClient {
     }
 
     public static void initialize() {
+        PaintRenderPipelines.initialize();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (!scrollCallbackRegistered && client.getWindow() != null) {
                 registerScrollCallback(client);
@@ -178,9 +184,14 @@ public final class PaintOverlayClient {
         Vec3d camera = context.camera().getPos();
         Frustum frustum = context.frustum();
         MatrixStack matrices = context.matrixStack();
+        if (matrices == null) {
+            return;
+        }
         Matrix4f matrix = matrices.peek().getPositionMatrix();
-        VertexConsumer vertices = context.consumers().getBuffer(RenderLayer.getDebugQuads());
+        RenderLayer layer = PaintRenderLayers.paintOverlay();
+        BufferBuilder vertices = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         List<VisibleChunk> visibleChunks = new ArrayList<>();
+        boolean rendered = false;
 
         for (ChunkMesh mesh : CHUNK_MESHES.values()) {
             Box bounds = mesh.bounds();
@@ -203,7 +214,14 @@ public final class PaintOverlayClient {
                 continue;
             }
             drawMesh(vertices, matrix, mesh.originX() - camera.x, -camera.y, mesh.originZ() - camera.z, meshData.positions(), meshData.colors());
+            rendered = true;
             remainingVertices -= meshData.vertexCount();
+        }
+        BuiltBuffer buffer = vertices.endNullable();
+        if (rendered && buffer != null) {
+            layer.draw(buffer);
+        } else if (buffer != null) {
+            buffer.close();
         }
     }
 

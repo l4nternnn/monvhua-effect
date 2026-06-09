@@ -1,6 +1,5 @@
 package com.kuilunfuzhe.monvhua.features.paint;
 
-import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.block.entity.BlockEntityRenderer;
@@ -15,7 +14,7 @@ public class PaintBucketBlockEntityRenderer implements BlockEntityRenderer<Paint
         if (!entity.isFilled()) {
             return;
         }
-        VertexConsumer vertices = vertexConsumers.getBuffer(RenderLayer.getDebugQuads());
+        VertexConsumer vertices = vertexConsumers.getBuffer(PaintRenderLayers.paintOverlay());
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         int color = entity.getColor();
         int r = (color >>> 16) & 0xFF;

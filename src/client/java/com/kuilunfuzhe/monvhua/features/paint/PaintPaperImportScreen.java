@@ -20,17 +20,21 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public class PaintPaperImportScreen extends Screen {
-    private static final Identifier PREVIEW_TEXTURE_ID = Identifier.of(MonvhuaMod.MOD_ID, "dynamic/paint_paper_import_preview");
     private static final int PANEL_WIDTH = 620;
     private static final int PANEL_HEIGHT = 286;
     private static final int LIST_WIDTH = 210;
     private static final int ROW_HEIGHT = 18;
     private static final int PREVIEW_SIZE = 210;
+    private static final Map<Path, CachedImage> IMAGE_CACHE = new HashMap<>();
 
     private final List<ImageEntry> images = new ArrayList<>();
     private Path folder;
@@ -39,7 +43,6 @@ public class PaintPaperImportScreen extends Screen {
     private int panelX;
     private int panelY;
     private double scale = 1.0D;
-    private NativeImageBackedTexture previewTexture;
     private ImageEntry previewEntry;
     private boolean importing;
     private String status = "";
@@ -103,30 +106,34 @@ public class PaintPaperImportScreen extends Screen {
         scroll = 0;
         importing = false;
         status = "";
-        closePreviewTexture();
+        previewEntry = null;
 
         folder = FabricLoader.getInstance().getGameDir().resolve("graffiti").normalize();
+        Set<Path> scannedPaths = new HashSet<>();
         try {
             Files.createDirectories(folder);
             try (Stream<Path> stream = Files.list(folder)) {
                 stream.filter(Files::isRegularFile)
                         .filter(PaintPaperImportScreen::isImageFile)
                         .sorted(Comparator.comparing(path -> path.getFileName().toString(), String.CASE_INSENSITIVE_ORDER))
-                        .forEach(this::addImage);
+                        .forEach(path -> addImage(path, scannedPaths));
             }
         } catch (IOException ignored) {
         }
+        pruneCache(scannedPaths);
         if (!images.isEmpty()) {
             selectedIndex = 0;
             loadPreview(images.get(0));
         }
     }
 
-    private void addImage(Path path) {
+    private void addImage(Path path, Set<Path> scannedPaths) {
+        Path normalized = path.normalize();
+        scannedPaths.add(normalized);
         try {
-            BufferedImage image = ImageIO.read(path.toFile());
-            if (image != null) {
-                images.add(new ImageEntry(path, path.getFileName().toString(), image.getWidth(), image.getHeight()));
+            CachedImage cached = cachedImage(normalized);
+            if (cached != null) {
+                images.add(new ImageEntry(normalized, normalized.getFileName().toString(), cached.width(), cached.height(), cached.textureId()));
             }
         } catch (IOException ignored) {
         }
@@ -173,7 +180,7 @@ public class PaintPaperImportScreen extends Screen {
         drawBorder(context, x, y, PREVIEW_SIZE, PREVIEW_SIZE);
 
         ImageEntry entry = selectedEntry();
-        if (entry == null || previewTexture == null) {
+        if (entry == null) {
             context.drawText(textRenderer, Text.literal("Select an image"), x + 58, y + 100, 0xFFE6E6E6, false);
             return;
         }
@@ -181,7 +188,7 @@ public class PaintPaperImportScreen extends Screen {
         int[] size = fitSize(entry.width(), entry.height(), PREVIEW_SIZE - 12, PREVIEW_SIZE - 12);
         int drawX = x + (PREVIEW_SIZE - size[0]) / 2;
         int drawY = y + (PREVIEW_SIZE - size[1]) / 2;
-        context.drawTexture(RenderPipelines.GUI_TEXTURED, PREVIEW_TEXTURE_ID,
+        context.drawTexture(RenderPipelines.GUI_TEXTURED, entry.textureId(),
                 drawX, drawY, 0.0F, 0.0F, size[0], size[1], size[0], size[1]);
     }
 
@@ -228,15 +235,7 @@ public class PaintPaperImportScreen extends Screen {
     }
 
     private void loadPreview(ImageEntry entry) {
-        closePreviewTexture();
         previewEntry = entry;
-        try (InputStream stream = Files.newInputStream(entry.path())) {
-            NativeImage image = NativeImage.read(stream);
-            previewTexture = new NativeImageBackedTexture(() -> "monvhua paint paper import preview", image);
-            MinecraftClient.getInstance().getTextureManager().registerTexture(PREVIEW_TEXTURE_ID, previewTexture);
-        } catch (IOException ignored) {
-            previewTexture = null;
-        }
     }
 
     private void importSelected() {
@@ -356,19 +355,69 @@ public class PaintPaperImportScreen extends Screen {
         return String.format(Locale.ROOT, "%.2f", scale);
     }
 
-    private void closePreviewTexture() {
-        if (previewTexture != null) {
-            MinecraftClient.getInstance().getTextureManager().destroyTexture(PREVIEW_TEXTURE_ID);
-            previewTexture = null;
-            previewEntry = null;
+    @Override
+    public void removed() {
+        previewEntry = null;
+    }
+
+    private static CachedImage cachedImage(Path path) throws IOException {
+        long lastModified = Files.getLastModifiedTime(path).toMillis();
+        long size = Files.size(path);
+        CachedImage cached = IMAGE_CACHE.get(path);
+        if (cached != null && cached.lastModified() == lastModified && cached.size() == size) {
+            return cached;
+        }
+        if (cached != null) {
+            MinecraftClient.getInstance().getTextureManager().destroyTexture(cached.textureId());
+        }
+
+        NativeImage image = readNativeImage(path);
+        Identifier textureId = Identifier.of(MonvhuaMod.MOD_ID, "dynamic/paint_paper_import/" + Integer.toUnsignedString(path.toString().hashCode(), 16));
+        NativeImageBackedTexture texture = new NativeImageBackedTexture(() -> "monvhua paint paper import " + path.getFileName(), image);
+        MinecraftClient.getInstance().getTextureManager().registerTexture(textureId, texture);
+        cached = new CachedImage(path, lastModified, size, image.getWidth(), image.getHeight(), textureId, texture);
+        IMAGE_CACHE.put(path, cached);
+        return cached;
+    }
+
+    private static NativeImage readNativeImage(Path path) throws IOException {
+        try (InputStream stream = Files.newInputStream(path)) {
+            return NativeImage.read(stream);
+        } catch (IOException nativeError) {
+            BufferedImage buffered = ImageIO.read(path.toFile());
+            if (buffered == null) {
+                throw nativeError;
+            }
+            NativeImage image = new NativeImage(buffered.getWidth(), buffered.getHeight(), false);
+            for (int y = 0; y < buffered.getHeight(); y++) {
+                for (int x = 0; x < buffered.getWidth(); x++) {
+                    image.setColorArgb(x, y, buffered.getRGB(x, y));
+                }
+            }
+            return image;
         }
     }
 
-    @Override
-    public void removed() {
-        closePreviewTexture();
+    private static void pruneCache(Set<Path> activePaths) {
+        List<Path> stale = new ArrayList<>();
+        for (Path path : IMAGE_CACHE.keySet()) {
+            if (!activePaths.contains(path)) {
+                stale.add(path);
+            }
+        }
+        MinecraftClient client = MinecraftClient.getInstance();
+        for (Path path : stale) {
+            CachedImage cached = IMAGE_CACHE.remove(path);
+            if (cached != null) {
+                client.getTextureManager().destroyTexture(cached.textureId());
+            }
+        }
     }
 
-    private record ImageEntry(Path path, String name, int width, int height) {
+    private record ImageEntry(Path path, String name, int width, int height, Identifier textureId) {
+    }
+
+    private record CachedImage(Path path, long lastModified, long size, int width, int height,
+                               Identifier textureId, NativeImageBackedTexture texture) {
     }
 }
