@@ -10,6 +10,7 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -28,17 +29,26 @@ public final class PaintOverlayFeature {
     public static final int DEFAULT_PAPER_SIZE = 3;
     public static final int MIN_PAPER_SIZE = 1;
     public static final int MAX_PAPER_SIZE = 25;
+    private static final double SYNC_DISTANCE_SQUARED = 128.0D * 128.0D;
     private static final Map<UUID, BrushSettings> BRUSH_SETTINGS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> PAPER_SIZES = new ConcurrentHashMap<>();
+    private static final Map<UUID, PlayerSyncKey> PLAYER_SYNC_KEYS = new ConcurrentHashMap<>();
 
     private PaintOverlayFeature() {
     }
 
     public static void initialize() {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
-                server.execute(() -> sendFullSync(handler.getPlayer())));
-        ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register((player, origin, destination) ->
-                sendFullSync(player));
+                server.execute(() -> {
+                    recordSyncKey(handler.getPlayer());
+                    sendNearbyFullSync(handler.getPlayer());
+                }));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
+                PLAYER_SYNC_KEYS.remove(handler.getPlayer().getUuid()));
+        ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register((player, origin, destination) -> {
+            recordSyncKey(player);
+            sendNearbyFullSync(player);
+        });
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.BrushSettingsC2S.ID, (packet, context) ->
                 context.server().execute(() -> setBrushSettings(context.player(), packet.color(), packet.radius())));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PaperSizeC2S.ID, (packet, context) ->
@@ -48,6 +58,15 @@ public final class PaintOverlayFeature {
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.FillPaintBucketC2S.ID, (packet, context) ->
                 context.server().execute(() -> handleFillPaintBucket(context.player(), packet)));
         ServerTickEvents.END_WORLD_TICK.register(PaintBucketBlock::tickKicks);
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+                PlayerSyncKey key = syncKey(player);
+                PlayerSyncKey previous = PLAYER_SYNC_KEYS.put(player.getUuid(), key);
+                if (!key.equals(previous)) {
+                    sendNearbyFullSync(player);
+                }
+            }
+        });
     }
 
     public static BrushSettings getBrushSettings(ServerPlayerEntity player) {
@@ -231,11 +250,12 @@ public final class PaintOverlayFeature {
         return true;
     }
 
-    private static void sendFullSync(ServerPlayerEntity player) {
+    private static void sendNearbyFullSync(ServerPlayerEntity player) {
         if (!(player.getWorld() instanceof ServerWorld world)) {
             return;
         }
         List<PaintOverlayPackets.FaceData> faces = PaintOverlayStore.get(world).toStoredFaces().stream()
+                .filter(face -> isNear(player, face.pos()))
                 .map(face -> new PaintOverlayPackets.FaceData(face.pos(), face.face(), face.pixels()))
                 .toList();
         ServerPlayNetworking.send(player, new PaintOverlayPackets.FullSyncS2C(faces));
@@ -245,8 +265,23 @@ public final class PaintOverlayFeature {
         PaintOverlayPackets.FaceUpdateS2C packet = new PaintOverlayPackets.FaceUpdateS2C(
                 new PaintOverlayPackets.FaceData(pos, face, pixels));
         for (ServerPlayerEntity player : world.getPlayers()) {
-            ServerPlayNetworking.send(player, packet);
+            if (isNear(player, pos)) {
+                ServerPlayNetworking.send(player, packet);
+            }
         }
+    }
+
+    private static boolean isNear(ServerPlayerEntity player, BlockPos pos) {
+        return Vec3d.ofCenter(pos).squaredDistanceTo(player.getEyePos()) <= SYNC_DISTANCE_SQUARED;
+    }
+
+    private static void recordSyncKey(ServerPlayerEntity player) {
+        PLAYER_SYNC_KEYS.put(player.getUuid(), syncKey(player));
+    }
+
+    private static PlayerSyncKey syncKey(ServerPlayerEntity player) {
+        ChunkPos chunkPos = player.getChunkPos();
+        return new PlayerSyncKey(player.getWorld().getRegistryKey().getValue().toString(), chunkPos.x, chunkPos.z);
     }
 
     public record BrushSettings(int color, int radius) {
@@ -258,5 +293,8 @@ public final class PaintOverlayFeature {
             }
             radius = MathHelper.clamp(radius, MIN_RADIUS, MAX_RADIUS);
         }
+    }
+
+    private record PlayerSyncKey(String world, int chunkX, int chunkZ) {
     }
 }

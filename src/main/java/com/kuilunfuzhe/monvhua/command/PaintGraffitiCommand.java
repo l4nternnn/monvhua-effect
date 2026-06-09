@@ -7,6 +7,7 @@ import com.kuilunfuzhe.monvhua.features.paint.PaintPaperStore;
 import com.kuilunfuzhe.monvhua.item.paint.PaintPaperItem;
 import net.minecraft.command.CommandRegistryAccess;
 import net.minecraft.item.ItemStack;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -23,12 +24,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 public final class PaintGraffitiCommand {
     private static final int TILE_SIZE = 16;
     private static final int PAPER_TILE_SIZE = 25;
     private static final int PAPER_PIXEL_SIZE = PAPER_TILE_SIZE * TILE_SIZE;
     private static final int MAX_IMPORTED_PAPERS = 25 * 25;
+    private static final int IMPORT_ALPHA_THRESHOLD = 24;
+    private static final int IMPORT_ALPHA = 0xCC;
+    private static final int IMPORT_COLOR_STEP = 16;
 
     private PaintGraffitiCommand() {
     }
@@ -90,29 +96,34 @@ public final class PaintGraffitiCommand {
             return 0;
         }
 
+        MinecraftServer server = source.getServer();
+        UUID playerId = player.getUuid();
+        source.sendFeedback(() -> Text.literal("Started importing " + imagePath.getFileName() + " at " + formatScale(scale) + "x..."), false);
+        CompletableFuture.supplyAsync(() -> loadImport(imagePath, scale))
+                .thenAccept(result -> server.execute(() -> finishImport(server, playerId, result)));
+        return 1;
+    }
+
+    private static ImportResult loadImport(Path imagePath, double scale) {
         BufferedImage image;
         try {
             image = ImageIO.read(imagePath.toFile());
         } catch (IOException e) {
-            source.sendError(Text.literal("Failed to read image: " + e.getMessage()));
-            return 0;
+            return ImportResult.error("Failed to read image: " + e.getMessage());
         }
         if (image == null) {
-            source.sendError(Text.literal("Unsupported image file: " + imagePath.getFileName()));
-            return 0;
+            return ImportResult.error("Unsupported image file: " + imagePath.getFileName());
         }
         image = scaledImage(image, scale);
 
         int paperColumns = Math.max(1, (image.getWidth() + PAPER_PIXEL_SIZE - 1) / PAPER_PIXEL_SIZE);
         int paperRows = Math.max(1, (image.getHeight() + PAPER_PIXEL_SIZE - 1) / PAPER_PIXEL_SIZE);
         if (paperColumns * paperRows > MAX_IMPORTED_PAPERS) {
-            source.sendError(Text.literal("Scaled image is too large: " + paperColumns + "x" + paperRows + " papers, max 25x25."));
-            return 0;
+            return ImportResult.error("Scaled image is too large: " + paperColumns + "x" + paperRows + " papers, max 25x25.");
         }
 
-        ServerWorld world = source.getWorld();
         String imageName = baseName(imagePath.getFileName().toString());
-        int created = 0;
+        List<ImportedPaper> papers = new ArrayList<>();
         for (int paperY = 0; paperY < paperRows; paperY++) {
             for (int paperX = 0; paperX < paperColumns; paperX++) {
                 int pixelStartX = paperX * PAPER_PIXEL_SIZE;
@@ -123,22 +134,37 @@ public final class PaintGraffitiCommand {
                 int tileRows = Math.min(PAPER_TILE_SIZE, Math.max(1, (remainingHeight + TILE_SIZE - 1) / TILE_SIZE));
                 int paperSize = Math.max(tileColumns, tileRows);
                 List<PaintPaperStore.Cell> cells = paperCells(image, paperX, paperY, tileColumns, tileRows);
-                ItemStack paper = PaintPaperItem.createSavedPaper(
-                        world,
+                papers.add(new ImportedPaper(
                         imageName + "(" + (paperX + 1) + "," + (paperY + 1) + ")",
                         paperSize,
                         cells
-                );
-                if (!player.getInventory().insertStack(paper)) {
-                    player.dropItem(paper, false);
-                }
-                created++;
+                ));
             }
         }
 
-        String message = "Imported " + imagePath.getFileName() + " at " + formatScale(scale) + "x as " + created + " paint papers from " + paperColumns + "x" + paperRows + " paper pages.";
-        source.sendFeedback(() -> Text.literal(message), true);
-        return created;
+        return new ImportResult(null, imagePath.getFileName().toString(), scale, paperColumns, paperRows, papers);
+    }
+
+    private static void finishImport(MinecraftServer server, UUID playerId, ImportResult result) {
+        ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+        if (player == null) {
+            return;
+        }
+        if (result.error() != null) {
+            player.sendMessage(Text.literal(result.error()), false);
+            return;
+        }
+        ServerWorld world = player.getWorld();
+        int created = 0;
+        for (ImportedPaper imported : result.papers()) {
+            ItemStack paper = PaintPaperItem.createSavedPaper(world, imported.name(), imported.size(), imported.cells());
+            if (!player.getInventory().insertStack(paper)) {
+                player.dropItem(paper, false);
+            }
+            created++;
+        }
+        player.sendMessage(Text.literal("Imported " + result.filename() + " at " + formatScale(result.scale()) + "x as " + created
+                + " paint papers from " + result.paperColumns() + "x" + result.paperRows() + " paper pages."), false);
     }
 
     private static BufferedImage scaledImage(BufferedImage source, double scale) {
@@ -188,13 +214,24 @@ public final class PaintGraffitiCommand {
                 }
                 int argb = image.getRGB(imageX, imageY);
                 int alpha = (argb >>> 24) & 0xFF;
-                if (alpha == 0) {
+                if (alpha < IMPORT_ALPHA_THRESHOLD) {
                     continue;
                 }
-                pixels[y * TILE_SIZE + x] = argb;
+                pixels[y * TILE_SIZE + x] = normalizeImportColor(argb);
             }
         }
         return pixels;
+    }
+
+    private static int normalizeImportColor(int argb) {
+        int red = quantizeChannel((argb >>> 16) & 0xFF);
+        int green = quantizeChannel((argb >>> 8) & 0xFF);
+        int blue = quantizeChannel(argb & 0xFF);
+        return (IMPORT_ALPHA << 24) | (red << 16) | (green << 8) | blue;
+    }
+
+    private static int quantizeChannel(int channel) {
+        return Math.min(255, ((channel + IMPORT_COLOR_STEP / 2) / IMPORT_COLOR_STEP) * IMPORT_COLOR_STEP);
     }
 
     private static boolean hasPixels(int[] pixels) {
@@ -214,5 +251,14 @@ public final class PaintGraffitiCommand {
 
     private static String formatScale(double scale) {
         return String.format(java.util.Locale.ROOT, "%.2f", scale);
+    }
+
+    private record ImportedPaper(String name, int size, List<PaintPaperStore.Cell> cells) {
+    }
+
+    private record ImportResult(String error, String filename, double scale, int paperColumns, int paperRows, List<ImportedPaper> papers) {
+        private static ImportResult error(String message) {
+            return new ImportResult(message, "", 1.0D, 0, 0, List.of());
+        }
     }
 }

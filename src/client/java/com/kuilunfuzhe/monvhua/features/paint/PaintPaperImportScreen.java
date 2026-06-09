@@ -41,6 +41,8 @@ public class PaintPaperImportScreen extends Screen {
     private double scale = 1.0D;
     private NativeImageBackedTexture previewTexture;
     private ImageEntry previewEntry;
+    private boolean importing;
+    private String status = "";
 
     public PaintPaperImportScreen() {
         super(Text.literal("Paint Paper Import"));
@@ -75,7 +77,7 @@ public class PaintPaperImportScreen extends Screen {
                 || clickButton(refreshX(), buttonY(), 58, 18, mouseX, mouseY, this::reloadImages)
                 || clickButton(minusX(), buttonY(), 22, 18, mouseX, mouseY, () -> setScale(scale - 0.05D))
                 || clickButton(plusX(), buttonY(), 22, 18, mouseX, mouseY, () -> setScale(scale + 0.05D))
-                || clickButton(importX(), buttonY(), 64, 18, mouseX, mouseY, this::importSelected)) {
+                || (!importing && clickButton(importX(), buttonY(), 64, 18, mouseX, mouseY, this::importSelected))) {
             return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
@@ -99,6 +101,8 @@ public class PaintPaperImportScreen extends Screen {
         images.clear();
         selectedIndex = -1;
         scroll = 0;
+        importing = false;
+        status = "";
         closePreviewTexture();
 
         folder = FabricLoader.getInstance().getGameDir().resolve("graffiti").normalize();
@@ -201,7 +205,10 @@ public class PaintPaperImportScreen extends Screen {
         drawButton(context, refreshX(), buttonY(), 58, 18, "Refresh", true);
         drawButton(context, minusX(), buttonY(), 22, 18, "-", true);
         drawButton(context, plusX(), buttonY(), 22, 18, "+", true);
-        drawButton(context, importX(), buttonY(), 64, 18, "Import", entry != null);
+        drawButton(context, importX(), buttonY(), 64, 18, importing ? "Busy" : "Import", entry != null && !importing);
+        if (!status.isEmpty()) {
+            context.drawText(textRenderer, Text.literal(status), infoX, buttonY() - 18, 0xFFE6E6E6, false);
+        }
     }
 
     private boolean clickList(double mouseX, double mouseY) {
@@ -238,8 +245,9 @@ public class PaintPaperImportScreen extends Screen {
         if (entry == null || client.player == null || client.player.networkHandler == null) {
             return;
         }
+        importing = true;
+        status = "Importing...";
         client.player.networkHandler.sendChatCommand("monvhua-graffiti import_scaled " + formatScale(scale) + " " + entry.name());
-        close();
     }
 
     private void setScale(double nextScale) {

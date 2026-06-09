@@ -12,6 +12,7 @@ import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.render.Frustum;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderTickCounter;
@@ -21,6 +22,8 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -31,17 +34,26 @@ import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWScrollCallbackI;
 
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public final class PaintOverlayClient {
     private static final double MAX_RENDER_DISTANCE_SQUARED = 96.0D * 96.0D;
     private static final float STEP = 1.0F / PaintOverlayStore.SIZE;
     private static final float OFFSET = 0.003F;
     private static final int MAX_RECENT_COLORS = 3;
-    private static final Map<PaintOverlayStore.FaceKey, int[]> FACES = new HashMap<>();
+    private static final int MAX_FRAME_PAINT_VERTICES = 180_000;
+    private static final int DENSE_CHUNK_VERTEX_THRESHOLD = 24_000;
+    private static final double FULL_DETAIL_DISTANCE_SQUARED = 12.0D * 12.0D;
+    private static final double MEDIUM_DETAIL_DISTANCE_SQUARED = 32.0D * 32.0D;
+    private static final MeshData EMPTY_MESH = new MeshData(new float[0], new int[0]);
+    private static final Map<PaintOverlayStore.FaceKey, FaceMesh> FACE_MESHES = new HashMap<>();
+    private static final Map<ChunkPos, ChunkMesh> CHUNK_MESHES = new HashMap<>();
+    private static final Map<ChunkPos, Set<PaintOverlayStore.FaceKey>> CHUNK_FACE_KEYS = new HashMap<>();
     private static final List<Integer> RECENT_COLORS = new ArrayList<>();
     private static final List<Integer> FAVORITE_COLORS = new ArrayList<>();
     private static GLFWScrollCallbackI previousScrollCallback;
@@ -159,21 +171,39 @@ public final class PaintOverlayClient {
 
     public static void render(WorldRenderContext context) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.world == null || FACES.isEmpty()) {
+        if (client.world == null || CHUNK_MESHES.isEmpty()) {
             return;
         }
 
         Vec3d camera = context.camera().getPos();
+        Frustum frustum = context.frustum();
         MatrixStack matrices = context.matrixStack();
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         VertexConsumer vertices = context.consumers().getBuffer(RenderLayer.getDebugQuads());
+        List<VisibleChunk> visibleChunks = new ArrayList<>();
 
-        for (Map.Entry<PaintOverlayStore.FaceKey, int[]> entry : FACES.entrySet()) {
-            BlockPos pos = entry.getKey().pos();
-            if (Vec3d.ofCenter(pos).squaredDistanceTo(camera) > MAX_RENDER_DISTANCE_SQUARED) {
+        for (ChunkMesh mesh : CHUNK_MESHES.values()) {
+            Box bounds = mesh.bounds();
+            double distanceSquared = squaredDistanceToBox(camera, bounds);
+            if (distanceSquared > MAX_RENDER_DISTANCE_SQUARED) {
                 continue;
             }
-            drawFace(vertices, matrix, Vec3d.of(pos).subtract(camera), entry.getKey().face(), entry.getValue());
+            if (frustum != null && !frustum.isVisible(bounds)) {
+                continue;
+            }
+            visibleChunks.add(new VisibleChunk(mesh, distanceSquared));
+        }
+
+        visibleChunks.sort(Comparator.comparingDouble(VisibleChunk::distanceSquared));
+        int remainingVertices = MAX_FRAME_PAINT_VERTICES;
+        for (VisibleChunk visible : visibleChunks) {
+            ChunkMesh mesh = visible.mesh();
+            MeshData meshData = selectRenderMesh(mesh, visible.distanceSquared(), remainingVertices);
+            if (meshData.isEmpty()) {
+                continue;
+            }
+            drawMesh(vertices, matrix, mesh.originX() - camera.x, -camera.y, mesh.originZ() - camera.z, meshData.positions(), meshData.colors());
+            remainingVertices -= meshData.vertexCount();
         }
     }
 
@@ -366,19 +396,34 @@ public final class PaintOverlayClient {
     }
 
     private static void applyFullSync(List<PaintOverlayPackets.FaceData> faces) {
-        FACES.clear();
+        FACE_MESHES.clear();
+        CHUNK_MESHES.clear();
+        CHUNK_FACE_KEYS.clear();
+        Set<ChunkPos> dirtyChunks = new HashSet<>();
         for (PaintOverlayPackets.FaceData face : faces) {
-            applyFace(face);
+            if (!hasPixels(face.pixels())) {
+                continue;
+            }
+            PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(face.pos(), face.face());
+            ChunkPos chunkPos = chunkPos(key.pos());
+            putFaceMesh(key, buildMesh(key, face.pixels()), chunkPos);
+            dirtyChunks.add(chunkPos);
+        }
+        for (ChunkPos chunkPos : dirtyChunks) {
+            rebuildChunkMesh(chunkPos);
         }
     }
 
     private static void applyFace(PaintOverlayPackets.FaceData face) {
         PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(face.pos(), face.face());
+        ChunkPos chunkPos = chunkPos(key.pos());
         if (!hasPixels(face.pixels())) {
-            FACES.remove(key);
+            removeFaceMesh(key, chunkPos);
+            rebuildChunkMesh(chunkPos);
             return;
         }
-        FACES.put(key, Arrays.copyOf(face.pixels(), PaintOverlayStore.FACE_PIXELS));
+        putFaceMesh(key, buildMesh(key, face.pixels()), chunkPos);
+        rebuildChunkMesh(chunkPos);
     }
 
     private static boolean hasPixels(int[] pixels) {
@@ -390,83 +435,358 @@ public final class PaintOverlayClient {
         return false;
     }
 
-    private static void drawFace(VertexConsumer vertices, Matrix4f matrix, Vec3d origin, Direction face, int[] pixels) {
-        for (int y = 0; y < PaintOverlayStore.SIZE; y++) {
-            for (int x = 0; x < PaintOverlayStore.SIZE; x++) {
-                int color = pixels[y * PaintOverlayStore.SIZE + x];
-                if (color == 0) {
+    private static FaceMesh buildMesh(PaintOverlayStore.FaceKey key, int[] pixels) {
+        return new FaceMesh(
+                key.pos(),
+                new Box(key.pos()).expand(0.01D),
+                buildFaceMesh(key.face(), pixels, 1),
+                buildFaceMesh(key.face(), pixels, 2),
+                buildFaceMesh(key.face(), pixels, 4)
+        );
+    }
+
+    private static MeshData buildFaceMesh(Direction face, int[] pixels, int cellSize) {
+        int gridSize = PaintOverlayStore.SIZE / cellSize;
+        int[] colors = new int[gridSize * gridSize];
+        for (int gridY = 0; gridY < gridSize; gridY++) {
+            for (int gridX = 0; gridX < gridSize; gridX++) {
+                colors[gridY * gridSize + gridX] = cellColor(pixels, gridX * cellSize, gridY * cellSize, cellSize);
+            }
+        }
+
+        MeshBuilder builder = new MeshBuilder();
+        boolean[] used = new boolean[gridSize * gridSize];
+        for (int y = 0; y < gridSize; y++) {
+            for (int x = 0; x < gridSize; x++) {
+                int index = y * gridSize + x;
+                int color = colors[index];
+                if (color == 0 || used[index]) {
                     continue;
                 }
-                drawPixel(vertices, matrix, origin, face, x, y, color);
+                int width = 1;
+                while (x + width < gridSize) {
+                    int nextIndex = y * gridSize + x + width;
+                    if (used[nextIndex] || colors[nextIndex] != color) {
+                        break;
+                    }
+                    width++;
+                }
+
+                int height = 1;
+                boolean canGrow = true;
+                while (y + height < gridSize && canGrow) {
+                    for (int rx = 0; rx < width; rx++) {
+                        int nextIndex = (y + height) * gridSize + x + rx;
+                        if (used[nextIndex] || colors[nextIndex] != color) {
+                            canGrow = false;
+                            break;
+                        }
+                    }
+                    if (canGrow) {
+                        height++;
+                    }
+                }
+
+                for (int ry = 0; ry < height; ry++) {
+                    for (int rx = 0; rx < width; rx++) {
+                        used[(y + ry) * gridSize + x + rx] = true;
+                    }
+                }
+                appendRect(builder, face, x * cellSize, y * cellSize, (x + width) * cellSize, (y + height) * cellSize, color);
             }
         }
+        return new MeshData(builder.positions(), builder.colors());
     }
 
-    private static void drawPixel(VertexConsumer vertices, Matrix4f matrix, Vec3d origin, Direction face, int x, int y, int color) {
-        float minU = x * STEP;
-        float maxU = minU + STEP;
-        float minV = y * STEP;
-        float maxV = minV + STEP;
-        float a = ((color >>> 24) & 0xFF);
-        float r = (color >>> 16) & 0xFF;
-        float g = (color >>> 8) & 0xFF;
-        float b = color & 0xFF;
+    private static int cellColor(int[] pixels, int startX, int startY, int cellSize) {
+        int alphaTotal = 0;
+        int redTotal = 0;
+        int greenTotal = 0;
+        int blueTotal = 0;
+        int filled = 0;
+        int total = cellSize * cellSize;
+        for (int y = 0; y < cellSize; y++) {
+            for (int x = 0; x < cellSize; x++) {
+                int color = pixels[(startY + y) * PaintOverlayStore.SIZE + startX + x];
+                int alpha = (color >>> 24) & 0xFF;
+                if (alpha == 0) {
+                    continue;
+                }
+                alphaTotal += alpha;
+                redTotal += (color >>> 16) & 0xFF;
+                greenTotal += (color >>> 8) & 0xFF;
+                blueTotal += color & 0xFF;
+                filled++;
+            }
+        }
+        if (filled == 0) {
+            return 0;
+        }
+        if (cellSize > 1 && filled * 4 < total) {
+            return 0;
+        }
+        int alpha = MathHelper.clamp((alphaTotal / filled) * filled / total, 32, 204);
+        int red = quantizeLodColor(redTotal / filled, cellSize);
+        int green = quantizeLodColor(greenTotal / filled, cellSize);
+        int blue = quantizeLodColor(blueTotal / filled, cellSize);
+        return (alpha << 24) | (red << 16) | (green << 8) | blue;
+    }
 
-        Vec3d p0;
-        Vec3d p1;
-        Vec3d p2;
-        Vec3d p3;
+    private static int quantizeLodColor(int channel, int cellSize) {
+        int step = cellSize <= 1 ? 1 : cellSize == 2 ? 16 : 32;
+        return Math.min(255, ((channel + step / 2) / step) * step);
+    }
+
+    private static void appendRect(MeshBuilder builder, Direction face, int x0, int y0, int x1, int y1, int color) {
+        float minU = x0 * STEP;
+        float maxU = x1 * STEP;
+        float minV = y0 * STEP;
+        float maxV = y1 * STEP;
         switch (face) {
             case UP -> {
-                p0 = origin.add(minU, 1.0F + OFFSET, minV);
-                p1 = origin.add(maxU, 1.0F + OFFSET, minV);
-                p2 = origin.add(maxU, 1.0F + OFFSET, maxV);
-                p3 = origin.add(minU, 1.0F + OFFSET, maxV);
+                builder.vertex(minU, 1.0F + OFFSET, minV, color);
+                builder.vertex(maxU, 1.0F + OFFSET, minV, color);
+                builder.vertex(maxU, 1.0F + OFFSET, maxV, color);
+                builder.vertex(minU, 1.0F + OFFSET, maxV, color);
             }
             case DOWN -> {
-                p0 = origin.add(minU, -OFFSET, 1.0F - minV);
-                p1 = origin.add(maxU, -OFFSET, 1.0F - minV);
-                p2 = origin.add(maxU, -OFFSET, 1.0F - maxV);
-                p3 = origin.add(minU, -OFFSET, 1.0F - maxV);
+                builder.vertex(minU, -OFFSET, 1.0F - minV, color);
+                builder.vertex(maxU, -OFFSET, 1.0F - minV, color);
+                builder.vertex(maxU, -OFFSET, 1.0F - maxV, color);
+                builder.vertex(minU, -OFFSET, 1.0F - maxV, color);
             }
             case NORTH -> {
-                p0 = origin.add(1.0F - minU, 1.0F - minV, -OFFSET);
-                p1 = origin.add(1.0F - maxU, 1.0F - minV, -OFFSET);
-                p2 = origin.add(1.0F - maxU, 1.0F - maxV, -OFFSET);
-                p3 = origin.add(1.0F - minU, 1.0F - maxV, -OFFSET);
+                builder.vertex(1.0F - minU, 1.0F - minV, -OFFSET, color);
+                builder.vertex(1.0F - maxU, 1.0F - minV, -OFFSET, color);
+                builder.vertex(1.0F - maxU, 1.0F - maxV, -OFFSET, color);
+                builder.vertex(1.0F - minU, 1.0F - maxV, -OFFSET, color);
             }
             case SOUTH -> {
-                p0 = origin.add(minU, 1.0F - minV, 1.0F + OFFSET);
-                p1 = origin.add(maxU, 1.0F - minV, 1.0F + OFFSET);
-                p2 = origin.add(maxU, 1.0F - maxV, 1.0F + OFFSET);
-                p3 = origin.add(minU, 1.0F - maxV, 1.0F + OFFSET);
+                builder.vertex(minU, 1.0F - minV, 1.0F + OFFSET, color);
+                builder.vertex(maxU, 1.0F - minV, 1.0F + OFFSET, color);
+                builder.vertex(maxU, 1.0F - maxV, 1.0F + OFFSET, color);
+                builder.vertex(minU, 1.0F - maxV, 1.0F + OFFSET, color);
             }
             case WEST -> {
-                p0 = origin.add(-OFFSET, 1.0F - minV, minU);
-                p1 = origin.add(-OFFSET, 1.0F - minV, maxU);
-                p2 = origin.add(-OFFSET, 1.0F - maxV, maxU);
-                p3 = origin.add(-OFFSET, 1.0F - maxV, minU);
+                builder.vertex(-OFFSET, 1.0F - minV, minU, color);
+                builder.vertex(-OFFSET, 1.0F - minV, maxU, color);
+                builder.vertex(-OFFSET, 1.0F - maxV, maxU, color);
+                builder.vertex(-OFFSET, 1.0F - maxV, minU, color);
             }
             case EAST -> {
-                p0 = origin.add(1.0F + OFFSET, 1.0F - minV, 1.0F - minU);
-                p1 = origin.add(1.0F + OFFSET, 1.0F - minV, 1.0F - maxU);
-                p2 = origin.add(1.0F + OFFSET, 1.0F - maxV, 1.0F - maxU);
-                p3 = origin.add(1.0F + OFFSET, 1.0F - maxV, 1.0F - minU);
+                builder.vertex(1.0F + OFFSET, 1.0F - minV, 1.0F - minU, color);
+                builder.vertex(1.0F + OFFSET, 1.0F - minV, 1.0F - maxU, color);
+                builder.vertex(1.0F + OFFSET, 1.0F - maxV, 1.0F - maxU, color);
+                builder.vertex(1.0F + OFFSET, 1.0F - maxV, 1.0F - minU, color);
             }
             default -> {
-                return;
             }
         }
-
-        vertex(vertices, matrix, p0, r, g, b, a);
-        vertex(vertices, matrix, p1, r, g, b, a);
-        vertex(vertices, matrix, p2, r, g, b, a);
-        vertex(vertices, matrix, p3, r, g, b, a);
     }
 
-    private static void vertex(VertexConsumer vertices, Matrix4f matrix, Vec3d pos, float r, float g, float b, float a) {
-        vertices.vertex(matrix, (float) pos.x, (float) pos.y, (float) pos.z)
-                .color((int) r, (int) g, (int) b, (int) a);
+    private static ChunkPos chunkPos(BlockPos pos) {
+        return new ChunkPos(pos.getX() >> 4, pos.getZ() >> 4);
+    }
+
+    private static void putFaceMesh(PaintOverlayStore.FaceKey key, FaceMesh mesh, ChunkPos chunkPos) {
+        FACE_MESHES.put(key, mesh);
+        CHUNK_FACE_KEYS.computeIfAbsent(chunkPos, ignored -> new HashSet<>()).add(key);
+    }
+
+    private static void removeFaceMesh(PaintOverlayStore.FaceKey key, ChunkPos chunkPos) {
+        FACE_MESHES.remove(key);
+        Set<PaintOverlayStore.FaceKey> keys = CHUNK_FACE_KEYS.get(chunkPos);
+        if (keys == null) {
+            return;
+        }
+        keys.remove(key);
+        if (keys.isEmpty()) {
+            CHUNK_FACE_KEYS.remove(chunkPos);
+        }
+    }
+
+    private static void rebuildChunkMesh(ChunkPos chunkPos) {
+        Set<PaintOverlayStore.FaceKey> keys = CHUNK_FACE_KEYS.get(chunkPos);
+        if (keys == null || keys.isEmpty()) {
+            CHUNK_MESHES.remove(chunkPos);
+            return;
+        }
+
+        Box bounds = null;
+        int fullVertexCount = 0;
+        int mediumVertexCount = 0;
+        int farVertexCount = 0;
+        for (PaintOverlayStore.FaceKey key : keys) {
+            FaceMesh mesh = FACE_MESHES.get(key);
+            if (mesh == null) {
+                continue;
+            }
+            bounds = bounds == null ? mesh.bounds() : union(bounds, mesh.bounds());
+            fullVertexCount += mesh.full().vertexCount();
+            mediumVertexCount += mesh.medium().vertexCount();
+            farVertexCount += mesh.far().vertexCount();
+        }
+        if (fullVertexCount == 0 || bounds == null) {
+            CHUNK_MESHES.remove(chunkPos);
+            return;
+        }
+
+        int originX = chunkPos.x << 4;
+        int originZ = chunkPos.z << 4;
+        CHUNK_MESHES.put(chunkPos, new ChunkMesh(
+                originX,
+                originZ,
+                bounds,
+                buildChunkMesh(keys, originX, originZ, fullVertexCount, FaceMesh::full),
+                buildChunkMesh(keys, originX, originZ, mediumVertexCount, FaceMesh::medium),
+                buildChunkMesh(keys, originX, originZ, farVertexCount, FaceMesh::far)
+        ));
+    }
+
+    private static MeshData buildChunkMesh(Set<PaintOverlayStore.FaceKey> keys, int originX, int originZ, int vertexCount,
+                                           java.util.function.Function<FaceMesh, MeshData> meshSelector) {
+        if (vertexCount == 0) {
+            return EMPTY_MESH;
+        }
+        float[] positions = new float[vertexCount * 3];
+        int[] colors = new int[vertexCount];
+        int vertexIndex = 0;
+        for (PaintOverlayStore.FaceKey key : keys) {
+            FaceMesh mesh = FACE_MESHES.get(key);
+            if (mesh == null) {
+                continue;
+            }
+            MeshData faceMesh = meshSelector.apply(mesh);
+            float[] facePositions = faceMesh.positions();
+            int[] faceColors = faceMesh.colors();
+            float offsetX = mesh.pos().getX() - originX;
+            float offsetY = mesh.pos().getY();
+            float offsetZ = mesh.pos().getZ() - originZ;
+            for (int i = 0; i < faceColors.length; i++) {
+                int sourcePositionIndex = i * 3;
+                int targetPositionIndex = vertexIndex * 3;
+                positions[targetPositionIndex] = offsetX + facePositions[sourcePositionIndex];
+                positions[targetPositionIndex + 1] = offsetY + facePositions[sourcePositionIndex + 1];
+                positions[targetPositionIndex + 2] = offsetZ + facePositions[sourcePositionIndex + 2];
+                colors[vertexIndex] = faceColors[i];
+                vertexIndex++;
+            }
+        }
+        return new MeshData(positions, colors);
+    }
+
+    private static MeshData selectRenderMesh(ChunkMesh mesh, double distanceSquared, int remainingVertices) {
+        boolean dense = mesh.full().vertexCount() > DENSE_CHUNK_VERTEX_THRESHOLD;
+        if (!dense && distanceSquared <= MEDIUM_DETAIL_DISTANCE_SQUARED && mesh.full().vertexCount() <= remainingVertices) {
+            return mesh.full();
+        }
+        if (!dense && mesh.medium().vertexCount() <= remainingVertices) {
+            return mesh.medium().isEmpty() ? mesh.full() : mesh.medium();
+        }
+        if (distanceSquared <= FULL_DETAIL_DISTANCE_SQUARED && mesh.full().vertexCount() <= remainingVertices) {
+            return mesh.full();
+        }
+        if (distanceSquared <= MEDIUM_DETAIL_DISTANCE_SQUARED && !mesh.medium().isEmpty()
+                && mesh.medium().vertexCount() <= remainingVertices) {
+            return mesh.medium();
+        }
+        if (!mesh.far().isEmpty() && mesh.far().vertexCount() <= remainingVertices) {
+            return mesh.far();
+        }
+        if (remainingVertices > 0 && !mesh.far().isEmpty() && mesh.far().vertexCount() <= DENSE_CHUNK_VERTEX_THRESHOLD) {
+            return mesh.far();
+        }
+        return EMPTY_MESH;
+    }
+
+    private static double squaredDistanceToBox(Vec3d point, Box box) {
+        double dx = point.x < box.minX ? box.minX - point.x : Math.max(point.x - box.maxX, 0.0D);
+        double dy = point.y < box.minY ? box.minY - point.y : Math.max(point.y - box.maxY, 0.0D);
+        double dz = point.z < box.minZ ? box.minZ - point.z : Math.max(point.z - box.maxZ, 0.0D);
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    private static Box union(Box a, Box b) {
+        return new Box(
+                Math.min(a.minX, b.minX),
+                Math.min(a.minY, b.minY),
+                Math.min(a.minZ, b.minZ),
+                Math.max(a.maxX, b.maxX),
+                Math.max(a.maxY, b.maxY),
+                Math.max(a.maxZ, b.maxZ)
+        );
+    }
+
+    private static void drawMesh(VertexConsumer vertices, Matrix4f matrix, double originX, double originY, double originZ, float[] positions, int[] colors) {
+        for (int i = 0; i < colors.length; i++) {
+            int color = colors[i];
+            int positionIndex = i * 3;
+            vertices.vertex(matrix,
+                            (float) (originX + positions[positionIndex]),
+                            (float) (originY + positions[positionIndex + 1]),
+                            (float) (originZ + positions[positionIndex + 2]))
+                    .color((color >>> 16) & 0xFF, (color >>> 8) & 0xFF, color & 0xFF, (color >>> 24) & 0xFF);
+        }
+    }
+
+    private record VisibleChunk(ChunkMesh mesh, double distanceSquared) {
+    }
+
+    private record MeshData(float[] positions, int[] colors) {
+        private int vertexCount() {
+            return colors.length;
+        }
+
+        private boolean isEmpty() {
+            return colors.length == 0;
+        }
+    }
+
+    private record FaceMesh(BlockPos pos, Box bounds, MeshData full, MeshData medium, MeshData far) {
+    }
+
+    private record ChunkMesh(int originX, int originZ, Box bounds, MeshData full, MeshData medium, MeshData far) {
+    }
+
+    private static class MeshBuilder {
+        private float[] positions = new float[64 * 3];
+        private int[] colors = new int[64];
+        private int vertexIndex;
+
+        private void vertex(float x, float y, float z, int color) {
+            ensureCapacity(vertexIndex + 1);
+            int positionIndex = vertexIndex * 3;
+            positions[positionIndex] = x;
+            positions[positionIndex + 1] = y;
+            positions[positionIndex + 2] = z;
+            colors[vertexIndex] = color;
+            vertexIndex++;
+        }
+
+        private void ensureCapacity(int requiredVertices) {
+            if (requiredVertices <= colors.length) {
+                return;
+            }
+            int nextVertices = Math.max(requiredVertices, colors.length * 2);
+            float[] nextPositions = new float[nextVertices * 3];
+            int[] nextColors = new int[nextVertices];
+            System.arraycopy(positions, 0, nextPositions, 0, vertexIndex * 3);
+            System.arraycopy(colors, 0, nextColors, 0, vertexIndex);
+            positions = nextPositions;
+            colors = nextColors;
+        }
+
+        private float[] positions() {
+            float[] result = new float[vertexIndex * 3];
+            System.arraycopy(positions, 0, result, 0, result.length);
+            return result;
+        }
+
+        private int[] colors() {
+            int[] result = new int[vertexIndex];
+            System.arraycopy(colors, 0, result, 0, result.length);
+            return result;
+        }
     }
 
     private record StrokeKey(BlockPos pos, Direction face, int x, int y, boolean clear) {
