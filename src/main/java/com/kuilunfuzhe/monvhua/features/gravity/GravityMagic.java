@@ -11,14 +11,18 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
+import net.minecraft.block.DoorBlock;
+import net.minecraft.block.TallPlantBlock;
 import net.minecraft.block.enums.BlockHalf;
 import net.minecraft.block.enums.DoubleBlockHalf;
+import net.minecraft.block.enums.DoorHinge;
 import net.minecraft.block.enums.SlabType;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityPose;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -27,6 +31,8 @@ import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.BlockSoundGroup;
+import net.minecraft.sound.SoundCategory;
 import net.minecraft.state.property.Properties;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
@@ -56,6 +62,8 @@ public final class GravityMagic {
     public static final double MIN_GRAVITY = 0.0D;
     public static final double MAX_GRAVITY = 0.30D;
     public static final int INFINITE_AREA_TICKS = -1;
+
+    public static final int DEFAULT_AREA_HEIGHT = 4;
 
     private static final int AREA_RADIUS = 10;
     private static final int ISLAND_VERTICAL_RADIUS = 8;
@@ -89,7 +97,7 @@ public final class GravityMagic {
         RIGHT
     }
 
-    public record AreaGravityView(BlockPos center, int radius, int ticks) {
+    public record AreaGravityView(BlockPos center, int radius, int height, int ticks) {
     }
 
     private GravityMagic() {
@@ -182,15 +190,19 @@ public final class GravityMagic {
 
     public static int activateAreaGravity(ServerWorld world, ServerPlayerEntity player, BlockPos origin) {
         double gravity = getSelectedGravity(player);
-        addAreaGravity(world, origin, AREA_RADIUS, AREA_DURATION_TICKS, gravity);
+        addAreaGravity(world, origin, AREA_RADIUS, DEFAULT_AREA_HEIGHT, AREA_DURATION_TICKS, gravity);
         player.sendMessage(Text.literal("\u00a7b[Gravity] Inverted walk area r=" + AREA_RADIUS
-                + " ticks=" + AREA_DURATION_TICKS), true);
+                + " h=" + DEFAULT_AREA_HEIGHT + " ticks=" + AREA_DURATION_TICKS), true);
         return 1;
     }
 
     public static int addAreaGravity(ServerWorld world, BlockPos center, int radius, int ticks, double gravity) {
+        return addAreaGravity(world, center, radius, DEFAULT_AREA_HEIGHT, ticks, gravity);
+    }
+
+    public static int addAreaGravity(ServerWorld world, BlockPos center, int radius, int height, int ticks, double gravity) {
         ensureServerAreasLoaded(world.getServer());
-        AreaGravityField field = new AreaGravityField(world.getRegistryKey(), center.toImmutable(), radius, ticks, gravity, false);
+        AreaGravityField field = new AreaGravityField(world.getRegistryKey(), center.toImmutable(), radius, height, ticks, gravity, false);
         AREA_FIELDS.add(field);
         broadcastAreaGravity(world, field);
         saveServerAreas(world.getServer());
@@ -204,7 +216,7 @@ public final class GravityMagic {
             if (field.clientSynced || !field.world.equals(world.getRegistryKey())) {
                 continue;
             }
-            double distanceSq = Vec3d.ofCenter(field.center).squaredDistanceTo(pos);
+            double distanceSq = areaTopCenter(field.center).squaredDistanceTo(pos);
             if (distanceSq < nearestDistanceSq) {
                 nearest = field;
                 nearestDistanceSq = distanceSq;
@@ -216,7 +228,7 @@ public final class GravityMagic {
         }
 
         AREA_FIELDS.remove(nearest);
-        broadcastClearAreaGravity(world, nearest.center, nearest.radius, false);
+        broadcastClearAreaGravity(world, nearest.center, nearest.radius, nearest.height, false);
         saveServerAreas(world.getServer());
         return 1;
     }
@@ -229,7 +241,7 @@ public final class GravityMagic {
             }
         }
         if (removed > 0) {
-            broadcastClearAreaGravity(world, BlockPos.ORIGIN, 0, true);
+            broadcastClearAreaGravity(world, BlockPos.ORIGIN, 0, 0, true);
             saveServerAreas(world.getServer());
         }
         return removed;
@@ -239,7 +251,7 @@ public final class GravityMagic {
         ensureServerAreasLoaded(player.getServer());
         for (AreaGravityField field : AREA_FIELDS) {
             if (!field.clientSynced && field.world.equals(player.getWorld().getRegistryKey())) {
-                ServerPlayNetworking.send(player, new GravityPackets.AreaGravityS2C(field.center, field.radius, field.ticks, field.gravity));
+                ServerPlayNetworking.send(player, new GravityPackets.AreaGravityS2C(field.center, field.radius, field.height, field.ticks, field.gravity));
             }
         }
     }
@@ -253,7 +265,21 @@ public final class GravityMagic {
     }
 
     private static ActionResult useInvertedBlockSurface(PlayerEntity player, World world, net.minecraft.util.Hand hand, net.minecraft.util.hit.BlockHitResult hit) {
-        if (!isInInvertedArea(world.getRegistryKey(), hit.getPos()) || hit.getSide() != Direction.DOWN) {
+        if (!isInInvertedArea(world.getRegistryKey(), hit.getPos())) {
+            return ActionResult.PASS;
+        }
+
+        ActionResult tallPlantResult = placeInvertedTallPlant(player, world, hand, hit);
+        if (tallPlantResult.isAccepted()) {
+            return tallPlantResult;
+        }
+
+        ActionResult doorResult = placeInvertedCeilingDoor(player, world, hand, hit);
+        if (doorResult.isAccepted()) {
+            return doorResult;
+        }
+
+        if (hit.getSide() != Direction.DOWN) {
             return ActionResult.PASS;
         }
 
@@ -279,6 +305,111 @@ public final class GravityMagic {
         world.setBlockState(cropPos, crop, Block.NOTIFY_ALL);
         if (!player.getAbilities().creativeMode) {
             player.getStackInHand(hand).decrement(1);
+        }
+        return ActionResult.SUCCESS_SERVER;
+    }
+
+    private static ActionResult placeInvertedTallPlant(PlayerEntity player, World world, net.minecraft.util.Hand hand, net.minecraft.util.hit.BlockHitResult hit) {
+        if (hit.getSide() != Direction.DOWN) {
+            return ActionResult.PASS;
+        }
+
+        ItemStack stack = player.getStackInHand(hand);
+        if (!(stack.getItem() instanceof BlockItem blockItem) || !(blockItem.getBlock() instanceof TallPlantBlock tallPlantBlock)) {
+            return ActionResult.PASS;
+        }
+
+        BlockPos supportPos = hit.getBlockPos();
+        BlockPos lowerPos = supportPos.down();
+        BlockPos upperPos = supportPos.down(2);
+        if (upperPos.getY() < world.getBottomY()
+                || !world.getBlockState(lowerPos).isReplaceable()
+                || !world.getBlockState(upperPos).isReplaceable()) {
+            return ActionResult.PASS;
+        }
+
+        BlockState lowerState = tallPlantBlock.getDefaultState().with(Properties.DOUBLE_BLOCK_HALF, DoubleBlockHalf.LOWER);
+        if (!lowerState.canPlaceAt(new InvertedSupportWorldView(world, lowerPos), lowerPos)) {
+            return ActionResult.PASS;
+        }
+
+        if (world.isClient()) {
+            return ActionResult.SUCCESS;
+        }
+
+        BlockState upperState = tallPlantBlock.getDefaultState().with(Properties.DOUBLE_BLOCK_HALF, DoubleBlockHalf.UPPER);
+        int flags = Block.NOTIFY_ALL | Block.FORCE_STATE;
+        world.setBlockState(lowerPos, TallPlantBlock.withWaterloggedState(world, lowerPos, lowerState), flags);
+        world.setBlockState(upperPos, TallPlantBlock.withWaterloggedState(world, upperPos, upperState), flags);
+
+        BlockSoundGroup soundGroup = lowerState.getSoundGroup();
+        world.playSound(null, lowerPos, lowerState.getSoundGroup().getPlaceSound(), SoundCategory.BLOCKS,
+                (soundGroup.getVolume() + 1.0F) / 2.0F, soundGroup.getPitch() * 0.8F);
+        if (!player.getAbilities().creativeMode) {
+            stack.decrement(1);
+        }
+        return ActionResult.SUCCESS_SERVER;
+    }
+
+    private static ActionResult placeInvertedCeilingDoor(PlayerEntity player, World world, net.minecraft.util.Hand hand, net.minecraft.util.hit.BlockHitResult hit) {
+        if (hit.getSide() != Direction.DOWN) {
+            return ActionResult.PASS;
+        }
+
+        ItemStack stack = player.getStackInHand(hand);
+        if (!(stack.getItem() instanceof BlockItem blockItem) || !(blockItem.getBlock() instanceof DoorBlock doorBlock)) {
+            return ActionResult.PASS;
+        }
+
+        BlockPos supportPos = hit.getBlockPos();
+        BlockState supportState = world.getBlockState(supportPos);
+        if (!supportState.isSideSolidFullSquare(world, supportPos, Direction.DOWN)) {
+            return ActionResult.PASS;
+        }
+
+        BlockPos upperPos = supportPos.down();
+        BlockPos lowerPos = supportPos.down(2);
+        if (lowerPos.getY() < world.getBottomY() || !world.getBlockState(lowerPos).isReplaceable() || !world.getBlockState(upperPos).isReplaceable()) {
+            return ActionResult.PASS;
+        }
+
+        if (world.isClient()) {
+            return ActionResult.SUCCESS;
+        }
+
+        boolean powered = world.isReceivingRedstonePower(lowerPos) || world.isReceivingRedstonePower(upperPos);
+        BlockState lowerState = doorBlock.getDefaultState();
+        if (lowerState.contains(Properties.HORIZONTAL_FACING)) {
+            lowerState = lowerState.with(Properties.HORIZONTAL_FACING, player.getHorizontalFacing());
+        }
+        if (lowerState.contains(Properties.DOOR_HINGE)) {
+            lowerState = lowerState.with(Properties.DOOR_HINGE, DoorHinge.LEFT);
+        }
+        if (lowerState.contains(Properties.OPEN)) {
+            lowerState = lowerState.with(Properties.OPEN, powered);
+        }
+        if (lowerState.contains(Properties.POWERED)) {
+            lowerState = lowerState.with(Properties.POWERED, powered);
+        }
+        if (lowerState.contains(Properties.DOUBLE_BLOCK_HALF)) {
+            lowerState = lowerState.with(Properties.DOUBLE_BLOCK_HALF, DoubleBlockHalf.LOWER);
+        }
+
+        BlockState upperState = lowerState;
+        if (upperState.contains(Properties.DOUBLE_BLOCK_HALF)) {
+            upperState = upperState.with(Properties.DOUBLE_BLOCK_HALF, DoubleBlockHalf.UPPER);
+        }
+
+        int flags = Block.NOTIFY_ALL | Block.FORCE_STATE;
+        world.setBlockState(lowerPos, lowerState, flags);
+        world.setBlockState(upperPos, upperState, flags);
+        doorBlock.onPlaced(world, lowerPos, lowerState, player, stack);
+
+        BlockSoundGroup soundGroup = lowerState.getSoundGroup();
+        world.playSound(null, lowerPos, lowerState.getSoundGroup().getPlaceSound(), SoundCategory.BLOCKS,
+                (soundGroup.getVolume() + 1.0F) / 2.0F, soundGroup.getPitch() * 0.8F);
+        if (!player.getAbilities().creativeMode) {
+            stack.decrement(1);
         }
         return ActionResult.SUCCESS_SERVER;
     }
@@ -377,7 +508,7 @@ public final class GravityMagic {
             field.ticks--;
             if (field.ticks <= 0) {
                 AREA_FIELDS.remove(field);
-                broadcastClearAreaGravity(world, field.center, field.radius, false);
+                broadcastClearAreaGravity(world, field.center, field.radius, field.height, false);
                 saveServerAreas(world.getServer());
             }
         }
@@ -408,9 +539,10 @@ public final class GravityMagic {
                 RegistryKey<World> world = RegistryKey.of(RegistryKeys.WORLD, Identifier.of(area.get("world").getAsString()));
                 BlockPos center = new BlockPos(area.get("x").getAsInt(), area.get("y").getAsInt(), area.get("z").getAsInt());
                 int radius = area.get("radius").getAsInt();
+                int height = area.has("height") ? area.get("height").getAsInt() : DEFAULT_AREA_HEIGHT;
                 int ticks = area.get("ticks").getAsInt();
                 double gravity = area.get("gravity").getAsDouble();
-                AREA_FIELDS.add(new AreaGravityField(world, center, radius, ticks, gravity, false));
+                AREA_FIELDS.add(new AreaGravityField(world, center, radius, height, ticks, gravity, false));
             }
         } catch (RuntimeException | IOException ignored) {
             // Corrupt debug-area data should not prevent a world from loading.
@@ -438,6 +570,7 @@ public final class GravityMagic {
             area.addProperty("y", field.center.getY());
             area.addProperty("z", field.center.getZ());
             area.addProperty("radius", field.radius);
+            area.addProperty("height", field.height);
             area.addProperty("ticks", field.ticks);
             area.addProperty("gravity", field.gravity);
             areas.add(area);
@@ -614,6 +747,10 @@ public final class GravityMagic {
         return getInvertedAreaGravity(world, pos) > 0.0D;
     }
 
+    public static Vec3d areaTopCenter(BlockPos center) {
+        return new Vec3d(center.getX() + 0.5D, center.getY(), center.getZ() + 0.5D);
+    }
+
     public static boolean isInvertedWalking(Entity entity) {
         InvertedPlayerState state = entity == null ? null : invertedPlayerStates(entity).get(entity.getUuid());
         return state != null && state.attached;
@@ -624,17 +761,17 @@ public final class GravityMagic {
     }
 
     private static void broadcastAreaGravity(ServerWorld world, AreaGravityField field) {
-        GravityPackets.AreaGravityS2C packet = new GravityPackets.AreaGravityS2C(field.center, field.radius, field.ticks, field.gravity);
-        double trackingDistanceSq = (field.radius + 96.0D) * (field.radius + 96.0D);
+        GravityPackets.AreaGravityS2C packet = new GravityPackets.AreaGravityS2C(field.center, field.radius, field.height, field.ticks, field.gravity);
+        double trackingDistanceSq = (field.maxExtent() + 96.0D) * (field.maxExtent() + 96.0D);
         for (ServerPlayerEntity target : world.getPlayers()) {
-            if (target.squaredDistanceTo(Vec3d.ofCenter(field.center)) <= trackingDistanceSq) {
+            if (target.squaredDistanceTo(areaTopCenter(field.center)) <= trackingDistanceSq) {
                 ServerPlayNetworking.send(target, packet);
             }
         }
     }
 
-    private static void broadcastClearAreaGravity(ServerWorld world, BlockPos center, int radius, boolean all) {
-        GravityPackets.ClearAreaGravityS2C packet = new GravityPackets.ClearAreaGravityS2C(center, radius, all);
+    private static void broadcastClearAreaGravity(ServerWorld world, BlockPos center, int radius, int height, boolean all) {
+        GravityPackets.ClearAreaGravityS2C packet = new GravityPackets.ClearAreaGravityS2C(center, radius, height, all);
         for (ServerPlayerEntity target : world.getPlayers()) {
             ServerPlayNetworking.send(target, packet);
         }
@@ -644,16 +781,16 @@ public final class GravityMagic {
         return ENTITY_GRAVITY.containsKey(entity.getUuid()) || isInInvertedArea(entity);
     }
 
-    public static void addClientSyncedAreaGravity(RegistryKey<World> world, BlockPos center, int radius, int ticks, double gravity) {
-        AREA_FIELDS.add(new AreaGravityField(world, center.toImmutable(), radius, ticks, gravity, true));
+    public static void addClientSyncedAreaGravity(RegistryKey<World> world, BlockPos center, int radius, int height, int ticks, double gravity) {
+        AREA_FIELDS.add(new AreaGravityField(world, center.toImmutable(), radius, height, ticks, gravity, true));
     }
 
-    public static void clearClientSyncedAreaGravity(RegistryKey<World> world, BlockPos center, int radius, boolean all) {
+    public static void clearClientSyncedAreaGravity(RegistryKey<World> world, BlockPos center, int radius, int height, boolean all) {
         for (AreaGravityField field : AREA_FIELDS) {
             if (!field.clientSynced || !field.world.equals(world)) {
                 continue;
             }
-            if (all || field.center.equals(center) && field.radius == radius) {
+            if (all || field.center.equals(center) && field.radius == radius && field.height == height) {
                 AREA_FIELDS.remove(field);
             }
         }
@@ -678,7 +815,7 @@ public final class GravityMagic {
         List<AreaGravityView> views = new java.util.ArrayList<>();
         for (AreaGravityField field : AREA_FIELDS) {
             if (field.clientSynced && field.world.equals(world)) {
-                views.add(new AreaGravityView(field.center, field.radius, field.ticks));
+                views.add(new AreaGravityView(field.center, field.radius, field.height, field.ticks));
             }
         }
         return views;
@@ -807,23 +944,37 @@ public final class GravityMagic {
         private final RegistryKey<World> world;
         private final BlockPos center;
         private final int radius;
-        private final double radiusSq;
+        private final int height;
         private final double gravity;
         private final boolean clientSynced;
         private int ticks;
 
-        private AreaGravityField(RegistryKey<World> world, BlockPos center, int radius, int ticks, double gravity, boolean clientSynced) {
+        private AreaGravityField(RegistryKey<World> world, BlockPos center, int radius, int height, int ticks, double gravity, boolean clientSynced) {
             this.world = world;
             this.center = center;
-            this.radius = radius;
-            this.radiusSq = radius * radius;
+            this.radius = Math.max(1, radius);
+            this.height = Math.max(1, height);
             this.ticks = ticks;
             this.gravity = gravity;
             this.clientSynced = clientSynced;
         }
 
         private boolean contains(Vec3d pos) {
-            return Vec3d.ofCenter(this.center).squaredDistanceTo(pos) <= this.radiusSq;
+            Vec3d topCenter = areaTopCenter(this.center);
+            double dx = pos.x - topCenter.x;
+            double dy = pos.y - topCenter.y;
+            double dz = pos.z - topCenter.z;
+            if (dy > 0.0D || dy < -this.height) {
+                return false;
+            }
+
+            double horizontal = (dx * dx + dz * dz) / (double) (this.radius * this.radius);
+            double vertical = (dy * dy) / (double) (this.height * this.height);
+            return horizontal + vertical <= 1.0D;
+        }
+
+        private int maxExtent() {
+            return Math.max(this.radius, this.height);
         }
     }
 

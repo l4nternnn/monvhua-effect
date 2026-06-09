@@ -25,7 +25,10 @@ public final class GravityCommand {
                         .then(CommandManager.literal("create")
                                 .then(CommandManager.argument("radius", IntegerArgumentType.integer(1, 256))
                                         .then(CommandManager.argument("time", StringArgumentType.word())
-                                                .executes(GravityCommand::createArea))))
+                                                .executes(context -> createArea(context, GravityMagic.DEFAULT_AREA_HEIGHT)))
+                                        .then(CommandManager.argument("height", IntegerArgumentType.integer(1, 256))
+                                                .then(CommandManager.argument("time", StringArgumentType.word())
+                                                        .executes(context -> createArea(context, IntegerArgumentType.getInteger(context, "height")))))))
                         .then(CommandManager.literal("clear")
                                 .then(CommandManager.literal("nearest")
                                         .executes(GravityCommand::clearNearest))
@@ -33,7 +36,7 @@ public final class GravityCommand {
                                         .executes(GravityCommand::clearAll)))));
     }
 
-    private static int createArea(CommandContext<ServerCommandSource> context) {
+    private static int createArea(CommandContext<ServerCommandSource> context, int height) {
         ServerPlayerEntity player = context.getSource().getPlayer();
         if (player == null) {
             context.getSource().sendError(Text.literal("This command requires a player."));
@@ -51,12 +54,12 @@ public final class GravityCommand {
         ServerWorld world = (ServerWorld) player.getWorld();
         BlockPos center = player.getBlockPos();
         double gravity = GravityMagic.getSelectedGravity(player);
-        GravityMagic.addAreaGravity(world, center, radius, ticks, gravity);
+        GravityMagic.addAreaGravity(world, center, radius, height, ticks, gravity);
 
         String duration = ticks == GravityMagic.INFINITE_AREA_TICKS ? "wuxian" : ticks / 20 + "s";
         context.getSource().sendFeedback(
                 () -> Text.literal("\u00a7a[Gravity] Created inverted area at "
-                        + center.toShortString() + " r=" + radius + " time=" + duration),
+                        + center.toShortString() + " r=" + radius + " h=" + height + " time=" + duration),
                 true
         );
         return 1;

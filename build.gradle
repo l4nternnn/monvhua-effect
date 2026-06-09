@@ -50,6 +50,16 @@ dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	// Optional Sodium mixins compile against Loom's processed jar because the targets use development names.
+	def sodiumCompileOnlyJars = fileTree("run/.fabric/processedMods") {
+		include "sodium-*.jar"
+	}.files
+	if (sodiumCompileOnlyJars.empty) {
+		logger.warn("No processed Sodium jar found in run/.fabric/processedMods; Sodium mixin source may not resolve in the IDE.")
+	}
+	def sodiumCompileOnly = files(sodiumCompileOnlyJars)
+	compileOnly sodiumCompileOnly
+	clientCompileOnly sodiumCompileOnly
 
 	modImplementation "curse.maven:modern-ui-352491:7025818"
 	modImplementation "curse.maven:forge-config-api-port-547434:6941149"

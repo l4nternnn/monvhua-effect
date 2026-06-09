@@ -45,10 +45,11 @@ public final class GravityClient {
                             client.world.getRegistryKey(),
                             packet.center(),
                             packet.radius(),
+                            packet.height(),
                             packet.ticks(),
                             packet.gravity()
                     );
-                    scheduleAreaRerender(client, packet.center(), packet.radius());
+                    scheduleAreaRerender(client, packet.center(), packet.radius(), packet.height());
                 }
             });
         });
@@ -60,25 +61,26 @@ public final class GravityClient {
                             client.world.getRegistryKey(),
                             packet.center(),
                             packet.radius(),
+                            packet.height(),
                             packet.all()
                     );
                     if (packet.all()) {
                         client.worldRenderer.reload();
                     } else {
-                        scheduleAreaRerender(client, packet.center(), packet.radius());
+                        scheduleAreaRerender(client, packet.center(), packet.radius(), packet.height());
                     }
                 }
             });
         });
     }
 
-    private static void scheduleAreaRerender(MinecraftClient client, net.minecraft.util.math.BlockPos center, int radius) {
+    private static void scheduleAreaRerender(MinecraftClient client, net.minecraft.util.math.BlockPos center, int radius, int height) {
         client.worldRenderer.scheduleBlockRenders(
                 center.getX() - radius,
-                center.getY() - radius,
+                center.getY() - height,
                 center.getZ() - radius,
                 center.getX() + radius,
-                center.getY() + radius,
+                center.getY() + 1,
                 center.getZ() + radius
         );
     }

@@ -1,19 +1,16 @@
 package com.kuilunfuzhe.monvhua.mixin;
 
-import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
+import com.kuilunfuzhe.monvhua.features.gravity.InvertedBlockContext;
 import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
 @Pseudo
 @Mixin(targets = "net.caffeinemc.mods.sodium.client.render.frapi.render.AbstractBlockRenderContext", remap = false)
@@ -24,14 +21,15 @@ public abstract class SodiumInvertedBlockCullMixin {
     @Shadow
     protected BlockState state;
 
-    @Inject(method = "isFaceCulled", at = @At("HEAD"), cancellable = true, remap = false)
-    private void monvhua$disableCullingInInvertedArea(Direction direction, CallbackInfoReturnable<Boolean> cir) {
+    @ModifyVariable(method = "isFaceCulled", at = @At("HEAD"), argsOnly = true, ordinal = 0, remap = false)
+    private Direction monvhua$flipInvertedCullDirection(Direction direction) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (direction == null || client.world == null || pos == null
-                || !GravityMagic.isInInvertedArea(client.world.getRegistryKey(), Vec3d.ofCenter(pos))) {
-            return;
+        if (direction == null || direction.getAxis() != Direction.Axis.Y
+                || client.world == null || pos == null || state == null
+                || !InvertedBlockContext.shouldMirror(client.world.getRegistryKey(), client.world, pos, state)) {
+            return direction;
         }
-        cir.setReturnValue(false);
+        return direction.getOpposite();
     }
 
     @ModifyArg(
@@ -44,7 +42,7 @@ public abstract class SodiumInvertedBlockCullMixin {
             remap = false
     )
     private Direction monvhua$flipStopLayerCullFaceLight(Direction direction) {
-        return monvhua$flipStopLayerHorizontalLightDirection(direction);
+        return monvhua$flipInvertedVerticalLightDirection(direction);
     }
 
     @ModifyArg(
@@ -57,24 +55,17 @@ public abstract class SodiumInvertedBlockCullMixin {
             remap = false
     )
     private Direction monvhua$flipStopLayerLightFaceLight(Direction direction) {
-        return monvhua$flipStopLayerHorizontalLightDirection(direction);
+        return monvhua$flipInvertedVerticalLightDirection(direction);
     }
 
-    private Direction monvhua$flipStopLayerHorizontalLightDirection(Direction direction) {
+    private Direction monvhua$flipInvertedVerticalLightDirection(Direction direction) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (direction == null || direction.getAxis() != Direction.Axis.Y
                 || client.world == null || pos == null || state == null
-                || !monvhua$isGravityStopLayer(state)
-                || !GravityMagic.isInInvertedArea(client.world.getRegistryKey(), Vec3d.ofCenter(pos))) {
+                || !InvertedBlockContext.shouldMirror(client.world.getRegistryKey(), client.world, pos, state)) {
             return direction;
         }
         return direction.getOpposite();
     }
 
-    private static boolean monvhua$isGravityStopLayer(BlockState state) {
-        return state.isOf(Blocks.BEDROCK)
-                || state.isOf(Blocks.OBSIDIAN)
-                || state.isOf(Blocks.REINFORCED_DEEPSLATE)
-                || state.isOf(Blocks.BARRIER);
-    }
 }

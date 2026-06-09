@@ -48,18 +48,19 @@ public final class GravityPackets {
         }
     }
 
-    public record AreaGravityS2C(BlockPos center, int radius, int ticks, double gravity) implements CustomPayload {
+    public record AreaGravityS2C(BlockPos center, int radius, int height, int ticks, double gravity) implements CustomPayload {
         public static final Id<AreaGravityS2C> ID = new Id<>(Identifier.of("monvhua", "area_gravity"));
         public static final PacketCodec<RegistryByteBuf, AreaGravityS2C> CODEC = PacketCodec.of(AreaGravityS2C::write, AreaGravityS2C::new);
         private static boolean registered = false;
 
         private AreaGravityS2C(RegistryByteBuf buf) {
-            this(buf.readBlockPos(), buf.readInt(), buf.readInt(), buf.readDouble());
+            this(buf.readBlockPos(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readDouble());
         }
 
         private void write(RegistryByteBuf buf) {
             buf.writeBlockPos(center);
             buf.writeInt(radius);
+            buf.writeInt(height);
             buf.writeInt(ticks);
             buf.writeDouble(gravity);
         }
@@ -77,18 +78,19 @@ public final class GravityPackets {
         }
     }
 
-    public record ClearAreaGravityS2C(BlockPos center, int radius, boolean all) implements CustomPayload {
+    public record ClearAreaGravityS2C(BlockPos center, int radius, int height, boolean all) implements CustomPayload {
         public static final Id<ClearAreaGravityS2C> ID = new Id<>(Identifier.of("monvhua", "clear_area_gravity"));
         public static final PacketCodec<RegistryByteBuf, ClearAreaGravityS2C> CODEC = PacketCodec.of(ClearAreaGravityS2C::write, ClearAreaGravityS2C::new);
         private static boolean registered = false;
 
         private ClearAreaGravityS2C(RegistryByteBuf buf) {
-            this(buf.readBlockPos(), buf.readInt(), buf.readBoolean());
+            this(buf.readBlockPos(), buf.readInt(), buf.readInt(), buf.readBoolean());
         }
 
         private void write(RegistryByteBuf buf) {
             buf.writeBlockPos(center);
             buf.writeInt(radius);
+            buf.writeInt(height);
             buf.writeBoolean(all);
         }
 

@@ -1,6 +1,6 @@
 package com.kuilunfuzhe.monvhua.mixin;
 
-import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
+import com.kuilunfuzhe.monvhua.features.gravity.InvertedBlockContext;
 import com.kuilunfuzhe.monvhua.features.gravity.InvertedBlockTextureVertexConsumer;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
@@ -9,7 +9,6 @@ import net.minecraft.client.render.block.BlockModelRenderer;
 import net.minecraft.client.render.model.BlockModelPart;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.BlockRenderView;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -27,7 +26,7 @@ public abstract class InvertedBlockTextureMixin {
     )
     private VertexConsumer monvhua$flipInvertedAreaBlockTextures(VertexConsumer vertexConsumer, BlockRenderView world, List<BlockModelPart> parts, BlockState state, BlockPos pos, MatrixStack matrices) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.world == null || !GravityMagic.isInInvertedArea(client.world.getRegistryKey(), Vec3d.ofCenter(pos))) {
+        if (client.world == null || !InvertedBlockContext.shouldMirror(client.world.getRegistryKey(), world, pos, state)) {
             return vertexConsumer;
         }
         return new InvertedBlockTextureVertexConsumer(vertexConsumer);
