@@ -9,13 +9,17 @@ import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import icyllis.modernui.core.Context;
 import icyllis.modernui.fragment.Fragment;
+import icyllis.modernui.R;
 import icyllis.modernui.graphics.drawable.ColorDrawable;
+import icyllis.modernui.graphics.drawable.ShapeDrawable;
+import icyllis.modernui.graphics.drawable.StateListDrawable;
 import icyllis.modernui.mc.MinecraftSurfaceView;
 import icyllis.modernui.mc.MuiModApi;
 import icyllis.modernui.text.Editable;
 import icyllis.modernui.text.TextWatcher;
 import icyllis.modernui.view.KeyEvent;
 import icyllis.modernui.view.MotionEvent;
+import icyllis.modernui.view.SoundEffectConstants;
 import icyllis.modernui.view.View;
 import icyllis.modernui.view.ViewGroup;
 import icyllis.modernui.widget.*;
@@ -116,6 +120,17 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final int PREVIEW_ITEM_SELECTOR_WIDTH = 180;
     private static final int PREVIEW_ITEM_SELECTOR_HEIGHT = 18;
     private static final int PREVIEW_ITEM_ROW_HEIGHT = 18;
+    private static final int BUTTON_FILL_COLOR = 0x55313A4A;
+    private static final int BUTTON_PRESSED_FILL_COLOR = 0x88566A84;
+    private static final int BUTTON_DISABLED_FILL_COLOR = 0x33262A32;
+    private static final int BUTTON_BORDER_COLOR = 0xB4AAB7C8;
+    private static final int BUTTON_PRESSED_BORDER_COLOR = 0xFFE8F1FF;
+    private static final int BUTTON_DISABLED_BORDER_COLOR = 0x55747A84;
+    private static final float BUTTON_CORNER_RADIUS = 4.0F;
+    private static final float BUTTON_PRESSED_ALPHA = 0.82F;
+    private static final float BUTTON_NORMAL_ALPHA = 1.0F;
+    private static final float BUTTON_PRESSED_SCALE = 0.985F;
+    private static final float BUTTON_NORMAL_SCALE = 1.0F;
 
     // ═══════════════════════════════════════════════════════
     //  静态状态 — 跨会话保持
@@ -536,7 +551,7 @@ public class BodyPoseEditorFragment extends Fragment {
         playerLabel.setTextColor(0xFF888888);
         panel.addView(playerLabel, new LinearLayout.LayoutParams(-1, -2));
 
-        playerButton = new Button(ctx);
+        playerButton = createStyledButton(ctx);
         playerButton.setText("玩家: 选择");
         playerButton.setOnClickListener(v -> togglePlayerList());
         panel.addView(playerButton, new LinearLayout.LayoutParams(-1, -2));
@@ -599,11 +614,11 @@ public class BodyPoseEditorFragment extends Fragment {
             String name = getPlayerName(entry);
             boolean selected = selectedSkinSource == SkinSource.PLAYER && name.equals(selectedPlayerName);
 
-            Button b = new Button(ctx);
+            Button b = createStyledButton(ctx);
             b.setText((selected ? "> " : "  ") + name);
             b.setTextColor(selected ? 0xFFFFDD66 : 0xFFE8E8E8);
             int bgColor = selected ? 0x334466AA : 0x22000000;
-            b.setBackground(new ColorDrawable(bgColor));
+            styleButton(b, bgColor);
             b.setOnClickListener(v -> {
                 selectedPlayerName = name;
                 selectedSkinSource = SkinSource.PLAYER;
@@ -638,7 +653,7 @@ public class BodyPoseEditorFragment extends Fragment {
             }
 
             String skin = localSkins.get(i);
-            Button button = new Button(ctx);
+            Button button = createStyledButton(ctx);
             boolean selected = selectedSkinSource == SkinSource.LOCAL && skin.equals(selectedSkin);
             button.setText(truncate(skin, 10));
             button.setTextColor(selected ? 0xFFFFDD66 : 0xFFE8E8E8);
@@ -658,25 +673,84 @@ public class BodyPoseEditorFragment extends Fragment {
     //  中栏 — 3D 预览 + 控制
     // ═══════════════════════════════════════════════════════
 
+    private Button createStyledButton(Context ctx) {
+        Button button = new Button(ctx);
+        styleButton(button);
+        return button;
+    }
+
+    private void styleButton(Button button) {
+        styleButton(button, BUTTON_FILL_COLOR);
+    }
+
+    private void styleButton(Button button, int fillColor) {
+        button.setBackground(createButtonBackground(fillColor));
+        button.setPadding(6, 2, 6, 2);
+        button.setMinHeight(22);
+        button.setSoundEffectsEnabled(true);
+        button.setOnTouchListener((view, event) -> {
+            applyButtonFeedback(view, event);
+            return false;
+        });
+    }
+
+    private static StateListDrawable createButtonBackground(int fillColor) {
+        StateListDrawable background = new StateListDrawable();
+        background.addState(new int[]{-R.attr.state_enabled},
+                createButtonShape(BUTTON_DISABLED_FILL_COLOR, BUTTON_DISABLED_BORDER_COLOR));
+        background.addState(new int[]{R.attr.state_pressed},
+                createButtonShape(BUTTON_PRESSED_FILL_COLOR, BUTTON_PRESSED_BORDER_COLOR));
+        background.addState(new int[0],
+                createButtonShape(fillColor, BUTTON_BORDER_COLOR));
+        return background;
+    }
+
+    private static ShapeDrawable createButtonShape(int fillColor, int borderColor) {
+        ShapeDrawable shape = new ShapeDrawable();
+        shape.setShape(ShapeDrawable.RECTANGLE);
+        shape.setColor(fillColor);
+        shape.setStroke(1, borderColor);
+        shape.setCornerRadius(BUTTON_CORNER_RADIUS);
+        return shape;
+    }
+
+    private static void applyButtonFeedback(View view, MotionEvent event) {
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN, MotionEvent.ACTION_BUTTON_PRESS -> setButtonPressedFeedback(view, true);
+            case MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_BUTTON_RELEASE -> setButtonPressedFeedback(view, false);
+            default -> {
+            }
+        }
+    }
+
+    private static void setButtonPressedFeedback(View view, boolean pressed) {
+        if (!view.isEnabled()) {
+            pressed = false;
+        }
+        view.setAlpha(pressed ? BUTTON_PRESSED_ALPHA : BUTTON_NORMAL_ALPHA);
+        view.setScaleX(pressed ? BUTTON_PRESSED_SCALE : BUTTON_NORMAL_SCALE);
+        view.setScaleY(pressed ? BUTTON_PRESSED_SCALE : BUTTON_NORMAL_SCALE);
+    }
+
     private void addLeftActionControls(LinearLayout panel, Context ctx) {
         addSectionLabel(panel, ctx, "操作");
 
-        resetPoseButton = new Button(ctx);
+        resetPoseButton = createStyledButton(ctx);
         panel.addView(resetPoseButton, new LinearLayout.LayoutParams(-1, -2));
 
-        resetAllPoseButton = new Button(ctx);
+        resetAllPoseButton = createStyledButton(ctx);
         panel.addView(resetAllPoseButton, new LinearLayout.LayoutParams(-1, -2));
 
-        resetTransformButton = new Button(ctx);
+        resetTransformButton = createStyledButton(ctx);
         panel.addView(resetTransformButton, new LinearLayout.LayoutParams(-1, -2));
 
-        placeButton = new Button(ctx);
+        placeButton = createStyledButton(ctx);
         panel.addView(placeButton, new LinearLayout.LayoutParams(-1, -2));
 
-        runCommandButton = new Button(ctx);
+        runCommandButton = createStyledButton(ctx);
         panel.addView(runCommandButton, new LinearLayout.LayoutParams(-1, -2));
 
-        applySkeletalButton = new Button(ctx);
+        applySkeletalButton = createStyledButton(ctx);
         panel.addView(applySkeletalButton, new LinearLayout.LayoutParams(-1, -2));
     }
 
@@ -704,27 +778,24 @@ public class BodyPoseEditorFragment extends Fragment {
         ctrlBar.setOrientation(LinearLayout.HORIZONTAL);
         ctrlBar.setPadding(0, 2, 0, 2);
 
-        showWholeButton = new Button(ctx);
+        showWholeButton = createStyledButton(ctx);
         ctrlBar.addView(showWholeButton, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        coordToggleButton = new Button(ctx);
+        coordToggleButton = createStyledButton(ctx);
         ctrlBar.addView(coordToggleButton, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        coordMovableButton = new Button(ctx);
+        coordMovableButton = createStyledButton(ctx);
         ctrlBar.addView(coordMovableButton, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        worldPreviewToggleButton = new Button(ctx);
+        worldPreviewToggleButton = createStyledButton(ctx);
         ctrlBar.addView(worldPreviewToggleButton, new LinearLayout.LayoutParams(0, -2, 1f));
 
         panel.addView(ctrlBar, new LinearLayout.LayoutParams(-1, -2));
 
         // 关闭按钮
-        Button doneBtn = new Button(ctx);
+        Button doneBtn = createStyledButton(ctx);
         doneBtn.setText("关闭-一般直接按esc");
-        doneBtn.setOnClickListener(v -> {
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client != null) client.execute(() -> client.setScreen(null));
-        });
+        doneBtn.setOnClickListener(v -> closeEditorScreen());
         panel.addView(doneBtn, new LinearLayout.LayoutParams(-1, -2));
 
         refreshButtonLabels();
@@ -745,10 +816,10 @@ public class BodyPoseEditorFragment extends Fragment {
 
         // ── 模型类型 ──
         addSectionLabel(panel, ctx, "模型");
-        modelTypeButton = new Button(ctx);
+        modelTypeButton = createStyledButton(ctx);
         panel.addView(modelTypeButton, new LinearLayout.LayoutParams(-1, -2));
 
-        poseModeButton = new Button(ctx);
+        poseModeButton = createStyledButton(ctx);
         panel.addView(poseModeButton, new LinearLayout.LayoutParams(-1, -2));
 
         // ── 部位选择 ──
@@ -835,7 +906,7 @@ public class BodyPoseEditorFragment extends Fragment {
         NumericValueBinding binding = new NumericValueBinding(getter, setter, min, max, wrap);
         installNumericFieldScroll(row, binding, step);
 
-        Button minusBtn = new Button(ctx);
+        Button minusBtn = createStyledButton(ctx);
         minusBtn.setText("-");
         installRepeatingTransformButton(minusBtn, () -> binding.add(-step));
         row.addView(minusBtn, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -848,7 +919,7 @@ public class BodyPoseEditorFragment extends Fragment {
         row.addView(valueField, new LinearLayout.LayoutParams(0, -2, 1.25f));
         bindings.add(binding);
 
-        Button plusBtn = new Button(ctx);
+        Button plusBtn = createStyledButton(ctx);
         plusBtn.setText("+");
         installRepeatingTransformButton(plusBtn, () -> binding.add(step));
         row.addView(plusBtn, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -874,10 +945,18 @@ public class BodyPoseEditorFragment extends Fragment {
         button.setOnTouchListener((view, event) -> {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN, MotionEvent.ACTION_BUTTON_PRESS -> {
+                    if (!view.isEnabled()) {
+                        return false;
+                    }
+                    view.setPressed(true);
+                    setButtonPressedFeedback(view, true);
+                    view.playSoundEffect(SoundEffectConstants.CLICK);
                     startRepeatingTransform(view, action);
                     return true;
                 }
                 case MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_BUTTON_RELEASE -> {
+                    view.setPressed(false);
+                    setButtonPressedFeedback(view, false);
                     stopRepeatingTransform();
                     return true;
                 }
@@ -972,7 +1051,7 @@ public class BodyPoseEditorFragment extends Fragment {
         partButtons.clear();
 
         for (String part : BodyModelSelectionCatalog.PARTS) {
-            Button button = new Button(ctx);
+            Button button = createStyledButton(ctx);
             boolean selected = part.equals(selectedPart);
             String prefix = selected ? "> " : "  ";
             button.setText(prefix + part);
@@ -1048,7 +1127,7 @@ public class BodyPoseEditorFragment extends Fragment {
                 -180.0F, 180.0F, axis != Axis.PITCH);
         installNumericFieldScroll(row, binding, ROTATION_STEP_DEGREES);
 
-        Button minusBtn = new Button(ctx);
+        Button minusBtn = createStyledButton(ctx);
         minusBtn.setText("-");
         installRepeatingTransformButton(minusBtn, () -> binding.add(-ROTATION_STEP_DEGREES));
         row.addView(minusBtn, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -1062,7 +1141,7 @@ public class BodyPoseEditorFragment extends Fragment {
         row.addView(valueField, new LinearLayout.LayoutParams(0, -2, 1.25f));
         poseValueBindings.add(binding);
 
-        Button plusBtn = new Button(ctx);
+        Button plusBtn = createStyledButton(ctx);
         plusBtn.setText("+");
         installRepeatingTransformButton(plusBtn, () -> binding.add(ROTATION_STEP_DEGREES));
         row.addView(plusBtn, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -1113,7 +1192,7 @@ public class BodyPoseEditorFragment extends Fragment {
                 -180.0F, 180.0F, axis != Axis.PITCH);
         installNumericFieldScroll(row, binding, ROTATION_STEP_DEGREES);
 
-        Button minusBtn = new Button(ctx);
+        Button minusBtn = createStyledButton(ctx);
         minusBtn.setText("-");
         installRepeatingTransformButton(minusBtn, () -> binding.add(-ROTATION_STEP_DEGREES));
         row.addView(minusBtn, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -1127,7 +1206,7 @@ public class BodyPoseEditorFragment extends Fragment {
         row.addView(valueField, new LinearLayout.LayoutParams(0, -2, 1.25f));
         poseValueBindings.add(binding);
 
-        Button plusBtn = new Button(ctx);
+        Button plusBtn = createStyledButton(ctx);
         plusBtn.setText("+");
         installRepeatingTransformButton(plusBtn, () -> binding.add(ROTATION_STEP_DEGREES));
         row.addView(plusBtn, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -1170,7 +1249,7 @@ public class BodyPoseEditorFragment extends Fragment {
             if (index >= stacks.size()) break;
             ItemStack stack = stacks.get(index);
 
-            Button b = new Button(ctx);
+            Button b = createStyledButton(ctx);
             b.setText(stack.getName().getString());
             b.setOnClickListener(v -> {
                 EditorItemModel model = new EditorItemModel(stack.copyWithCount(1));
@@ -2330,12 +2409,25 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private void placePosedBody() {
         boolean skeletalMode = poseEditMode == PoseEditMode.SKELETAL;
+        float[] poseValues = skeletalMode ? createSkeletalPoseValueArray() : createStaticPoseValueArray();
+        float[] bendValues = skeletalMode ? createSkeletalBendValueArray() : null;
+        Vec3d fixedBase = getFixedPlacementBaseForPacket();
+        if (fixedBase != null) {
+            ClientPlayNetworking.send(new PlacePosedBodyC2SPacket(selectedSkin, slimModel,
+                    poseValues, bendValues,
+                    selectedSkinSource == SkinSource.PLAYER, selectedPlayerName,
+                    modelOffsetX, modelOffsetY, modelOffsetZ,
+                    modelPitch, modelYaw, modelRoll, wholeBodyScale,
+                    fixedBase.x, fixedBase.y, fixedBase.z));
+            closeEditorScreen();
+            return;
+        }
         ClientPlayNetworking.send(new PlacePosedBodyC2SPacket(selectedSkin, slimModel,
-                skeletalMode ? createSkeletalPoseValueArray() : createStaticPoseValueArray(),
-                skeletalMode ? createSkeletalBendValueArray() : null,
+                poseValues, bendValues,
                 selectedSkinSource == SkinSource.PLAYER, selectedPlayerName,
                 modelOffsetX, modelOffsetY, modelOffsetZ,
                 modelPitch, modelYaw, modelRoll, wholeBodyScale));
+        closeEditorScreen();
     }
 
     private void applySkeletalPose() {
@@ -2355,7 +2447,26 @@ public class BodyPoseEditorFragment extends Fragment {
                         item.pitch, item.yaw, item.roll, item.displayMode.context));
             }
         }
+        Vec3d fixedBase = getFixedPlacementBaseForPacket();
+        if (fixedBase != null) {
+            ClientPlayNetworking.send(new PlacePoseEditorItemsC2SPacket(placements, fixedBase.x, fixedBase.y, fixedBase.z));
+            return;
+        }
         ClientPlayNetworking.send(new PlacePoseEditorItemsC2SPacket(placements));
+    }
+
+    private static Vec3d getFixedPlacementBaseForPacket() {
+        if (worldPreviewMode != PreviewMode.FIXED) {
+            return null;
+        }
+        return new Vec3d(fixedWorldX, fixedWorldY, fixedWorldZ);
+    }
+
+    private static void closeEditorScreen() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null) {
+            client.execute(() -> client.setScreen(null));
+        }
     }
 
     private void toggleWorldPreviewMode() {

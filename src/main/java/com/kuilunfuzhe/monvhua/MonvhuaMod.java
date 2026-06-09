@@ -101,6 +101,7 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -268,15 +269,29 @@ public class MonvhuaMod implements ModInitializer {
                         player.sendMessage(Text.literal("Player " + packet.playerName() + " is not online"), true);
                         return;
                     }
-                    BodyPartManager.createPosedCombinedDisplay(player, new ProfileComponent(source.getGameProfile()), packet.slimModel(), packet.poseValues(),
-                            packet.bendValues(),
-                            packet.offsetX(), packet.offsetY(), packet.offsetZ(),
-                            packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
+                    if (packet.fixedBase()) {
+                        BodyPartManager.createPosedCombinedDisplayAt(player, new Vec3d(packet.baseX(), packet.baseY(), packet.baseZ()),
+                                new ProfileComponent(source.getGameProfile()), packet.slimModel(), packet.poseValues(), packet.bendValues(),
+                                packet.offsetX(), packet.offsetY(), packet.offsetZ(),
+                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
+                    } else {
+                        BodyPartManager.createPosedCombinedDisplay(player, new ProfileComponent(source.getGameProfile()), packet.slimModel(), packet.poseValues(),
+                                packet.bendValues(),
+                                packet.offsetX(), packet.offsetY(), packet.offsetZ(),
+                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
+                    }
                 } else {
-                    BodyPartManager.createPosedCombinedDisplay(player, packet.skinName(), packet.slimModel(), packet.poseValues(),
-                            packet.bendValues(),
-                            packet.offsetX(), packet.offsetY(), packet.offsetZ(),
-                            packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
+                    if (packet.fixedBase()) {
+                        BodyPartManager.createPosedCombinedDisplayAt(player, new Vec3d(packet.baseX(), packet.baseY(), packet.baseZ()),
+                                packet.skinName(), packet.slimModel(), packet.poseValues(), packet.bendValues(),
+                                packet.offsetX(), packet.offsetY(), packet.offsetZ(),
+                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
+                    } else {
+                        BodyPartManager.createPosedCombinedDisplay(player, packet.skinName(), packet.slimModel(), packet.poseValues(),
+                                packet.bendValues(),
+                                packet.offsetX(), packet.offsetY(), packet.offsetZ(),
+                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
+                    }
                 }
             });
         });
@@ -288,7 +303,11 @@ public class MonvhuaMod implements ModInitializer {
                     player.sendMessage(Text.literal("No permission to place pose editor items"), true);
                     return;
                 }
-                BodyPartManager.createPoseEditorItemDisplays(player, packet.items());
+                if (packet.fixedBase()) {
+                    BodyPartManager.createPoseEditorItemDisplays(player, packet.items(), new Vec3d(packet.baseX(), packet.baseY(), packet.baseZ()));
+                } else {
+                    BodyPartManager.createPoseEditorItemDisplays(player, packet.items());
+                }
             });
         });
 

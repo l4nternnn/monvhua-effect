@@ -660,8 +660,14 @@ public class BodyPartManager {
 	public static void createPosedCombinedDisplay(ServerPlayerEntity player, String skinName, boolean slim, float[] poseValues, float[] bendValues,
 			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
 		ServerWorld world = (ServerWorld) player.getWorld();
-		Vec3d forward = getHorizontalForward(player);
-		Vec3d pos = player.getPos().add(forward.x, 1.5D, forward.z);
+		Vec3d pos = getDefaultPosePlacementBase(player);
+		createPosedCombinedDisplayAt(player, pos, skinName, slim, poseValues, bendValues,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
+	}
+
+	public static void createPosedCombinedDisplayAt(ServerPlayerEntity player, Vec3d pos, String skinName, boolean slim, float[] poseValues, float[] bendValues,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
+		ServerWorld world = (ServerWorld) player.getWorld();
 		createCombinedDisplay(world, pos, skinName, DefaultedList.ofSize(9, ItemStack.EMPTY), null, slim, poseValues, bendValues, false,
 				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
 		player.sendMessage(Text.literal("Placed posed body model"), true);
@@ -686,21 +692,29 @@ public class BodyPartManager {
 	public static void createPosedCombinedDisplay(ServerPlayerEntity player, ProfileComponent profile, boolean slim, float[] poseValues, float[] bendValues,
 			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
 		ServerWorld world = (ServerWorld) player.getWorld();
-		Vec3d forward = getHorizontalForward(player);
-		Vec3d pos = player.getPos().add(forward.x, 1.5D, forward.z);
+		Vec3d pos = getDefaultPosePlacementBase(player);
+		createPosedCombinedDisplayAt(player, pos, profile, slim, poseValues, bendValues,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
+	}
+
+	public static void createPosedCombinedDisplayAt(ServerPlayerEntity player, Vec3d pos, ProfileComponent profile, boolean slim, float[] poseValues, float[] bendValues,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
+		ServerWorld world = (ServerWorld) player.getWorld();
 		createCombinedDisplay(world, pos, "", DefaultedList.ofSize(9, ItemStack.EMPTY), profile, slim, poseValues, bendValues, false,
 				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
 		player.sendMessage(Text.literal("Placed posed body model"), true);
 	}
 
 	public static void createPoseEditorItemDisplays(ServerPlayerEntity player, List<PlacePoseEditorItemsC2SPacket.ItemPlacement> placements) {
+		createPoseEditorItemDisplays(player, placements, getDefaultPosePlacementBase(player));
+	}
+
+	public static void createPoseEditorItemDisplays(ServerPlayerEntity player, List<PlacePoseEditorItemsC2SPacket.ItemPlacement> placements, Vec3d basePos) {
 		if (placements == null || placements.isEmpty()) {
 			player.sendMessage(Text.literal("No pose editor item models to place"), true);
 			return;
 		}
 		ServerWorld world = (ServerWorld) player.getWorld();
-		Vec3d forward = getHorizontalForward(player);
-		Vec3d basePos = player.getPos().add(forward.x, 1.5D, forward.z);
 		int placed = 0;
 		for (PlacePoseEditorItemsC2SPacket.ItemPlacement placement : placements) {
 			Item item = Registries.ITEM.get(placement.itemId());
@@ -781,6 +795,11 @@ public class BodyPartManager {
 	private static Vec3d getHorizontalForward(ServerPlayerEntity player) {
 		double rad = Math.toRadians(player.getYaw());
 		return new Vec3d(-Math.sin(rad), 0, Math.cos(rad)).normalize();
+	}
+
+	private static Vec3d getDefaultPosePlacementBase(ServerPlayerEntity player) {
+		Vec3d forward = getHorizontalForward(player);
+		return player.getPos().add(forward.x, 1.5D, forward.z);
 	}
 
 	private static void writePoseValues(NbtCompound nbt, float[] poseValues) {

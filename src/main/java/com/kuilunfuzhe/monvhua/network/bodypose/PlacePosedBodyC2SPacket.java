@@ -9,7 +9,8 @@ import net.minecraft.util.Identifier;
 public record PlacePosedBodyC2SPacket(String skinName, boolean slimModel, float[] poseValues, float[] bendValues, boolean playerSkin, String playerName,
 									  float offsetX, float offsetY, float offsetZ,
 									  float rotationPitch, float rotationYaw, float rotationRoll,
-									  float modelScale) implements CustomPayload {
+									  float modelScale,
+									  boolean fixedBase, double baseX, double baseY, double baseZ) implements CustomPayload {
 	public static final int PART_COUNT = 6;
 	public static final int POSE_VALUE_STRIDE = 4;
 	public static final int ROTATION_VALUE_COUNT = PART_COUNT * 3;
@@ -41,6 +42,26 @@ public record PlacePosedBodyC2SPacket(String skinName, boolean slimModel, float[
 				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
 	}
 
+	public PlacePosedBodyC2SPacket(String skinName, boolean slimModel, float[] poseValues, float[] bendValues, boolean playerSkin, String playerName,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
+		this(skinName, slimModel, poseValues, bendValues, playerSkin, playerName,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, false, 0.0D, 0.0D, 0.0D);
+	}
+
+	public PlacePosedBodyC2SPacket(String skinName, boolean slimModel, float[] poseValues, float[] bendValues, boolean playerSkin, String playerName,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale,
+			double baseX, double baseY, double baseZ) {
+		this(skinName, slimModel, poseValues, bendValues, playerSkin, playerName,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, true, baseX, baseY, baseZ);
+	}
+
+	public PlacePosedBodyC2SPacket(String skinName, boolean slimModel, float[] poseValues, boolean playerSkin, String playerName,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale,
+			boolean fixedBase, double baseX, double baseY, double baseZ) {
+		this(skinName, slimModel, poseValues, null, playerSkin, playerName,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, fixedBase, baseX, baseY, baseZ);
+	}
+
 	public PlacePosedBodyC2SPacket {
 		poseValues = normalizePoseValues(poseValues);
 		bendValues = normalizeBendValues(bendValues);
@@ -51,7 +72,8 @@ public record PlacePosedBodyC2SPacket(String skinName, boolean slimModel, float[
 	private PlacePosedBodyC2SPacket(RegistryByteBuf buf) {
 		this(buf.readString(), buf.readBoolean(), readPoseValues(buf), readBendValues(buf), buf.readBoolean(), buf.readString(),
 				buf.readFloat(), buf.readFloat(), buf.readFloat(),
-				buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat());
+				buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(),
+				buf.readBoolean(), buf.readDouble(), buf.readDouble(), buf.readDouble());
 	}
 
 	private void write(RegistryByteBuf buf) {
@@ -72,6 +94,10 @@ public record PlacePosedBodyC2SPacket(String skinName, boolean slimModel, float[
 		buf.writeFloat(this.rotationYaw);
 		buf.writeFloat(this.rotationRoll);
 		buf.writeFloat(this.modelScale);
+		buf.writeBoolean(this.fixedBase);
+		buf.writeDouble(this.baseX);
+		buf.writeDouble(this.baseY);
+		buf.writeDouble(this.baseZ);
 	}
 
 	private static float[] readPoseValues(RegistryByteBuf buf) {
