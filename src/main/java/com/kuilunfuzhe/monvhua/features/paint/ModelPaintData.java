@@ -153,31 +153,65 @@ public final class ModelPaintData {
     }
 
     public static FaceSize size(String surface, Direction face, boolean slim) {
-        int width = switch (surface) {
+        String baseSurface = baseSurface(surface);
+        Direction effectiveFace = outerSourceFace(surface, face);
+        int width = switch (baseSurface) {
             case "head" -> 8;
             case "body_upper", "body_lower" -> 8;
             case "left_arm_upper", "left_arm_lower", "right_arm_upper", "right_arm_lower" -> slim ? 3 : 4;
             case "left_leg_upper", "left_leg_lower", "right_leg_upper", "right_leg_lower" -> 4;
             default -> SIZE;
         };
-        int height = switch (surface) {
+        int height = switch (baseSurface) {
             case "head" -> 8;
             case "body_upper", "body_lower",
                  "left_arm_upper", "left_arm_lower", "right_arm_upper", "right_arm_lower",
                  "left_leg_upper", "left_leg_lower", "right_leg_upper", "right_leg_lower" -> 6;
             default -> SIZE;
         };
-        int depth = switch (surface) {
+        int depth = switch (baseSurface) {
             case "head" -> 8;
             case "body_upper", "body_lower",
                  "left_arm_upper", "left_arm_lower", "right_arm_upper", "right_arm_lower",
                  "left_leg_upper", "left_leg_lower", "right_leg_upper", "right_leg_lower" -> 4;
             default -> SIZE;
         };
-        return switch (face) {
+        return switch (effectiveFace) {
             case UP, DOWN -> new FaceSize(width, depth);
             case EAST, WEST -> new FaceSize(depth, height);
             default -> new FaceSize(width, height);
+        };
+    }
+
+    private static Direction outerSourceFace(String surface, Direction fallback) {
+        if (surface == null) {
+            return fallback;
+        }
+        int marker = surface.indexOf("_outer_");
+        if (marker < 0) {
+            return fallback;
+        }
+        Direction direction = parseDirection(surface.substring(marker + "_outer_".length()));
+        return direction == null ? fallback : direction;
+    }
+
+    private static String baseSurface(String surface) {
+        if (surface == null) {
+            return null;
+        }
+        int outerIndex = surface.indexOf("_outer");
+        return outerIndex >= 0 ? surface.substring(0, outerIndex) : surface;
+    }
+
+    private static Direction parseDirection(String name) {
+        return switch (name) {
+            case "down" -> Direction.DOWN;
+            case "up" -> Direction.UP;
+            case "north" -> Direction.NORTH;
+            case "south" -> Direction.SOUTH;
+            case "west" -> Direction.WEST;
+            case "east" -> Direction.EAST;
+            default -> null;
         };
     }
 

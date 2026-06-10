@@ -638,7 +638,7 @@ public class BodyPartManager {
 
 	public static void createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile) {
 		createCombinedDisplay(world, pos, skinName, torsoInv, profile, false, null, null, true,
-				0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F);
+				0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, true);
 	}
 
 	public static void createPosedCombinedDisplay(ServerPlayerEntity player, String skinName, boolean slim, float[] poseValues) {
@@ -659,17 +659,31 @@ public class BodyPartManager {
 
 	public static void createPosedCombinedDisplay(ServerPlayerEntity player, String skinName, boolean slim, float[] poseValues, float[] bendValues,
 			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
+		createPosedCombinedDisplay(player, skinName, slim, poseValues, bendValues,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, true);
+	}
+
+	public static void createPosedCombinedDisplay(ServerPlayerEntity player, String skinName, boolean slim, float[] poseValues, float[] bendValues,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale,
+			boolean backpackEnabled) {
 		ServerWorld world = (ServerWorld) player.getWorld();
 		Vec3d pos = getDefaultPosePlacementBase(player);
 		createPosedCombinedDisplayAt(player, pos, skinName, slim, poseValues, bendValues,
-				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, backpackEnabled);
 	}
 
 	public static void createPosedCombinedDisplayAt(ServerPlayerEntity player, Vec3d pos, String skinName, boolean slim, float[] poseValues, float[] bendValues,
 			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
+		createPosedCombinedDisplayAt(player, pos, skinName, slim, poseValues, bendValues,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, true);
+	}
+
+	public static void createPosedCombinedDisplayAt(ServerPlayerEntity player, Vec3d pos, String skinName, boolean slim, float[] poseValues, float[] bendValues,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale,
+			boolean backpackEnabled) {
 		ServerWorld world = (ServerWorld) player.getWorld();
-		createCombinedDisplay(world, pos, skinName, DefaultedList.ofSize(9, ItemStack.EMPTY), null, slim, poseValues, bendValues, false,
-				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
+		createCombinedDisplay(world, pos, skinName, backpackEnabled ? DefaultedList.ofSize(9, ItemStack.EMPTY) : null, null, slim, poseValues, bendValues, false,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, backpackEnabled);
 		player.sendMessage(Text.literal("Placed posed body model"), true);
 	}
 
@@ -691,17 +705,31 @@ public class BodyPartManager {
 
 	public static void createPosedCombinedDisplay(ServerPlayerEntity player, ProfileComponent profile, boolean slim, float[] poseValues, float[] bendValues,
 			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
+		createPosedCombinedDisplay(player, profile, slim, poseValues, bendValues,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, true);
+	}
+
+	public static void createPosedCombinedDisplay(ServerPlayerEntity player, ProfileComponent profile, boolean slim, float[] poseValues, float[] bendValues,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale,
+			boolean backpackEnabled) {
 		ServerWorld world = (ServerWorld) player.getWorld();
 		Vec3d pos = getDefaultPosePlacementBase(player);
 		createPosedCombinedDisplayAt(player, pos, profile, slim, poseValues, bendValues,
-				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, backpackEnabled);
 	}
 
 	public static void createPosedCombinedDisplayAt(ServerPlayerEntity player, Vec3d pos, ProfileComponent profile, boolean slim, float[] poseValues, float[] bendValues,
 			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
+		createPosedCombinedDisplayAt(player, pos, profile, slim, poseValues, bendValues,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, true);
+	}
+
+	public static void createPosedCombinedDisplayAt(ServerPlayerEntity player, Vec3d pos, ProfileComponent profile, boolean slim, float[] poseValues, float[] bendValues,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale,
+			boolean backpackEnabled) {
 		ServerWorld world = (ServerWorld) player.getWorld();
-		createCombinedDisplay(world, pos, "", DefaultedList.ofSize(9, ItemStack.EMPTY), profile, slim, poseValues, bendValues, false,
-				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
+		createCombinedDisplay(world, pos, "", backpackEnabled ? DefaultedList.ofSize(9, ItemStack.EMPTY) : null, profile, slim, poseValues, bendValues, false,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, backpackEnabled);
 		player.sendMessage(Text.literal("Placed posed body model"), true);
 	}
 
@@ -741,7 +769,8 @@ public class BodyPartManager {
 
 	private static void createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile,
 			boolean slim, float[] poseValues, float[] bendValues, boolean lyingDown,
-			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale,
+			boolean interactionEnabled) {
 		ItemStack combinedStack = new ItemStack(Items.NETHERITE_SCRAP);
 		combinedStack.set(DataComponentTypes.ITEM_MODEL, Identifier.of("monvhua", "combined_body"));
 		if (profile != null) {
@@ -779,15 +808,17 @@ public class BodyPartManager {
 			}
 			world.spawnEntity(display);
 
-			InteractionEntity interaction = new InteractionEntity(EntityType.INTERACTION, world);
-			interaction.setPosition(pos.x, lyingDown ? pos.y - 0.3 : pos.y - 1.5, pos.z);
-			interaction.setInteractionWidth(0.9f);
-			interaction.setInteractionHeight(lyingDown ? 0.8f : 1.8f);
-			world.spawnEntity(interaction);
-			INTERACTION_TO_DISPLAY.put(interaction.getUuid(), display.getUuid());
-			DISPLAY_TO_INTERACTION.put(display.getUuid(), interaction.getUuid());
-			if (torsoInv != null) {
-				BODY_PART_DISPLAY_INVENTORIES.put(display.getUuid(), torsoInv);
+			if (interactionEnabled) {
+				InteractionEntity interaction = new InteractionEntity(EntityType.INTERACTION, world);
+				interaction.setPosition(pos.x, lyingDown ? pos.y - 0.3 : pos.y - 1.5, pos.z);
+				interaction.setInteractionWidth(0.9f);
+				interaction.setInteractionHeight(lyingDown ? 0.8f : 1.8f);
+				world.spawnEntity(interaction);
+				INTERACTION_TO_DISPLAY.put(interaction.getUuid(), display.getUuid());
+				DISPLAY_TO_INTERACTION.put(display.getUuid(), interaction.getUuid());
+				if (torsoInv != null) {
+					BODY_PART_DISPLAY_INVENTORIES.put(display.getUuid(), torsoInv);
+				}
 			}
 		}
 	}

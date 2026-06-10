@@ -252,6 +252,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private Button worldPreviewToggleButton;
     private Button runCommandButton;
     private Button placeButton;
+    private Button placeBackpackButton;
     private Button applySkeletalButton;
     private List<Button> partButtons = new ArrayList<>();
     private List<Button> poseButtons = new ArrayList<>();
@@ -746,6 +747,9 @@ public class BodyPoseEditorFragment extends Fragment {
 
         placeButton = createStyledButton(ctx);
         panel.addView(placeButton, new LinearLayout.LayoutParams(-1, -2));
+
+        placeBackpackButton = createStyledButton(ctx);
+        panel.addView(placeBackpackButton, new LinearLayout.LayoutParams(-1, -2));
 
         runCommandButton = createStyledButton(ctx);
         panel.addView(runCommandButton, new LinearLayout.LayoutParams(-1, -2));
@@ -2326,7 +2330,11 @@ public class BodyPoseEditorFragment extends Fragment {
         }
         if (placeButton != null) {
             placeButton.setText("放置模型");
-            placeButton.setOnClickListener(v -> placePosedBody());
+            placeButton.setOnClickListener(v -> placePosedBody(false));
+        }
+        if (placeBackpackButton != null) {
+            placeBackpackButton.setText("\u653e\u7f6e\u6a21\u578b(\u80cc\u5305)");
+            placeBackpackButton.setOnClickListener(v -> placePosedBody(true));
         }
         if (applySkeletalButton != null) {
             applySkeletalButton.setText("应用骨骼姿势");
@@ -2407,7 +2415,7 @@ public class BodyPoseEditorFragment extends Fragment {
         client.player.networkHandler.sendChatCommand(command);
     }
 
-    private void placePosedBody() {
+    private void placePosedBody(boolean backpackEnabled) {
         boolean skeletalMode = poseEditMode == PoseEditMode.SKELETAL;
         float[] poseValues = skeletalMode ? createSkeletalPoseValueArray() : createStaticPoseValueArray();
         float[] bendValues = skeletalMode ? createSkeletalBendValueArray() : null;
@@ -2418,7 +2426,7 @@ public class BodyPoseEditorFragment extends Fragment {
                     selectedSkinSource == SkinSource.PLAYER, selectedPlayerName,
                     modelOffsetX, modelOffsetY, modelOffsetZ,
                     modelPitch, modelYaw, modelRoll, wholeBodyScale,
-                    fixedBase.x, fixedBase.y, fixedBase.z));
+                    fixedBase.x, fixedBase.y, fixedBase.z, backpackEnabled));
             closeEditorScreen();
             return;
         }
@@ -2426,7 +2434,7 @@ public class BodyPoseEditorFragment extends Fragment {
                 poseValues, bendValues,
                 selectedSkinSource == SkinSource.PLAYER, selectedPlayerName,
                 modelOffsetX, modelOffsetY, modelOffsetZ,
-                modelPitch, modelYaw, modelRoll, wholeBodyScale));
+                modelPitch, modelYaw, modelRoll, wholeBodyScale, backpackEnabled));
         closeEditorScreen();
     }
 

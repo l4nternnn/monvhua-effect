@@ -273,24 +273,24 @@ public class MonvhuaMod implements ModInitializer {
                         BodyPartManager.createPosedCombinedDisplayAt(player, new Vec3d(packet.baseX(), packet.baseY(), packet.baseZ()),
                                 new ProfileComponent(source.getGameProfile()), packet.slimModel(), packet.poseValues(), packet.bendValues(),
                                 packet.offsetX(), packet.offsetY(), packet.offsetZ(),
-                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
+                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale(), packet.backpackEnabled());
                     } else {
                         BodyPartManager.createPosedCombinedDisplay(player, new ProfileComponent(source.getGameProfile()), packet.slimModel(), packet.poseValues(),
                                 packet.bendValues(),
                                 packet.offsetX(), packet.offsetY(), packet.offsetZ(),
-                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
+                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale(), packet.backpackEnabled());
                     }
                 } else {
                     if (packet.fixedBase()) {
                         BodyPartManager.createPosedCombinedDisplayAt(player, new Vec3d(packet.baseX(), packet.baseY(), packet.baseZ()),
                                 packet.skinName(), packet.slimModel(), packet.poseValues(), packet.bendValues(),
                                 packet.offsetX(), packet.offsetY(), packet.offsetZ(),
-                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
+                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale(), packet.backpackEnabled());
                     } else {
                         BodyPartManager.createPosedCombinedDisplay(player, packet.skinName(), packet.slimModel(), packet.poseValues(),
                                 packet.bendValues(),
                                 packet.offsetX(), packet.offsetY(), packet.offsetZ(),
-                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
+                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale(), packet.backpackEnabled());
                     }
                 }
             });

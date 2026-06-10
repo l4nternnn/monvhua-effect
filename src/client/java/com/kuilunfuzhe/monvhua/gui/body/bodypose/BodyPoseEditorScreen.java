@@ -97,6 +97,7 @@ public class BodyPoseEditorScreen extends Screen {
 	private ButtonWidget poseModeButton;
 	private ButtonWidget runCommandButton;
 	private ButtonWidget placeButton;
+	private ButtonWidget placeBackpackButton;
 	private ButtonWidget applySkeletalButton;
 	private ButtonWidget showWholeButton;
 	private ButtonWidget playerButton;
@@ -219,14 +220,19 @@ public class BodyPoseEditorScreen extends Screen {
 				.position(rightX + 78, poseY + 100)
 				.build());
 
-		this.placeButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> placePosedBody())
+		this.placeButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> placePosedBody(false))
 				.size(RIGHT_CONTROL_WIDTH, 20)
 				.position(rightX, poseY + 126)
 				.build());
 
+		this.placeBackpackButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> placePosedBody(true))
+				.size(RIGHT_CONTROL_WIDTH, 20)
+				.position(rightX, poseY + 150)
+				.build());
+
 		this.applySkeletalButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> applySkeletalPose())
 				.size(RIGHT_CONTROL_WIDTH, 18)
-				.position(rightX, poseY + 150)
+				.position(rightX, poseY + 174)
 				.build());
 
 		this.itemButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> {
@@ -240,22 +246,22 @@ public class BodyPoseEditorScreen extends Screen {
 
 		this.placeItemsButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> placeEditorItems())
 				.size(RIGHT_CONTROL_WIDTH, 18)
-				.position(rightX, poseY + 174)
+				.position(rightX, poseY + 198)
 				.build());
 
 		this.clearSelectedItemButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> clearSelectedItemModel())
 				.size(72, 18)
-				.position(rightX, poseY + 196)
+				.position(rightX, poseY + 220)
 				.build());
 
 		this.clearAllItemsButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> clearAllItemModels())
 				.size(74, 18)
-				.position(rightX + 76, poseY + 196)
+				.position(rightX + 76, poseY + 220)
 				.build());
 
 		this.resetTransformButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> resetActiveTransform())
 				.size(RIGHT_CONTROL_WIDTH, 18)
-				.position(rightX, poseY + 218)
+				.position(rightX, poseY + 242)
 				.build());
 
 		this.showWholeButton = this.addDrawableChild(ButtonWidget.builder(Text.empty(), pressed -> {
@@ -322,6 +328,9 @@ public class BodyPoseEditorScreen extends Screen {
 		}
 		if (this.placeButton != null) {
 			this.placeButton.setMessage(Text.literal("放置模型"));
+		}
+		if (this.placeBackpackButton != null) {
+			this.placeBackpackButton.setMessage(Text.literal("\u653e\u7f6e\u6a21\u578b(\u80cc\u5305)"));
 		}
 		if (this.applySkeletalButton != null) {
 			this.applySkeletalButton.setMessage(Text.literal("Apply Skeletal"));
@@ -390,14 +399,14 @@ public class BodyPoseEditorScreen extends Screen {
 		this.client.player.networkHandler.sendChatCommand(command);
 	}
 
-	private void placePosedBody() {
+	private void placePosedBody(boolean backpackEnabled) {
 		boolean skeletalMode = poseEditMode == PoseEditMode.SKELETAL;
 		ClientPlayNetworking.send(new PlacePosedBodyC2SPacket(selectedSkin, slimModel,
 				skeletalMode ? createSkeletalPoseValueArray() : createStaticPoseValueArray(),
 				skeletalMode ? createSkeletalBendValueArray() : null,
 				selectedSkinSource == SkinSource.PLAYER, selectedPlayerName,
 				modelOffsetX, modelOffsetY, modelOffsetZ,
-				modelPitch, modelYaw, modelRoll, wholeBodyScale));
+				modelPitch, modelYaw, modelRoll, wholeBodyScale, backpackEnabled));
 	}
 
 	private void applySkeletalPose() {

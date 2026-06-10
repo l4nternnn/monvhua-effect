@@ -6,8 +6,10 @@ import com.kuilunfuzhe.monvhua.renderer.body.special.CombinedBodySpecialModelRen
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
+import net.minecraft.client.util.SkinTextures;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.NbtComponent;
+import net.minecraft.component.type.ProfileComponent;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.decoration.DisplayEntity;
 import net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity;
@@ -26,6 +28,20 @@ import org.joml.Vector4d;
 public final class PaintModelOverlayClient {
     private static final double MAX_DISTANCE = 6.0D;
     private static final double TRIANGLE_EPSILON = 1.0E-7D;
+    private static final double OUTER_PIXEL_DEPTH = 0.5D;
+    private static final OuterSurfaceDef[] OUTER_EDGE_SURFACES = new OuterSurfaceDef[]{
+            outer("head", new Part[]{Part.HEAD, Part.HAT}, boxPixels(-4, -8, -4, 8, 8, 8), 32, 0, 0, true, true),
+            outer("body_upper", new Part[]{Part.BODY, Part.JACKET}, boxPixels(-4, 0, -2, 8, 6, 4), 16, 32, 0, true, false),
+            outer("body_lower", new Part[]{Part.BODY, Part.WAIST, Part.WAIST_JACKET}, boxPixels(-4, 0, -2, 8, 6, 4), 16, 32, 6, false, true),
+            outer("left_arm_upper", new Part[]{Part.LEFT_ARM, Part.LEFT_SLEEVE}, boxPixels(-1, -2, -2, 4, 6, 4), boxPixels(-1, -2, -2, 3, 6, 4), 48, 48, 0, true, false),
+            outer("left_arm_lower", new Part[]{Part.LEFT_ARM, Part.LEFT_FOREARM, Part.LEFT_FOREARM_SLEEVE}, boxPixels(-1, 0, -2, 4, 6, 4), boxPixels(-1, 0, -2, 3, 6, 4), 48, 48, 6, false, true),
+            outer("right_arm_upper", new Part[]{Part.RIGHT_ARM, Part.RIGHT_SLEEVE}, boxPixels(-3, -2, -2, 4, 6, 4), boxPixels(-2, -2, -2, 3, 6, 4), 40, 32, 0, true, false),
+            outer("right_arm_lower", new Part[]{Part.RIGHT_ARM, Part.RIGHT_FOREARM, Part.RIGHT_FOREARM_SLEEVE}, boxPixels(-3, 0, -2, 4, 6, 4), boxPixels(-2, 0, -2, 3, 6, 4), 40, 32, 6, false, true),
+            outer("left_leg_upper", new Part[]{Part.LEFT_LEG, Part.LEFT_PANTS}, boxPixels(-2, 0, -2, 4, 6, 4), 0, 48, 0, true, false),
+            outer("left_leg_lower", new Part[]{Part.LEFT_LEG, Part.LEFT_LOWER_LEG, Part.LEFT_LOWER_PANTS}, boxPixels(-2, 0, -2, 4, 6, 4), 0, 48, 6, false, true),
+            outer("right_leg_upper", new Part[]{Part.RIGHT_LEG, Part.RIGHT_PANTS}, boxPixels(-2, 0, -2, 4, 6, 4), 0, 32, 0, true, false),
+            outer("right_leg_lower", new Part[]{Part.RIGHT_LEG, Part.RIGHT_LOWER_LEG, Part.RIGHT_LOWER_PANTS}, boxPixels(-2, 0, -2, 4, 6, 4), 0, 32, 6, false, true)
+    };
     private static final SurfaceDef[] COMBINED_BODY_SURFACES = new SurfaceDef[]{
             def("head", new Part[]{Part.HEAD}, cuboid(-4, -8, -4, 8, 8, 8)),
             def("body_upper", new Part[]{Part.BODY}, cuboid(-4, 0, -2, 8, 6, 4)),
@@ -80,6 +96,31 @@ public final class PaintModelOverlayClient {
         Matrix4d rootMatrix = rootModelToWorld(display, data);
         ModelHit best = null;
         double bestDistance = Double.POSITIVE_INFINITY;
+        SkinTexturePixels skinPixels = skinPixels(client, display.getItemStack(), data);
+
+        if (skinPixels != null) {
+            for (OuterSurfaceDef surface : OUTER_EDGE_SURFACES) {
+                Matrix4d surfaceMatrix = outerSurfaceMatrix(rootMatrix, model, surface);
+                if (surfaceMatrix == null) {
+                    continue;
+                }
+                Matrix4d worldToSurface = surfaceMatrix.invert(new Matrix4d());
+                Vector3d localStart = transformPosition(worldToSurface, eye);
+                Vector3d localEnd = transformPosition(worldToSurface, end);
+                Vector3d localDir = new Vector3d(localEnd).sub(localStart);
+                OuterHit hit = intersectOuterEdges(localStart, localDir, skinPixels, surface, slim);
+                if (hit == null) {
+                    continue;
+                }
+                Vector3d worldPoint = transformPosition(surfaceMatrix, hit.point());
+                double distance = Math.sqrt(squaredDistance(eye, worldPoint));
+                if (distance >= bestDistance) {
+                    continue;
+                }
+                best = new ModelHit(display.getId(), hit.surface(), hit.face(), hit.x(), hit.y(), distance);
+                bestDistance = distance;
+            }
+        }
 
         for (SurfaceDef surface : COMBINED_BODY_SURFACES) {
             Matrix4d surfaceMatrix = surfaceMatrix(rootMatrix, model, surface);
@@ -91,7 +132,7 @@ public final class PaintModelOverlayClient {
             Vector3d localEnd = transformPosition(worldToSurface, end);
             Vector3d localDir = new Vector3d(localEnd).sub(localStart);
             Cuboid cuboid = surface.cuboid(slim);
-            BoxHit hit = intersectFaces(localStart, localDir, cuboid);
+            BoxHit hit = intersectFaces(localStart, localDir, cuboid, surface.hitOffset());
             if (hit != null && hit.t() >= 0.0D && hit.t() <= 1.0D) {
                 Vector3d worldPoint = transformPosition(surfaceMatrix, hit.point());
                 double distance = Math.sqrt(squaredDistance(eye, worldPoint));
@@ -108,6 +149,27 @@ public final class PaintModelOverlayClient {
             }
         }
         return best;
+    }
+
+    private static SkinTexturePixels skinPixels(MinecraftClient client, ItemStack stack, NbtCompound data) {
+        String localSkin = data.getString("local_skin").orElse("");
+        if (!localSkin.isEmpty()) {
+            return SkinTexturePixels.get(Identifier.of("monvhua", "textures/local_skin/" + localSkin + ".png"));
+        }
+        ProfileComponent profile = stack.get(DataComponentTypes.PROFILE);
+        if (profile != null) {
+            ProfileComponent resolved = profile.resolve();
+            if (resolved != null) {
+                SkinTextures textures = client.getSkinProvider().getSkinTextures(resolved.gameProfile(), null);
+                if (textures != null) {
+                    return SkinTexturePixels.get(textures.texture());
+                }
+            }
+        }
+        if (client.player != null) {
+            return SkinTexturePixels.get(client.player.getSkinTextures().texture());
+        }
+        return null;
     }
 
     private static PlayerEntityModel createModel(MinecraftClient client, boolean slim) {
@@ -131,6 +193,19 @@ public final class PaintModelOverlayClient {
         return matrix;
     }
 
+    private static Matrix4d outerSurfaceMatrix(Matrix4d rootMatrix, PlayerEntityModel model, OuterSurfaceDef surface) {
+        Matrix4d matrix = new Matrix4d(rootMatrix);
+        applyModelPart(matrix, model.getRootPart());
+        for (Part part : surface.path()) {
+            ModelPart modelPart = modelPart(model, part);
+            if (modelPart == null) {
+                return null;
+            }
+            applyModelPart(matrix, modelPart);
+        }
+        return matrix;
+    }
+
     private static void applyModelPart(Matrix4d matrix, ModelPart part) {
         matrix.translate(part.originX / 16.0D, part.originY / 16.0D, part.originZ / 16.0D)
                 .rotateZ(part.roll)
@@ -142,16 +217,27 @@ public final class PaintModelOverlayClient {
     private static ModelPart modelPart(PlayerEntityModel model, Part part) {
         return switch (part) {
             case HEAD -> model.head;
+            case HAT -> model.hat;
             case BODY -> model.body;
+            case JACKET -> model.jacket;
             case WAIST -> getChild(model.body, CombinedBodyModelData.WAIST);
+            case WAIST_JACKET -> getChild(getChild(model.body, CombinedBodyModelData.WAIST), CombinedBodyModelData.WAIST_JACKET);
             case LEFT_ARM -> model.leftArm;
+            case LEFT_SLEEVE -> model.leftSleeve;
             case LEFT_FOREARM -> getChild(model.leftArm, CombinedBodyModelData.LEFT_FOREARM);
+            case LEFT_FOREARM_SLEEVE -> getChild(getChild(model.leftArm, CombinedBodyModelData.LEFT_FOREARM), CombinedBodyModelData.LEFT_FOREARM_SLEEVE);
             case RIGHT_ARM -> model.rightArm;
+            case RIGHT_SLEEVE -> model.rightSleeve;
             case RIGHT_FOREARM -> getChild(model.rightArm, CombinedBodyModelData.RIGHT_FOREARM);
+            case RIGHT_FOREARM_SLEEVE -> getChild(getChild(model.rightArm, CombinedBodyModelData.RIGHT_FOREARM), CombinedBodyModelData.RIGHT_FOREARM_SLEEVE);
             case LEFT_LEG -> model.leftLeg;
+            case LEFT_PANTS -> model.leftPants;
             case LEFT_LOWER_LEG -> getChild(model.leftLeg, CombinedBodyModelData.LEFT_LOWER_LEG);
+            case LEFT_LOWER_PANTS -> getChild(getChild(model.leftLeg, CombinedBodyModelData.LEFT_LOWER_LEG), CombinedBodyModelData.LEFT_LOWER_PANTS);
             case RIGHT_LEG -> model.rightLeg;
+            case RIGHT_PANTS -> model.rightPants;
             case RIGHT_LOWER_LEG -> getChild(model.rightLeg, CombinedBodyModelData.RIGHT_LOWER_LEG);
+            case RIGHT_LOWER_PANTS -> getChild(getChild(model.rightLeg, CombinedBodyModelData.RIGHT_LOWER_LEG), CombinedBodyModelData.RIGHT_LOWER_PANTS);
         };
     }
 
@@ -250,10 +336,202 @@ public final class PaintModelOverlayClient {
         return new Vector3d(result.x, result.y, result.z);
     }
 
-    private static BoxHit intersectFaces(Vector3d start, Vector3d dir, Cuboid box) {
+    private static OuterHit intersectOuterEdges(Vector3d start, Vector3d dir, SkinTexturePixels pixels,
+                                                OuterSurfaceDef surface, boolean slim) {
+        PixelBox box = surface.box(slim);
+        OuterHit best = null;
+        for (OuterFace face : outerFaces(surface, box)) {
+            for (int y = 0; y < face.height(); y++) {
+                for (int x = 0; x < face.width(); x++) {
+                    if (!pixels.isOpaque(face.textureX() + x, face.textureY() + y)) {
+                        continue;
+                    }
+                    best = nearerOuter(best, intersectOuterPixelFront(start, dir, surface.name(), face, x, y));
+                    best = nearerOuter(best, intersectOuterPixelSide(start, dir, surface.name(), face,
+                            x, y, pixels, Edge.UP));
+                    best = nearerOuter(best, intersectOuterPixelSide(start, dir, surface.name(), face,
+                            x, y, pixels, Edge.RIGHT));
+                    best = nearerOuter(best, intersectOuterPixelSide(start, dir, surface.name(), face,
+                            x, y, pixels, Edge.DOWN));
+                    best = nearerOuter(best, intersectOuterPixelSide(start, dir, surface.name(), face,
+                            x, y, pixels, Edge.LEFT));
+                }
+            }
+        }
+        return best;
+    }
+
+    private static OuterHit nearerOuter(OuterHit current, OuterHit candidate) {
+        if (candidate == null) {
+            return current;
+        }
+        return current == null || candidate.t() < current.t() ? candidate : current;
+    }
+
+    private static OuterHit intersectOuterPixelFront(Vector3d start, Vector3d dir, String surfaceName,
+                                                     OuterFace face, int x, int y) {
+        FacePoint p00 = face.origin()
+                .add(face.uStep().multiply(x))
+                .add(face.vStep().multiply(y));
+        FacePoint p10 = p00.add(face.uStep());
+        FacePoint p11 = p10.add(face.vStep());
+        FacePoint p01 = p00.add(face.vStep());
+        FacePoint offset = face.normal().multiply(OUTER_PIXEL_DEPTH);
+        FacePoint o00 = p00.add(offset);
+        FacePoint o10 = p10.add(offset);
+        FacePoint o11 = p11.add(offset);
+        FacePoint o01 = p01.add(offset);
+
+        BoxHit hit = nearer(null, intersectTriangle(start, dir, face.face(), o00.vector(), o10.vector(), o11.vector()));
+        hit = nearer(hit, intersectTriangle(start, dir, face.face(), o00.vector(), o11.vector(), o01.vector()));
+        if (hit == null) {
+            return null;
+        }
+        return new OuterHit(hit.t(), hit.point(), surfaceName + "_outer_" + face.face().asString(),
+                face.face(), x, y);
+    }
+
+    private static OuterHit intersectOuterPixelSide(Vector3d start, Vector3d dir, String surfaceName, OuterFace face,
+                                                    int x, int y, SkinTexturePixels pixels, Edge edge) {
+        if (!isOuterEdge(pixels, face, x, y, edge)) {
+            return null;
+        }
+
+        FacePoint p00 = face.origin()
+                .add(face.uStep().multiply(x))
+                .add(face.vStep().multiply(y));
+        FacePoint p10 = p00.add(face.uStep());
+        FacePoint p11 = p10.add(face.vStep());
+        FacePoint p01 = p00.add(face.vStep());
+        FacePoint offset = face.normal().multiply(OUTER_PIXEL_DEPTH);
+        FacePoint o00 = p00.add(offset);
+        FacePoint o10 = p10.add(offset);
+        FacePoint o11 = p11.add(offset);
+        FacePoint o01 = p01.add(offset);
+
+        FacePoint a;
+        FacePoint b;
+        FacePoint c;
+        FacePoint d;
+        Direction sideFace;
+        switch (edge) {
+            case UP -> {
+                a = o00; b = o10; c = p10; d = p00;
+                sideFace = directionFromVector(face.vStep().negate());
+            }
+            case RIGHT -> {
+                a = o10; b = o11; c = p11; d = p10;
+                sideFace = directionFromVector(face.uStep());
+            }
+            case DOWN -> {
+                a = o11; b = o01; c = p01; d = p11;
+                sideFace = directionFromVector(face.vStep());
+            }
+            case LEFT -> {
+                a = o01; b = o00; c = p00; d = p01;
+                sideFace = directionFromVector(face.uStep().negate());
+            }
+            default -> {
+                return null;
+            }
+        }
+
+        BoxHit hit = nearer(null, intersectTriangle(start, dir, sideFace, a.vector(), b.vector(), c.vector()));
+        hit = nearer(hit, intersectTriangle(start, dir, sideFace, a.vector(), c.vector(), d.vector()));
+        if (hit == null) {
+            return null;
+        }
+        return new OuterHit(hit.t(), hit.point(), surfaceName + "_outer_" + face.face().asString(),
+                sideFace, x, y);
+    }
+
+    private static boolean isOuterEdge(SkinTexturePixels pixels, OuterFace face, int x, int y, Edge edge) {
+        return switch (edge) {
+            case UP -> !isOuterFacePixelOpaque(pixels, face, x, y - 1);
+            case RIGHT -> !isOuterFacePixelOpaque(pixels, face, x + 1, y);
+            case DOWN -> !isOuterFacePixelOpaque(pixels, face, x, y + 1);
+            case LEFT -> !isOuterFacePixelOpaque(pixels, face, x - 1, y);
+        };
+    }
+
+    private static boolean isOuterFacePixelOpaque(SkinTexturePixels pixels, OuterFace face, int x, int y) {
+        if (x < 0 || y < 0 || x >= face.width() || y >= face.height()) {
+            return false;
+        }
+        return pixels.isOpaque(face.textureX() + x, face.textureY() + y);
+    }
+
+    private static OuterFace[] outerFaces(OuterSurfaceDef surface, PixelBox box) {
+        int textureX = surface.textureX();
+        int sideTextureY = surface.textureY() + box.depth() + surface.textureYSegment();
+        OuterFace[] faces = new OuterFace[6];
+        int index = 0;
+        if (surface.renderStartCap()) {
+            faces[index++] = new OuterFace(Direction.UP, textureX + box.depth(), surface.textureY(),
+                    box.width(), box.depth(),
+                    new FacePoint(box.x(), box.y(), box.z() + box.depth()),
+                    new FacePoint(1.0D, 0.0D, 0.0D),
+                    new FacePoint(0.0D, 0.0D, -1.0D),
+                    new FacePoint(0.0D, -1.0D, 0.0D));
+        }
+        if (surface.renderEndCap()) {
+            faces[index++] = new OuterFace(Direction.DOWN, textureX + box.depth() + box.width(), surface.textureY(),
+                    box.width(), box.depth(),
+                    new FacePoint(box.x(), box.y() + box.height(), box.z() + box.depth()),
+                    new FacePoint(1.0D, 0.0D, 0.0D),
+                    new FacePoint(0.0D, 0.0D, -1.0D),
+                    new FacePoint(0.0D, 1.0D, 0.0D));
+        }
+        faces[index++] = new OuterFace(Direction.WEST, textureX, sideTextureY,
+                box.depth(), box.height(),
+                new FacePoint(box.x(), box.y(), box.z() + box.depth()),
+                new FacePoint(0.0D, 0.0D, -1.0D),
+                new FacePoint(0.0D, 1.0D, 0.0D),
+                new FacePoint(-1.0D, 0.0D, 0.0D));
+        faces[index++] = new OuterFace(Direction.NORTH, textureX + box.depth(), sideTextureY,
+                box.width(), box.height(),
+                new FacePoint(box.x(), box.y(), box.z()),
+                new FacePoint(1.0D, 0.0D, 0.0D),
+                new FacePoint(0.0D, 1.0D, 0.0D),
+                new FacePoint(0.0D, 0.0D, -1.0D));
+        faces[index++] = new OuterFace(Direction.EAST, textureX + box.depth() + box.width(), sideTextureY,
+                box.depth(), box.height(),
+                new FacePoint(box.x() + box.width(), box.y(), box.z()),
+                new FacePoint(0.0D, 0.0D, 1.0D),
+                new FacePoint(0.0D, 1.0D, 0.0D),
+                new FacePoint(1.0D, 0.0D, 0.0D));
+        faces[index++] = new OuterFace(Direction.SOUTH, textureX + box.depth() + box.width() + box.depth(), sideTextureY,
+                box.width(), box.height(),
+                new FacePoint(box.x() + box.width(), box.y(), box.z() + box.depth()),
+                new FacePoint(-1.0D, 0.0D, 0.0D),
+                new FacePoint(0.0D, 1.0D, 0.0D),
+                new FacePoint(0.0D, 0.0D, 1.0D));
+
+        if (index == faces.length) {
+            return faces;
+        }
+        OuterFace[] compact = new OuterFace[index];
+        System.arraycopy(faces, 0, compact, 0, index);
+        return compact;
+    }
+
+    private static Direction directionFromVector(FacePoint vector) {
+        double ax = Math.abs(vector.x());
+        double ay = Math.abs(vector.y());
+        double az = Math.abs(vector.z());
+        if (ax >= ay && ax >= az) {
+            return vector.x() < 0.0D ? Direction.WEST : Direction.EAST;
+        }
+        if (ay >= az) {
+            return vector.y() < 0.0D ? Direction.UP : Direction.DOWN;
+        }
+        return vector.z() < 0.0D ? Direction.NORTH : Direction.SOUTH;
+    }
+
+    private static BoxHit intersectFaces(Vector3d start, Vector3d dir, Cuboid box, double offset) {
         BoxHit best = null;
         for (Direction face : Direction.values()) {
-            Vector3d[] quad = quad(box, face);
+            Vector3d[] quad = quad(box, face, offset);
             best = nearer(best, intersectTriangle(start, dir, face, quad[0], quad[1], quad[2]));
             best = nearer(best, intersectTriangle(start, dir, face, quad[0], quad[2], quad[3]));
         }
@@ -298,8 +576,9 @@ public final class PaintModelOverlayClient {
         return new BoxHit(clampedT, new Vector3d(start).fma(clampedT, dir), face);
     }
 
-    private static Vector3d[] quad(Cuboid box, Direction face) {
-        return switch (face) {
+    private static Vector3d[] quad(Cuboid box, Direction face, double offset) {
+        Vector3d normal = normal(face).mul(offset);
+        Vector3d[] vertices = switch (face) {
             case UP -> new Vector3d[]{
                     new Vector3d(box.minX(), box.minY(), box.minZ()),
                     new Vector3d(box.maxX(), box.minY(), box.minZ()),
@@ -337,6 +616,21 @@ public final class PaintModelOverlayClient {
                     new Vector3d(box.maxX(), box.maxY(), box.minZ())
             };
         };
+        for (Vector3d vertex : vertices) {
+            vertex.add(normal);
+        }
+        return vertices;
+    }
+
+    private static Vector3d normal(Direction face) {
+        return switch (face) {
+            case UP -> new Vector3d(0.0D, -1.0D, 0.0D);
+            case DOWN -> new Vector3d(0.0D, 1.0D, 0.0D);
+            case NORTH -> new Vector3d(0.0D, 0.0D, -1.0D);
+            case SOUTH -> new Vector3d(0.0D, 0.0D, 1.0D);
+            case WEST -> new Vector3d(-1.0D, 0.0D, 0.0D);
+            case EAST -> new Vector3d(1.0D, 0.0D, 0.0D);
+        };
     }
 
     private static int[] pixel(Cuboid box, Vector3d point, Direction face, int width, int height) {
@@ -367,11 +661,11 @@ public final class PaintModelOverlayClient {
     }
 
     private static SurfaceDef def(String name, Part[] path, Cuboid cuboid) {
-        return new SurfaceDef(name, path, cuboid, cuboid);
+        return new SurfaceDef(name, path, cuboid, cuboid, 0.0D);
     }
 
     private static SurfaceDef def(String name, Part[] path, Cuboid defaultCuboid, Cuboid slimCuboid) {
-        return new SurfaceDef(name, path, defaultCuboid, slimCuboid);
+        return new SurfaceDef(name, path, defaultCuboid, slimCuboid, 0.0D);
     }
 
     private static Cuboid cuboid(double x, double y, double z, double width, double height, double depth) {
@@ -379,27 +673,97 @@ public final class PaintModelOverlayClient {
                 (x + width) / 16.0D, (y + height) / 16.0D, (z + depth) / 16.0D);
     }
 
+    private static PixelBox boxPixels(int x, int y, int z, int width, int height, int depth) {
+        return new PixelBox(x, y, z, width, height, depth);
+    }
+
+    private static OuterSurfaceDef outer(String name, Part[] path, PixelBox box,
+                                         int textureX, int textureY, int textureYSegment,
+                                         boolean renderStartCap, boolean renderEndCap) {
+        return new OuterSurfaceDef(name, path, box, box, textureX, textureY, textureYSegment, renderStartCap, renderEndCap);
+    }
+
+    private static OuterSurfaceDef outer(String name, Part[] path, PixelBox defaultBox, PixelBox slimBox,
+                                         int textureX, int textureY, int textureYSegment,
+                                         boolean renderStartCap, boolean renderEndCap) {
+        return new OuterSurfaceDef(name, path, defaultBox, slimBox, textureX, textureY, textureYSegment, renderStartCap, renderEndCap);
+    }
+
     public record ModelHit(int entityId, String surface, Direction face, int x, int y, double distance) {
     }
 
-    private record SurfaceDef(String name, Part[] path, Cuboid defaultCuboid, Cuboid slimCuboid) {
+    private record SurfaceDef(String name, Part[] path, Cuboid defaultCuboid, Cuboid slimCuboid, double hitOffset) {
         private Cuboid cuboid(boolean slim) {
             return slim ? slimCuboid : defaultCuboid;
         }
     }
 
+    private record OuterSurfaceDef(String name, Part[] path, PixelBox defaultBox, PixelBox slimBox,
+                                   int textureX, int textureY, int textureYSegment,
+                                   boolean renderStartCap, boolean renderEndCap) {
+        private PixelBox box(boolean slim) {
+            return slim ? slimBox : defaultBox;
+        }
+    }
+
+    private record PixelBox(int x, int y, int z, int width, int height, int depth) {
+    }
+
+    private record OuterFace(Direction face, int textureX, int textureY, int width, int height,
+                             FacePoint origin, FacePoint uStep, FacePoint vStep, FacePoint normal) {
+    }
+
+    private record FacePoint(double x, double y, double z) {
+        private FacePoint add(FacePoint other) {
+            return new FacePoint(x + other.x, y + other.y, z + other.z);
+        }
+
+        private FacePoint multiply(double scalar) {
+            return new FacePoint(x * scalar, y * scalar, z * scalar);
+        }
+
+        private FacePoint negate() {
+            return new FacePoint(-x, -y, -z);
+        }
+
+        private Vector3d vector() {
+            return new Vector3d(x / 16.0D, y / 16.0D, z / 16.0D);
+        }
+    }
+
+    private enum Edge {
+        UP,
+        RIGHT,
+        DOWN,
+        LEFT
+    }
+
+    private record OuterHit(double t, Vector3d point, String surface, Direction face, int x, int y) {
+    }
+
     private enum Part {
         HEAD,
+        HAT,
         BODY,
+        JACKET,
         WAIST,
+        WAIST_JACKET,
         LEFT_ARM,
+        LEFT_SLEEVE,
         LEFT_FOREARM,
+        LEFT_FOREARM_SLEEVE,
         RIGHT_ARM,
+        RIGHT_SLEEVE,
         RIGHT_FOREARM,
+        RIGHT_FOREARM_SLEEVE,
         LEFT_LEG,
+        LEFT_PANTS,
         LEFT_LOWER_LEG,
+        LEFT_LOWER_PANTS,
         RIGHT_LEG,
-        RIGHT_LOWER_LEG
+        RIGHT_PANTS,
+        RIGHT_LOWER_LEG,
+        RIGHT_LOWER_PANTS
     }
 
     private record Cuboid(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {

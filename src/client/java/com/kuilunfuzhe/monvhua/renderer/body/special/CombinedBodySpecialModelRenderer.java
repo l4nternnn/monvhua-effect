@@ -5,6 +5,7 @@ import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.model.TorsoBendFollower;
 import com.kuilunfuzhe.monvhua.features.paint.ModelPaintData;
 import com.kuilunfuzhe.monvhua.features.paint.PaintRenderLayers;
+import com.kuilunfuzhe.monvhua.features.paint.SkinTexturePixels;
 import com.kuilunfuzhe.monvhua.renderer.body.SkinOuterLayerVoxelRenderer;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.client.model.ModelPart;
@@ -37,6 +38,8 @@ import java.util.Set;
  * </ol>
  */
 public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRenderer {
+    private static final float PAINT_SURFACE_OFFSET = 0.002F;
+    private static final float OUTER_LAYER_PAINT_OFFSET = 0.5F / 16.0F + PAINT_SURFACE_OFFSET;
     private final PlayerEntityModel model;
     private final PlayerEntityModel slimModel;
 
@@ -123,7 +126,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
                 activeModel.rightLeg, rightLowerLeg);
         matrices.pop();
 
-        renderModelPaint(matrices, vertexConsumers, activeModel, slim, data.customData(), light);
+        renderModelPaint(matrices, vertexConsumers, activeModel, slim, data.texture(), data.customData(), light);
 
         matrices.pop();
     }
@@ -193,12 +196,29 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
     }
 
     private void renderModelPaint(MatrixStack matrices, VertexConsumerProvider vertexConsumers, PlayerEntityModel model,
-                                  boolean slim, NbtCompound customData, int light) {
+                                  boolean slim, net.minecraft.util.Identifier texture, NbtCompound customData, int light) {
         if (customData == null || !customData.contains(ModelPaintData.MODEL_PAINT_KEY)) {
             return;
         }
         VertexConsumer vertices = vertexConsumers.getBuffer(PaintRenderLayers.paintOverlay());
+        SkinTexturePixels skinPixels = SkinTexturePixels.get(texture);
         for (ModelPaintData.ModelFace face : ModelPaintData.readFaces(customData, slim)) {
+            OuterPaintTarget outerTarget = outerPaintTarget(model, slim, face.surface());
+            if (outerTarget != null && skinPixels != null) {
+                matrices.push();
+                model.getRootPart().applyTransform(matrices);
+                for (ModelPart part : outerTarget.path()) {
+                    if (part == null) {
+                        matrices.pop();
+                        return;
+                    }
+                    part.applyTransform(matrices);
+                }
+                renderOuterEdgePaint(vertices, matrices.peek().getPositionMatrix(), outerTarget, skinPixels,
+                        face.face(), face.width(), face.height(), face.pixels(), light);
+                matrices.pop();
+                continue;
+            }
             SurfaceTarget target = surfaceTarget(model, slim, face.surface());
             if (target == null) {
                 continue;
@@ -212,21 +232,83 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
                 }
                 part.applyTransform(matrices);
             }
-            renderPaintFace(vertices, matrices.peek().getPositionMatrix(), target.cuboid(), face.face(), face.width(), face.height(), face.pixels(), light);
+            renderPaintFace(vertices, matrices.peek().getPositionMatrix(), target.cuboid(), target.paintOffset(),
+                    face.face(), face.width(), face.height(), face.pixels(), light);
             matrices.pop();
         }
     }
 
+    private OuterPaintTarget outerPaintTarget(PlayerEntityModel model, boolean slim, String surface) {
+        OuterSurfaceKey key = OuterSurfaceKey.parse(surface);
+        if (key == null) {
+            return null;
+        }
+        ModelPart waist = getChild(model.body, CombinedBodyModelData.WAIST);
+        ModelPart waistJacket = getChild(waist, CombinedBodyModelData.WAIST_JACKET);
+        ModelPart leftForearm = getChild(model.leftArm, CombinedBodyModelData.LEFT_FOREARM);
+        ModelPart leftForearmSleeve = getChild(leftForearm, CombinedBodyModelData.LEFT_FOREARM_SLEEVE);
+        ModelPart rightForearm = getChild(model.rightArm, CombinedBodyModelData.RIGHT_FOREARM);
+        ModelPart rightForearmSleeve = getChild(rightForearm, CombinedBodyModelData.RIGHT_FOREARM_SLEEVE);
+        ModelPart leftLowerLeg = getChild(model.leftLeg, CombinedBodyModelData.LEFT_LOWER_LEG);
+        ModelPart leftLowerPants = getChild(leftLowerLeg, CombinedBodyModelData.LEFT_LOWER_PANTS);
+        ModelPart rightLowerLeg = getChild(model.rightLeg, CombinedBodyModelData.RIGHT_LOWER_LEG);
+        ModelPart rightLowerPants = getChild(rightLowerLeg, CombinedBodyModelData.RIGHT_LOWER_PANTS);
+        int armWidth = slim ? 3 : 4;
+        int leftArmX = -1;
+        int rightArmX = slim ? -2 : -3;
+        return switch (key.baseSurface()) {
+            case "head" -> new OuterPaintTarget(new ModelPart[]{model.head, model.hat}, key.sourceFace(),
+                    new PixelBox(-4, -8, -4, 8, 8, 8), 32, 0, 0, true, true);
+            case "body_upper" -> new OuterPaintTarget(new ModelPart[]{model.body, model.jacket}, key.sourceFace(),
+                    new PixelBox(-4, 0, -2, 8, 6, 4), 16, 32, 0, true, false);
+            case "body_lower" -> new OuterPaintTarget(new ModelPart[]{model.body, waist, waistJacket}, key.sourceFace(),
+                    new PixelBox(-4, 0, -2, 8, 6, 4), 16, 32, 6, false, true);
+            case "left_arm_upper" -> new OuterPaintTarget(new ModelPart[]{model.leftArm, model.leftSleeve}, key.sourceFace(),
+                    new PixelBox(leftArmX, -2, -2, armWidth, 6, 4), 48, 48, 0, true, false);
+            case "left_arm_lower" -> new OuterPaintTarget(new ModelPart[]{model.leftArm, leftForearm, leftForearmSleeve}, key.sourceFace(),
+                    new PixelBox(leftArmX, 0, -2, armWidth, 6, 4), 48, 48, 6, false, true);
+            case "right_arm_upper" -> new OuterPaintTarget(new ModelPart[]{model.rightArm, model.rightSleeve}, key.sourceFace(),
+                    new PixelBox(rightArmX, -2, -2, armWidth, 6, 4), 40, 32, 0, true, false);
+            case "right_arm_lower" -> new OuterPaintTarget(new ModelPart[]{model.rightArm, rightForearm, rightForearmSleeve}, key.sourceFace(),
+                    new PixelBox(rightArmX, 0, -2, armWidth, 6, 4), 40, 32, 6, false, true);
+            case "left_leg_upper" -> new OuterPaintTarget(new ModelPart[]{model.leftLeg, model.leftPants}, key.sourceFace(),
+                    new PixelBox(-2, 0, -2, 4, 6, 4), 0, 48, 0, true, false);
+            case "left_leg_lower" -> new OuterPaintTarget(new ModelPart[]{model.leftLeg, leftLowerLeg, leftLowerPants}, key.sourceFace(),
+                    new PixelBox(-2, 0, -2, 4, 6, 4), 0, 48, 6, false, true);
+            case "right_leg_upper" -> new OuterPaintTarget(new ModelPart[]{model.rightLeg, model.rightPants}, key.sourceFace(),
+                    new PixelBox(-2, 0, -2, 4, 6, 4), 0, 32, 0, true, false);
+            case "right_leg_lower" -> new OuterPaintTarget(new ModelPart[]{model.rightLeg, rightLowerLeg, rightLowerPants}, key.sourceFace(),
+                    new PixelBox(-2, 0, -2, 4, 6, 4), 0, 32, 6, false, true);
+            default -> null;
+        };
+    }
+
     private SurfaceTarget surfaceTarget(PlayerEntityModel model, boolean slim, String surface) {
         ModelPart waist = getChild(model.body, CombinedBodyModelData.WAIST);
+        ModelPart waistJacket = getChild(waist, CombinedBodyModelData.WAIST_JACKET);
         ModelPart leftForearm = getChild(model.leftArm, CombinedBodyModelData.LEFT_FOREARM);
+        ModelPart leftForearmSleeve = getChild(leftForearm, CombinedBodyModelData.LEFT_FOREARM_SLEEVE);
         ModelPart rightForearm = getChild(model.rightArm, CombinedBodyModelData.RIGHT_FOREARM);
+        ModelPart rightForearmSleeve = getChild(rightForearm, CombinedBodyModelData.RIGHT_FOREARM_SLEEVE);
         ModelPart leftLowerLeg = getChild(model.leftLeg, CombinedBodyModelData.LEFT_LOWER_LEG);
+        ModelPart leftLowerPants = getChild(leftLowerLeg, CombinedBodyModelData.LEFT_LOWER_PANTS);
         ModelPart rightLowerLeg = getChild(model.rightLeg, CombinedBodyModelData.RIGHT_LOWER_LEG);
+        ModelPart rightLowerPants = getChild(rightLowerLeg, CombinedBodyModelData.RIGHT_LOWER_PANTS);
         float armWidth = slim ? 3.0F : 4.0F;
         float leftArmX = slim ? -1.0F : -1.0F;
         float rightArmX = slim ? -2.0F : -3.0F;
         return switch (surface) {
+            case "head_outer" -> new SurfaceTarget(new ModelPart[]{model.head, model.hat}, new Cuboid(-4.0F, -8.0F, -4.0F, 8.0F, 8.0F, 8.0F), OUTER_LAYER_PAINT_OFFSET);
+            case "body_upper_outer" -> new SurfaceTarget(new ModelPart[]{model.body, model.jacket}, new Cuboid(-4.0F, 0.0F, -2.0F, 8.0F, 6.0F, 4.0F), OUTER_LAYER_PAINT_OFFSET);
+            case "body_lower_outer" -> new SurfaceTarget(new ModelPart[]{model.body, waist, waistJacket}, new Cuboid(-4.0F, 0.0F, -2.0F, 8.0F, 6.0F, 4.0F), OUTER_LAYER_PAINT_OFFSET);
+            case "left_arm_upper_outer" -> new SurfaceTarget(new ModelPart[]{model.leftArm, model.leftSleeve}, new Cuboid(leftArmX, -2.0F, -2.0F, armWidth, 6.0F, 4.0F), OUTER_LAYER_PAINT_OFFSET);
+            case "left_arm_lower_outer" -> new SurfaceTarget(new ModelPart[]{model.leftArm, leftForearm, leftForearmSleeve}, new Cuboid(leftArmX, 0.0F, -2.0F, armWidth, 6.0F, 4.0F), OUTER_LAYER_PAINT_OFFSET);
+            case "right_arm_upper_outer" -> new SurfaceTarget(new ModelPart[]{model.rightArm, model.rightSleeve}, new Cuboid(rightArmX, -2.0F, -2.0F, armWidth, 6.0F, 4.0F), OUTER_LAYER_PAINT_OFFSET);
+            case "right_arm_lower_outer" -> new SurfaceTarget(new ModelPart[]{model.rightArm, rightForearm, rightForearmSleeve}, new Cuboid(rightArmX, 0.0F, -2.0F, armWidth, 6.0F, 4.0F), OUTER_LAYER_PAINT_OFFSET);
+            case "left_leg_upper_outer" -> new SurfaceTarget(new ModelPart[]{model.leftLeg, model.leftPants}, new Cuboid(-2.0F, 0.0F, -2.0F, 4.0F, 6.0F, 4.0F), OUTER_LAYER_PAINT_OFFSET);
+            case "left_leg_lower_outer" -> new SurfaceTarget(new ModelPart[]{model.leftLeg, leftLowerLeg, leftLowerPants}, new Cuboid(-2.0F, 0.0F, -2.0F, 4.0F, 6.0F, 4.0F), OUTER_LAYER_PAINT_OFFSET);
+            case "right_leg_upper_outer" -> new SurfaceTarget(new ModelPart[]{model.rightLeg, model.rightPants}, new Cuboid(-2.0F, 0.0F, -2.0F, 4.0F, 6.0F, 4.0F), OUTER_LAYER_PAINT_OFFSET);
+            case "right_leg_lower_outer" -> new SurfaceTarget(new ModelPart[]{model.rightLeg, rightLowerLeg, rightLowerPants}, new Cuboid(-2.0F, 0.0F, -2.0F, 4.0F, 6.0F, 4.0F), OUTER_LAYER_PAINT_OFFSET);
             case "head" -> new SurfaceTarget(new ModelPart[]{model.head}, new Cuboid(-4.0F, -8.0F, -4.0F, 8.0F, 8.0F, 8.0F));
             case "body_upper" -> new SurfaceTarget(new ModelPart[]{model.body}, new Cuboid(-4.0F, 0.0F, -2.0F, 8.0F, 6.0F, 4.0F));
             case "body_lower" -> new SurfaceTarget(new ModelPart[]{model.body, waist}, new Cuboid(-4.0F, 0.0F, -2.0F, 8.0F, 6.0F, 4.0F));
@@ -242,21 +324,187 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         };
     }
 
-    private static void renderPaintFace(VertexConsumer vertices, Matrix4f matrix, Cuboid cuboid, Direction face,
-                                        int width, int height, int[] pixels, int light) {
+    private static void renderOuterEdgePaint(VertexConsumer vertices, Matrix4f matrix, OuterPaintTarget target,
+                                             SkinTexturePixels skinPixels, Direction paintFace,
+                                             int width, int height, int[] pixels, int light) {
+        OuterPaintFace sourceFace = outerPaintFace(target, target.sourceFace());
+        if (sourceFace == null) {
+            return;
+        }
+        int renderWidth = Math.min(width, sourceFace.width());
+        int renderHeight = Math.min(height, sourceFace.height());
+        for (int y = 0; y < renderHeight; y++) {
+            for (int x = 0; x < renderWidth; x++) {
+                int color = pixels[y * width + x];
+                if (color == 0 || !skinPixels.isOpaque(sourceFace.textureX() + x, sourceFace.textureY() + y)) {
+                    continue;
+                }
+                renderOuterPixelPaint(vertices, matrix, sourceFace, skinPixels, paintFace, x, y, color, light);
+            }
+        }
+    }
+
+    private static void renderOuterPixelPaint(VertexConsumer vertices, Matrix4f matrix, OuterPaintFace sourceFace,
+                                              SkinTexturePixels skinPixels, Direction paintFace,
+                                              int x, int y, int color, int light) {
+        PaintPoint p00 = sourceFace.origin()
+                .add(sourceFace.uStep().multiply(x))
+                .add(sourceFace.vStep().multiply(y));
+        PaintPoint p10 = p00.add(sourceFace.uStep());
+        PaintPoint p11 = p10.add(sourceFace.vStep());
+        PaintPoint p01 = p00.add(sourceFace.vStep());
+        PaintPoint offset = sourceFace.normal().multiply(0.5F + 0.002F * 16.0F);
+        PaintPoint o00 = p00.add(offset);
+        PaintPoint o10 = p10.add(offset);
+        PaintPoint o11 = p11.add(offset);
+        PaintPoint o01 = p01.add(offset);
+
+        if (paintFace == sourceFace.face()) {
+            emitPaintPointQuad(vertices, matrix, o00, o10, o11, o01, sourceFace.normal().direction(), color, light);
+            return;
+        }
+
+        emitOuterEdgeIfVisible(vertices, matrix, sourceFace, skinPixels, paintFace, x, y,
+                Edge.UP, o00, o10, p10, p00, sourceFace.vStep().negate(), color, light);
+        emitOuterEdgeIfVisible(vertices, matrix, sourceFace, skinPixels, paintFace, x, y,
+                Edge.RIGHT, o10, o11, p11, p10, sourceFace.uStep(), color, light);
+        emitOuterEdgeIfVisible(vertices, matrix, sourceFace, skinPixels, paintFace, x, y,
+                Edge.DOWN, o11, o01, p01, p11, sourceFace.vStep(), color, light);
+        emitOuterEdgeIfVisible(vertices, matrix, sourceFace, skinPixels, paintFace, x, y,
+                Edge.LEFT, o01, o00, p00, p01, sourceFace.uStep().negate(), color, light);
+    }
+
+    private static void emitOuterEdgeIfVisible(VertexConsumer vertices, Matrix4f matrix, OuterPaintFace sourceFace,
+                                               SkinTexturePixels skinPixels, Direction paintFace,
+                                               int x, int y, Edge edge,
+                                               PaintPoint p0, PaintPoint p1, PaintPoint p2, PaintPoint p3,
+                                               PaintPoint normal, int color, int light) {
+        if (directionFromVector(normal) != paintFace || !isOuterEdge(sourceFace, skinPixels, x, y, edge)) {
+            return;
+        }
+        PaintPoint sideNormal = normal.direction();
+        PaintPoint paintOffset = sideNormal.multiply(PAINT_SURFACE_OFFSET * 16.0F);
+        emitPaintPointQuad(vertices, matrix,
+                p0.add(paintOffset), p1.add(paintOffset), p2.add(paintOffset), p3.add(paintOffset),
+                sideNormal, color, light);
+    }
+
+    private static boolean isOuterEdge(OuterPaintFace sourceFace, SkinTexturePixels skinPixels, int x, int y, Edge edge) {
+        return switch (edge) {
+            case UP -> !isOuterFacePixelOpaque(sourceFace, skinPixels, x, y - 1);
+            case RIGHT -> !isOuterFacePixelOpaque(sourceFace, skinPixels, x + 1, y);
+            case DOWN -> !isOuterFacePixelOpaque(sourceFace, skinPixels, x, y + 1);
+            case LEFT -> !isOuterFacePixelOpaque(sourceFace, skinPixels, x - 1, y);
+        };
+    }
+
+    private static boolean isOuterFacePixelOpaque(OuterPaintFace sourceFace, SkinTexturePixels skinPixels, int x, int y) {
+        if (x < 0 || y < 0 || x >= sourceFace.width() || y >= sourceFace.height()) {
+            return false;
+        }
+        return skinPixels.isOpaque(sourceFace.textureX() + x, sourceFace.textureY() + y);
+    }
+
+    private static OuterPaintFace outerPaintFace(OuterPaintTarget target, Direction sourceFace) {
+        for (OuterPaintFace face : outerPaintFaces(target)) {
+            if (face.face() == sourceFace) {
+                return face;
+            }
+        }
+        return null;
+    }
+
+    private static OuterPaintFace[] outerPaintFaces(OuterPaintTarget target) {
+        PixelBox box = target.box();
+        int textureX = target.textureX();
+        int sideTextureY = target.textureY() + box.depth() + target.textureYSegment();
+        OuterPaintFace[] faces = new OuterPaintFace[6];
+        int index = 0;
+        if (target.renderStartCap()) {
+            faces[index++] = new OuterPaintFace(Direction.UP, textureX + box.depth(), target.textureY(),
+                    box.width(), box.depth(),
+                    new PaintPoint(box.x(), box.y(), box.z() + box.depth()),
+                    new PaintPoint(1.0F, 0.0F, 0.0F),
+                    new PaintPoint(0.0F, 0.0F, -1.0F),
+                    new PaintPoint(0.0F, -1.0F, 0.0F));
+        }
+        if (target.renderEndCap()) {
+            faces[index++] = new OuterPaintFace(Direction.DOWN, textureX + box.depth() + box.width(), target.textureY(),
+                    box.width(), box.depth(),
+                    new PaintPoint(box.x(), box.y() + box.height(), box.z() + box.depth()),
+                    new PaintPoint(1.0F, 0.0F, 0.0F),
+                    new PaintPoint(0.0F, 0.0F, -1.0F),
+                    new PaintPoint(0.0F, 1.0F, 0.0F));
+        }
+        faces[index++] = new OuterPaintFace(Direction.WEST, textureX, sideTextureY,
+                box.depth(), box.height(),
+                new PaintPoint(box.x(), box.y(), box.z() + box.depth()),
+                new PaintPoint(0.0F, 0.0F, -1.0F),
+                new PaintPoint(0.0F, 1.0F, 0.0F),
+                new PaintPoint(-1.0F, 0.0F, 0.0F));
+        faces[index++] = new OuterPaintFace(Direction.NORTH, textureX + box.depth(), sideTextureY,
+                box.width(), box.height(),
+                new PaintPoint(box.x(), box.y(), box.z()),
+                new PaintPoint(1.0F, 0.0F, 0.0F),
+                new PaintPoint(0.0F, 1.0F, 0.0F),
+                new PaintPoint(0.0F, 0.0F, -1.0F));
+        faces[index++] = new OuterPaintFace(Direction.EAST, textureX + box.depth() + box.width(), sideTextureY,
+                box.depth(), box.height(),
+                new PaintPoint(box.x() + box.width(), box.y(), box.z()),
+                new PaintPoint(0.0F, 0.0F, 1.0F),
+                new PaintPoint(0.0F, 1.0F, 0.0F),
+                new PaintPoint(1.0F, 0.0F, 0.0F));
+        faces[index++] = new OuterPaintFace(Direction.SOUTH, textureX + box.depth() + box.width() + box.depth(), sideTextureY,
+                box.width(), box.height(),
+                new PaintPoint(box.x() + box.width(), box.y(), box.z() + box.depth()),
+                new PaintPoint(-1.0F, 0.0F, 0.0F),
+                new PaintPoint(0.0F, 1.0F, 0.0F),
+                new PaintPoint(0.0F, 0.0F, 1.0F));
+        if (index == faces.length) {
+            return faces;
+        }
+        OuterPaintFace[] compact = new OuterPaintFace[index];
+        System.arraycopy(faces, 0, compact, 0, index);
+        return compact;
+    }
+
+    private static Direction directionFromVector(PaintPoint vector) {
+        float ax = Math.abs(vector.x());
+        float ay = Math.abs(vector.y());
+        float az = Math.abs(vector.z());
+        if (ax >= ay && ax >= az) {
+            return vector.x() < 0.0F ? Direction.WEST : Direction.EAST;
+        }
+        if (ay >= az) {
+            return vector.y() < 0.0F ? Direction.UP : Direction.DOWN;
+        }
+        return vector.z() < 0.0F ? Direction.NORTH : Direction.SOUTH;
+    }
+
+    private static void emitPaintPointQuad(VertexConsumer vertices, Matrix4f matrix,
+                                           PaintPoint p0, PaintPoint p1, PaintPoint p2, PaintPoint p3,
+                                           PaintPoint normal, int color, int light) {
+        vertex(vertices, matrix, p0.x() / 16.0F, p0.y() / 16.0F, p0.z() / 16.0F, color, normal.x(), normal.y(), normal.z(), light);
+        vertex(vertices, matrix, p1.x() / 16.0F, p1.y() / 16.0F, p1.z() / 16.0F, color, normal.x(), normal.y(), normal.z(), light);
+        vertex(vertices, matrix, p2.x() / 16.0F, p2.y() / 16.0F, p2.z() / 16.0F, color, normal.x(), normal.y(), normal.z(), light);
+        vertex(vertices, matrix, p3.x() / 16.0F, p3.y() / 16.0F, p3.z() / 16.0F, color, normal.x(), normal.y(), normal.z(), light);
+    }
+
+    private static void renderPaintFace(VertexConsumer vertices, Matrix4f matrix, Cuboid cuboid, float offset,
+                                        Direction face, int width, int height, int[] pixels, int light) {
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 int color = pixels[y * width + x];
                 if (color == 0) {
                     continue;
                 }
-                appendPaintPixel(vertices, matrix, cuboid, face, x, y, width, height, color, light);
+                appendPaintPixel(vertices, matrix, cuboid, face, offset, x, y, width, height, color, light);
             }
         }
     }
 
     private static void appendPaintPixel(VertexConsumer vertices, Matrix4f matrix, Cuboid cuboid, Direction face,
-                                         int x, int y, int width, int height, int color, int light) {
+                                         float offset, int x, int y, int width, int height, int color, int light) {
         float u0 = x / (float) width;
         float u1 = (x + 1) / (float) width;
         float v0 = y / (float) height;
@@ -273,7 +521,6 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         float py1;
         float pz0;
         float pz1;
-        float offset = 0.002F;
         switch (face) {
             case UP -> {
                 px0 = lerp(minX, maxX, u0); px1 = lerp(minX, maxX, u1);
@@ -347,10 +594,83 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
                 .normal(normalX, normalY, normalZ);
     }
 
-    private record SurfaceTarget(ModelPart[] path, Cuboid cuboid) {
+    private record SurfaceTarget(ModelPart[] path, Cuboid cuboid, float paintOffset) {
+        private SurfaceTarget(ModelPart[] path, Cuboid cuboid) {
+            this(path, cuboid, PAINT_SURFACE_OFFSET);
+        }
     }
 
     private record Cuboid(float x, float y, float z, float width, float height, float depth) {
+    }
+
+    private record OuterPaintTarget(ModelPart[] path, Direction sourceFace, PixelBox box,
+                                    int textureX, int textureY, int textureYSegment,
+                                    boolean renderStartCap, boolean renderEndCap) {
+    }
+
+    private record OuterSurfaceKey(String baseSurface, Direction sourceFace) {
+        private static OuterSurfaceKey parse(String surface) {
+            if (surface == null) {
+                return null;
+            }
+            int marker = surface.indexOf("_outer_");
+            if (marker < 0) {
+                return null;
+            }
+            Direction sourceFace = parseDirection(surface.substring(marker + "_outer_".length()));
+            if (sourceFace == null) {
+                return null;
+            }
+            return new OuterSurfaceKey(surface.substring(0, marker), sourceFace);
+        }
+
+        private static Direction parseDirection(String name) {
+            return switch (name) {
+                case "down" -> Direction.DOWN;
+                case "up" -> Direction.UP;
+                case "north" -> Direction.NORTH;
+                case "south" -> Direction.SOUTH;
+                case "west" -> Direction.WEST;
+                case "east" -> Direction.EAST;
+                default -> null;
+            };
+        }
+    }
+
+    private record PixelBox(int x, int y, int z, int width, int height, int depth) {
+    }
+
+    private record OuterPaintFace(Direction face, int textureX, int textureY, int width, int height,
+                                  PaintPoint origin, PaintPoint uStep, PaintPoint vStep, PaintPoint normal) {
+    }
+
+    private record PaintPoint(float x, float y, float z) {
+        private PaintPoint add(PaintPoint other) {
+            return new PaintPoint(x + other.x, y + other.y, z + other.z);
+        }
+
+        private PaintPoint multiply(float scalar) {
+            return new PaintPoint(x * scalar, y * scalar, z * scalar);
+        }
+
+        private PaintPoint negate() {
+            return new PaintPoint(-x, -y, -z);
+        }
+
+        private PaintPoint direction() {
+            float length = (float) Math.sqrt(x * x + y * y + z * z);
+            if (length <= 0.000001F) {
+                return new PaintPoint(0.0F, 1.0F, 0.0F);
+            }
+            return new PaintPoint(x / length, y / length, z / length);
+        }
+    }
+
+    private enum Edge {
+        UP,
+        RIGHT,
+        DOWN,
+        LEFT
     }
 
     public static void resetModel(PlayerEntityModel model) {
