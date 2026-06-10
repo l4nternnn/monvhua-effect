@@ -30,7 +30,9 @@
 		"carrymodelpose.FirstPersonCarrierAttachedEntityRenderMixin",
 		"PlayerSkinGuiElementRendererMixin",
 		"SoundManagerMixin",
-		"ChatHudMixin"
+		"ChatHudMixin",
+		"PaintInputMixin",
+		"SpriteContentsAccessor"
 	],
 	"injectors": {
 		"defaultRequire": 1

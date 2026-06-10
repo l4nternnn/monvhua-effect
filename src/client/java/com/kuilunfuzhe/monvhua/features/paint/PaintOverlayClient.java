@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.paint;
 
+import com.kuilunfuzhe.monvhua.mixin.SpriteContentsAccessor;
 import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
 import com.kuilunfuzhe.monvhua.item.paint.PaintBrushItem;
 import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
@@ -9,15 +10,20 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.minecraft.block.BlockState;
 import net.minecraft.client.render.LightmapTextureManager;
 import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.Frustum;
+import net.minecraft.client.render.model.BakedQuad;
+import net.minecraft.client.render.model.BlockModelPart;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.texture.NativeImage;
+import net.minecraft.client.texture.Sprite;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
@@ -28,9 +34,11 @@ import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.math.random.Random;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import org.joml.Matrix4f;
+import org.joml.Vector3d;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWScrollCallbackI;
 
@@ -52,6 +60,7 @@ public final class PaintOverlayClient {
     private static final double FULL_DETAIL_DISTANCE_SQUARED = 12.0D * 12.0D;
     private static final double MEDIUM_DETAIL_DISTANCE_SQUARED = 32.0D * 32.0D;
     private static final MeshData EMPTY_MESH = new MeshData(new float[0], new int[0], new float[0]);
+    private static final Map<PaintOverlayStore.FaceKey, int[]> FACE_PIXELS = new HashMap<>();
     private static final Map<PaintOverlayStore.FaceKey, FaceMesh> FACE_MESHES = new HashMap<>();
     private static final Map<ChunkPos, ChunkMesh> CHUNK_MESHES = new HashMap<>();
     private static final Map<ChunkPos, Set<PaintOverlayStore.FaceKey>> CHUNK_FACE_KEYS = new HashMap<>();
@@ -303,6 +312,215 @@ public final class PaintOverlayClient {
         SafeClientNetworking.send(new PaintOverlayPackets.PaintStrokeC2S(pos, face, pixel[0], pixel[1], clear));
     }
 
+    public static boolean isBrushInputActive(MinecraftClient client) {
+        return client != null && client.player != null && client.currentScreen == null && isHoldingPaintBrush(client);
+    }
+
+    public static void handleBrushPickInput(MinecraftClient client) {
+        if (!isBrushInputActive(client)) {
+            return;
+        }
+
+        int color = pickModelColor(client);
+        if (color == 0) {
+            color = pickBlockColor(client);
+        }
+        if (color == 0) {
+            color = pickBlockTextureColor(client);
+        }
+        if (color == 0) {
+            return;
+        }
+
+        setSelectedColor(color);
+        recordPickedColor(color);
+        client.player.sendMessage(Text.literal("取色 " + toHex(color)), true);
+    }
+
+    private static int pickBlockTextureColor(MinecraftClient client) {
+        if (client.world == null || !(client.crosshairTarget instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK) {
+            return 0;
+        }
+
+        BlockPos pos = hit.getBlockPos();
+        BlockState state = client.world.getBlockState(pos);
+        Vec3d localHit = hit.getPos().subtract(pos.getX(), pos.getY(), pos.getZ());
+        Random random = Random.create(state.getRenderingSeed(pos));
+        TextureSample best = null;
+
+        for (BlockModelPart part : client.getBlockRenderManager().getModel(state).getParts(random)) {
+            best = betterSample(best, findTextureSample(part.getQuads(hit.getSide()), localHit));
+            best = betterSample(best, findTextureSample(part.getQuads(null), localHit));
+        }
+
+        if (best == null) {
+            Sprite sprite = client.getBlockRenderManager().getModel(state).particleSprite();
+            return sampleSpriteColor(client, state, pos, sprite, 0.5F, 0.5F, -1);
+        }
+        return sampleSpriteColor(client, state, pos, best.quad().sprite(), best.u(), best.v(), best.quad().tintIndex());
+    }
+
+    private static TextureSample betterSample(TextureSample current, TextureSample candidate) {
+        if (candidate == null) {
+            return current;
+        }
+        if (current == null || candidate.distanceSquared() < current.distanceSquared()) {
+            return candidate;
+        }
+        return current;
+    }
+
+    private static TextureSample findTextureSample(List<BakedQuad> quads, Vec3d localHit) {
+        TextureSample best = null;
+        for (BakedQuad quad : quads) {
+            best = betterSample(best, sampleQuad(quad, localHit));
+        }
+        return best;
+    }
+
+    private static TextureSample sampleQuad(BakedQuad quad, Vec3d point) {
+        int vertices = quad.vertexData().length / 8;
+        if (vertices < 4) {
+            return null;
+        }
+        QuadVertex v0 = quadVertex(quad, 0);
+        QuadVertex v1 = quadVertex(quad, 1);
+        QuadVertex v2 = quadVertex(quad, 2);
+        QuadVertex v3 = quadVertex(quad, 3);
+        TextureSample first = sampleTriangle(quad, point, v0, v1, v2);
+        TextureSample second = sampleTriangle(quad, point, v0, v2, v3);
+        return betterSample(first, second);
+    }
+
+    private static TextureSample sampleTriangle(BakedQuad quad, Vec3d point, QuadVertex a, QuadVertex b, QuadVertex c) {
+        Vector3d ab = new Vector3d(b.position()).sub(a.position());
+        Vector3d ac = new Vector3d(c.position()).sub(a.position());
+        Vector3d ap = new Vector3d(point.x, point.y, point.z).sub(a.position());
+        double d00 = ab.dot(ab);
+        double d01 = ab.dot(ac);
+        double d11 = ac.dot(ac);
+        double d20 = ap.dot(ab);
+        double d21 = ap.dot(ac);
+        double denominator = d00 * d11 - d01 * d01;
+        if (Math.abs(denominator) < 1.0E-8D) {
+            return null;
+        }
+
+        double bWeight = (d11 * d20 - d01 * d21) / denominator;
+        double cWeight = (d00 * d21 - d01 * d20) / denominator;
+        double aWeight = 1.0D - bWeight - cWeight;
+        double tolerance = 1.0E-4D;
+        if (aWeight < -tolerance || bWeight < -tolerance || cWeight < -tolerance) {
+            return null;
+        }
+
+        float u = (float) (a.u() * aWeight + b.u() * bWeight + c.u() * cWeight);
+        float v = (float) (a.v() * aWeight + b.v() * bWeight + c.v() * cWeight);
+        Vector3d closest = new Vector3d(a.position()).mul(aWeight)
+                .add(new Vector3d(b.position()).mul(bWeight))
+                .add(new Vector3d(c.position()).mul(cWeight));
+        double distanceSquared = closest.distanceSquared(point.x, point.y, point.z);
+        return new TextureSample(quad, u, v, distanceSquared);
+    }
+
+    private static QuadVertex quadVertex(BakedQuad quad, int vertex) {
+        int base = vertex * 8;
+        int[] data = quad.vertexData();
+        Vector3d position = new Vector3d(
+                Float.intBitsToFloat(data[base]),
+                Float.intBitsToFloat(data[base + 1]),
+                Float.intBitsToFloat(data[base + 2])
+        );
+        float u = Float.intBitsToFloat(data[base + 4]);
+        float v = Float.intBitsToFloat(data[base + 5]);
+        return new QuadVertex(position, u, v);
+    }
+
+    private static int sampleSpriteColor(MinecraftClient client, BlockState state, BlockPos pos, Sprite sprite, float u, float v, int tintIndex) {
+        if (sprite == null) {
+            return 0;
+        }
+        NativeImage image = ((SpriteContentsAccessor) sprite.getContents()).monvhua$getImage();
+        if (image == null || image.getWidth() <= 0 || image.getHeight() <= 0) {
+            return 0;
+        }
+
+        int x = MathHelper.clamp((int) sprite.getFrameFromU(u), 0, image.getWidth() - 1);
+        int y = MathHelper.clamp((int) sprite.getFrameFromV(v), 0, image.getHeight() - 1);
+        int color = image.getColorArgb(x, y);
+        if (((color >>> 24) & 0xFF) == 0) {
+            return 0;
+        }
+        if (tintIndex >= 0 && client.world != null) {
+            color = multiplyRgb(color, client.getBlockColors().getColor(state, client.world, pos, tintIndex));
+        }
+        return ensureAlpha(color);
+    }
+
+    private static int multiplyRgb(int color, int tint) {
+        int alpha = color & 0xFF000000;
+        int red = ((color >>> 16) & 0xFF) * ((tint >>> 16) & 0xFF) / 255;
+        int green = ((color >>> 8) & 0xFF) * ((tint >>> 8) & 0xFF) / 255;
+        int blue = (color & 0xFF) * (tint & 0xFF) / 255;
+        return alpha | (red << 16) | (green << 8) | blue;
+    }
+
+    public static void consumeBrushColorSlotKeys(MinecraftClient client) {
+        if (!isBrushInputActive(client)) {
+            return;
+        }
+        for (int slot = 0; slot < 3 && slot < client.options.hotbarKeys.length; slot++) {
+            boolean pressed = false;
+            while (client.options.hotbarKeys[slot].wasPressed()) {
+                pressed = true;
+            }
+            if (pressed) {
+                selectRecentColorSlot(client, slot);
+            }
+        }
+    }
+
+    private static void selectRecentColorSlot(MinecraftClient client, int slot) {
+        if (slot < 0 || slot >= RECENT_COLORS.size()) {
+            if (client.player != null) {
+                client.player.sendMessage(Text.literal("颜色槽 " + (slot + 1) + " 为空"), true);
+            }
+            return;
+        }
+        int color = RECENT_COLORS.get(slot);
+        setSelectedColor(color);
+        if (client.player != null) {
+            client.player.sendMessage(Text.literal("颜色槽 " + (slot + 1) + " " + toHex(color)), true);
+        }
+    }
+
+    private static int pickModelColor(MinecraftClient client) {
+        PaintModelOverlayClient.ModelHit modelHit = PaintModelOverlayClient.raycastCombinedBody(client);
+        if (modelHit == null) {
+            return 0;
+        }
+        int color = PaintModelOverlayClient.colorAt(client, modelHit);
+        return color == 0 ? 0 : ensureAlpha(color);
+    }
+
+    private static int pickBlockColor(MinecraftClient client) {
+        if (!(client.crosshairTarget instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK) {
+            return 0;
+        }
+        int[] pixel = PaintBrushItem.getPixel(hit.getPos(), hit.getBlockPos(), hit.getSide());
+        int[] pixels = FACE_PIXELS.get(new PaintOverlayStore.FaceKey(hit.getBlockPos(), hit.getSide()));
+        if (pixels == null) {
+            return 0;
+        }
+        int x = pixel[0];
+        int y = pixel[1];
+        if (x < 0 || y < 0 || x >= PaintOverlayStore.SIZE || y >= PaintOverlayStore.SIZE) {
+            return 0;
+        }
+        int color = pixels[y * PaintOverlayStore.SIZE + x];
+        return color == 0 ? 0 : ensureAlpha(color);
+    }
+
     private static boolean shouldToggleEraserMode(MinecraftClient client, PaintModelOverlayClient.ModelHit modelHit) {
         if (client.player == null) {
             return false;
@@ -352,9 +570,13 @@ public final class PaintOverlayClient {
         context.drawText(client.textRenderer, Text.literal(colorText), x + 30, y + 17, 0xFFE6E6E6, false);
 
         int slotY = y + height + 4;
+        List<Integer> recent = recentColors();
         for (int i = 0; i < 3; i++) {
             int slotX = x + i * 20;
             context.fill(slotX, slotY, slotX + 18, slotY + 18, 0x66101015);
+            if (!paper && !eraser && i < recent.size()) {
+                context.fill(slotX + 2, slotY + 2, slotX + 16, slotY + 16, recent.get(i));
+            }
             context.fill(slotX, slotY, slotX + 18, slotY + 1, 0x99FFFFFF);
             context.fill(slotX, slotY + 17, slotX + 18, slotY + 18, 0x99000000);
             context.fill(slotX, slotY, slotX + 1, slotY + 18, 0x99FFFFFF);
@@ -422,6 +644,7 @@ public final class PaintOverlayClient {
     }
 
     private static void applyFullSync(List<PaintOverlayPackets.FaceData> faces) {
+        FACE_PIXELS.clear();
         FACE_MESHES.clear();
         CHUNK_MESHES.clear();
         CHUNK_FACE_KEYS.clear();
@@ -432,6 +655,7 @@ public final class PaintOverlayClient {
             }
             PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(face.pos(), face.face());
             ChunkPos chunkPos = chunkPos(key.pos());
+            FACE_PIXELS.put(key, copyPixels(face.pixels()));
             putFaceMesh(key, buildMesh(key, face.pixels()), chunkPos);
             dirtyChunks.add(chunkPos);
         }
@@ -444,12 +668,20 @@ public final class PaintOverlayClient {
         PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(face.pos(), face.face());
         ChunkPos chunkPos = chunkPos(key.pos());
         if (!hasPixels(face.pixels())) {
+            FACE_PIXELS.remove(key);
             removeFaceMesh(key, chunkPos);
             rebuildChunkMesh(chunkPos);
             return;
         }
+        FACE_PIXELS.put(key, copyPixels(face.pixels()));
         putFaceMesh(key, buildMesh(key, face.pixels()), chunkPos);
         rebuildChunkMesh(chunkPos);
+    }
+
+    private static int[] copyPixels(int[] source) {
+        int[] pixels = new int[PaintOverlayStore.FACE_PIXELS];
+        System.arraycopy(source, 0, pixels, 0, Math.min(source.length, pixels.length));
+        return pixels;
     }
 
     private static boolean hasPixels(int[] pixels) {
@@ -790,6 +1022,12 @@ public final class PaintOverlayClient {
     }
 
     private record ChunkMesh(int originX, int originZ, Box bounds, MeshData full, MeshData medium, MeshData far) {
+    }
+
+    private record QuadVertex(Vector3d position, float u, float v) {
+    }
+
+    private record TextureSample(BakedQuad quad, float u, float v, double distanceSquared) {
     }
 
     private static class MeshBuilder {

@@ -84,6 +84,28 @@ public final class PaintModelOverlayClient {
         return best;
     }
 
+    public static int colorAt(MinecraftClient client, ModelHit hit) {
+        if (client.world == null || hit == null) {
+            return 0;
+        }
+        Entity entity = client.world.getEntityById(hit.entityId());
+        if (!(entity instanceof ItemDisplayEntity display) || !isCombinedBody(display.getItemStack())) {
+            return 0;
+        }
+        NbtCompound data = customData(display.getItemStack());
+        boolean slim = "slim".equals(data.getString("arm_model", ""));
+        for (ModelPaintData.ModelFace face : ModelPaintData.readFaces(data, slim)) {
+            if (!face.surface().equals(hit.surface()) || face.face() != hit.face()) {
+                continue;
+            }
+            if (hit.x() < 0 || hit.y() < 0 || hit.x() >= face.width() || hit.y() >= face.height()) {
+                return 0;
+            }
+            return face.pixels()[hit.y() * face.width() + hit.x()];
+        }
+        return 0;
+    }
+
     private static ModelHit raycastDisplay(MinecraftClient client, ItemDisplayEntity display, Vec3d eye, Vec3d end) {
         NbtCompound data = customData(display.getItemStack());
         boolean slim = "slim".equals(data.getString("arm_model", ""));
