@@ -5,200 +5,247 @@
 [![Loader](https://img.shields.io/badge/Loader-Fabric-DBB69B)](https://fabricmc.net/)
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-**Minecraft 1.21.8 Fabric** 综合 Mod，由「魔女化状态效果」与「千里眼」两个 Mod 合并而成。基于 `monvhua` 计分板驱动，提供魔女化阶段可视化 + 实体标记/视角追踪/视线诱导/身体部件/镜像/搬运等全套辅助功能。
+魔女化是一个 Minecraft 1.21.8 Fabric 模组，围绕 `monvhua` 计分板驱动的魔女化阶段，提供状态效果展示、千里眼、模仿、视线诱导、身体部件、镜像、搬运、漂浮、动作、重力和绘画等系统。模组包含服务端逻辑和客户端渲染，客户端与服务端都需要安装。
 
-📦 **下载**：[Releases 页面](https://github.com/l4nternnn/monvhua-effect/releases)
+## 下载
 
----
-
-## 功能总览
-
-### 一、魔女化状态效果系统
-
-| 特性 | 说明 |
-|------|------|
-| 14 角色 × 8 阶段 | 112 个独立状态效果，每个角色一套图标和翻译 |
-| 计分板驱动 | 基于 `monvhua` dummy 计分板数值判定阶段 |
-| 角色识别 | 玩家 scoreboard tag：`ema` `cero` `nnk` `mago` `leiya` `milya` `sherry` `yalisa` `noa` `anan` `yuki` `mll` `coco` `hanna` |
-| Tainted 三段叙事 | ≥10 分时触发，三段文案随机排列，3-5 分钟内陆续推送 |
-| 全角色专属文案 | 14 个角色全部实装 tainted 三段变体 + 6 阶段定制对话 |
-| 飞行能力 | 同时持有 `Floating` + `MonvhuaFull` tag 获得创造飞行 + 免疫摔落 |
-
-### 二、千里眼（实体标记 / 视角追踪）
-
-- **实体标记**：按 G 键标记看向的实体，或通过锚点（鹦鹉盔甲架）自动标记
-- **视角追踪**：选择标记实体后进入观看模式，视角跟随目标移动
-- **7 阶段配置**：基于 `monvhua` 分数（0-100）决定标记数、每日次数等限制
-- **双模式**：legacy（客户端盔甲架相机）/ modern（服务端 CameraWatch）
-- **GUI 管理**：右键千里眼物品打开标记列表，U 键打开配置面板
-
-### 三、视线诱导
-
-- **能量聚焦**：标记实体后长按右键激活，被标记实体看向焦点位置
-- **能量系统**：消耗/回复机制，屏幕 HUD 显示能量条
-- **自定义粒子环**：三叶草形状粒子效果
-
-### 四、身体部件系统
-
-- **死亡掉落**：持有 `dead_part` / `dead_body` tag 的玩家死亡后掉落身体部件
-- **部件交互**：右键拾取或打开死亡背包（3×3）
-- **合并/替换**：命令合并散落部件为完整身体，支持内置皮肤替换
-- **6 种方块实体**：头部/躯干/左臂/右臂/左腿/右腿，带自定义 Geo 模型
-
-### 五、镜像系统
-
-- 两个可设置的镜位点，开启后屏幕右上/右下显示第三人称镜像视口
-- `/clairvoyance-mirror set <1|2> [x y z]` 设置镜位，右键昔今之镜物品切换
-
-### 六、搬运实体
-
-- 潜行 + 右键抱起玩家/生物，被抱者可挣扎挣脱
-- 负重减速（持身体部件时），掉落伤害分摊
-
-### 七、其他功能
-
-- **查看背包**：持有 `kaibao` tag 可打开附近玩家背包
-- **锚点系统**：锚点自动标记看向它的实体，180 秒过期
-- **测试假人**：`/placemannequin` 放置测试用实体
-
----
-
-## 阶段表
-
-| 阈值 | ID | 显示名称 | 类别 | 颜色 |
-|------|-----|----------|------|------|
-| 0  | `1` | 神智清醒   | BENEFICIAL | `#55FF55` |
-| 10 | `2` | 略染污浊   | BENEFICIAL | `#00AA00` |
-| 25 | `3` | 轻度魔女化 | NEUTRAL    | `#FFFF55` |
-| 45 | `4` | 中度魔女化 | NEUTRAL    | `#FFAA00` |
-| 60 | `5` | 高度魔女化 | HARMFUL    | `#FF5555` |
-| 70 | `6` | 重度魔女化 | HARMFUL    | `#AA0000` |
-| 80 | `7` | 准魔女     | HARMFUL    | `#FF55FF` |
-| 90 | `8` | 魔女       | HARMFUL    | `#AA00AA` |
-
-每个效果注册 ID：`monvhua:<role>_<stage>`，例如 `monvhua:ema_5`。
-
----
-
-## 命令参考
-
-### 魔女化系统
-
-```mcfunction
-/scoreboard objectives add monvhua dummy 魔女化
-/tag @s add ema                        # 设置角色为 EMA
-/scoreboard players set @s monvhua 45  # 中度魔女化
-/tag @s remove ema                     # 清除角色（移除效果）
-```
-
-### 千里眼
-
-| 命令 | 说明 |
-|------|------|
-| `/clairvoyance clearanchors_清除千里眼锚点 [玩家]` | 清除锚点 |
-| `/clairvoyance viewmode <legacy\|modern>` | 切换观看模式 |
-| `/watch` | 观看指定实体 |
-| `/watch angle <偏航> <俯仰> <距离>` | 设置相机偏移 |
-
-### 身体部件
-
-| 命令 | 说明 |
-|------|------|
-| `/clairvoyance-肢体\|获取 <角色名> [内置皮肤名]` | 获取身体部件 |
-| `/clairvoyance-肢体\|替换 localskin-内置 <角色名> <皮肤名>` | 替换皮肤 |
-| `/clairvoyance-肢体\|合并` | 合并散落部件 |
-
-### 镜像
-
-| 命令 | 说明 |
-|------|------|
-| `/mirror set <1\|2> [x y z]` | 设置镜位（不填坐标则用玩家位置） |
-| `/mirror remove <1\|2>` | 清除镜位 |
-| `/mirror list` | 列出所有镜位 |
-| `/mirror clear` | 清除全部 |
-
-### 其他
-
-| 命令 | 说明 |
-|------|------|
-| `/placemannequin` | 放置测试假人 |
-
----
-
-## 物品列表
-
-| 物品 | 获取方式 | 用途 |
-|------|---------|------|
-| 千里眼 | `/give @s monvhua:clairvoyance_item` | 右键打开标记列表 |
-| 视线诱导棒 | `/give @s monvhua:magic_stick` | G 键标记 + 长按右键诱导 |
-| 昔今之镜 | `/give @s monvhua:mirror_of_then_and_now` | 右键切换镜像视图 |
-
----
+从 [Releases](https://github.com/l4nternnn/monvhua-effect/releases) 下载 `monvhua-<版本>.jar`，放入客户端和服务端的 `mods/` 目录。
 
 ## 环境要求
 
-- Minecraft `1.21.8`
-- Fabric Loader `>= 0.16.0`
-- Fabric API
-- Java `21`
+| 项目 | 版本 |
+| --- | --- |
+| Minecraft | `1.21.8` |
+| Fabric Loader | `>= 0.16.0` |
+| Fabric API | `0.136.1+1.21.8` |
+| Java | `21` |
+| GeckoLib | `5.2.2` |
+| Mod 版本 | `0.7.1-Beta` |
 
-## 安装
+## 功能总览
 
-1. 从 [Releases](https://github.com/l4nternnn/monvhua-effect/releases) 下载 `monvhua-<版本>.jar`
-2. 放入服务端 / 客户端的 `mods/` 目录
-3. 服务端和客户端**都需要安装**（图标、模型、GUI 由客户端渲染）
+| 系统 | 说明 |
+| --- | --- |
+| 魔女化状态效果 | 14 个角色、8 个阶段，共 112 个显示用状态效果。每 20 tick 根据 `monvhua` 计分板与角色 tag 切换效果。 |
+| 千里眼 | 标记实体、锚点自动标记、观看目标、legacy/modern 双观看模式和阶段限制。 |
+| 模仿 | 角色扮演、聊天显示名覆盖、沉默能力和冷却管理。 |
+| 视线诱导 | 用魔法棒标记目标并引导目标视线，带能量消耗、恢复和 HUD 显示。 |
+| 身体部件 | 玩家死亡掉落身体部件，可拾取、放置、合并、替换皮肤，并支持骨架部件与姿态编辑。 |
+| 镜像 | 设置镜面发生点、映射点和触发半径，使用昔今之镜开启镜像视角。 |
+| 搬运 | 潜行右键抱起玩家或生物，被抱者可挣脱，客户端包含抱姿、相机和渲染兼容逻辑。 |
+| 漂浮 | 双击跳跃漂浮，满魔女状态可创造飞行，并显示能量条。 |
+| 动作系统 | JSON 驱动动作、触发器和时间线，可在动作编辑器中调整。 |
+| 重力 | 重力魔杖与倒置区域，支持倒置方块支撑、相机/视角修正和区域边界渲染。 |
+| 绘画与涂鸦 | 覆盖画笔、橡皮、画纸和油漆桶，可在方块面与身体模型上绘制，也可导入图片生成画纸。 |
+| 黑洞 | 自定义着色器方块，提供引力透镜视觉效果。 |
+| 保密 | 隐身和客户端音量衰减。 |
 
-## 构建
+## 魔女化计分板
+
+创建 `monvhua` 计分板后，玩家分数决定魔女化阶段，玩家 tag 决定角色。示例：
+
+```mcfunction
+/scoreboard objectives add monvhua dummy 魔女化
+/tag @s add ema
+/scoreboard players set @s monvhua 45
+```
+
+角色 tag：
+
+```text
+ema, cero, nnk, mago, leiya, milya, sherry, yalisa, noa, anan, yuki, mll, coco, hanna
+```
+
+阶段阈值：
+
+| 阈值 | ID | 显示名称 | 类别 | 颜色 |
+| --- | --- | --- | --- | --- |
+| 0 | `1` | 神智清醒 | BENEFICIAL | `#55FF55` |
+| 10 | `2` | 略染污浊 | BENEFICIAL | `#00AA00` |
+| 25 | `3` | 轻度魔女化 | NEUTRAL | `#FFFF55` |
+| 45 | `4` | 中度魔女化 | NEUTRAL | `#FFAA00` |
+| 60 | `5` | 高度魔女化 | HARMFUL | `#FF5555` |
+| 70 | `6` | 重度魔女化 | HARMFUL | `#AA0000` |
+| 80 | `7` | 准魔女 | HARMFUL | `#FF55FF` |
+| 90 | `8` | 魔女 | HARMFUL | `#AA00AA` |
+
+状态效果注册 ID 为 `monvhua:<role>_<stage>`，例如 `monvhua:ema_5`。
+
+## 常用物品
+
+| 物品 | ID | 用途 |
+| --- | --- | --- |
+| 千里眼 | `monvhua:clairvoyance_item` | 打开标记列表与千里眼管理界面。 |
+| 模仿之书 | `monvhua:imitate_book` | 打开模仿相关界面。 |
+| 视线诱导魔法棒 | `monvhua:magic_stick` | 标记目标并发动视线诱导。 |
+| 昔今之镜 | `monvhua:mirror_of_then_and_now` | 切换镜像视角。 |
+| 重力魔杖 | `monvhua:gravity_wand` | 选择并施放重力魔法。 |
+| 覆盖画笔 | `monvhua:paint_brush` | 在方块面或支持的模型表面绘制。 |
+| 橡皮 | `monvhua:eraser` | 擦除已绘制内容。 |
+| 画纸 | `monvhua:paint_paper` | 保存、释放或承载导入图片生成的绘画数据。 |
+| 油漆桶 | `monvhua:paint_bucket` | 绘画系统使用的方块和物品。 |
+| 黑洞 | `monvhua:block_hole` | 放置黑洞视觉方块。 |
+
+## 常用按键
+
+| 按键 | 功能 |
+| --- | --- |
+| `V` | 标记实体。 |
+| `U` | 打开配置菜单，仅创造模式可用。 |
+| `B` | 打开身体姿态编辑器。 |
+| `P` | 打开身体姿态世界预览，仅创造模式可用。 |
+| `J` | 打开动作编辑器，仅创造模式可用。 |
+
+## 命令速查
+
+### 千里眼
+
+```mcfunction
+/clairvoyance clearanchors_清除千里眼锚点 <玩家>
+/clairvoyance clearanchors_清除千里眼锚点 all
+/clairvoyance viewmode_切换相机系统 legacy——旧版客户端
+/clairvoyance viewmode_切换相机系统 modern——新版服务端
+/watch
+/watch <实体名>
+/watch angle <偏航> <俯仰> <距离>
+/watch angle reset
+```
+
+### 身体部件
+
+```mcfunction
+/clairvoyance-肢体|获取 player-玩家 <玩家> all
+/clairvoyance-肢体|获取 player-玩家 <玩家> torso
+/clairvoyance-肢体|获取 localskin <皮肤名> all
+/clairvoyance-肢体|替换 localskin-内置 <皮肤名>
+/clairvoyance-肢体|替换 player-玩家 <玩家>
+/clairvoyance-肢体|替换 split-分离
+/monvhua-skeletal-pose <pitch> <yaw> <roll>
+```
+
+### 镜像
+
+```mcfunction
+/clairvoyance-mirror set <1|2> hsPos-设定点 <坐标>
+/clairvoyance-mirror set <1|2> mapPos-映射点 <坐标>
+/clairvoyance-mirror set <1|2> radius-半径 <半径>
+/clairvoyance-mirror remove-移除 <1|2>
+/clairvoyance-mirror list-列出所有
+/clairvoyance-mirror clear-清除
+```
+
+### 动作
+
+```mcfunction
+/monvhua-action|动作 reload|重载
+/monvhua-action|动作 list|列表
+/monvhua-action|动作 trigger|触发 <动作 ID> [玩家]
+/monvhua-action|动作 enable|启用 <动作 ID>
+/monvhua-action|动作 disable|禁用 <动作 ID>
+```
+
+### 重力
+
+```mcfunction
+/monvhua-gravity area create <radius> <time>
+/monvhua-gravity area create <radius> <height> <time>
+/monvhua-gravity area clear nearest
+/monvhua-gravity area clear all
+```
+
+`time` 使用秒数，或使用 `wuxian` 表示无限时间。
+
+### 绘画与涂鸦
+
+```mcfunction
+/monvhua-graffiti folder
+/monvhua-graffiti import <文件名>
+/monvhua-graffiti import_scaled <缩放倍率> <文件名>
+/monvhua-graffiti clear grid <半径> [中心坐标]
+/monvhua-graffiti clear block-方块 <半径> [中心坐标]
+/monvhua-graffiti clear chunk <半径> [中心坐标]
+```
+
+图片导入文件夹位于游戏目录下的 `graffiti/`。导入图片会按画纸网格拆分，生成一个或多个画纸物品。
+
+### 其他
+
+```mcfunction
+/placemannequin
+```
+
+## 配置与数据
+
+配置文件位于 Fabric 游戏目录的 `config/monvhua/` 下，使用 Gson pretty-print 保存。主要配置包括：
+
+| 文件 | 内容 |
+| --- | --- |
+| `clairvoyance_global.json` | 千里眼各阶段限制。 |
+| `actions.json` | 动作定义、触发器和时间线。 |
+| `imitate.json` | 模仿系统参数。 |
+| `mirror.json` | 镜像系统参数。 |
+
+绘画导入图片放在游戏目录的 `graffiti/` 文件夹中。
+
+## 开发
+
+常用命令：
 
 ```bash
-./gradlew build          # 构建 jar → build/libs/
-./gradlew runClient      # 启动测试客户端
-./gradlew runServer      # 启动测试服务端
+./gradlew build
+./gradlew compileJava
+./gradlew runClient
+./gradlew runServer
 ```
 
-## 项目结构
+源码结构：
 
-```
+```text
 src/main/java/com/kuilunfuzhe/monvhua/
-├── MonvhuaMod.java           主入口：效果注册 + 全部系统初始化
-├── WitchRole.java            14 个角色枚举（tag/文案/对话）
-├── WitchStage.java           8 阶段枚举（阈值/名称/颜色/类别）
-├── effect/                   DisplayOnlyEffect（纯显示状态效果）
-├── config/                   全局/诱导配置管理
-├── network/                  36+ C2S/S2C 网络包
-├── clairvoyance/             千里眼核心（标记/观看/锚点）
-├── gazeguidance/             视线诱导系统
-├── bodypart/                 身体部件方块/BE/管理器
-├── mirror/                   镜像系统（服务端命令）
-├── carry/                    搬运实体系统
-├── item/                     物品注册
-├── command/                  所有命令
-├── screen/                   屏幕处理器
-├── entity/                   方块实体/实体注册
-├── mixin/                    服务端 Mixin
-└── util/                     工具类
+  MonvhuaMod.java              服务端与通用入口
+  WitchRole.java               14 个角色枚举
+  WitchStage.java              8 个阶段枚举
+  command/                     千里眼、肢体、镜像、动作、重力、涂鸦等命令
+  config/                      JSON 配置管理
+  effect/                      纯显示状态效果
+  features/                    各功能系统
+  item/                        物品和方块注册
+  network/                     Fabric CustomPayload 网络包
+  mixin/                       服务端和通用 mixin
 
-src/client/java/.../monvhua/
-├── MonvhuaModClient.java     客户端入口
-├── features/                 客户端功能（千里眼/诱导/镜像渲染）
-├── gui/                      GUI 界面（配置/标记列表/背包）
-├── mixin/                    客户端 Mixin
-├── model/                    身体部件模型
-└── renderer/                 身体部件渲染器
+src/client/java/com/kuilunfuzhe/monvhua/
+  MonvhuaModClient.java        客户端入口
+  event/                       按键、tick、世界渲染处理
+  features/                    客户端功能状态与渲染
+  gui/                         配置、动作、身体姿态等界面
+  mixin/                       客户端渲染、相机、输入和兼容 mixin
+  model/                       身体部件模型数据
+  renderer/                    方块实体、身体部件、骨架等渲染器
 ```
+
+网络包统一使用 Fabric `CustomPayload` + `PayloadTypeRegistry`，优先保持 `record` + `PacketCodec` 模式。客户端发包优先使用 `SafeClientNetworking.send()`。
 
 ## 资源替换
 
-112 张 32×32 状态效果图标：
-```
+状态效果图标：
+
+```text
 src/main/resources/assets/monvhua/textures/mob_effect/<role>_<stage>.png
 ```
-直接覆盖同名 PNG 即可替换为正式美术资源。
 
-翻译文件：`assets/monvhua/lang/{zh_cn,en_us}.json`
+翻译文件：
 
-内置皮肤：`assets/monvhua/textures/local_skin/`（15 个角色皮肤 PNG）
+```text
+src/main/resources/assets/monvhua/lang/zh_cn.json
+src/main/resources/assets/monvhua/lang/en_us.json
+```
+
+内置皮肤：
+
+```text
+src/main/resources/assets/monvhua/textures/local_skin/
+```
 
 ## License
 
-GNU General Public License v3.0，详见 [`LICENSE`](LICENSE)。
+本项目使用 [GNU General Public License v3.0](LICENSE)。
