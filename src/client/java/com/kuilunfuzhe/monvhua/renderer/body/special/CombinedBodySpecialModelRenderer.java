@@ -198,7 +198,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
             return;
         }
         VertexConsumer vertices = vertexConsumers.getBuffer(PaintRenderLayers.paintOverlay());
-        for (ModelPaintData.ModelFace face : ModelPaintData.readFaces(customData)) {
+        for (ModelPaintData.ModelFace face : ModelPaintData.readFaces(customData, slim)) {
             SurfaceTarget target = surfaceTarget(model, slim, face.surface());
             if (target == null) {
                 continue;
@@ -212,7 +212,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
                 }
                 part.applyTransform(matrices);
             }
-            renderPaintFace(vertices, matrices.peek().getPositionMatrix(), target.cuboid(), face.face(), face.pixels(), light);
+            renderPaintFace(vertices, matrices.peek().getPositionMatrix(), target.cuboid(), face.face(), face.width(), face.height(), face.pixels(), light);
             matrices.pop();
         }
     }
@@ -242,23 +242,25 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         };
     }
 
-    private static void renderPaintFace(VertexConsumer vertices, Matrix4f matrix, Cuboid cuboid, Direction face, int[] pixels, int light) {
-        for (int y = 0; y < ModelPaintData.SIZE; y++) {
-            for (int x = 0; x < ModelPaintData.SIZE; x++) {
-                int color = pixels[y * ModelPaintData.SIZE + x];
+    private static void renderPaintFace(VertexConsumer vertices, Matrix4f matrix, Cuboid cuboid, Direction face,
+                                        int width, int height, int[] pixels, int light) {
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int color = pixels[y * width + x];
                 if (color == 0) {
                     continue;
                 }
-                appendPaintPixel(vertices, matrix, cuboid, face, x, y, color, light);
+                appendPaintPixel(vertices, matrix, cuboid, face, x, y, width, height, color, light);
             }
         }
     }
 
-    private static void appendPaintPixel(VertexConsumer vertices, Matrix4f matrix, Cuboid cuboid, Direction face, int x, int y, int color, int light) {
-        float u0 = x / (float) ModelPaintData.SIZE;
-        float u1 = (x + 1) / (float) ModelPaintData.SIZE;
-        float v0 = y / (float) ModelPaintData.SIZE;
-        float v1 = (y + 1) / (float) ModelPaintData.SIZE;
+    private static void appendPaintPixel(VertexConsumer vertices, Matrix4f matrix, Cuboid cuboid, Direction face,
+                                         int x, int y, int width, int height, int color, int light) {
+        float u0 = x / (float) width;
+        float u1 = (x + 1) / (float) width;
+        float v0 = y / (float) height;
+        float v1 = (y + 1) / (float) height;
         float minX = cuboid.x() / 16.0F;
         float minY = cuboid.y() / 16.0F;
         float minZ = cuboid.z() / 16.0F;
@@ -351,7 +353,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
     private record Cuboid(float x, float y, float z, float width, float height, float depth) {
     }
 
-    private static void resetModel(PlayerEntityModel model) {
+    public static void resetModel(PlayerEntityModel model) {
         for (ModelPart part : model.getRootPart().traverse()) {
             part.resetTransform();
             part.visible = true;
@@ -359,7 +361,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         }
     }
 
-    private static void applyPoseData(PlayerEntityModel model, NbtCompound data) {
+    public static void applyPoseData(PlayerEntityModel model, NbtCompound data) {
         if (data == null) {
             return;
         }

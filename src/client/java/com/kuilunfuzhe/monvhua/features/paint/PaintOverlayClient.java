@@ -279,6 +279,8 @@ public final class PaintOverlayClient {
             repeatedStrokeTicks = 0;
             SafeClientNetworking.send(new PaintOverlayPackets.ModelPaintStrokeC2S(
                     modelHit.entityId(), modelHit.surface(), modelHit.face(), modelHit.x(), modelHit.y(), clear));
+            client.player.sendMessage(Text.literal("model paint " + modelHit.surface() + " " + modelHit.face().asString()
+                    + " (" + modelHit.x() + "," + modelHit.y() + ")"), true);
             return;
         }
         if (!(client.crosshairTarget instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK) {

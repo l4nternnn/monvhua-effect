@@ -176,7 +176,8 @@ public final class PaintOverlayFeature {
 
         NbtComponent component = stack.get(DataComponentTypes.CUSTOM_DATA);
         NbtCompound root = component == null ? new NbtCompound() : component.copyNbt();
-        boolean changed = ModelPaintData.paint(root, packet.surface(), packet.face(), packet.x(), packet.y(), radius, color, clear && packet.clearFace());
+        boolean slim = "slim".equals(root.getString("arm_model", ""));
+        boolean changed = ModelPaintData.paint(root, packet.surface(), packet.face(), packet.x(), packet.y(), radius, color, clear && packet.clearFace(), slim);
         if (!changed) {
             return;
         }

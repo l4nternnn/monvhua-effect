@@ -704,7 +704,6 @@ public final class GravityMagic {
 
         entity.setNoGravity(false);
         entity.fallDistance = 0.0D;
-        entity.setOnGround(false);
 
         Vec3d velocity = entity.getVelocity();
         if (velocity.y > 0.0D) {
