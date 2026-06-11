@@ -12,6 +12,7 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.DoorBlock;
+import net.minecraft.block.ShapeContext;
 import net.minecraft.block.TallPlantBlock;
 import net.minecraft.block.enums.BlockHalf;
 import net.minecraft.block.enums.DoubleBlockHalf;
@@ -43,6 +44,7 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.world.BlockView;
 import net.minecraft.world.World;
 
@@ -82,7 +84,7 @@ public final class GravityMagic {
     private static final double INVERTED_JUMP_SPEED = -0.42D;
     private static final double INVERTED_CEILING_EPSILON = 0.035D;
     private static final double INVERTED_CEILING_PROBE = 0.09D;
-    private static final double INVERTED_ATTACH_SNAP = 0.18D;
+    private static final double INVERTED_STEP_HEIGHT = 0.6D;
     private static final int INVERTED_JUMP_DETACH_TICKS = 8;
     private static final Map<UUID, LaunchMode> PLAYER_MODES = new ConcurrentHashMap<>();
     private static final Map<UUID, Double> PLAYER_GRAVITY = new ConcurrentHashMap<>();
@@ -597,13 +599,13 @@ public final class GravityMagic {
 
     private static void tickInvertedServerPlayerStates(ServerWorld world) {
         for (ServerPlayerEntity player : world.getPlayers()) {
+            if (shouldIgnoreInvertedPull(player)) {
+                resetInvertedPlayerState(player);
+                continue;
+            }
             if (isInInvertedArea(player)) {
                 SERVER_INVERTED_PLAYER_STATES.computeIfAbsent(player.getUuid(), uuid -> new InvertedPlayerState());
                 player.setNoGravity(true);
-                player.setSneaking(false);
-                if (player.isInPose(EntityPose.CROUCHING)) {
-                    player.setPose(EntityPose.STANDING);
-                }
                 player.fallDistance = 0.0D;
             } else {
                 resetInvertedPlayerIfInactive(player);
@@ -612,6 +614,10 @@ public final class GravityMagic {
     }
 
     public static boolean cancelServerInvertedTravel(Entity entity) {
+        if (shouldIgnoreInvertedPull(entity)) {
+            resetInvertedPlayerState(entity);
+            return false;
+        }
         if (!isInInvertedArea(entity)) {
             resetInvertedPlayerIfInactive(entity);
             return false;
@@ -623,7 +629,7 @@ public final class GravityMagic {
 
     public static boolean tickInvertedPlayer(Entity entity, PlayerInput input) {
         Map<UUID, InvertedPlayerState> stateMap = invertedPlayerStates(entity);
-        if (entity == null || input == null || getInvertedAreaGravity(entity) <= 0.0D) {
+        if (entity == null || input == null || getInvertedAreaGravity(entity) <= 0.0D || shouldIgnoreInvertedPull(entity)) {
             if (entity != null) {
                 resetInvertedPlayerState(entity);
             }
@@ -632,10 +638,6 @@ public final class GravityMagic {
 
         InvertedPlayerState state = stateMap.computeIfAbsent(entity.getUuid(), uuid -> new InvertedPlayerState());
         entity.setNoGravity(true);
-        entity.setSneaking(false);
-        if (entity.isInPose(EntityPose.CROUCHING)) {
-            entity.setPose(EntityPose.STANDING);
-        }
         entity.fallDistance = 0.0D;
 
         if (state.detachTicks > 0) {
@@ -646,19 +648,16 @@ public final class GravityMagic {
         CeilingSupport support = state.detachTicks <= 0 && velocity.y >= -0.02D ? findCeilingSupport(entity) : null;
 
         if (support != null) {
-            double targetY = support.bottomY - standingHeight(entity) - INVERTED_CEILING_EPSILON;
+            recoverInvertedStandingPose(entity, input, support);
+            double targetY = support.bottomY - entity.getHeight() - INVERTED_CEILING_EPSILON;
             double delta = targetY - entity.getY();
-            if (Math.abs(delta) > INVERTED_ATTACH_SNAP && state.attached) {
-                entity.setPosition(entity.getX(), targetY, entity.getZ());
-                delta = 0.0D;
-            }
 
             if (input.jump()) {
                 state.detachTicks = INVERTED_JUMP_DETACH_TICKS;
                 state.attached = false;
                 Vec3d acceleration = inputAcceleration(entity, input, INVERTED_AIR_ACCELERATION);
                 Vec3d moveVelocity = new Vec3d(velocity.x + acceleration.x, INVERTED_JUMP_SPEED, velocity.z + acceleration.z);
-                entity.move(MovementType.SELF, moveVelocity);
+                moveWithoutSneakEdgeClip(entity, moveVelocity);
                 velocity = new Vec3d(moveVelocity.x * INVERTED_AIR_XZ_DRAG, moveVelocity.y * INVERTED_Y_DRAG, moveVelocity.z * INVERTED_AIR_XZ_DRAG);
                 entity.setOnGround(false);
             } else {
@@ -669,7 +668,7 @@ public final class GravityMagic {
                         Math.clamp(delta * 0.45D, -0.08D, 0.08D),
                         velocity.z + acceleration.z
                 );
-                entity.move(MovementType.SELF, moveVelocity);
+                moveAttachedToInvertedSupport(entity, moveVelocity);
                 velocity = new Vec3d(moveVelocity.x * INVERTED_GROUND_XZ_DRAG, 0.0D, moveVelocity.z * INVERTED_GROUND_XZ_DRAG);
                 entity.setOnGround(true);
             }
@@ -681,13 +680,99 @@ public final class GravityMagic {
                     Math.min(velocity.y + INVERTED_GRAVITY, INVERTED_MAX_FALL_UP_SPEED),
                     velocity.z + acceleration.z
             );
-            entity.move(MovementType.SELF, moveVelocity);
+            moveWithoutSneakEdgeClip(entity, moveVelocity);
             velocity = new Vec3d(moveVelocity.x * INVERTED_AIR_XZ_DRAG, moveVelocity.y * INVERTED_Y_DRAG, moveVelocity.z * INVERTED_AIR_XZ_DRAG);
             entity.setOnGround(false);
         }
 
         entity.setVelocity(velocity);
         return true;
+    }
+
+    private static void recoverInvertedStandingPose(Entity entity, PlayerInput input, CeilingSupport support) {
+        if (input.sneak() || !entity.isInPose(EntityPose.CROUCHING)) {
+            return;
+        }
+
+        double standingHeight = entity.getDimensions(EntityPose.STANDING).height();
+        if (standingHeight <= entity.getHeight() + 1.0E-4D) {
+            return;
+        }
+
+        double targetY = support.bottomY - standingHeight - INVERTED_CEILING_EPSILON;
+        Box currentBox = entity.getBoundingBox();
+        Box standingBox = new Box(
+                currentBox.minX,
+                targetY,
+                currentBox.minZ,
+                currentBox.maxX,
+                targetY + standingHeight,
+                currentBox.maxZ
+        );
+        if (!entity.getWorld().isSpaceEmpty(entity, standingBox)) {
+            return;
+        }
+
+        entity.setPose(EntityPose.STANDING);
+        entity.setPosition(entity.getX(), targetY, entity.getZ());
+    }
+
+    private static void moveAttachedToInvertedSupport(Entity entity, Vec3d moveVelocity) {
+        double requestedHorizontalSq = horizontalLengthSquared(moveVelocity);
+        if (requestedHorizontalSq <= 1.0E-8D) {
+            moveWithoutSneakEdgeClip(entity, moveVelocity);
+            return;
+        }
+
+        double beforeX = entity.getX();
+        double beforeY = entity.getY();
+        double beforeZ = entity.getZ();
+        moveWithoutSneakEdgeClip(entity, moveVelocity);
+
+        double normalX = entity.getX();
+        double normalY = entity.getY();
+        double normalZ = entity.getZ();
+        double normalHorizontalSq = horizontalDistanceSquared(beforeX, beforeZ, normalX, normalZ);
+        if (normalHorizontalSq >= requestedHorizontalSq * 0.5D) {
+            return;
+        }
+
+        entity.setPosition(beforeX, beforeY, beforeZ);
+        moveWithoutSneakEdgeClip(entity, moveVelocity.add(0.0D, -INVERTED_STEP_HEIGHT, 0.0D));
+        double steppedHorizontalSq = horizontalDistanceSquared(beforeX, beforeZ, entity.getX(), entity.getZ());
+        CeilingSupport steppedSupport = findCeilingSupport(entity, INVERTED_STEP_HEIGHT + INVERTED_CEILING_PROBE);
+        if (steppedHorizontalSq < normalHorizontalSq
+                || steppedSupport == null
+                || Math.abs(steppedSupport.bottomY - entity.getHeight() - INVERTED_CEILING_EPSILON - entity.getY()) > INVERTED_STEP_HEIGHT * 0.5D) {
+            entity.setPosition(normalX, normalY, normalZ);
+        } else {
+            double targetY = steppedSupport.bottomY - entity.getHeight() - INVERTED_CEILING_EPSILON;
+            entity.setPosition(entity.getX(), targetY, entity.getZ());
+        }
+    }
+
+    private static void moveWithoutSneakEdgeClip(Entity entity, Vec3d movement) {
+        if (!entity.isSneaking()) {
+            entity.move(MovementType.SELF, movement);
+            return;
+        }
+
+        entity.setSneaking(false);
+        try {
+            entity.move(MovementType.SELF, movement);
+        } finally {
+            entity.setSneaking(true);
+        }
+    }
+
+    private static double horizontalLengthSquared(Vec3d velocity) {
+        return velocity.x * velocity.x + velocity.z * velocity.z;
+    }
+
+    private static double horizontalDistanceSquared(double fromX, double fromZ, double toX, double toZ) {
+        double dx = toX - fromX;
+        double dz = toZ - fromZ;
+        return dx * dx + dz * dz;
     }
 
     public static void resetInvertedPlayerIfInactive(Entity entity) {
@@ -745,8 +830,13 @@ public final class GravityMagic {
     }
 
     private static CeilingSupport findCeilingSupport(Entity entity) {
+        return findCeilingSupport(entity, INVERTED_CEILING_PROBE);
+    }
+
+    private static CeilingSupport findCeilingSupport(Entity entity, double verticalReach) {
         Box box = entity.getBoundingBox();
-        int blockY = (int) Math.floor(box.maxY + INVERTED_CEILING_PROBE);
+        int minBlockY = (int) Math.floor(box.maxY - INVERTED_CEILING_PROBE);
+        int maxBlockY = (int) Math.floor(box.maxY + verticalReach + INVERTED_CEILING_PROBE);
         double[][] samples = new double[][] {
                 {entity.getX(), entity.getZ()},
                 {box.minX + 0.05D, box.minZ + 0.05D},
@@ -755,18 +845,51 @@ public final class GravityMagic {
                 {box.maxX - 0.05D, box.maxZ - 0.05D}
         };
 
+        CeilingSupport closest = null;
+        double closestGap = Double.MAX_VALUE;
         for (double[] sample : samples) {
-            BlockPos pos = BlockPos.ofFloored(sample[0], blockY, sample[1]);
-            BlockState state = entity.getWorld().getBlockState(pos);
-            if (!state.isAir() && state.isSideSolidFullSquare(entity.getWorld(), pos, Direction.DOWN)) {
-                return new CeilingSupport(pos.getY());
+            for (int blockY = minBlockY; blockY <= maxBlockY; blockY++) {
+                BlockPos pos = BlockPos.ofFloored(sample[0], blockY, sample[1]);
+                CeilingSupport support = findCeilingSupportAt(entity, pos, sample[0], sample[1]);
+                if (support == null) {
+                    continue;
+                }
+
+                double gap = support.bottomY - box.maxY;
+                if (gap < -INVERTED_CEILING_PROBE || gap > verticalReach + INVERTED_CEILING_PROBE) {
+                    continue;
+                }
+                if (gap < closestGap) {
+                    closest = support;
+                    closestGap = gap;
+                }
+            }
+        }
+        return closest;
+    }
+
+    private static CeilingSupport findCeilingSupportAt(Entity entity, BlockPos pos, double sampleX, double sampleZ) {
+        BlockState state = entity.getWorld().getBlockState(pos);
+        if (state.isAir()) {
+            return null;
+        }
+
+        VoxelShape shape = state.getCollisionShape(entity.getWorld(), pos, ShapeContext.of(entity));
+        if (shape.isEmpty()) {
+            return null;
+        }
+
+        double localX = sampleX - pos.getX();
+        double localZ = sampleZ - pos.getZ();
+        for (Box bounds : shape.getBoundingBoxes()) {
+            if (localX >= bounds.minX - INVERTED_CEILING_PROBE
+                    && localX <= bounds.maxX + INVERTED_CEILING_PROBE
+                    && localZ >= bounds.minZ - INVERTED_CEILING_PROBE
+                    && localZ <= bounds.maxZ + INVERTED_CEILING_PROBE) {
+                return new CeilingSupport(pos.getY() + bounds.minY);
             }
         }
         return null;
-    }
-
-    private static double standingHeight(Entity entity) {
-        return entity.getDimensions(EntityPose.STANDING).height();
     }
 
     public static boolean isInInvertedArea(Entity entity) {
@@ -784,6 +907,21 @@ public final class GravityMagic {
     public static boolean isInvertedWalking(Entity entity) {
         InvertedPlayerState state = entity == null ? null : invertedPlayerStates(entity).get(entity.getUuid());
         return state != null && state.attached;
+    }
+
+    private static boolean shouldIgnoreInvertedPull(Entity entity) {
+        return entity instanceof PlayerEntity player && player.getAbilities().creativeMode && player.getAbilities().flying;
+    }
+
+    public static Vec3d correctInvertedFlyingMovementInput(Entity entity, Vec3d movementInput) {
+        if (movementInput == null || !isInInvertedArea(entity) || !isFlyingPlayer(entity)) {
+            return movementInput;
+        }
+        return new Vec3d(-movementInput.x, movementInput.y, movementInput.z);
+    }
+
+    private static boolean isFlyingPlayer(Entity entity) {
+        return entity instanceof PlayerEntity player && player.getAbilities().flying;
     }
 
     private static Map<UUID, InvertedPlayerState> invertedPlayerStates(Entity entity) {
@@ -808,7 +946,7 @@ public final class GravityMagic {
     }
 
     public static boolean shouldSuppressVanillaGravity(Entity entity) {
-        return ENTITY_GRAVITY.containsKey(entity.getUuid()) || isInInvertedArea(entity);
+        return ENTITY_GRAVITY.containsKey(entity.getUuid()) || isInInvertedArea(entity) && !shouldIgnoreInvertedPull(entity);
     }
 
     public static void addClientSyncedAreaGravity(RegistryKey<World> world, BlockPos center, int radius, int height, int ticks, double gravity) {
