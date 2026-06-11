@@ -32,6 +32,9 @@
 		"SoundManagerMixin",
 		"ChatHudMixin",
 		"PaintInputMixin",
+		"SecrecyClientPhaseCollisionMixin",
+		"SecrecyLookLockMixin",
+		"SecrecyPhaseInputMixin",
 		"SpriteContentsAccessor"
 	],
 	"injectors": {

@@ -1,7 +1,10 @@
 package com.kuilunfuzhe.monvhua.features.secrecy;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.option.Perspective;
+import net.minecraft.entity.Entity;
 import net.minecraft.sound.SoundCategory;
+import net.minecraft.util.math.BlockPos;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -20,6 +23,15 @@ public final class SecrecyClientAudioManager {
     private static final Map<SoundCategory, Double> ORIGINAL_OPTIONS = new EnumMap<>(SoundCategory.class);
     /** 当前是否处于隐秘状态 */
     private static boolean active = false;
+    /** 客户端是否应开启 noClip（穿墙尝试或穿墙锁定） */
+    private static boolean phaseNoClip = false;
+    /** 是否处于进入墙体后的穿墙锁定状态 */
+    private static boolean phaseLocked = false;
+    /** 穿墙锁定时服务端固定的视角 */
+    private static float lockedYaw = 0.0F;
+    private static float lockedPitch = 0.0F;
+    /** 穿墙期间强制第一人称前的原视角，用于结束后恢复 */
+    private static Perspective previousPerspective = null;
 
     private SecrecyClientAudioManager() {
     }
@@ -30,27 +42,58 @@ public final class SecrecyClientAudioManager {
      * @param fadeOutTicks 淡出tick数（当前未使用，保留用于未来扩展）
      */
     public static void setInvisible(boolean invisible, int fadeOutTicks) {
-        if (invisible == active) {
-            return;
-        }
-
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null) {
-            active = invisible;
-            return;
-        }
-
-        if (invisible) {
-            storeOriginalOptions(client);
-            setCategoryOptions(client, OTHER_SOUND_MULTIPLIER, HEART_SOUND_MULTIPLIER);
-        } else {
-            restoreOriginalOptions(client);
-        }
-        active = invisible;
+        setState(invisible, false, false, 0.0F, 0.0F, fadeOutTicks);
     }
 
-    /** 每tick调用（当前为空，保留用于未来扩展如淡入淡出） */
+    /**
+     * 设置完整隐秘状态，同步穿墙 noClip、锁定输入和锁定视角。
+     */
+    public static void setState(boolean invisible, boolean newPhaseNoClip, boolean newPhaseLocked, float newLockedYaw, float newLockedPitch, int fadeOutTicks) {
+        if (invisible != active) {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client == null) {
+                active = invisible;
+            } else if (invisible) {
+                storeOriginalOptions(client);
+                setCategoryOptions(client, OTHER_SOUND_MULTIPLIER, HEART_SOUND_MULTIPLIER);
+                active = true;
+            } else {
+                restoreOriginalOptions(client);
+                active = false;
+            }
+        }
+
+        phaseNoClip = newPhaseNoClip;
+        phaseLocked = newPhaseLocked;
+        lockedYaw = newLockedYaw;
+        lockedPitch = newLockedPitch;
+    }
+
+    /** 每tick调用，维护客户端 noClip、禁用侧移/跳跃并锁定视角。 */
     public static void tick() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.player == null) {
+            return;
+        }
+
+        if (phaseNoClip) {
+            client.player.noClip = false;
+            client.player.fallDistance = 0.0F;
+            forceFirstPersonPerspective(client);
+        } else {
+            restorePerspective(client);
+            if (!client.player.isSpectator()) {
+                client.player.noClip = false;
+            }
+        }
+
+        if (phaseLocked) {
+            client.player.setYaw(lockedYaw);
+            client.player.setPitch(lockedPitch);
+            client.options.leftKey.setPressed(false);
+            client.options.rightKey.setPressed(false);
+            client.options.jumpKey.setPressed(false);
+        }
     }
 
     /**
@@ -68,6 +111,40 @@ public final class SecrecyClientAudioManager {
      */
     public static boolean isHeartAudible() {
         return active;
+    }
+
+    public static boolean isPhaseLocked() {
+        return phaseLocked;
+    }
+
+    public static boolean isPhaseNoClip() {
+        return phaseNoClip;
+    }
+
+    public static boolean shouldIgnorePhaseCollision(Entity entity, BlockPos pos) {
+        if (!phaseNoClip || entity == null) {
+            return false;
+        }
+        int feetY = BlockPos.ofFloored(entity.getX(), entity.getY() + 0.05D, entity.getZ()).getY();
+        int headY = BlockPos.ofFloored(entity.getBoundingBox().maxX, entity.getBoundingBox().maxY, entity.getBoundingBox().maxZ).getY();
+        return pos.getY() >= feetY && pos.getY() <= headY;
+    }
+
+    private static void forceFirstPersonPerspective(MinecraftClient client) {
+        if (previousPerspective == null) {
+            previousPerspective = client.options.getPerspective();
+        }
+        if (!client.options.getPerspective().isFirstPerson()) {
+            client.options.setPerspective(Perspective.FIRST_PERSON);
+        }
+    }
+
+    private static void restorePerspective(MinecraftClient client) {
+        if (previousPerspective == null) {
+            return;
+        }
+        client.options.setPerspective(previousPerspective);
+        previousPerspective = null;
     }
 
     private static void storeOriginalOptions(MinecraftClient client) {

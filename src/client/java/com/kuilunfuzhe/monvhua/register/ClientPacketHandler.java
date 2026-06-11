@@ -175,7 +175,14 @@ public class ClientPacketHandler {
         });
 
         ClientPlayNetworking.registerGlobalReceiver(SecrecyStateS2CPacket.ID, (packet, context) -> {
-            context.client().execute(() -> SecrecyClientAudioManager.setInvisible(packet.invisible(), packet.fadeOutTicks()));
+            context.client().execute(() -> SecrecyClientAudioManager.setState(
+                    packet.invisible(),
+                    packet.phaseNoClip(),
+                    packet.phaseLocked(),
+                    packet.lockedYaw(),
+                    packet.lockedPitch(),
+                    packet.fadeOutTicks()
+            ));
         });
 
         // 9. 能量同步

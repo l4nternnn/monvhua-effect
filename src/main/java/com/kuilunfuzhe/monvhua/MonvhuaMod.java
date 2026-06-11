@@ -700,6 +700,11 @@ public class MonvhuaMod implements ModInitializer {
         // ===== 15. 漂浮/缓降玩家免疫摔落伤害 =====
         ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> {
             if (entity instanceof ServerPlayerEntity player
+                    && source.isOf(DamageTypes.IN_WALL)
+                    && SecrecyItem.isPhaseNoClip(player)) {
+                return false;
+            }
+            if (entity instanceof ServerPlayerEntity player
                     && source.isOf(DamageTypes.FALL)
                     && (floatingPlayers.contains(player.getUuid())
                     || com.kuilunfuzhe.monvhua.features.floating.floating.shouldPreventFallDamage(player))) {
