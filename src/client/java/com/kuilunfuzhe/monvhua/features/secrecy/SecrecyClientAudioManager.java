@@ -82,7 +82,7 @@ public final class SecrecyClientAudioManager {
         }
 
         if (phaseNoClip) {
-            client.player.noClip = false;
+            client.player.noClip = shouldEnableClientPhasePerspective(client);
             client.player.fallDistance = 0.0F;
             enableGravityLock(client);
             forceFirstPersonPerspective(client);
@@ -144,6 +144,10 @@ public final class SecrecyClientAudioManager {
         int feetY = BlockPos.ofFloored(entity.getX(), entity.getY() + 0.05D, entity.getZ()).getY();
         int headY = BlockPos.ofFloored(entity.getBoundingBox().maxX, entity.getBoundingBox().maxY, entity.getBoundingBox().maxZ).getY();
         return pos.getY() >= feetY && pos.getY() <= headY;
+    }
+
+    private static boolean shouldEnableClientPhasePerspective(MinecraftClient client) {
+        return client.player.isCreative() || client.player.isSpectator();
     }
 
     private static void forceFirstPersonPerspective(MinecraftClient client) {
