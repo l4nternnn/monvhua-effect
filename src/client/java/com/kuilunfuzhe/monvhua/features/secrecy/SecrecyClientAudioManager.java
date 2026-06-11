@@ -36,6 +36,8 @@ public final class SecrecyClientAudioManager {
     private static Perspective previousPerspective = null;
     /** 穿墙期间客户端原本的无重力状态，用于结束后恢复 */
     private static Boolean previousNoGravity = null;
+    /** 虚化临时接管客户端 noClip 前的原状态，用于恢复创造/旁观/指令提供的原版穿墙视角 */
+    private static Boolean previousNoClip = null;
 
     private SecrecyClientAudioManager() {
     }
@@ -82,16 +84,14 @@ public final class SecrecyClientAudioManager {
         }
 
         if (phaseNoClip) {
-            client.player.noClip = shouldEnableClientPhasePerspective(client);
+            applyPhaseNoClip(client);
             client.player.fallDistance = 0.0F;
             enableGravityLock(client);
             forceFirstPersonPerspective(client);
         } else {
             restoreGravityLock(client);
             restorePerspective(client);
-            if (!client.player.isSpectator()) {
-                client.player.noClip = false;
-            }
+            restorePhaseNoClip(client);
         }
 
         if (phaseLocked) {
@@ -144,6 +144,21 @@ public final class SecrecyClientAudioManager {
         int feetY = BlockPos.ofFloored(entity.getX(), entity.getY() + 0.05D, entity.getZ()).getY();
         int headY = BlockPos.ofFloored(entity.getBoundingBox().maxX, entity.getBoundingBox().maxY, entity.getBoundingBox().maxZ).getY();
         return pos.getY() >= feetY && pos.getY() <= headY;
+    }
+
+    private static void applyPhaseNoClip(MinecraftClient client) {
+        if (previousNoClip == null) {
+            previousNoClip = client.player.noClip;
+        }
+        client.player.noClip = shouldEnableClientPhasePerspective(client);
+    }
+
+    private static void restorePhaseNoClip(MinecraftClient client) {
+        if (previousNoClip == null) {
+            return;
+        }
+        client.player.noClip = previousNoClip;
+        previousNoClip = null;
     }
 
     private static boolean shouldEnableClientPhasePerspective(MinecraftClient client) {
