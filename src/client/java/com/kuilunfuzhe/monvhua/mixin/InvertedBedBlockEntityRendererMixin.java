@@ -2,11 +2,17 @@ package com.kuilunfuzhe.monvhua.mixin;
 
 import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import com.kuilunfuzhe.monvhua.features.gravity.InvertedBedVertexConsumerProvider;
+import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BedBlockEntity;
+import net.minecraft.block.enums.BedPart;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.block.entity.BedBlockEntityRenderer;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.state.property.Properties;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.World;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -25,8 +31,7 @@ public abstract class InvertedBedBlockEntityRendererMixin {
     )
     private void monvhua$mirrorInvertedBedModel(BedBlockEntity bed, float tickProgress, MatrixStack matrices, VertexConsumerProvider vertexConsumers,
                                                 int light, int overlay, Vec3d cameraPos, CallbackInfo ci) {
-        monvhua$mirroredBed = bed.getWorld() != null
-                && GravityMagic.isInInvertedArea(bed.getWorld().getRegistryKey(), bed.getPos().toCenterPos());
+        monvhua$mirroredBed = monvhua$isInInvertedBedArea(bed);
         if (!monvhua$mirroredBed) {
             return;
         }
@@ -43,8 +48,7 @@ public abstract class InvertedBedBlockEntityRendererMixin {
             ordinal = 0
     )
     private VertexConsumerProvider monvhua$wrapInvertedBedVertexConsumers(VertexConsumerProvider vertexConsumers, BedBlockEntity bed) {
-        if (monvhua$mirroredBed || bed.getWorld() != null
-                && GravityMagic.isInInvertedArea(bed.getWorld().getRegistryKey(), bed.getPos().toCenterPos())) {
+        if (monvhua$mirroredBed || monvhua$isInInvertedBedArea(bed)) {
             return new InvertedBedVertexConsumerProvider(vertexConsumers);
         }
         return vertexConsumers;
@@ -62,5 +66,27 @@ public abstract class InvertedBedBlockEntityRendererMixin {
 
         matrices.pop();
         monvhua$mirroredBed = false;
+    }
+
+    @Unique
+    private boolean monvhua$isInInvertedBedArea(BedBlockEntity bed) {
+        World world = bed.getWorld();
+        if (world == null) {
+            return false;
+        }
+
+        BlockPos pos = bed.getPos();
+        if (GravityMagic.isInInvertedArea(world.getRegistryKey(), pos.toCenterPos())) {
+            return true;
+        }
+
+        BlockState state = bed.getCachedState();
+        if (!state.contains(Properties.HORIZONTAL_FACING) || !state.contains(Properties.BED_PART)) {
+            return false;
+        }
+
+        Direction facing = state.get(Properties.HORIZONTAL_FACING);
+        Direction otherHalfDirection = state.get(Properties.BED_PART) == BedPart.HEAD ? facing.getOpposite() : facing;
+        return GravityMagic.isInInvertedArea(world.getRegistryKey(), pos.offset(otherHalfDirection).toCenterPos());
     }
 }

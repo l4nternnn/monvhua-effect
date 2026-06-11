@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.mixin;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityPose;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.spongepowered.asm.mixin.Mixin;
@@ -37,6 +38,12 @@ public abstract class GravityEyePositionMixin {
     @Shadow
     public abstract float getStandingEyeHeight();
 
+    @Shadow
+    public abstract float getEyeHeight(EntityPose pose);
+
+    @Shadow
+    public abstract EntityPose getPose();
+
     @Inject(method = "getEyeY", at = @At("HEAD"), cancellable = true)
     private void monvhua$getInvertedEyeY(CallbackInfoReturnable<Double> cir) {
         Entity entity = (Entity) (Object) this;
@@ -59,7 +66,7 @@ public abstract class GravityEyePositionMixin {
     }
 
     private double invertedEyeY(double baseY) {
-        return baseY + this.getHeight() - this.getStandingEyeHeight();
+        return baseY + this.getHeight() - this.getEyeHeight(this.getPose());
     }
 
     private static boolean isLocalInvertedPlayer(Entity entity) {

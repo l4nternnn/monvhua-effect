@@ -120,6 +120,15 @@ public class CarryEvents {
 				return;
 			}
 
+			if (!(target instanceof LivingEntity)) {
+				carrier.sendMessage(Text.literal("§c只能抱起活物"), false);
+				return;
+			}
+			if (!CarryManager.hasCarryExperience(carrier)) {
+				carrier.sendMessage(Text.literal("§c没有经验，无法抱起"), false);
+				return;
+			}
+
 			boolean savedFlying = false, savedAllowFlying = false, savedInvulnerable = false;
 			if (target instanceof ServerPlayerEntity carriedPlayer) {
 				savedFlying = carriedPlayer.getAbilities().flying;
@@ -138,9 +147,6 @@ public class CarryEvents {
 					return;
 				}
 				carriedPlayer.sendMessage(Text.literal("§e你被 " + carrier.getName().getString() + " 抱起来了，按潜行键挣脱"), false);
-			} else if (!(target instanceof LivingEntity)) {
-				carrier.sendMessage(Text.literal("§c只能抱起活物"), false);
-				return;
 			}
 
 			if (target instanceof MobEntity mob) {

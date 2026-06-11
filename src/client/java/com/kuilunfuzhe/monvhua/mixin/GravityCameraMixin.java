@@ -49,7 +49,7 @@ public abstract class GravityCameraMixin {
 
         if (!thirdPerson) {
             Vec3d pos = focusedEntity.getLerpedPos(tickProgress);
-            double eyeY = pos.y + focusedEntity.getHeight() - focusedEntity.getStandingEyeHeight();
+            double eyeY = pos.y + focusedEntity.getHeight() - focusedEntity.getEyeHeight(focusedEntity.getPose());
             this.setPos(pos.x, eyeY, pos.z);
         }
     }

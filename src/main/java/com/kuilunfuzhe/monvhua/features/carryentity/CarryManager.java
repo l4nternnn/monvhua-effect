@@ -63,6 +63,14 @@ public class CarryManager {
 		return 300;
 	}
 
+	public static boolean shouldDrainCarryExperience(ServerPlayerEntity carrier) {
+		return CARRY_XP_DRAIN_RATE > 0 && !carrier.isCreative() && carrier.getCommandTags().contains("kebao");
+	}
+
+	public static boolean hasCarryExperience(ServerPlayerEntity carrier) {
+		return !shouldDrainCarryExperience(carrier) || carrier.experienceLevel > 0;
+	}
+
 	public static void syncCarryPose(ServerPlayerEntity carrier, Entity carried, boolean active) {
 		MinecraftServer server = carrier.getServer();
 		if (server == null) return;
@@ -200,7 +208,7 @@ public class CarryManager {
 			return;
 		}
 
-		if (carried instanceof LivingEntity && !carrier.isCreative() && !carrier.getCommandTags().contains("kebao")) {
+		if (carried instanceof LivingEntity && shouldDrainCarryExperience(carrier)) {
 			int tickCount = CARRY_XP_TICK_COUNTER.merge(carrier, 1, (oldVal, v) -> oldVal + 1);
 			if (tickCount >= 20) {
 				CARRY_XP_TICK_COUNTER.put(carrier, 0);

@@ -11,6 +11,7 @@
 		"InvertedDoorSupportMixin",
 		"InvertedGroundSupportPlacementMixin",
 		"InvertedPlayerTravelMixin",
+		"InvertedSneakLedgeClipMixin",
 		"InvertedSupportSideShapeMixin",
 		"InvertedSupportSmallSquareMixin",
 		"InvertedTallPlantBlockMixin",
