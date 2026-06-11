@@ -32,6 +32,8 @@ public final class SecrecyClientAudioManager {
     private static float lockedPitch = 0.0F;
     /** 穿墙期间强制第一人称前的原视角，用于结束后恢复 */
     private static Perspective previousPerspective = null;
+    /** 穿墙期间客户端原本的无重力状态，用于结束后恢复 */
+    private static Boolean previousNoGravity = null;
 
     private SecrecyClientAudioManager() {
     }
@@ -79,8 +81,10 @@ public final class SecrecyClientAudioManager {
         if (phaseNoClip) {
             client.player.noClip = false;
             client.player.fallDistance = 0.0F;
+            enableGravityLock(client);
             forceFirstPersonPerspective(client);
         } else {
+            restoreGravityLock(client);
             restorePerspective(client);
             if (!client.player.isSpectator()) {
                 client.player.noClip = false;
@@ -137,6 +141,26 @@ public final class SecrecyClientAudioManager {
         if (!client.options.getPerspective().isFirstPerson()) {
             client.options.setPerspective(Perspective.FIRST_PERSON);
         }
+    }
+
+    private static void enableGravityLock(MinecraftClient client) {
+        if (previousNoGravity == null) {
+            previousNoGravity = client.player.hasNoGravity();
+        }
+        client.player.setNoGravity(true);
+        var velocity = client.player.getVelocity();
+        if (velocity.y != 0.0D) {
+            client.player.setVelocity(velocity.x, 0.0D, velocity.z);
+        }
+    }
+
+    private static void restoreGravityLock(MinecraftClient client) {
+        if (previousNoGravity == null) {
+            return;
+        }
+        client.player.setNoGravity(previousNoGravity);
+        previousNoGravity = null;
+        client.player.fallDistance = 0.0F;
     }
 
     private static void restorePerspective(MinecraftClient client) {

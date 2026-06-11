@@ -84,6 +84,8 @@ public class SecrecyItem extends Item {
     private static final Map<UUID, Integer> PHASE_ATTEMPT_TICKS = new ConcurrentHashMap<>();
     /** 穿墙锁定时的固定视角 */
     private static final Map<UUID, RotationSnapshot> PHASE_LOCKED_ROTATIONS = new ConcurrentHashMap<>();
+    /** 进入穿墙前玩家原本的无重力状态，用于退出穿墙后恢复 */
+    private static final Map<UUID, Boolean> PHASE_PREVIOUS_NO_GRAVITY = new ConcurrentHashMap<>();
     /** 穿墙黑名单方块，遇到这些方块时不允许开始穿墙 */
     private static final Set<Identifier> PHASE_BLACKLIST = Set.of(
             Identifier.of("minecraft", "bedrock"),
@@ -96,15 +98,43 @@ public class SecrecyItem extends Item {
             Identifier.of("minecraft", "end_portal_frame")
     );
     /** 射线允许检测到的最大实体方块数量 */
-    private static final int MAX_PHASE_BLOCKS = 2;
+    private static final int MAX_PHASE_BLOCKS = 3;
     /** 穿墙尝试窗口，避免玩家只是看着墙就永久 noClip */
     private static final int PHASE_ATTEMPT_MAX_TICKS = 30;
     /** 必须贴近墙体才开始穿墙尝试，避免远处墙体提前消耗尝试窗口 */
     private static final double PHASE_START_DISTANCE = 0.95D;
+    /** 四条穿墙检测射线相对玩家中心的左右偏移，略小于玩家碰撞箱半宽 */
+    private static final double PHASE_RAY_SIDE_OFFSET = 0.3D;
+    /** 射线没有命中任何实体墙体，仅打到空气 */
+    private static final double PHASE_RAY_NO_HIT = -1.0D;
+    /** 单条射线近处命中的墙体过厚，整体否决穿墙 */
+    private static final double PHASE_RAY_TOO_THICK = -2.0D;
+    /** 单条射线命中黑名单方块，整体否决穿墙 */
+    private static final double PHASE_RAY_BLOCKED = Double.MAX_VALUE;
+    /** 远处障碍检测余量，防止头部刚穿完合法墙体后腿部立刻进入厚墙 */
+    private static final double PHASE_OBSTRUCTION_CLEARANCE = 0.75D;
     /** 全局配置管理器，由外部在initialize()时注入 */
     private static GlobalConfigManager configManager;
 
     private record RotationSnapshot(float yaw, float pitch) {}
+
+    private record PhaseRayResult(double firstSolidDistance, double exitDistance, int solidBlocks, boolean blocked, boolean tooThick) {
+        private boolean hasSolid() {
+            return firstSolidDistance >= 0.0D;
+        }
+
+        private boolean isNear() {
+            return hasSolid() && firstSolidDistance <= PHASE_START_DISTANCE;
+        }
+
+        private boolean isValidNearWall() {
+            return isNear() && !blocked && !tooThick;
+        }
+
+        private boolean isBlockingAtOrBefore(double distance) {
+            return hasSolid() && firstSolidDistance <= distance && !isValidNearWall();
+        }
+    }
 
     public SecrecyItem(Settings settings) {
         super(settings);
@@ -377,6 +407,7 @@ public class SecrecyItem extends Item {
         UUID uuid = player.getUuid();
         PHASE_ATTEMPTING.add(uuid);
         PHASE_ATTEMPT_TICKS.put(uuid, PHASE_ATTEMPT_MAX_TICKS);
+        enablePhaseGravityLock(player);
         player.noClip = false;
         player.fallDistance = 0.0F;
         syncSecrecyState(player, true, true, false);
@@ -387,6 +418,7 @@ public class SecrecyItem extends Item {
         if (!shouldContinueSecrecy(player)) {
             PHASE_ATTEMPTING.remove(uuid);
             PHASE_ATTEMPT_TICKS.remove(uuid);
+            restorePhaseGravityLock(player);
             player.noClip = false;
             syncSecrecyState(player, true, false, false);
             return;
@@ -394,6 +426,7 @@ public class SecrecyItem extends Item {
 
         player.noClip = false;
         player.fallDistance = 0.0F;
+        zeroVerticalVelocity(player);
 
         if (isInsideWall(player)) {
             enterPhaseLocked(player);
@@ -401,9 +434,10 @@ public class SecrecyItem extends Item {
         }
 
         int ticks = PHASE_ATTEMPT_TICKS.getOrDefault(uuid, 0) - 1;
-        if (ticks <= 0 || !canAttemptPhase(player)) {
+        if (ticks <= 0) {
             PHASE_ATTEMPTING.remove(uuid);
             PHASE_ATTEMPT_TICKS.remove(uuid);
+            restorePhaseGravityLock(player);
             player.noClip = false;
             syncSecrecyState(player, true, false, false);
             return;
@@ -418,6 +452,7 @@ public class SecrecyItem extends Item {
         PHASE_READY.remove(uuid);
         PHASE_LOCKED.add(uuid);
         PHASE_LOCKED_ROTATIONS.put(uuid, new RotationSnapshot(player.getYaw(), player.getPitch()));
+        enablePhaseGravityLock(player);
         player.noClip = false;
         player.fallDistance = 0.0F;
         syncSecrecyState(player, true, true, true);
@@ -427,6 +462,8 @@ public class SecrecyItem extends Item {
     private static void tickPhaseLocked(ServerPlayerEntity player) {
         player.noClip = false;
         player.fallDistance = 0.0F;
+        enablePhaseGravityLock(player);
+        zeroVerticalVelocity(player);
         applySpeedMultiplier(player, SecrecyConfig.getInstance().getSpeedMultiplier(getPlayerStage(player)));
         restoreLockedRotation(player);
         constrainLockedVelocity(player);
@@ -445,6 +482,7 @@ public class SecrecyItem extends Item {
         UUID uuid = player.getUuid();
         PHASE_LOCKED.remove(uuid);
         PHASE_LOCKED_ROTATIONS.remove(uuid);
+        restorePhaseGravityLock(player);
         PHASE_READY.add(uuid);
         player.noClip = false;
         syncSecrecyState(player, true, false, false);
@@ -457,6 +495,7 @@ public class SecrecyItem extends Item {
         PHASE_LOCKED.remove(uuid);
         PHASE_ATTEMPT_TICKS.remove(uuid);
         PHASE_LOCKED_ROTATIONS.remove(uuid);
+        restorePhaseGravityLock(player);
         player.noClip = false;
     }
 
@@ -470,11 +509,58 @@ public class SecrecyItem extends Item {
             return Double.MAX_VALUE;
         }
 
-        Vec3d start = new Vec3d(player.getX(), player.getY() + 0.1D, player.getZ());
+        Vec3d right = new Vec3d(horizontalLook.z, 0.0D, -horizontalLook.x).normalize();
+        Vec3d feetLeft = new Vec3d(player.getX(), player.getY() + 0.1D, player.getZ()).subtract(right.multiply(PHASE_RAY_SIDE_OFFSET));
+        Vec3d feetRight = new Vec3d(player.getX(), player.getY() + 0.1D, player.getZ()).add(right.multiply(PHASE_RAY_SIDE_OFFSET));
+        Vec3d headLeft = new Vec3d(player.getX(), player.getEyeY(), player.getZ()).subtract(right.multiply(PHASE_RAY_SIDE_OFFSET));
+        Vec3d headRight = new Vec3d(player.getX(), player.getEyeY(), player.getZ()).add(right.multiply(PHASE_RAY_SIDE_OFFSET));
+
+        PhaseRayResult feetLeftResult = getPhaseRayWallResult(player, feetLeft, horizontalLook);
+        PhaseRayResult feetRightResult = getPhaseRayWallResult(player, feetRight, horizontalLook);
+        PhaseRayResult headLeftResult = getPhaseRayWallResult(player, headLeft, horizontalLook);
+        PhaseRayResult headRightResult = getPhaseRayWallResult(player, headRight, horizontalLook);
+
+        double phaseDistance = combinePhaseRayDistances(
+                feetLeftResult,
+                feetRightResult,
+                headLeftResult,
+                headRightResult
+        );
+        return phaseDistance;
+    }
+
+    private static double combinePhaseRayDistances(PhaseRayResult... results) {
+        double farthestValidStartDistance = PHASE_RAY_NO_HIT;
+        double farthestValidExitDistance = PHASE_RAY_NO_HIT;
+        for (PhaseRayResult result : results) {
+            if (result.isNear() && (result.blocked() || result.tooThick())) {
+                return PHASE_RAY_BLOCKED;
+            }
+            if (result.isValidNearWall()) {
+                farthestValidStartDistance = Math.max(farthestValidStartDistance, result.firstSolidDistance());
+                farthestValidExitDistance = Math.max(farthestValidExitDistance, result.exitDistance());
+            }
+        }
+
+        if (farthestValidStartDistance < 0.0D) {
+            return PHASE_RAY_BLOCKED;
+        }
+
+        double obstructionLimit = farthestValidExitDistance + PHASE_OBSTRUCTION_CLEARANCE;
+        for (PhaseRayResult result : results) {
+            if (result.isBlockingAtOrBefore(obstructionLimit)) {
+                return PHASE_RAY_BLOCKED;
+            }
+        }
+
+        return farthestValidStartDistance;
+    }
+
+    private static PhaseRayResult getPhaseRayWallResult(ServerPlayerEntity player, Vec3d start, Vec3d horizontalLook) {
         Set<BlockPos> checkedBlocks = new HashSet<>();
         int solidBlocks = 0;
         double firstSolidDistance = Double.MAX_VALUE;
-        double maxDistance = MAX_PHASE_BLOCKS + 1.0D;
+        double maxDistance = (MAX_PHASE_BLOCKS * 2.0D) + PHASE_START_DISTANCE + PHASE_OBSTRUCTION_CLEARANCE;
 
         for (double distance = 0.1D; distance <= maxDistance; distance += 0.1D) {
             BlockPos pos = BlockPos.ofFloored(start.add(horizontalLook.multiply(distance)));
@@ -485,22 +571,24 @@ public class SecrecyItem extends Item {
             BlockState state = player.getWorld().getBlockState(pos);
             if (state.isAir() || state.getCollisionShape(player.getWorld(), pos).isEmpty()) {
                 if (solidBlocks > 0) {
-                    return firstSolidDistance;
+                    return new PhaseRayResult(firstSolidDistance, distance, solidBlocks, false, false);
                 }
                 continue;
-            }
-            if (isPhaseBlacklisted(state)) {
-                return Double.MAX_VALUE;
             }
             if (solidBlocks == 0) {
                 firstSolidDistance = distance;
             }
+            if (isPhaseBlacklisted(state)) {
+                return new PhaseRayResult(firstSolidDistance, distance, solidBlocks + 1, true, false);
+            }
             solidBlocks++;
             if (solidBlocks > MAX_PHASE_BLOCKS) {
-                return Double.MAX_VALUE;
+                return new PhaseRayResult(firstSolidDistance, distance, solidBlocks, false, true);
             }
         }
-        return solidBlocks > 0 ? firstSolidDistance : Double.MAX_VALUE;
+        return solidBlocks > 0
+                ? new PhaseRayResult(firstSolidDistance, maxDistance, solidBlocks, false, false)
+                : new PhaseRayResult(PHASE_RAY_NO_HIT, PHASE_RAY_NO_HIT, 0, false, false);
     }
 
     private static Vec3d getHorizontalLook(ServerPlayerEntity player) {
@@ -556,6 +644,27 @@ public class SecrecyItem extends Item {
 
     public static boolean isPhaseLocked(ServerPlayerEntity player) {
         return PHASE_LOCKED.contains(player.getUuid());
+    }
+
+    private static void enablePhaseGravityLock(ServerPlayerEntity player) {
+        PHASE_PREVIOUS_NO_GRAVITY.putIfAbsent(player.getUuid(), player.hasNoGravity());
+        player.setNoGravity(true);
+        player.fallDistance = 0.0F;
+    }
+
+    private static void restorePhaseGravityLock(ServerPlayerEntity player) {
+        Boolean previousNoGravity = PHASE_PREVIOUS_NO_GRAVITY.remove(player.getUuid());
+        if (previousNoGravity != null) {
+            player.setNoGravity(previousNoGravity);
+        }
+        player.fallDistance = 0.0F;
+    }
+
+    private static void zeroVerticalVelocity(ServerPlayerEntity player) {
+        Vec3d velocity = player.getVelocity();
+        if (velocity.y != 0.0D) {
+            player.setVelocity(velocity.x, 0.0D, velocity.z);
+        }
     }
 
     public static void restoreLockedRotation(ServerPlayerEntity player) {
