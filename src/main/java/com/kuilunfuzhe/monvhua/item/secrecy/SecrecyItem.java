@@ -17,6 +17,7 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemGroups;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.consume.UseAction;
+import net.minecraft.network.packet.s2c.play.StopSoundS2CPacket;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryKey;
@@ -263,7 +264,16 @@ public class SecrecyItem extends Item {
                 activePlayers.add(player.getUuid());
                 playHeartSound(player);
             }
-            HEART_SOUND_TICKS.keySet().removeIf(uuid -> !activePlayers.contains(uuid));
+            HEART_SOUND_TICKS.keySet().removeIf(uuid -> {
+                if (activePlayers.contains(uuid)) {
+                    return false;
+                }
+                ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+                if (player != null) {
+                    stopHeartSound(player);
+                }
+                return true;
+            });
 
             Iterator<Map.Entry<UUID, Long>> iterator = VANISH_PENDING_TICKS.entrySet().iterator();
             while (iterator.hasNext()) {
@@ -271,7 +281,7 @@ public class SecrecyItem extends Item {
                 if (entry.getValue() > now) continue;
                 ServerPlayerEntity player = server.getPlayerManager().getPlayer(entry.getKey());
                 if (player != null && shouldContinueSecrecy(player)) {
-                    player.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, INFINITE_DURATION, 0, false, false, true));
+                    //player.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, INFINITE_DURATION, 0, false, false, true));
                     PHASE_READY.add(player.getUuid());
                     syncSecrecyState(player, true, false, false);
                     player.sendMessage(Text.literal("§b精神集中..."), true);
@@ -307,11 +317,12 @@ public class SecrecyItem extends Item {
         UUID uuid = player.getUuid();
         VANISH_PENDING_TICKS.remove(uuid);
         HEART_SOUND_TICKS.remove(uuid);
+        stopHeartSound(player);
         ACTIVE_SECRECY.remove(uuid);
         EXITING_SECRECY.add(uuid);
         clearPhaseState(player);
         removeSpeedModifier(player);
-        player.removeStatusEffect(StatusEffects.INVISIBILITY);
+        //player.removeStatusEffect(StatusEffects.INVISIBILITY);
         //player.removeStatusEffect(StatusEffects.BLINDNESS);
         //player.removeStatusEffect(StatusEffects.DARKNESS);
         syncSecrecyState(player, false, false, false);
@@ -410,6 +421,10 @@ public class SecrecyItem extends Item {
         }
         player.playSoundToPlayer(HEART_SOUND, SoundCategory.PLAYERS, HEART_SOUND_MAX_VOLUME, 1.0F);
         HEART_SOUND_TICKS.put(uuid, HEART_SOUND_INTERVAL_TICKS);
+    }
+
+    private static void stopHeartSound(ServerPlayerEntity player) {
+        player.networkHandler.sendPacket(new StopSoundS2CPacket(HEART_SOUND_ID, SoundCategory.PLAYERS));
     }
 
     private static void tickPhaseReady(ServerPlayerEntity player) {
@@ -760,7 +775,7 @@ public class SecrecyItem extends Item {
 
     private static double getCurrentMovementSpeed(ServerPlayerEntity player) {
         EntityAttributeInstance speed = player.getAttributeInstance(EntityAttributes.MOVEMENT_SPEED);
-        return speed == null ? 0.1D : Math.max(0.0D, speed.getValue()*0.5f);
+        return speed == null ? 0.1D : Math.max(0.0D, speed.getValue()*0.1f);
     }
 
     public static void restoreLockedRotation(ServerPlayerEntity player) {
