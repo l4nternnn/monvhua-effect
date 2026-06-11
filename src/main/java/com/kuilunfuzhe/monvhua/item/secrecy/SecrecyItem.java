@@ -80,6 +80,8 @@ public class SecrecyItem extends Item {
     private static final Set<UUID> PHASE_ATTEMPTING = ConcurrentHashMap.newKeySet();
     /** 已经进入墙体内部的穿墙锁定玩家 */
     private static final Set<UUID> PHASE_LOCKED = ConcurrentHashMap.newKeySet();
+    /** 松开使用键或被沉默后滞留在墙体内的玩家，保留锁视角/无重力/碰撞穿透，但允许窒息伤害 */
+    private static final Set<UUID> PHASE_STALLED = ConcurrentHashMap.newKeySet();
     /** 穿墙尝试剩余 tick，超时未进入墙体则取消 noClip */
     private static final Map<UUID, Integer> PHASE_ATTEMPT_TICKS = new ConcurrentHashMap<>();
     /** 穿墙锁定时的固定视角 */
@@ -155,6 +157,11 @@ public class SecrecyItem extends Item {
             if (!canUseSecrecy(player, true)) {
                 return ActionResult.FAIL;
             }
+            if (PHASE_STALLED.contains(player.getUuid())) {
+                resumePhaseLocked(player);
+                user.setCurrentHand(hand);
+                return ActionResult.SUCCESS;
+            }
             user.setCurrentHand(hand);
             if (isSecrecyActive(player)) {
                 enterSecrecy(player);
@@ -191,7 +198,7 @@ public class SecrecyItem extends Item {
     public boolean onStoppedUsing(ItemStack stack, World world, LivingEntity user, int remainingUseTicks) {
         if (!world.isClient() && user instanceof ServerPlayerEntity player) {
             if (PHASE_LOCKED.contains(player.getUuid())) {
-                player.setCurrentHand(Hand.MAIN_HAND);
+                enterPhaseStalled(player);
                 return true;
             }
             exitSecrecy(player);
@@ -229,6 +236,12 @@ public class SecrecyItem extends Item {
             Set<UUID> activePlayers = new HashSet<>();
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                 if (EXITING_SECRECY.remove(player.getUuid())) {
+                    continue;
+                }
+                if (PHASE_STALLED.contains(player.getUuid())) {
+                    tickPhaseStalled(player);
+                    activePlayers.add(player.getUuid());
+                    playHeartSound(player);
                     continue;
                 }
                 if (PHASE_LOCKED.contains(player.getUuid())) {
@@ -335,6 +348,9 @@ public class SecrecyItem extends Item {
     }
 
     private static boolean shouldContinueSecrecy(ServerPlayerEntity player) {
+        if (PHASE_STALLED.contains(player.getUuid())) {
+            return isHoldingSecrecy(player.getMainHandStack()) && canUseSecrecy(player, false);
+        }
         if (PHASE_LOCKED.contains(player.getUuid())) {
             return isHoldingSecrecy(player.getMainHandStack()) && canUseSecrecy(player, false);
         }
@@ -427,6 +443,7 @@ public class SecrecyItem extends Item {
         player.noClip = false;
         player.fallDistance = 0.0F;
         zeroVerticalVelocity(player);
+        clampPhaseHorizontalSpeed(player);
 
         if (isInsideWall(player)) {
             enterPhaseLocked(player);
@@ -450,6 +467,7 @@ public class SecrecyItem extends Item {
         PHASE_ATTEMPTING.remove(uuid);
         PHASE_ATTEMPT_TICKS.remove(uuid);
         PHASE_READY.remove(uuid);
+        PHASE_STALLED.remove(uuid);
         PHASE_LOCKED.add(uuid);
         PHASE_LOCKED_ROTATIONS.put(uuid, new RotationSnapshot(player.getYaw(), player.getPitch()));
         enablePhaseGravityLock(player);
@@ -460,6 +478,11 @@ public class SecrecyItem extends Item {
     }
 
     private static void tickPhaseLocked(ServerPlayerEntity player) {
+        if (!shouldContinueSecrecy(player)) {
+            enterPhaseStalled(player);
+            return;
+        }
+
         player.noClip = false;
         player.fallDistance = 0.0F;
         enablePhaseGravityLock(player);
@@ -478,6 +501,50 @@ public class SecrecyItem extends Item {
         }
     }
 
+    private static void enterPhaseStalled(ServerPlayerEntity player) {
+        UUID uuid = player.getUuid();
+        PHASE_LOCKED.remove(uuid);
+        PHASE_ATTEMPTING.remove(uuid);
+        PHASE_ATTEMPT_TICKS.remove(uuid);
+        PHASE_READY.remove(uuid);
+        PHASE_STALLED.add(uuid);
+        PHASE_LOCKED_ROTATIONS.putIfAbsent(uuid, new RotationSnapshot(player.getYaw(), player.getPitch()));
+        enablePhaseGravityLock(player);
+        player.noClip = false;
+        player.fallDistance = 0.0F;
+        stopPhaseMovement(player);
+        syncSecrecyState(player, true, true, true, true);
+    }
+
+    private static void tickPhaseStalled(ServerPlayerEntity player) {
+        player.noClip = false;
+        player.fallDistance = 0.0F;
+        enablePhaseGravityLock(player);
+        restoreLockedRotation(player);
+        stopPhaseMovement(player);
+
+        if (isInsideWall(player)) {
+            return;
+        }
+        exitSecrecy(player);
+    }
+
+    private static void resumePhaseLocked(ServerPlayerEntity player) {
+        UUID uuid = player.getUuid();
+        PHASE_STALLED.remove(uuid);
+        PHASE_READY.remove(uuid);
+        PHASE_ATTEMPTING.remove(uuid);
+        PHASE_ATTEMPT_TICKS.remove(uuid);
+        PHASE_LOCKED.add(uuid);
+        PHASE_LOCKED_ROTATIONS.putIfAbsent(uuid, new RotationSnapshot(player.getYaw(), player.getPitch()));
+        enablePhaseGravityLock(player);
+        player.noClip = false;
+        player.fallDistance = 0.0F;
+        stopPhaseMovement(player);
+        syncSecrecyState(player, true, true, true, false);
+        player.sendMessage(Text.literal("§b集中..."), true);
+    }
+
     private static void exitPhaseLocked(ServerPlayerEntity player) {
         UUID uuid = player.getUuid();
         PHASE_LOCKED.remove(uuid);
@@ -493,6 +560,7 @@ public class SecrecyItem extends Item {
         PHASE_READY.remove(uuid);
         PHASE_ATTEMPTING.remove(uuid);
         PHASE_LOCKED.remove(uuid);
+        PHASE_STALLED.remove(uuid);
         PHASE_ATTEMPT_TICKS.remove(uuid);
         PHASE_LOCKED_ROTATIONS.remove(uuid);
         restorePhaseGravityLock(player);
@@ -629,12 +697,17 @@ public class SecrecyItem extends Item {
     }
 
     public static boolean shouldIgnorePhaseCollision(ServerPlayerEntity player, BlockPos pos) {
-        if (!isPhaseNoClip(player)) {
+        if (!shouldIgnorePhaseCollision(player)) {
             return false;
         }
         int feetY = BlockPos.ofFloored(player.getX(), player.getY() + 0.05D, player.getZ()).getY();
         int headY = BlockPos.ofFloored(player.getBoundingBox().maxX, player.getBoundingBox().maxY, player.getBoundingBox().maxZ).getY();
         return pos.getY() >= feetY && pos.getY() <= headY;
+    }
+
+    private static boolean shouldIgnorePhaseCollision(ServerPlayerEntity player) {
+        UUID uuid = player.getUuid();
+        return PHASE_ATTEMPTING.contains(uuid) || PHASE_LOCKED.contains(uuid) || PHASE_STALLED.contains(uuid);
     }
 
     public static boolean isPhaseNoClip(ServerPlayerEntity player) {
@@ -643,7 +716,7 @@ public class SecrecyItem extends Item {
     }
 
     public static boolean isPhaseLocked(ServerPlayerEntity player) {
-        return PHASE_LOCKED.contains(player.getUuid());
+        return PHASE_LOCKED.contains(player.getUuid()) || PHASE_STALLED.contains(player.getUuid());
     }
 
     private static void enablePhaseGravityLock(ServerPlayerEntity player) {
@@ -667,6 +740,29 @@ public class SecrecyItem extends Item {
         }
     }
 
+    private static void stopPhaseMovement(ServerPlayerEntity player) {
+        Vec3d velocity = player.getVelocity();
+        if (velocity.lengthSquared() != 0.0D) {
+            player.setVelocity(Vec3d.ZERO);
+        }
+    }
+
+    private static void clampPhaseHorizontalSpeed(ServerPlayerEntity player) {
+        Vec3d velocity = player.getVelocity();
+        double horizontalSpeedSquared = (velocity.x * velocity.x) + (velocity.z * velocity.z);
+        double maxSpeed = getCurrentMovementSpeed(player);
+        double maxSpeedSquared = maxSpeed * maxSpeed;
+        if (horizontalSpeedSquared > maxSpeedSquared && horizontalSpeedSquared > 0.0D) {
+            double scale = maxSpeed / Math.sqrt(horizontalSpeedSquared);
+            player.setVelocity(velocity.x * scale, velocity.y, velocity.z * scale);
+        }
+    }
+
+    private static double getCurrentMovementSpeed(ServerPlayerEntity player) {
+        EntityAttributeInstance speed = player.getAttributeInstance(EntityAttributes.MOVEMENT_SPEED);
+        return speed == null ? 0.1D : Math.max(0.0D, speed.getValue()*0.5f);
+    }
+
     public static void restoreLockedRotation(ServerPlayerEntity player) {
         RotationSnapshot rotation = PHASE_LOCKED_ROTATIONS.get(player.getUuid());
         if (rotation == null) {
@@ -685,16 +781,22 @@ public class SecrecyItem extends Item {
         Vec3d forward = new Vec3d(-Math.sin(yawRadians), 0.0D, Math.cos(yawRadians));
         Vec3d velocity = player.getVelocity();
         double forwardSpeed = velocity.x * forward.x + velocity.z * forward.z;
+        double maxSpeed = getCurrentMovementSpeed(player);
+        forwardSpeed = Math.clamp(forwardSpeed, -maxSpeed, maxSpeed);
         player.setVelocity(forward.multiply(forwardSpeed));
     }
 
     private static void syncSecrecyState(ServerPlayerEntity player, boolean invisible, boolean phaseNoClip, boolean phaseLocked) {
+        syncSecrecyState(player, invisible, phaseNoClip, phaseLocked, false);
+    }
+
+    private static void syncSecrecyState(ServerPlayerEntity player, boolean invisible, boolean phaseNoClip, boolean phaseLocked, boolean phaseStalled) {
         RotationSnapshot rotation = PHASE_LOCKED_ROTATIONS.get(player.getUuid());
         float yaw = rotation != null ? rotation.yaw() : player.getYaw();
         float pitch = rotation != null ? rotation.pitch() : player.getPitch();
         net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(
                 player,
-                new SecrecyStateS2CPacket(invisible, phaseNoClip, phaseLocked, yaw, pitch, 0)
+                new SecrecyStateS2CPacket(invisible, phaseNoClip, phaseLocked, phaseStalled, yaw, pitch, 0)
         );
     }
 }

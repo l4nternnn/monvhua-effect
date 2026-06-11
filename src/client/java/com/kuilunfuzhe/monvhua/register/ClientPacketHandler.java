@@ -179,6 +179,7 @@ public class ClientPacketHandler {
                     packet.invisible(),
                     packet.phaseNoClip(),
                     packet.phaseLocked(),
+                    packet.phaseStalled(),
                     packet.lockedYaw(),
                     packet.lockedPitch(),
                     packet.fadeOutTicks()

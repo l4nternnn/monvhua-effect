@@ -18,15 +18,16 @@ public abstract class SecrecyPhaseInputMixin extends Input {
         if (!SecrecyClientAudioManager.isPhaseLocked()) {
             return;
         }
+        boolean phaseStalled = SecrecyClientAudioManager.isPhaseStalled();
         this.playerInput = new PlayerInput(
-                this.playerInput.forward(),
-                this.playerInput.backward(),
+                !phaseStalled && this.playerInput.forward(),
+                !phaseStalled && this.playerInput.backward(),
                 false,
                 false,
                 false,
-                this.playerInput.sneak(),
-                this.playerInput.sprint()
+                !phaseStalled && this.playerInput.sneak(),
+                !phaseStalled && this.playerInput.sprint()
         );
-        this.movementVector = new Vec2f(0.0F, this.movementVector.y);
+        this.movementVector = phaseStalled ? Vec2f.ZERO : new Vec2f(0.0F, this.movementVector.y);
     }
 }

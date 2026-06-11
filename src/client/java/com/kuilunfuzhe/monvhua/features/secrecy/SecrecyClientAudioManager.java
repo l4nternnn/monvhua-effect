@@ -27,6 +27,8 @@ public final class SecrecyClientAudioManager {
     private static boolean phaseNoClip = false;
     /** 是否处于进入墙体后的穿墙锁定状态 */
     private static boolean phaseLocked = false;
+    /** 是否处于松开使用键/被沉默后的墙内滞留状态 */
+    private static boolean phaseStalled = false;
     /** 穿墙锁定时服务端固定的视角 */
     private static float lockedYaw = 0.0F;
     private static float lockedPitch = 0.0F;
@@ -44,13 +46,13 @@ public final class SecrecyClientAudioManager {
      * @param fadeOutTicks 淡出tick数（当前未使用，保留用于未来扩展）
      */
     public static void setInvisible(boolean invisible, int fadeOutTicks) {
-        setState(invisible, false, false, 0.0F, 0.0F, fadeOutTicks);
+        setState(invisible, false, false, false, 0.0F, 0.0F, fadeOutTicks);
     }
 
     /**
      * 设置完整隐秘状态，同步穿墙 noClip、锁定输入和锁定视角。
      */
-    public static void setState(boolean invisible, boolean newPhaseNoClip, boolean newPhaseLocked, float newLockedYaw, float newLockedPitch, int fadeOutTicks) {
+    public static void setState(boolean invisible, boolean newPhaseNoClip, boolean newPhaseLocked, boolean newPhaseStalled, float newLockedYaw, float newLockedPitch, int fadeOutTicks) {
         if (invisible != active) {
             MinecraftClient client = MinecraftClient.getInstance();
             if (client == null) {
@@ -67,6 +69,7 @@ public final class SecrecyClientAudioManager {
 
         phaseNoClip = newPhaseNoClip;
         phaseLocked = newPhaseLocked;
+        phaseStalled = newPhaseStalled;
         lockedYaw = newLockedYaw;
         lockedPitch = newLockedPitch;
     }
@@ -97,6 +100,11 @@ public final class SecrecyClientAudioManager {
             client.options.leftKey.setPressed(false);
             client.options.rightKey.setPressed(false);
             client.options.jumpKey.setPressed(false);
+            if (phaseStalled) {
+                client.options.forwardKey.setPressed(false);
+                client.options.backKey.setPressed(false);
+                client.options.sprintKey.setPressed(false);
+            }
         }
     }
 
@@ -119,6 +127,10 @@ public final class SecrecyClientAudioManager {
 
     public static boolean isPhaseLocked() {
         return phaseLocked;
+    }
+
+    public static boolean isPhaseStalled() {
+        return phaseStalled;
     }
 
     public static boolean isPhaseNoClip() {

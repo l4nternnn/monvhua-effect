@@ -17,6 +17,8 @@ public record SecrecyStateS2CPacket(
         boolean phaseNoClip,
         /** 是否处于进入墙体后的穿墙锁定状态 */
         boolean phaseLocked,
+        /** 是否处于松开使用键/被沉默后的墙内滞留状态 */
+        boolean phaseStalled,
         /** 穿墙锁定时固定的水平视角 */
         float lockedYaw,
         /** 穿墙锁定时固定的俯仰视角 */
@@ -31,7 +33,7 @@ public record SecrecyStateS2CPacket(
      * 从网络缓冲区读取状态数据构造数据包。
      */
     private SecrecyStateS2CPacket(RegistryByteBuf buf) {
-        this(buf.readBoolean(), buf.readBoolean(), buf.readBoolean(), buf.readFloat(), buf.readFloat(), buf.readVarInt());
+        this(buf.readBoolean(), buf.readBoolean(), buf.readBoolean(), buf.readBoolean(), buf.readFloat(), buf.readFloat(), buf.readVarInt());
     }
 
     /**
@@ -41,6 +43,7 @@ public record SecrecyStateS2CPacket(
         buf.writeBoolean(invisible);
         buf.writeBoolean(phaseNoClip);
         buf.writeBoolean(phaseLocked);
+        buf.writeBoolean(phaseStalled);
         buf.writeFloat(lockedYaw);
         buf.writeFloat(lockedPitch);
         buf.writeVarInt(fadeOutTicks);
