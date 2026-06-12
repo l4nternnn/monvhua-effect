@@ -6,7 +6,7 @@ import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
-import com.kuilunfuzhe.monvhua.item.secrecy.SecrecyItem;
+import com.kuilunfuzhe.monvhua.item.through.ThroughItem;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.minecraft.item.ItemGroup;
 import net.minecraft.item.ItemStack;
@@ -36,8 +36,8 @@ public class ModItemGroups {
                             entries.add(PaintItems.ERASER);
                             entries.add(PaintItems.PAINT_PAPER);
                             entries.add(PaintItems.PAINT_BUCKET);
+                            entries.add(ThroughItem.THROUGH_ITEM);
                             entries.add(mirror_of_then_and_now.MIRROR_ITEM);
-                            entries.add(SecrecyItem.SECRECY_ITEM);
                             entries.add(Assembly_ModItems.TORSO_ITEM);
                             entries.add(Assembly_ModItems.LEFT_ARM_ITEM);
                             entries.add(Assembly_ModItems.RIGHT_ARM_ITEM);
