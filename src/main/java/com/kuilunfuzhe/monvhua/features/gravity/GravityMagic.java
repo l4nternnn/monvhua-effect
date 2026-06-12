@@ -92,6 +92,8 @@ public final class GravityMagic {
     private static final Map<UUID, InvertedPlayerState> SERVER_INVERTED_PLAYER_STATES = new ConcurrentHashMap<>();
     private static final Map<UUID, InvertedPlayerState> CLIENT_INVERTED_PLAYER_STATES = new ConcurrentHashMap<>();
     private static final List<AreaGravityField> AREA_FIELDS = new CopyOnWriteArrayList<>();
+    private static final Map<UUID, java.util.ArrayDeque<AreaEdit>> DEBUG_UNDO = new ConcurrentHashMap<>();
+    private static final Map<UUID, java.util.ArrayDeque<AreaEdit>> DEBUG_REDO = new ConcurrentHashMap<>();
     private static boolean serverAreasLoaded = false;
 
     public enum LaunchMode {
@@ -99,7 +101,13 @@ public final class GravityMagic {
         RIGHT
     }
 
-    public record AreaGravityView(BlockPos center, int radius, int height, int ticks) {
+    public record AreaGravityView(UUID id, BlockPos center, GravityAreaSpec spec, int ticks) {
+    }
+
+    private record AreaSnapshot(UUID id, RegistryKey<World> world, BlockPos center, GravityAreaSpec spec, int ticks, double gravity) {
+    }
+
+    private record AreaEdit(List<AreaSnapshot> added, List<AreaSnapshot> removed) {
     }
 
     private GravityMagic() {
@@ -112,6 +120,9 @@ public final class GravityMagic {
                 double gravity = adjustTargetGravity(player, packet.entityId(), packet.gravity());
                 player.sendMessage(Text.literal("\u00a7b[Gravity] g=" + format(gravity)), true);
             });
+        });
+        ServerPlayNetworking.registerGlobalReceiver(GravityPackets.DebugAreaActionC2S.ID, (packet, context) -> {
+            context.server().execute(() -> handleDebugAreaAction(context.player(), packet));
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -203,34 +214,217 @@ public final class GravityMagic {
     }
 
     public static int addAreaGravity(ServerWorld world, BlockPos center, int radius, int height, int ticks, double gravity) {
+        return addAreaGravity(world, center, GravityAreaSpec.legacy(radius, height), ticks, gravity);
+    }
+
+    public static int addAreaGravity(ServerWorld world, BlockPos center, GravityAreaSpec spec, int ticks, double gravity) {
         ensureServerAreasLoaded(world.getServer());
-        AreaGravityField field = new AreaGravityField(world.getRegistryKey(), center.toImmutable(), radius, height, ticks, gravity, false);
+        AreaGravityField field = new AreaGravityField(UUID.randomUUID(), world.getRegistryKey(), center.toImmutable(), spec, ticks, gravity, false);
         AREA_FIELDS.add(field);
         broadcastAreaGravity(world, field);
         saveServerAreas(world.getServer());
         return 1;
     }
 
-    public static int clearNearestAreaGravity(ServerWorld world, Vec3d pos) {
+    private static void handleDebugAreaAction(ServerPlayerEntity player, GravityPackets.DebugAreaActionC2S packet) {
+        if (player == null || !(player.getWorld() instanceof ServerWorld world) || !canUseDebugStick(player)) {
+            return;
+        }
+
+        GravityAreaSpec spec = new GravityAreaSpec(
+                GravityAreaSpec.Shape.byId(packet.shape()),
+                GravityAreaSpec.Half.byId(packet.half()),
+                packet.sizeX(),
+                packet.sizeY(),
+                packet.sizeZ()
+        );
+        int ticks = packet.ticks() == 0 ? INFINITE_AREA_TICKS : packet.ticks();
+        double gravity = clampGravity(packet.gravity());
+
+        switch (packet.action()) {
+            case 0 -> placeDebugArea(player, world, packet.center(), spec, ticks, gravity);
+            case 1 -> moveNearestDebugArea(player, world, packet.center());
+            case 2 -> deleteDebugAreas(player, world, packet.center(), spec);
+            case 3 -> undoDebugAreaEdit(player, world);
+            case 4 -> redoDebugAreaEdit(player, world);
+            default -> {
+            }
+        }
+    }
+
+    private static boolean canUseDebugStick(ServerPlayerEntity player) {
+        return player.isCreative() || player.hasPermissionLevel(2);
+    }
+
+    private static void placeDebugArea(ServerPlayerEntity player, ServerWorld world, BlockPos center, GravityAreaSpec spec, int ticks, double gravity) {
+        ensureServerAreasLoaded(world.getServer());
+        AreaGravityField field = new AreaGravityField(UUID.randomUUID(), world.getRegistryKey(), center.toImmutable(), spec, ticks, gravity, false);
+        AREA_FIELDS.add(field);
+        broadcastAreaGravity(world, field);
+        saveServerAreas(world.getServer());
+        pushDebugEdit(player, new AreaEdit(List.of(snapshot(field)), List.of()));
+        player.sendMessage(Text.literal("\u00a7e[Gravity Debug] Placed " + describeSpec(spec) + " at " + center.toShortString()), true);
+    }
+
+    private static void moveNearestDebugArea(ServerPlayerEntity player, ServerWorld world, BlockPos center) {
+        ensureServerAreasLoaded(world.getServer());
+        AreaGravityField field = nearestArea(world, player.getPos());
+        if (field == null) {
+            player.sendMessage(Text.literal("\u00a7c[Gravity Debug] No area to move"), true);
+            return;
+        }
+
+        AreaSnapshot removed = snapshot(field);
+        AREA_FIELDS.remove(field);
+        broadcastClearAreaGravity(world, field, false);
+        AreaGravityField moved = new AreaGravityField(UUID.randomUUID(), field.world, center.toImmutable(), field.spec, field.ticks, field.gravity, false);
+        AREA_FIELDS.add(moved);
+        broadcastAreaGravity(world, moved);
+        saveServerAreas(world.getServer());
+        pushDebugEdit(player, new AreaEdit(List.of(snapshot(moved)), List.of(removed)));
+        player.sendMessage(Text.literal("\u00a7e[Gravity Debug] Moved nearest area"), true);
+    }
+
+    private static void deleteDebugAreas(ServerPlayerEntity player, ServerWorld world, BlockPos center, GravityAreaSpec spec) {
+        ensureServerAreasLoaded(world.getServer());
+        List<AreaSnapshot> removed = new java.util.ArrayList<>();
+        GravityAreaSpec.Bounds selection = spec.bounds(center);
+        for (AreaGravityField field : AREA_FIELDS) {
+            if (field.clientSynced || !field.world.equals(world.getRegistryKey())) {
+                continue;
+            }
+            GravityAreaSpec.Bounds bounds = field.spec.bounds(field.center);
+            if (intersects(selection, bounds)) {
+                removed.add(snapshot(field));
+                AREA_FIELDS.remove(field);
+                broadcastClearAreaGravity(world, field, false);
+            }
+        }
+
+        if (removed.isEmpty()) {
+            player.sendMessage(Text.literal("\u00a7c[Gravity Debug] No area in selection"), true);
+            return;
+        }
+
+        saveServerAreas(world.getServer());
+        pushDebugEdit(player, new AreaEdit(List.of(), removed));
+        player.sendMessage(Text.literal("\u00a7e[Gravity Debug] Deleted " + removed.size() + " area(s)"), true);
+    }
+
+    private static void undoDebugAreaEdit(ServerPlayerEntity player, ServerWorld world) {
+        AreaEdit edit = popEdit(DEBUG_UNDO, player.getUuid());
+        if (edit == null) {
+            player.sendMessage(Text.literal("\u00a7c[Gravity Debug] Nothing to undo"), true);
+            return;
+        }
+        applyInverseEdit(world, edit);
+        pushEdit(DEBUG_REDO, player.getUuid(), edit);
+        player.sendMessage(Text.literal("\u00a7e[Gravity Debug] Undo"), true);
+    }
+
+    private static void redoDebugAreaEdit(ServerPlayerEntity player, ServerWorld world) {
+        AreaEdit edit = popEdit(DEBUG_REDO, player.getUuid());
+        if (edit == null) {
+            player.sendMessage(Text.literal("\u00a7c[Gravity Debug] Nothing to redo"), true);
+            return;
+        }
+        applyEdit(world, edit);
+        pushEdit(DEBUG_UNDO, player.getUuid(), edit);
+        player.sendMessage(Text.literal("\u00a7e[Gravity Debug] Redo"), true);
+    }
+
+    private static void pushDebugEdit(ServerPlayerEntity player, AreaEdit edit) {
+        pushEdit(DEBUG_UNDO, player.getUuid(), edit);
+        DEBUG_REDO.computeIfAbsent(player.getUuid(), ignored -> new java.util.ArrayDeque<>()).clear();
+    }
+
+    private static void pushEdit(Map<UUID, java.util.ArrayDeque<AreaEdit>> edits, UUID playerId, AreaEdit edit) {
+        java.util.ArrayDeque<AreaEdit> stack = edits.computeIfAbsent(playerId, ignored -> new java.util.ArrayDeque<>());
+        stack.push(edit);
+        while (stack.size() > 64) {
+            stack.removeLast();
+        }
+    }
+
+    private static AreaEdit popEdit(Map<UUID, java.util.ArrayDeque<AreaEdit>> edits, UUID playerId) {
+        java.util.ArrayDeque<AreaEdit> stack = edits.get(playerId);
+        return stack == null || stack.isEmpty() ? null : stack.pop();
+    }
+
+    private static void applyEdit(ServerWorld world, AreaEdit edit) {
+        for (AreaSnapshot snapshot : edit.removed()) {
+            removeSnapshot(world, snapshot);
+        }
+        for (AreaSnapshot snapshot : edit.added()) {
+            restoreSnapshot(world, snapshot);
+        }
+        saveServerAreas(world.getServer());
+    }
+
+    private static void applyInverseEdit(ServerWorld world, AreaEdit edit) {
+        for (AreaSnapshot snapshot : edit.added()) {
+            removeSnapshot(world, snapshot);
+        }
+        for (AreaSnapshot snapshot : edit.removed()) {
+            restoreSnapshot(world, snapshot);
+        }
+        saveServerAreas(world.getServer());
+    }
+
+    private static void removeSnapshot(ServerWorld world, AreaSnapshot snapshot) {
+        for (AreaGravityField field : AREA_FIELDS) {
+            if (!field.clientSynced && field.id.equals(snapshot.id())) {
+                AREA_FIELDS.remove(field);
+                if (field.world.equals(world.getRegistryKey())) {
+                    broadcastClearAreaGravity(world, field, false);
+                }
+                return;
+            }
+        }
+    }
+
+    private static void restoreSnapshot(ServerWorld world, AreaSnapshot snapshot) {
+        AreaGravityField field = new AreaGravityField(snapshot.id(), snapshot.world(), snapshot.center(), snapshot.spec(), snapshot.ticks(), snapshot.gravity(), false);
+        AREA_FIELDS.add(field);
+        if (field.world.equals(world.getRegistryKey())) {
+            broadcastAreaGravity(world, field);
+        }
+    }
+
+    private static AreaGravityField nearestArea(ServerWorld world, Vec3d pos) {
         AreaGravityField nearest = null;
         double nearestDistanceSq = Double.MAX_VALUE;
         for (AreaGravityField field : AREA_FIELDS) {
             if (field.clientSynced || !field.world.equals(world.getRegistryKey())) {
                 continue;
             }
-            double distanceSq = areaTopCenter(field.center).squaredDistanceTo(pos);
+            double distanceSq = field.center.toCenterPos().squaredDistanceTo(pos);
             if (distanceSq < nearestDistanceSq) {
                 nearest = field;
                 nearestDistanceSq = distanceSq;
             }
         }
+        return nearest;
+    }
 
+    private static AreaSnapshot snapshot(AreaGravityField field) {
+        return new AreaSnapshot(field.id, field.world, field.center, field.spec, field.ticks, field.gravity);
+    }
+
+    private static boolean intersects(GravityAreaSpec.Bounds a, GravityAreaSpec.Bounds b) {
+        return a.minX() <= b.maxX() && a.maxX() >= b.minX()
+                && a.minY() <= b.maxY() && a.maxY() >= b.minY()
+                && a.minZ() <= b.maxZ() && a.maxZ() >= b.minZ();
+    }
+
+    public static int clearNearestAreaGravity(ServerWorld world, Vec3d pos) {
+        AreaGravityField nearest = nearestArea(world, pos);
         if (nearest == null) {
             return 0;
         }
 
         AREA_FIELDS.remove(nearest);
-        broadcastClearAreaGravity(world, nearest.center, nearest.radius, nearest.height, false);
+        broadcastClearAreaGravity(world, nearest, false);
         resetInvertedPlayersOutsideAreas(world);
         saveServerAreas(world.getServer());
         return 1;
@@ -244,7 +438,7 @@ public final class GravityMagic {
             }
         }
         if (removed > 0) {
-            broadcastClearAreaGravity(world, BlockPos.ORIGIN, 0, 0, true);
+            broadcastClearAllAreaGravity(world);
             resetInvertedPlayersOutsideAreas(world);
             saveServerAreas(world.getServer());
         }
@@ -255,7 +449,7 @@ public final class GravityMagic {
         ensureServerAreasLoaded(player.getServer());
         for (AreaGravityField field : AREA_FIELDS) {
             if (!field.clientSynced && field.world.equals(player.getWorld().getRegistryKey())) {
-                ServerPlayNetworking.send(player, new GravityPackets.AreaGravityS2C(field.center, field.radius, field.height, field.ticks, field.gravity));
+                ServerPlayNetworking.send(player, areaPacket(field));
             }
         }
     }
@@ -512,7 +706,7 @@ public final class GravityMagic {
             field.ticks--;
             if (field.ticks <= 0) {
                 AREA_FIELDS.remove(field);
-                broadcastClearAreaGravity(world, field.center, field.radius, field.height, false);
+                broadcastClearAreaGravity(world, field, false);
                 resetInvertedPlayersOutsideAreas(world);
                 saveServerAreas(world.getServer());
             }
@@ -542,12 +736,22 @@ public final class GravityMagic {
                 }
                 JsonObject area = element.getAsJsonObject();
                 RegistryKey<World> world = RegistryKey.of(RegistryKeys.WORLD, Identifier.of(area.get("world").getAsString()));
+                UUID id = area.has("id") ? UUID.fromString(area.get("id").getAsString()) : UUID.randomUUID();
                 BlockPos center = new BlockPos(area.get("x").getAsInt(), area.get("y").getAsInt(), area.get("z").getAsInt());
                 int radius = area.get("radius").getAsInt();
                 int height = area.has("height") ? area.get("height").getAsInt() : DEFAULT_AREA_HEIGHT;
+                GravityAreaSpec spec = area.has("shape")
+                        ? new GravityAreaSpec(
+                        GravityAreaSpec.Shape.byId(area.get("shape").getAsInt()),
+                        GravityAreaSpec.Half.byId(area.has("half") ? area.get("half").getAsInt() : GravityAreaSpec.Half.LOWER.ordinal()),
+                        area.has("sizeX") ? area.get("sizeX").getAsInt() : radius,
+                        area.has("sizeY") ? area.get("sizeY").getAsInt() : height,
+                        area.has("sizeZ") ? area.get("sizeZ").getAsInt() : radius
+                )
+                        : GravityAreaSpec.legacy(radius, height);
                 int ticks = area.get("ticks").getAsInt();
                 double gravity = area.get("gravity").getAsDouble();
-                AREA_FIELDS.add(new AreaGravityField(world, center, radius, height, ticks, gravity, false));
+                AREA_FIELDS.add(new AreaGravityField(id, world, center, spec, ticks, gravity, false));
             }
         } catch (RuntimeException | IOException ignored) {
             // Corrupt debug-area data should not prevent a world from loading.
@@ -570,12 +774,18 @@ public final class GravityMagic {
                 continue;
             }
             JsonObject area = new JsonObject();
+            area.addProperty("id", field.id.toString());
             area.addProperty("world", field.world.getValue().toString());
             area.addProperty("x", field.center.getX());
             area.addProperty("y", field.center.getY());
             area.addProperty("z", field.center.getZ());
-            area.addProperty("radius", field.radius);
-            area.addProperty("height", field.height);
+            area.addProperty("radius", field.spec.sizeX());
+            area.addProperty("height", field.spec.sizeY());
+            area.addProperty("shape", field.spec.shape().ordinal());
+            area.addProperty("half", field.spec.half().ordinal());
+            area.addProperty("sizeX", field.spec.sizeX());
+            area.addProperty("sizeY", field.spec.sizeY());
+            area.addProperty("sizeZ", field.spec.sizeZ());
             area.addProperty("ticks", field.ticks);
             area.addProperty("gravity", field.gravity);
             areas.add(area);
@@ -929,7 +1139,7 @@ public final class GravityMagic {
     }
 
     private static void broadcastAreaGravity(ServerWorld world, AreaGravityField field) {
-        GravityPackets.AreaGravityS2C packet = new GravityPackets.AreaGravityS2C(field.center, field.radius, field.height, field.ticks, field.gravity);
+        GravityPackets.AreaGravityS2C packet = areaPacket(field);
         double trackingDistanceSq = (field.maxExtent() + 96.0D) * (field.maxExtent() + 96.0D);
         for (ServerPlayerEntity target : world.getPlayers()) {
             if (target.squaredDistanceTo(areaTopCenter(field.center)) <= trackingDistanceSq) {
@@ -938,8 +1148,29 @@ public final class GravityMagic {
         }
     }
 
-    private static void broadcastClearAreaGravity(ServerWorld world, BlockPos center, int radius, int height, boolean all) {
-        GravityPackets.ClearAreaGravityS2C packet = new GravityPackets.ClearAreaGravityS2C(center, radius, height, all);
+    private static GravityPackets.AreaGravityS2C areaPacket(AreaGravityField field) {
+        return new GravityPackets.AreaGravityS2C(
+                field.id,
+                field.center,
+                field.spec.shape().ordinal(),
+                field.spec.half().ordinal(),
+                field.spec.sizeX(),
+                field.spec.sizeY(),
+                field.spec.sizeZ(),
+                field.ticks,
+                field.gravity
+        );
+    }
+
+    private static void broadcastClearAreaGravity(ServerWorld world, AreaGravityField field, boolean all) {
+        GravityPackets.ClearAreaGravityS2C packet = new GravityPackets.ClearAreaGravityS2C(field.id, field.center, field.maxExtent(), all);
+        for (ServerPlayerEntity target : world.getPlayers()) {
+            ServerPlayNetworking.send(target, packet);
+        }
+    }
+
+    private static void broadcastClearAllAreaGravity(ServerWorld world) {
+        GravityPackets.ClearAreaGravityS2C packet = new GravityPackets.ClearAreaGravityS2C(new UUID(0L, 0L), BlockPos.ORIGIN, 0, true);
         for (ServerPlayerEntity target : world.getPlayers()) {
             ServerPlayNetworking.send(target, packet);
         }
@@ -949,16 +1180,17 @@ public final class GravityMagic {
         return ENTITY_GRAVITY.containsKey(entity.getUuid()) || isInInvertedArea(entity) && !shouldIgnoreInvertedPull(entity);
     }
 
-    public static void addClientSyncedAreaGravity(RegistryKey<World> world, BlockPos center, int radius, int height, int ticks, double gravity) {
-        AREA_FIELDS.add(new AreaGravityField(world, center.toImmutable(), radius, height, ticks, gravity, true));
+    public static void addClientSyncedAreaGravity(UUID id, RegistryKey<World> world, BlockPos center, GravityAreaSpec spec, int ticks, double gravity) {
+        AREA_FIELDS.removeIf(field -> field.clientSynced && field.id.equals(id));
+        AREA_FIELDS.add(new AreaGravityField(id, world, center.toImmutable(), spec, ticks, gravity, true));
     }
 
-    public static void clearClientSyncedAreaGravity(RegistryKey<World> world, BlockPos center, int radius, int height, boolean all) {
+    public static void clearClientSyncedAreaGravity(UUID id, RegistryKey<World> world, boolean all) {
         for (AreaGravityField field : AREA_FIELDS) {
             if (!field.clientSynced || !field.world.equals(world)) {
                 continue;
             }
-            if (all || field.center.equals(center) && field.radius == radius && field.height == height) {
+            if (all || field.id.equals(id)) {
                 AREA_FIELDS.remove(field);
             }
         }
@@ -983,7 +1215,7 @@ public final class GravityMagic {
         List<AreaGravityView> views = new java.util.ArrayList<>();
         for (AreaGravityField field : AREA_FIELDS) {
             if (field.clientSynced && field.world.equals(world)) {
-                views.add(new AreaGravityView(field.center, field.radius, field.height, field.ticks));
+                views.add(new AreaGravityView(field.id, field.center, field.spec, field.ticks));
             }
         }
         return views;
@@ -1018,6 +1250,14 @@ public final class GravityMagic {
 
     private static String displayName(LaunchMode mode) {
         return mode == LaunchMode.UP ? "UP" : "RIGHT";
+    }
+
+    private static String describeSpec(GravityAreaSpec spec) {
+        return spec.shape().name().toLowerCase(java.util.Locale.ROOT)
+                + "/" + spec.half().name().toLowerCase(java.util.Locale.ROOT)
+                + " x=" + spec.sizeX()
+                + " y=" + spec.sizeY()
+                + " z=" + spec.sizeZ();
     }
 
     private static int invertIslandArea(ServerWorld world, BlockPos origin) {
@@ -1109,40 +1349,30 @@ public final class GravityMagic {
     }
 
     private static final class AreaGravityField {
+        private final UUID id;
         private final RegistryKey<World> world;
         private final BlockPos center;
-        private final int radius;
-        private final int height;
+        private final GravityAreaSpec spec;
         private final double gravity;
         private final boolean clientSynced;
         private int ticks;
 
-        private AreaGravityField(RegistryKey<World> world, BlockPos center, int radius, int height, int ticks, double gravity, boolean clientSynced) {
+        private AreaGravityField(UUID id, RegistryKey<World> world, BlockPos center, GravityAreaSpec spec, int ticks, double gravity, boolean clientSynced) {
+            this.id = id == null ? UUID.randomUUID() : id;
             this.world = world;
-            this.center = center;
-            this.radius = Math.max(1, radius);
-            this.height = Math.max(1, height);
+            this.center = center.toImmutable();
+            this.spec = spec == null ? GravityAreaSpec.legacy(AREA_RADIUS, DEFAULT_AREA_HEIGHT) : spec;
             this.ticks = ticks;
             this.gravity = gravity;
             this.clientSynced = clientSynced;
         }
 
         private boolean contains(Vec3d pos) {
-            Vec3d topCenter = areaTopCenter(this.center);
-            double dx = pos.x - topCenter.x;
-            double dy = pos.y - topCenter.y;
-            double dz = pos.z - topCenter.z;
-            if (dy > 0.0D || dy < -this.height) {
-                return false;
-            }
-
-            double horizontal = (dx * dx + dz * dz) / (double) (this.radius * this.radius);
-            double vertical = (dy * dy) / (double) (this.height * this.height);
-            return horizontal + vertical <= 1.0D;
+            return this.spec.contains(this.center, pos);
         }
 
         private int maxExtent() {
-            return Math.max(this.radius, this.height);
+            return this.spec.maxExtent();
         }
     }
 

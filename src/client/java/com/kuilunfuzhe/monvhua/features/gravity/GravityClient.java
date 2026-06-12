@@ -36,6 +36,7 @@ public final class GravityClient {
             }
             GravityMagic.tickClientSyncedAreaGravity();
             GravityMagic.resetInvertedPlayerIfInactive(client.player);
+            GravityDebugClient.tick(client);
         });
         HudRenderCallback.EVENT.register(GravityClient::renderHud);
         ClientPlayNetworking.registerGlobalReceiver(GravityPackets.AreaGravityS2C.ID, (packet, context) -> {
@@ -43,14 +44,20 @@ public final class GravityClient {
                 MinecraftClient client = MinecraftClient.getInstance();
                 if (client.world != null) {
                     GravityMagic.addClientSyncedAreaGravity(
+                            packet.id(),
                             client.world.getRegistryKey(),
                             packet.center(),
-                            packet.radius(),
-                            packet.height(),
+                            new GravityAreaSpec(
+                                    GravityAreaSpec.Shape.byId(packet.shape()),
+                                    GravityAreaSpec.Half.byId(packet.half()),
+                                    packet.sizeX(),
+                                    packet.sizeY(),
+                                    packet.sizeZ()
+                            ),
                             packet.ticks(),
                             packet.gravity()
                     );
-                    scheduleAreaRerender(client, packet.center(), packet.radius(), packet.height());
+                    scheduleAreaRerender(client, packet.center(), Math.max(packet.sizeX(), Math.max(packet.sizeY(), packet.sizeZ())));
                 }
             });
         });
@@ -59,16 +66,14 @@ public final class GravityClient {
                 MinecraftClient client = MinecraftClient.getInstance();
                 if (client.world != null) {
                     GravityMagic.clearClientSyncedAreaGravity(
+                            packet.id(),
                             client.world.getRegistryKey(),
-                            packet.center(),
-                            packet.radius(),
-                            packet.height(),
                             packet.all()
                     );
                     if (packet.all()) {
                         client.worldRenderer.reload();
                     } else {
-                        scheduleAreaRerender(client, packet.center(), packet.radius(), packet.height());
+                        scheduleAreaRerender(client, packet.center(), packet.extent());
                     }
                     GravityMagic.resetInvertedPlayerIfInactive(client.player);
                 }
@@ -76,14 +81,14 @@ public final class GravityClient {
         });
     }
 
-    private static void scheduleAreaRerender(MinecraftClient client, net.minecraft.util.math.BlockPos center, int radius, int height) {
+    private static void scheduleAreaRerender(MinecraftClient client, net.minecraft.util.math.BlockPos center, int extent) {
         client.worldRenderer.scheduleBlockRenders(
-                center.getX() - radius,
-                center.getY() - height,
-                center.getZ() - radius,
-                center.getX() + radius,
-                center.getY() + 1,
-                center.getZ() + radius
+                center.getX() - extent,
+                center.getY() - extent,
+                center.getZ() - extent,
+                center.getX() + extent,
+                center.getY() + extent,
+                center.getZ() + extent
         );
     }
 

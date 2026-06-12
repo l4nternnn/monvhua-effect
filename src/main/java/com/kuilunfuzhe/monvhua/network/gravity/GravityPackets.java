@@ -7,12 +7,15 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 
+import java.util.UUID;
+
 public final class GravityPackets {
     private GravityPackets() {
     }
 
     public static void registerC2S() {
         AdjustGravityC2S.register();
+        DebugAreaActionC2S.register();
     }
 
     public static void registerS2C() {
@@ -48,19 +51,57 @@ public final class GravityPackets {
         }
     }
 
-    public record AreaGravityS2C(BlockPos center, int radius, int height, int ticks, double gravity) implements CustomPayload {
+    public record DebugAreaActionC2S(int action, BlockPos center, int shape, int half, int sizeX, int sizeY, int sizeZ, int ticks, double gravity) implements CustomPayload {
+        public static final Id<DebugAreaActionC2S> ID = new Id<>(Identifier.of("monvhua", "debug_area_action"));
+        public static final PacketCodec<RegistryByteBuf, DebugAreaActionC2S> CODEC = PacketCodec.of(DebugAreaActionC2S::write, DebugAreaActionC2S::new);
+        private static boolean registered = false;
+
+        private DebugAreaActionC2S(RegistryByteBuf buf) {
+            this(buf.readInt(), buf.readBlockPos(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readDouble());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeInt(action);
+            buf.writeBlockPos(center);
+            buf.writeInt(shape);
+            buf.writeInt(half);
+            buf.writeInt(sizeX);
+            buf.writeInt(sizeY);
+            buf.writeInt(sizeZ);
+            buf.writeInt(ticks);
+            buf.writeDouble(gravity);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record AreaGravityS2C(UUID id, BlockPos center, int shape, int half, int sizeX, int sizeY, int sizeZ, int ticks, double gravity) implements CustomPayload {
         public static final Id<AreaGravityS2C> ID = new Id<>(Identifier.of("monvhua", "area_gravity"));
         public static final PacketCodec<RegistryByteBuf, AreaGravityS2C> CODEC = PacketCodec.of(AreaGravityS2C::write, AreaGravityS2C::new);
         private static boolean registered = false;
 
         private AreaGravityS2C(RegistryByteBuf buf) {
-            this(buf.readBlockPos(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readDouble());
+            this(buf.readUuid(), buf.readBlockPos(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readDouble());
         }
 
         private void write(RegistryByteBuf buf) {
+            buf.writeUuid(id);
             buf.writeBlockPos(center);
-            buf.writeInt(radius);
-            buf.writeInt(height);
+            buf.writeInt(shape);
+            buf.writeInt(half);
+            buf.writeInt(sizeX);
+            buf.writeInt(sizeY);
+            buf.writeInt(sizeZ);
             buf.writeInt(ticks);
             buf.writeDouble(gravity);
         }
@@ -78,19 +119,19 @@ public final class GravityPackets {
         }
     }
 
-    public record ClearAreaGravityS2C(BlockPos center, int radius, int height, boolean all) implements CustomPayload {
+    public record ClearAreaGravityS2C(UUID id, BlockPos center, int extent, boolean all) implements CustomPayload {
         public static final Id<ClearAreaGravityS2C> ID = new Id<>(Identifier.of("monvhua", "clear_area_gravity"));
         public static final PacketCodec<RegistryByteBuf, ClearAreaGravityS2C> CODEC = PacketCodec.of(ClearAreaGravityS2C::write, ClearAreaGravityS2C::new);
         private static boolean registered = false;
 
         private ClearAreaGravityS2C(RegistryByteBuf buf) {
-            this(buf.readBlockPos(), buf.readInt(), buf.readInt(), buf.readBoolean());
+            this(buf.readUuid(), buf.readBlockPos(), buf.readInt(), buf.readBoolean());
         }
 
         private void write(RegistryByteBuf buf) {
+            buf.writeUuid(id);
             buf.writeBlockPos(center);
-            buf.writeInt(radius);
-            buf.writeInt(height);
+            buf.writeInt(extent);
             buf.writeBoolean(all);
         }
 

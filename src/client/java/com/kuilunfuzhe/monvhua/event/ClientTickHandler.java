@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.event;
 
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
+import com.kuilunfuzhe.monvhua.features.gravity.GravityDebugClient;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
@@ -46,6 +47,9 @@ public class ClientTickHandler {
                 client.setScreen(new CombinedConfigScreen());
             }
             if (KeyBindingHandler.bodyPoseEditorKey.wasPressed()) {
+                if (GravityDebugClient.tryOpenConfig(client)) {
+                    return;
+                }
                 if (!PaintOverlayClient.tryOpenColorScreen(client) && client.player.isCreative()) {
                     if (!BodyPoseEditorFragment.tryOpenFromTargetedEditorEntity()) {
                         BodyPoseEditorFragment.open();
