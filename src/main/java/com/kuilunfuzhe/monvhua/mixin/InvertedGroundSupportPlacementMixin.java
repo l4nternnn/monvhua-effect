@@ -1,12 +1,11 @@
 package com.kuilunfuzhe.monvhua.mixin;
 
-import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
+import com.kuilunfuzhe.monvhua.features.gravity.InvertedBlockContext;
 import com.kuilunfuzhe.monvhua.features.gravity.InvertedSupportWorldView;
 import net.minecraft.block.AbstractBlock;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.TallPlantBlock;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
 import net.minecraft.world.WorldView;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -19,12 +18,11 @@ public abstract class InvertedGroundSupportPlacementMixin {
     @Unique
     private static final ThreadLocal<Boolean> MONVHUA_CHECKING_INVERTED_SUPPORT = ThreadLocal.withInitial(() -> false);
 
-    @Inject(method = "canPlaceAt", at = @At("RETURN"), cancellable = true)
-    private void monvhua$retryWithInvertedGroundSupport(WorldView world, BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
-        if (cir.getReturnValueZ()
+    @Inject(method = "canPlaceAt", at = @At("HEAD"), cancellable = true)
+    private void monvhua$useInvertedSupportSurface(WorldView world, BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
+        if (world instanceof InvertedSupportWorldView
                 || MONVHUA_CHECKING_INVERTED_SUPPORT.get()
-                || !(world instanceof World realWorld)
-                || !GravityMagic.isInInvertedArea(realWorld.getRegistryKey(), pos.toCenterPos())) {
+                || !InvertedBlockContext.shouldMirror(world, pos)) {
             return;
         }
 
@@ -34,9 +32,7 @@ public abstract class InvertedGroundSupportPlacementMixin {
             if (state.getBlock() instanceof TallPlantBlock) {
                 return;
             }
-            if (state.canPlaceAt(new InvertedSupportWorldView(world, pos), pos)) {
-                cir.setReturnValue(true);
-            }
+            cir.setReturnValue(state.canPlaceAt(new InvertedSupportWorldView(world, pos), pos));
         } finally {
             MONVHUA_CHECKING_INVERTED_SUPPORT.set(false);
         }

@@ -41,6 +41,14 @@ public final class InvertedSupportWorldView implements WorldView {
         return direction;
     }
 
+    public static Direction flipVertical(Direction direction) {
+        return direction.getAxis() == Direction.Axis.Y ? direction.getOpposite() : direction;
+    }
+
+    public static BlockPos offsetFromFlippedSurface(BlockPos pos, Direction direction) {
+        return pos.offset(flipVertical(direction));
+    }
+
     private BlockPos mirror(BlockPos pos) {
         int mirroredY = anchor.getY() * 2 - pos.getY();
         return new BlockPos(pos.getX(), mirroredY, pos.getZ());
