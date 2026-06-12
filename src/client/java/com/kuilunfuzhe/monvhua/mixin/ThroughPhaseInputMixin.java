@@ -1,6 +1,6 @@
 package com.kuilunfuzhe.monvhua.mixin;
 
-import com.kuilunfuzhe.monvhua.features.secrecy.SecrecyClientAudioManager;
+import com.kuilunfuzhe.monvhua.features.through.ThroughClientManager;
 import net.minecraft.client.input.Input;
 import net.minecraft.client.input.KeyboardInput;
 import net.minecraft.util.PlayerInput;
@@ -11,14 +11,14 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(KeyboardInput.class)
-public abstract class SecrecyPhaseInputMixin extends Input {
+public abstract class ThroughPhaseInputMixin extends Input {
 
     @Inject(method = "tick", at = @At("TAIL"))
     private void monvhua$lockSecrecyPhaseInput(CallbackInfo ci) {
-        if (!SecrecyClientAudioManager.isPhaseLocked()) {
+        if (!ThroughClientManager.isPhaseLocked()) {
             return;
         }
-        boolean phaseStalled = SecrecyClientAudioManager.isPhaseStalled();
+        boolean phaseStalled = ThroughClientManager.isPhaseStalled();
         this.playerInput = new PlayerInput(
                 !phaseStalled && this.playerInput.forward(),
                 !phaseStalled && this.playerInput.backward(),

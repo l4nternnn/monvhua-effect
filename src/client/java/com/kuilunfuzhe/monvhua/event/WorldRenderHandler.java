@@ -5,7 +5,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityAreaBoundaryRenderer;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
-import com.kuilunfuzhe.monvhua.item.secrecy.SecrecyItem;
+import com.kuilunfuzhe.monvhua.item.through.ThroughItem;
 import com.kuilunfuzhe.monvhua.renderer.bodypose.BodyPoseWorldPreviewRenderer;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.AnchorButtonRenderer;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.BackTextureRenderer;
@@ -26,7 +26,7 @@ public class WorldRenderHandler {
             if (player != null) {
                 ItemStack mainHand = player.getMainHandStack();
                 // 仅当手持千里眼、凝视法杖或隐秘相关物品时渲染背景纹理和轨道
-                if (mainHand.getItem() == Evil_Eyes.CLAIRVOYANCE_ITEM || mainHand.getItem() == ModItems.MAGIC_STICK || SecrecyItem.isHoldingSecrecy(mainHand)) {
+                if (mainHand.getItem() == Evil_Eyes.CLAIRVOYANCE_ITEM || mainHand.getItem() == ModItems.MAGIC_STICK || ThroughItem.isHoldingSecrecy(mainHand)) {
                     BackTextureRenderer.render(context.matrixStack(), context.consumers(), player, MonvhuaModClient.currentPlayerStage);
                     OrbitRenderer.render(context.matrixStack(), context.consumers(), player, MonvhuaModClient.currentPlayerStage);
                 }

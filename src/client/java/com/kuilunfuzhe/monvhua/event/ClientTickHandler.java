@@ -4,7 +4,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
-import com.kuilunfuzhe.monvhua.features.secrecy.SecrecyClientAudioManager;
+import com.kuilunfuzhe.monvhua.features.through.ThroughClientManager;
 import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
@@ -39,7 +39,7 @@ public class ClientTickHandler {
     public static void register() {
         // Main key handling tick
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            SecrecyClientAudioManager.tick();
+            ThroughClientManager.tick();
             ActionEditorFragment.tickActive();
             if (client.player == null) return;
             if (KeyBindingHandler.configKey.wasPressed() && client.player.isCreative()) {
@@ -145,7 +145,7 @@ public class ClientTickHandler {
         // Anchor cleanup
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.world == null) {
-                SecrecyClientAudioManager.setInvisible(false, 0);
+                ThroughClientManager.setInvisible(false, 0);
                 if (!AnchorButtonRenderer.anchors.isEmpty()) AnchorButtonRenderer.anchors.clear();
                 MirrorClientManager.reset();
                 MirrorViewportRenderer.cleanup();

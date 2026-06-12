@@ -1,8 +1,8 @@
-package com.kuilunfuzhe.monvhua.item.secrecy;
+package com.kuilunfuzhe.monvhua.item.through;
 
 import com.kuilunfuzhe.monvhua.config.GlobalConfigManager;
-import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
-import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyStateS2CPacket;
+import com.kuilunfuzhe.monvhua.item.config.ThroughConfig;
+import com.kuilunfuzhe.monvhua.network.through.ThroughStateS2CPacket;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.minecraft.block.BlockState;
@@ -10,7 +10,6 @@ import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.attribute.EntityAttributeModifier;
 import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
@@ -47,15 +46,15 @@ import java.util.concurrent.ConcurrentHashMap;
  * 延迟一定时间后获得隐身效果；松开右键或条件不满足时退出隐秘。
  * 特色：根据玩家阶段的速度修正、心跳音效、客户端状态同步。
  */
-public class SecrecyItem extends Item {
+public class ThroughItem extends Item {
     /** 隐秘物品的注册ID */
-    public static final Identifier ID = Identifier.of("monvhua", "secrecy");
+    public static final Identifier ID = Identifier.of("monvhua", "through");
     /** 心跳音效的注册ID，隐秘状态下周期性播放，模拟紧张氛围 */
     public static final Identifier HEART_SOUND_ID = Identifier.of("monvhua", "heart");
     /** 隐秘速度修正器的ID，用于给隐秘状态的玩家施加移动速度倍率 */
     public static final Identifier SPEED_MODIFIER_ID = Identifier.of("monvhua", "secrecy_speed_multiplier");
     /** 隐秘物品单例，在initialize()中赋值 */
-    public static SecrecyItem SECRECY_ITEM;
+    public static ThroughItem THROUGH_ITEM;
     /** 心跳音效事件，在initialize()中注册 */
     public static SoundEvent HEART_SOUND;
 
@@ -139,7 +138,7 @@ public class SecrecyItem extends Item {
         }
     }
 
-    public SecrecyItem(Settings settings) {
+    public ThroughItem(Settings settings) {
         super(settings);
     }
 
@@ -228,9 +227,9 @@ public class SecrecyItem extends Item {
         configManager = manager;
         HEART_SOUND = Registry.register(Registries.SOUND_EVENT, HEART_SOUND_ID, SoundEvent.of(HEART_SOUND_ID));
         RegistryKey<Item> key = RegistryKey.of(RegistryKeys.ITEM, ID);
-        SECRECY_ITEM = new SecrecyItem(new Item.Settings().registryKey(key).maxCount(1));
-        Registry.register(Registries.ITEM, ID, SECRECY_ITEM);
-        ItemGroupEvents.modifyEntriesEvent(ItemGroups.TOOLS).register(entries -> entries.add(SECRECY_ITEM));
+        THROUGH_ITEM = new ThroughItem(new Item.Settings().registryKey(key).maxCount(1));
+        Registry.register(Registries.ITEM, ID, THROUGH_ITEM);
+        ItemGroupEvents.modifyEntriesEvent(ItemGroups.TOOLS).register(entries -> entries.add(THROUGH_ITEM));
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             long now = server.getOverworld().getTime();
@@ -281,6 +280,7 @@ public class SecrecyItem extends Item {
                 if (entry.getValue() > now) continue;
                 ServerPlayerEntity player = server.getPlayerManager().getPlayer(entry.getKey());
                 if (player != null && shouldContinueSecrecy(player)) {
+                    //开关隐身
                     //player.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, INFINITE_DURATION, 0, false, false, true));
                     PHASE_READY.add(player.getUuid());
                     syncSecrecyState(player, true, false, false);
@@ -293,7 +293,7 @@ public class SecrecyItem extends Item {
 
     /** 检查物品堆是否就是隐秘物品本身 */
     public static boolean isHoldingSecrecy(ItemStack stack) {
-        return SECRECY_ITEM != null && stack.getItem() == SECRECY_ITEM;
+        return THROUGH_ITEM != null && stack.getItem() == THROUGH_ITEM;
     }
 
     /**
@@ -330,7 +330,7 @@ public class SecrecyItem extends Item {
 
     private static void enterSecrecy(ServerPlayerEntity player) {
         int stage = getPlayerStage(player);
-        SecrecyConfig config = SecrecyConfig.getInstance();
+        ThroughConfig config = ThroughConfig.getInstance();
         double speedMultiplier = config.getSpeedMultiplier(stage);
         int delaySeconds = config.getVanishDelaySeconds(stage);
         int delayTicks = delaySeconds * 20;
@@ -374,15 +374,15 @@ public class SecrecyItem extends Item {
     private static boolean canUseSecrecy(ServerPlayerEntity player, boolean notify) {
         if (player.getCommandTags().contains(SILENCED_TAG)) {
             if (notify) {
-                player.sendMessage(Text.literal("§c你难以集中精神"), true);
+                player.sendMessage(Text.literal("§c难以集中精神"), true);
             }
             return false;
         }
 
         int stage = getPlayerStage(player);
-        if (SecrecyConfig.getInstance().getVanishDelaySeconds(stage) < 0) {
+        if (ThroughConfig.getInstance().getVanishDelaySeconds(stage) < 0) {
             if (notify) {
-                player.sendMessage(Text.literal("§c你难以集中精神"), true);
+                player.sendMessage(Text.literal("§c难以集中精神"), true);
             }
             return false;
         }
@@ -502,7 +502,7 @@ public class SecrecyItem extends Item {
         player.fallDistance = 0.0F;
         enablePhaseGravityLock(player);
         zeroVerticalVelocity(player);
-        applySpeedMultiplier(player, SecrecyConfig.getInstance().getSpeedMultiplier(getPlayerStage(player)));
+        applySpeedMultiplier(player, ThroughConfig.getInstance().getSpeedMultiplier(getPlayerStage(player)));
         restoreLockedRotation(player);
         constrainLockedVelocity(player);
 
@@ -774,8 +774,11 @@ public class SecrecyItem extends Item {
     }
 
     private static double getCurrentMovementSpeed(ServerPlayerEntity player) {
+        int stage = getPlayerStage(player);
+        ThroughConfig config = ThroughConfig.getInstance();
+        double speedMultiplier = config.getSpeedMultiplier(stage);
         EntityAttributeInstance speed = player.getAttributeInstance(EntityAttributes.MOVEMENT_SPEED);
-        return speed == null ? 0.1D : Math.max(0.0D, speed.getValue()*0.1f);
+        return speed == null ? speedMultiplier : Math.max(0.0D, speedMultiplier);
     }
 
     public static void restoreLockedRotation(ServerPlayerEntity player) {
@@ -811,7 +814,7 @@ public class SecrecyItem extends Item {
         float pitch = rotation != null ? rotation.pitch() : player.getPitch();
         net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(
                 player,
-                new SecrecyStateS2CPacket(invisible, phaseNoClip, phaseLocked, phaseStalled, yaw, pitch, 0)
+                new ThroughStateS2CPacket(invisible, phaseNoClip, phaseLocked, phaseStalled, yaw, pitch, 0)
         );
     }
 }

@@ -1,4 +1,4 @@
-package com.kuilunfuzhe.monvhua.features.secrecy;
+package com.kuilunfuzhe.monvhua.features.through;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.Perspective;
@@ -10,11 +10,11 @@ import java.util.EnumMap;
 import java.util.Map;
 
 /**
- * 隐秘状态客户端音效管理器。
+ * 隐秘状态客户端管理器。
  * 进入隐秘状态时将非玩家音效音量降至10%，仅保留PLAYERS类音效（心跳声）不变，
  * 退出时通过EnumMap备份恢复原始音量设置。
  */
-public final class SecrecyClientAudioManager {
+public final class ThroughClientManager {
     /** 非玩家音效音量乘数（降至10%） */
     private static final float OTHER_SOUND_MULTIPLIER = 0.10F;
     /** 玩家类音效（心跳）音量乘数（保持100%不变） */
@@ -39,7 +39,7 @@ public final class SecrecyClientAudioManager {
     /** 虚化临时接管客户端 noClip 前的原状态，用于恢复创造/旁观/指令提供的原版穿墙视角 */
     private static Boolean previousNoClip = null;
 
-    private SecrecyClientAudioManager() {
+    private ThroughClientManager() {
     }
 
     /**
@@ -108,24 +108,7 @@ public final class SecrecyClientAudioManager {
         }
     }
 
-    /**
-     * 获取指定音效类别的音量乘数。
-     * @param category 音效类别
-     * @return 音量乘数（当前固定返回1.0）
-     */
-    public static float getVolumeMultiplier(SoundCategory category) {
-            return 1.0F;
-    }
-
-    /**
-     * 心跳音效是否可听到。
-     * @return true表示处于隐秘状态，心跳正常播放
-     */
-    public static boolean isHeartAudible() {
-        return active;
-    }
-
-    public static boolean isPhaseLocked() {
+     public static boolean isPhaseLocked() {
         return phaseLocked;
     }
 
@@ -150,7 +133,7 @@ public final class SecrecyClientAudioManager {
         if (previousNoClip == null) {
             previousNoClip = client.player.noClip;
         }
-        client.player.noClip = shouldEnableClientPhasePerspective(client);
+        client.player.noClip = false;//shouldEnableClientPhasePerspective(client);
     }
 
     private static void restorePhaseNoClip(MinecraftClient client) {

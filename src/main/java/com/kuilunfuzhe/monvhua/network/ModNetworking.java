@@ -23,10 +23,11 @@ import com.kuilunfuzhe.monvhua.network.imitate.UpdateImitateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets;
 import com.kuilunfuzhe.monvhua.network.openback.*;
 import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
-import com.kuilunfuzhe.monvhua.network.secrecy.RequestSecrecyConfigC2SPacket;
-import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigS2CPacket;
-import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigUpdateC2SPacket;
-import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyStateS2CPacket;
+import com.kuilunfuzhe.monvhua.network.secret.SecretPackets;
+import com.kuilunfuzhe.monvhua.network.through.RequestThroughConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.through.ThroughConfigS2CPacket;
+import com.kuilunfuzhe.monvhua.network.through.ThroughConfigUpdateC2SPacket;
+import com.kuilunfuzhe.monvhua.network.through.ThroughStateS2CPacket;
 
 public class ModNetworking {
 
@@ -47,8 +48,8 @@ public class ModNetworking {
         CameraWatchUnbindS2CPacket.register();
         CameraUpdateS2CPacket.register();
         MirrorPackets.registerS2C();
-        SecrecyConfigS2CPacket.register();
-        SecrecyStateS2CPacket.register();
+        ThroughConfigS2CPacket.register();
+        ThroughStateS2CPacket.register();
         CarryPoseSyncS2CPacket.register();
         ActionPackets.registerS2C();
         GravityPackets.registerS2C();
@@ -57,6 +58,7 @@ public class ModNetworking {
         SoundWaveStartS2CPacket.register();
         ImitateConfigS2CPacket.register();
         ImitateSyncS2CPacket.register();
+        SecretPackets.registerS2C();
     }
 
     public static void registerC2SPackets() {
@@ -74,8 +76,8 @@ public class ModNetworking {
         CameraWatchStartC2SPacket.register();
         CameraWatchStopC2SPacket.register();
         MirrorPackets.registerC2S();
-        RequestSecrecyConfigC2SPacket.register();
-        SecrecyConfigUpdateC2SPacket.register();
+        RequestThroughConfigC2SPacket.register();
+        ThroughConfigUpdateC2SPacket.register();
         ActionPackets.registerC2S();
         FloatingPackets.registerC2S();
         GravityPackets.registerC2S();
@@ -84,5 +86,6 @@ public class ModNetworking {
         RequestImitateConfigC2SPacket.register();
         UpdateImitateConfigC2SPacket.register();
         SilencePacket.register();
+        SecretPackets.registerC2S();
     }
 }

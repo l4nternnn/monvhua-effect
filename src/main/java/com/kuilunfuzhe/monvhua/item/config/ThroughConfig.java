@@ -15,12 +15,12 @@ import java.nio.file.Path;
  * 隐秘配置文件
  * 管理隐秘功能的阶段参数（作用范围、触发概率、速度倍率、消失延迟），支持 JSON 持久化读写和参数归一化校验
  */
-public class SecrecyConfig {
+public class ThroughConfig {
     /** 隐秘的阶段总数 */
     private static final int STAGES = 7;
-    private static final Path CONFIG_PATH = FabricLoader.getInstance().getConfigDir().resolve("secrecy.json");
+    private static final Path CONFIG_PATH = FabricLoader.getInstance().getConfigDir().resolve("through.json");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static SecrecyConfig instance;
+    private static ThroughConfig instance;
 
     /** 各阶段的配置数组（索引 0 对应阶段 1） */
     public StageConfig[] stages = new StageConfig[STAGES];
@@ -29,10 +29,6 @@ public class SecrecyConfig {
      * 单阶段配置项
      */
     public static class StageConfig {
-        /** 作用范围（格） */
-        public int range = 10;
-        /** 触发概率（0.0-1.0） */
-        public double probability = 0.5D;
         /** 速度倍率 */
         public double speedMultiplier = 0.1D;
         /** 消失延迟（秒），-1 表示永不消失 */
@@ -40,7 +36,7 @@ public class SecrecyConfig {
     }
 
     /** 构造时预填充 stages 数组，避免后续 null 检查 */
-    public SecrecyConfig() {
+    public ThroughConfig() {
         stages = new StageConfig[STAGES];
         for (int i = 0; i < STAGES; i++) {
             stages[i] = new StageConfig();
@@ -50,25 +46,25 @@ public class SecrecyConfig {
     /**
      * @return 单例配置实例（首次调用时从文件加载并归一化）
      */
-    public static SecrecyConfig getInstance() {
+    public static ThroughConfig getInstance() {
         if (instance == null) instance = load();
         return instance;
     }
 
-    public static void setInstance(SecrecyConfig config) {
+    public static void setInstance(ThroughConfig config) {
         instance = normalize(config);
         instance.save();
     }
 
-    private static SecrecyConfig load() {
+    private static ThroughConfig load() {
         if (CONFIG_PATH.toFile().exists()) {
             try (Reader reader = new FileReader(CONFIG_PATH.toFile())) {
-                return normalize(GSON.fromJson(reader, SecrecyConfig.class));
+                return normalize(GSON.fromJson(reader, ThroughConfig.class));
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
-        SecrecyConfig config = createDefault();
+        ThroughConfig config = createDefault();
         config.save();
         return config;
     }
@@ -78,10 +74,10 @@ public class SecrecyConfig {
      * @param config 原始配置（可能为 null 或字段残缺）
      * @return 归一化后的安全配置对象
      */
-    private static SecrecyConfig normalize(SecrecyConfig config) {
+    private static ThroughConfig normalize(ThroughConfig config) {
         if (config == null) return createDefault();
         if (config.stages == null || config.stages.length != STAGES) {
-            SecrecyConfig normalized = createDefault();
+            ThroughConfig normalized = createDefault();
             if (config.stages != null) {
                 int len = Math.min(config.stages.length, STAGES);
                 System.arraycopy(config.stages, 0, normalized.stages, 0, len);
@@ -90,7 +86,6 @@ public class SecrecyConfig {
         }
         for (int i = 0; i < STAGES; i++) {
             if (config.stages[i] == null) config.stages[i] = new StageConfig();
-            config.stages[i].probability = Math.max(0.0D, Math.min(1.0D, config.stages[i].probability));
             config.stages[i].speedMultiplier = Math.max(0.0D, config.stages[i].speedMultiplier);
             config.stages[i].vanishDelaySeconds = Math.max(-1, config.stages[i].vanishDelaySeconds);
         }
@@ -100,8 +95,8 @@ public class SecrecyConfig {
     /**
      * 创建带默认值的配置（首次运行或配置文件损坏时使用）
      */
-    private static SecrecyConfig createDefault() {
-        SecrecyConfig config = new SecrecyConfig();
+    private static ThroughConfig createDefault() {
+        ThroughConfig config = new ThroughConfig();
 
         // 各阶段作用范围（格），从阶段1到阶段7递增
         int[] ranges = {
@@ -125,8 +120,7 @@ public class SecrecyConfig {
 
         for (int i = 0; i < STAGES; i++) {
             config.stages[i] = new StageConfig();
-            config.stages[i].range = ranges[i];
-            config.stages[i].probability = probabilities[i];
+
             config.stages[i].speedMultiplier = speedMultipliers[i];
             config.stages[i].vanishDelaySeconds = vanishDelaySeconds[i];
         }
@@ -146,17 +140,15 @@ public class SecrecyConfig {
         return GSON.toJson(this);
     }
 
-    public static SecrecyConfig fromJson(String json) {
-        return normalize(GSON.fromJson(json, SecrecyConfig.class));
+    public static ThroughConfig fromJson(String json) {
+        return normalize(GSON.fromJson(json, ThroughConfig.class));
     }
 
-    public int getRange(int stage) { return stages[stage - 1].range; }
-    public double getProbability(int stage) { return stages[stage - 1].probability; }
+
     public double getSpeedMultiplier(int stage) { return stages[stage - 1].speedMultiplier; }
     public int getVanishDelaySeconds(int stage) { return stages[stage - 1].vanishDelaySeconds; }
 
-    public void setRange(int stage, int val) { stages[stage - 1].range = val; save(); }
-    public void setProbability(int stage, double val) { stages[stage - 1].probability = Math.max(0.0D, Math.min(1.0D, val)); save(); }
+
     public void setSpeedMultiplier(int stage, double val) { stages[stage - 1].speedMultiplier = Math.max(0.0D, val); save(); }
     public void setVanishDelaySeconds(int stage, int val) { stages[stage - 1].vanishDelaySeconds = Math.max(-1, val); save(); }
 }

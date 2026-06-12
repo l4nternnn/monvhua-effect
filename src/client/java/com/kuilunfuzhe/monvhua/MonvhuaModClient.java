@@ -20,12 +20,16 @@ import com.kuilunfuzhe.monvhua.gui.body.bodyback.BodyPartScreen;
 import com.kuilunfuzhe.monvhua.gui.mirror.mirrorHUD;
 import com.kuilunfuzhe.monvhua.gui.openback.OtherPlayerInventoryScreen;
 import com.kuilunfuzhe.monvhua.features.block_hole.BlockHoleClient;
+import com.kuilunfuzhe.monvhua.item.config.SecretConfig;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.AnchorDestroyC2S;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
 import com.kuilunfuzhe.monvhua.network.imitate.SilenceEffectS2CPacket;
+import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
+import com.kuilunfuzhe.monvhua.item.config.SecretConfig;
+import com.kuilunfuzhe.monvhua.network.secret.SecretPackets;
 import com.kuilunfuzhe.monvhua.network.openback.CarryEntityPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
 import com.kuilunfuzhe.monvhua.register.BodyBlockModelRegister;
@@ -201,6 +205,19 @@ public class MonvhuaModClient implements ClientModInitializer {
 
         // 注册漂浮魔法能量条 HUD
         EnergyHud.register();
+
+        // ===== 接收窃密配置同步包 =====
+        ClientPlayNetworking.registerGlobalReceiver(SecretPackets.ConfigS2C.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                SecretConfig config = SecretConfig.fromJson(packet.json());
+                if (config != null) {
+                    CombinedConfigScreen.cachedSecretConfig = config;
+                    if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
+                        screen.receiveSecretConfig(config);
+                    }
+                }
+            });
+        });
 
         // ===== 接收标签同步包（完全魔女化 + Floating）=====
         ClientPlayNetworking.registerGlobalReceiver(FullWitchTagSyncS2CPacket.ID, (packet, context) -> {

@@ -7,7 +7,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
 import com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient;
-import com.kuilunfuzhe.monvhua.features.secrecy.SecrecyClientAudioManager;
+import com.kuilunfuzhe.monvhua.features.through.ThroughClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import com.kuilunfuzhe.monvhua.features.action.ActionConfig;
@@ -18,7 +18,7 @@ import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.FloatingConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
-import com.kuilunfuzhe.monvhua.item.config.SecrecyConfig;
+import com.kuilunfuzhe.monvhua.item.config.ThroughConfig;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
@@ -26,8 +26,8 @@ import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ChargeSyncS2C;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ConfigS2C;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.StateS2C;
-import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyConfigS2CPacket;
-import com.kuilunfuzhe.monvhua.network.secrecy.SecrecyStateS2CPacket;
+import com.kuilunfuzhe.monvhua.network.through.ThroughConfigS2CPacket;
+import com.kuilunfuzhe.monvhua.network.through.ThroughStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.action.ActionPackets.*;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.AnchorButtonRenderer;
@@ -155,11 +155,11 @@ public class ClientPacketHandler {
             });
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(SecrecyConfigS2CPacket.ID, (packet, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(ThroughConfigS2CPacket.ID, (packet, context) -> {
             context.client().execute(() -> {
-                SecrecyConfig config = SecrecyConfig.fromJson(packet.json());
+                ThroughConfig config = ThroughConfig.fromJson(packet.json());
                 if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
-                    screen.receiveSecrecyConfig(config);
+                    screen.receiveThroughConfig(config);
                 }
             });
         });
@@ -174,8 +174,8 @@ public class ClientPacketHandler {
             });
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(SecrecyStateS2CPacket.ID, (packet, context) -> {
-            context.client().execute(() -> SecrecyClientAudioManager.setState(
+        ClientPlayNetworking.registerGlobalReceiver(ThroughStateS2CPacket.ID, (packet, context) -> {
+            context.client().execute(() -> ThroughClientManager.setState(
                     packet.invisible(),
                     packet.phaseNoClip(),
                     packet.phaseLocked(),

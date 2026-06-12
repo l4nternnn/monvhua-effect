@@ -2,7 +2,7 @@ package com.kuilunfuzhe.monvhua.renderer.picturerender;
 
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
-import com.kuilunfuzhe.monvhua.item.secrecy.SecrecyItem;
+import com.kuilunfuzhe.monvhua.item.through.ThroughItem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.*;
 import net.minecraft.client.util.math.MatrixStack;
@@ -65,7 +65,7 @@ public class BackTextureRenderer {
 
         // 检查玩家手持物品：千里眼物品、魔法棒或保密物品
         ItemStack mainHand = player.getMainHandStack();
-        boolean hasValidItem = mainHand.getItem() == Evil_Eyes.CLAIRVOYANCE_ITEM || mainHand.getItem() == ModItems.MAGIC_STICK || SecrecyItem.isHoldingSecrecy(mainHand);
+        boolean hasValidItem = mainHand.getItem() == Evil_Eyes.CLAIRVOYANCE_ITEM || mainHand.getItem() == ModItems.MAGIC_STICK || ThroughItem.isHoldingSecrecy(mainHand);
         if (!hasValidItem) return;
 
         // 根据玩家身份和阶段决定渲染哪些图片

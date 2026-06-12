@@ -1,4 +1,4 @@
-package com.kuilunfuzhe.monvhua.network.secrecy;
+package com.kuilunfuzhe.monvhua.network.through;
 
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.network.RegistryByteBuf;
@@ -10,9 +10,9 @@ import net.minecraft.util.Identifier;
  * 客户端 -> 服务端：请求隐身配置。
  * 客户端初始化时发送此空包，向服务端请求当前玩家的隐身功能配置数据。
  */
-public record RequestSecrecyConfigC2SPacket() implements CustomPayload {
-    public static final Id<RequestSecrecyConfigC2SPacket> ID = new Id<>(Identifier.of("monvhua", "request_secrecy_config"));
-    public static final PacketCodec<RegistryByteBuf, RequestSecrecyConfigC2SPacket> CODEC = PacketCodec.unit(new RequestSecrecyConfigC2SPacket());
+public record RequestThroughConfigC2SPacket() implements CustomPayload {
+    public static final Id<RequestThroughConfigC2SPacket> ID = new Id<>(Identifier.of("monvhua", "request_secrecy_config"));
+    public static final PacketCodec<RegistryByteBuf, RequestThroughConfigC2SPacket> CODEC = PacketCodec.unit(new RequestThroughConfigC2SPacket());
 
     @Override
     public Id<? extends CustomPayload> getId() {

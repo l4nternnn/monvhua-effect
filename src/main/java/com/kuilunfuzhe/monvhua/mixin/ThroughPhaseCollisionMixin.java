@@ -1,6 +1,6 @@
 package com.kuilunfuzhe.monvhua.mixin;
 
-import com.kuilunfuzhe.monvhua.item.secrecy.SecrecyItem;
+import com.kuilunfuzhe.monvhua.item.through.ThroughItem;
 import net.minecraft.block.AbstractBlock;
 import net.minecraft.block.ShapeContext;
 import net.minecraft.entity.Entity;
@@ -16,14 +16,14 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(AbstractBlock.AbstractBlockState.class)
-public abstract class SecrecyPhaseCollisionMixin {
+public abstract class ThroughPhaseCollisionMixin {
     @Inject(method = "getCollisionShape(Lnet/minecraft/world/BlockView;Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/ShapeContext;)Lnet/minecraft/util/shape/VoxelShape;", at = @At("HEAD"), cancellable = true)
     private void monvhua$removeCollisionForSecrecyPhase(BlockView world, BlockPos pos, ShapeContext context, CallbackInfoReturnable<VoxelShape> cir) {
         if (!(context instanceof EntityShapeContext entityContext)) {
             return;
         }
         Entity entity = entityContext.getEntity();
-        if (entity instanceof ServerPlayerEntity player && SecrecyItem.shouldIgnorePhaseCollision(player, pos)) {
+        if (entity instanceof ServerPlayerEntity player && ThroughItem.shouldIgnorePhaseCollision(player, pos)) {
             cir.setReturnValue(VoxelShapes.empty());
         }
     }
