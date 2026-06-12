@@ -16,7 +16,7 @@ import com.kuilunfuzhe.monvhua.network.openback.OpenOtherInventoryPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ChargeC2S;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
-import com.kuilunfuzhe.monvhua.renderer.Font_Render;
+//import com.kuilunfuzhe.monvhua.renderer.Font_Render;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.AnchorButtonRenderer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.entity.Entity;
@@ -101,12 +101,12 @@ public class ClientTickHandler {
                         Entity target = getTargetEntity(client, 50.0);
                         if (target instanceof PlayerEntity) {
                             SafeClientNetworking.send(new OpenOtherInventoryPayload(target.getId()));
-                            client.player.sendMessage(Text.literal("§a尝试打开目标玩家背包"), true);
+//                            client.player.sendMessage(Text.literal("§a尝试打开目标玩家背包"), true);
                         } else {
                             client.player.sendMessage(Text.literal("§c请对准一名玩家"), true);
                         }
                     } else {
-                        client.player.sendMessage(Text.literal("§c查看背包功能未完善喵，仅创造模式才能使用此功能"), true);
+//                        client.player.sendMessage(Text.literal("§c查看背包功能未完善喵，仅创造模式才能使用此功能"), true);
                     }
                 }
             }
@@ -156,8 +156,8 @@ public class ClientTickHandler {
         });
 
         // Font_Render tick
-        ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            Font_Render.tick(client);
-        });
+//        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+//            Font_Render.tick(client);
+//        });
     }
 }

@@ -1,4 +1,4 @@
-package com.kuilunfuzhe.monvhua.mixin;
+package com.kuilunfuzhe.monvhua.mixin.gravity;
 
 import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import net.minecraft.client.MinecraftClient;

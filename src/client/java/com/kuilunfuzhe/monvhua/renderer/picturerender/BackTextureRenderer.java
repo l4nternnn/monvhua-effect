@@ -45,10 +45,10 @@ public class BackTextureRenderer {
     /** 预定义的4张背后装饰图片及其位置/动画参数 */
     private static final List<BackImage> BACK_IMAGES = new ArrayList<>();
     static {
-        BACK_IMAGES.add(new BackImage(Identifier.of("monvhua", "textures/gui/6.png"), 0.0f, 1.0f, 3.0f, 3.5f, 3.5f, 1.0f));
-        BACK_IMAGES.add(new BackImage(Identifier.of("monvhua", "textures/gui/3.png"), -2f, 0.8f, 3.0f, 2.0f, 2.0f, -1.5f));
-        BACK_IMAGES.add(new BackImage(Identifier.of("monvhua", "textures/gui/3.png"), 2f, 0.8f, 3.0f, 2.0f, 2.0f, -1.5f));
-        BACK_IMAGES.add(new BackImage(Identifier.of("monvhua", "textures/gui/11.png"), 0.0f, 3f, 4.0f, 2.0f, 2.0f, 3.0f));
+//        BACK_IMAGES.add(new BackImage(Identifier.of("monvhua", "textures/gui/6.png"), 0.0f, 1.0f, 3.0f, 3.5f, 3.5f, 1.0f));
+//        BACK_IMAGES.add(new BackImage(Identifier.of("monvhua", "textures/gui/3.png"), -2f, 0.8f, 3.0f, 2.0f, 2.0f, -1.5f));
+//        BACK_IMAGES.add(new BackImage(Identifier.of("monvhua", "textures/gui/3.png"), 2f, 0.8f, 3.0f, 2.0f, 2.0f, -1.5f));
+//        BACK_IMAGES.add(new BackImage(Identifier.of("monvhua", "textures/gui/11.png"), 0.0f, 3f, 4.0f, 2.0f, 2.0f, 3.0f));
     }
 
     /**

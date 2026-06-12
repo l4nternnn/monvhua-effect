@@ -41,7 +41,6 @@ public class AnchorButtonRenderer {
      * @param consumers 顶点消费者提供者，用于获取渲染缓冲区
      */
     public static void render(MatrixStack matrices, VertexConsumerProvider consumers) {
-        if (!BackTextureRenderer.imagesEnabled) return;
         if (anchors.isEmpty()) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null || client.player == null) return;
@@ -59,12 +58,11 @@ public class AnchorButtonRenderer {
         Iterator<Map.Entry<UUID, AnchorInfo>> it = anchors.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<UUID, AnchorInfo> entry = it.next();
-            // 实体已消失则清理该锚点
-            if (client.world.getEntity(entry.getKey()) == null) {
+            AnchorInfo info = entry.getValue();
+            if (info == null || info.pos == null) {
                 it.remove();
                 continue;
             }
-            AnchorInfo info = entry.getValue();
             Vec3d armorStandPos = info.pos;
 
             // 球面定位：计算玩家到锚点中心的方向，将按钮沿该方向推出SPHERE_RADIUS距离

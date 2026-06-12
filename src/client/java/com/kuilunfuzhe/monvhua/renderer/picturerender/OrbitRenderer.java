@@ -34,14 +34,14 @@ public class OrbitRenderer {
     /** 预定义的8张轨道旋转图片，交替使用两种纹理，起始角度均匀分布（间隔45度） */
     private static final List<OrbitImage> ORBIT_IMAGES = new ArrayList<>();
     static {
-        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,0.0));
-        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/8.png"), 0.5, 5.0, -0.7 ,10.0f,45.0));
-        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,90.0));
-        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/8.png"), 0.5, 5.0, -0.7, 10.0f,135.0));
-        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,180.0));
-        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/8.png"), 0.5, 5.0, -0.7 ,10.0f,225.0));
-        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,270.0));
-        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/8.png"), 0.5, 5.0, -0.7, 10.0f,315.0));
+//        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,0.0));
+//        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/8.png"), 0.5, 5.0, -0.7 ,10.0f,45.0));
+//        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,90.0));
+//        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/8.png"), 0.5, 5.0, -0.7, 10.0f,135.0));
+//        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,180.0));
+//        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/8.png"), 0.5, 5.0, -0.7 ,10.0f,225.0));
+//        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/7.png"), 0.5, 5.0, -0.7, 10.0f,270.0));
+//        ORBIT_IMAGES.add(new OrbitImage(Identifier.of("monvhua", "textures/gui/8.png"), 0.5, 5.0, -0.7, 10.0f,315.0));
     }
 
     /**
