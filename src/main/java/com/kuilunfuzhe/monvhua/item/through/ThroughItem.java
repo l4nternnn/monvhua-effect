@@ -374,7 +374,7 @@ public class ThroughItem extends Item {
     private static boolean canUseSecrecy(ServerPlayerEntity player, boolean notify) {
         if (player.getCommandTags().contains(SILENCED_TAG)) {
             if (notify) {
-                player.sendMessage(Text.literal("§c难以集中精神"), true);
+                player.sendMessage(Text.literal("§c受到干扰"), true);
             }
             return false;
         }
@@ -382,7 +382,7 @@ public class ThroughItem extends Item {
         int stage = getPlayerStage(player);
         if (ThroughConfig.getInstance().getVanishDelaySeconds(stage) < 0) {
             if (notify) {
-                player.sendMessage(Text.literal("§c难以集中精神"), true);
+                player.sendMessage(Text.literal("§c受到干扰"), true);
             }
             return false;
         }
