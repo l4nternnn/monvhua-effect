@@ -23,6 +23,30 @@ public class PaintEditorScreen extends Screen {
     private static final int MAP_SIZE = 104;
     private static final int HUE_WIDTH = 12;
     private static final int SWATCH = 18;
+    private static final int BRUSH_COLOR_Y = 74;
+    private static final int BRUSH_SWATCH_Y = 183;
+    private static final int BRUSH_HEX_Y = 228;
+    private static final int BRUSH_RECENT_Y = 278;
+    private static final int BRUSH_FAVORITE_X_OFFSET = 86;
+    private static final int BRUSH_RADIUS_Y = 380;
+    private static final int ERASER_RADIUS_Y = 82;
+    private static final int ERASER_MODE_Y = 118;
+    private static final int PAPER_SIZE_Y = 82;
+    private static final int TOOL_X = 10;
+    private static final int TOOL_BRUSH_Y = 36;
+    private static final int TOOL_ERASER_Y = 78;
+    private static final int TOOL_PAPER_Y = 120;
+    private static final int TOOL_NONE_Y = 162;
+    private static final int SURFACE = 0xD812141A;
+    private static final int SURFACE_SOFT = 0xA6181B23;
+    private static final int SURFACE_HOVER = 0xC8242832;
+    private static final int OUTLINE = 0xAA8DDAFF;
+    private static final int OUTLINE_SOFT = 0x668DDAFF;
+    private static final int TEXT_PRIMARY = 0xFFF3F5F7;
+    private static final int TEXT_SECONDARY = 0xFFAEB6C2;
+    private static final int ACCENT = 0xFF5FB7FF;
+    private static final int ACCENT_DARK = 0xFF1E5D7A;
+    private static final int CHAMFER = 5;
     private static final Identifier COLOR_MAP_TEXTURE_ID = Identifier.of(MonvhuaMod.MOD_ID, "dynamic/paint_editor_color_map");
 
     private PaintOverlayClient.EditorTool selectedTool = PaintOverlayClient.EditorTool.NONE;
@@ -50,7 +74,7 @@ public class PaintEditorScreen extends Screen {
     protected void init() {
         PaintOverlayClient.enterPaintEditor(client);
         int rightX = rightX();
-        hexField = addDrawableChild(new TextFieldWidget(textRenderer, rightX + 16, 138, 86, 18, Text.literal("HEX")));
+        hexField = addDrawableChild(new TextFieldWidget(textRenderer, rightX + 16, BRUSH_HEX_Y, 86, 18, Text.literal("HEX")));
         hexField.setMaxLength(7);
         hexField.setTextPredicate(PaintEditorScreen::isValidHexInput);
         hexField.setChangedListener(this::onHexChanged);
@@ -81,10 +105,12 @@ public class PaintEditorScreen extends Screen {
         if (GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_D) == GLFW.GLFW_PRESS) {
             strafe += 0.36D;
         }
-        if (client.options.jumpKey.isPressed()) {
+        if (client.options.jumpKey.isPressed() || isKeyDown(handle, GLFW.GLFW_KEY_SPACE)) {
             vertical += 0.36D;
         }
-        if (client.options.sneakKey.isPressed()) {
+        if (client.options.sneakKey.isPressed()
+                || isKeyDown(handle, GLFW.GLFW_KEY_LEFT_SHIFT)
+                || isKeyDown(handle, GLFW.GLFW_KEY_RIGHT_SHIFT)) {
             vertical -= 0.36D;
         }
         if (forward != 0.0D || strafe != 0.0D || vertical != 0.0D) {
@@ -139,6 +165,9 @@ public class PaintEditorScreen extends Screen {
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             return super.mouseClicked(mouseX, mouseY, button);
         }
+        if (hexField != null && hexField.visible && hexField.isMouseOver(mouseX, mouseY)) {
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
         if (handleLeftPanelClick(mouseX, mouseY) || handleRightPanelClick(mouseX, mouseY)) {
             return true;
         }
@@ -148,6 +177,9 @@ public class PaintEditorScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (hexField != null && hexField.visible && hexField.isFocused()) {
+            return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        }
         if (pickingColor && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             pickColor(mouseX, mouseY, true);
             return true;
@@ -172,6 +204,9 @@ public class PaintEditorScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (hexField != null && hexField.visible && hexField.isFocused() && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            return super.mouseReleased(mouseX, mouseY, button);
+        }
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             if (pickingColor) {
                 PaintOverlayClient.recordPickedColor(PaintOverlayClient.selectedColor());
@@ -219,7 +254,13 @@ public class PaintEditorScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        PaintOverlayClient.moveEditorViewTowardScreenPoint(client, mouseX, mouseY, width, height, Math.signum(verticalAmount) * 0.45D);
+        if (handleValueScroll(mouseX, mouseY, verticalAmount)) {
+            return true;
+        }
+        PaintOverlayClient.moveEditorViewTowardScreenPoint(client, mouseX, mouseY, width, height,
+//                Math.signum(verticalAmount) * 0.45D
+        verticalAmount * 0.45D
+        );
         return true;
     }
 
@@ -259,6 +300,10 @@ public class PaintEditorScreen extends Screen {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
+    private static boolean isKeyDown(long handle, int keyCode) {
+        return GLFW.glfwGetKey(handle, keyCode) == GLFW.GLFW_PRESS;
+    }
+
     private void toggleTool(PaintOverlayClient.EditorTool tool) {
         selectedTool = selectedTool == tool ? PaintOverlayClient.EditorTool.NONE : tool;
     }
@@ -286,20 +331,25 @@ public class PaintEditorScreen extends Screen {
     }
 
     private void drawLeftPanel(DrawContext context, int mouseX, int mouseY) {
-        context.fill(0, 0, LEFT_WIDTH, height, 0xC8101015);
-        drawToolButton(context, 10, 20, PaintOverlayClient.EditorTool.BRUSH, new ItemStack(PaintItems.PAINT_BRUSH), mouseX, mouseY);
-        drawToolButton(context, 10, 62, PaintOverlayClient.EditorTool.ERASER, new ItemStack(PaintItems.ERASER), mouseX, mouseY);
-        drawToolButton(context, 10, 104, PaintOverlayClient.EditorTool.PAPER, new ItemStack(PaintItems.PAINT_PAPER), mouseX, mouseY);
-        drawToolButton(context, 10, 146, PaintOverlayClient.EditorTool.NONE, ItemStack.EMPTY, mouseX, mouseY);
+        context.fill(0, 0, LEFT_WIDTH, height, SURFACE);
+        context.fill(LEFT_WIDTH - 1, 0, LEFT_WIDTH, height, OUTLINE);
+        context.fill(12, 8, 42, 9, ACCENT);
+        context.drawText(textRenderer, Text.literal("Tools"), 10, 14, TEXT_SECONDARY, false);
+        drawToolButton(context, TOOL_X, TOOL_BRUSH_Y, PaintOverlayClient.EditorTool.BRUSH, new ItemStack(PaintItems.PAINT_BRUSH), mouseX, mouseY);
+        drawToolButton(context, TOOL_X, TOOL_ERASER_Y, PaintOverlayClient.EditorTool.ERASER, new ItemStack(PaintItems.ERASER), mouseX, mouseY);
+        drawToolButton(context, TOOL_X, TOOL_PAPER_Y, PaintOverlayClient.EditorTool.PAPER, new ItemStack(PaintItems.PAINT_PAPER), mouseX, mouseY);
+        drawToolButton(context, TOOL_X, TOOL_NONE_Y, PaintOverlayClient.EditorTool.NONE, ItemStack.EMPTY, mouseX, mouseY);
     }
 
     private void drawToolButton(DrawContext context, int x, int y, PaintOverlayClient.EditorTool tool, ItemStack stack, int mouseX, int mouseY) {
         boolean selected = selectedTool == tool;
         boolean hover = isInside(x, y, 34, 34, mouseX, mouseY);
-        context.fill(x, y, x + 34, y + 34, selected ? 0xFF2E6A84 : (hover ? 0xAA303038 : 0xAA1B1B22));
-        drawBorder(context, x, y, 34, 34);
+        drawControlSurface(context, x, y, 34, 34, selected, hover);
+        if (selected) {
+            context.fill(x + 1, y + CHAMFER, x + 4, y + 34 - CHAMFER, ACCENT);
+        }
         if (stack.isEmpty()) {
-            context.fill(x + 11, y + 16, x + 23, y + 18, 0xFFE6E6E6);
+            context.fill(x + 11, y + 16, x + 23, y + 18, TEXT_PRIMARY);
         } else {
             context.drawItem(stack, x + 9, y + 9);
         }
@@ -307,8 +357,11 @@ public class PaintEditorScreen extends Screen {
 
     private void drawRightPanel(DrawContext context, int mouseX, int mouseY) {
         int x = rightX();
-        context.fill(x, 0, width, height, 0xC8101015);
-        context.drawText(textRenderer, Text.literal("Paint"), x + 16, 12, 0xFFFFFFFF, false);
+        context.fill(x, 0, width, height, SURFACE);
+        context.fill(x, 0, x + 1, height, OUTLINE);
+        context.fill(x + 14, 9, x + 72, 10, ACCENT);
+        context.drawText(textRenderer, Text.literal("Paint"), x + 16, 16, TEXT_PRIMARY, false);
+        context.drawText(textRenderer, Text.literal(selectedToolName()), x + 16, 28, TEXT_SECONDARY, false);
         if (hexField != null) {
             hexField.visible = selectedTool == PaintOverlayClient.EditorTool.BRUSH;
         }
@@ -321,49 +374,59 @@ public class PaintEditorScreen extends Screen {
     }
 
     private void drawBrushPanel(DrawContext context, int x) {
-        drawColorMap(context, x, 28);
-        drawHueBar(context, x + MAP_SIZE + 8, 28);
-        drawColorCursor(context, x, 28);
+        drawSection(context, x - 8, 48, 166, 198);
+        drawSectionTitle(context, x, 56, "Color-颜色");
+        drawColorMap(context, x, BRUSH_COLOR_Y);
+        drawHueBar(context, x + MAP_SIZE + 8, BRUSH_COLOR_Y);
+        drawColorCursor(context, x, BRUSH_COLOR_Y);
 
         int color = PaintOverlayClient.selectedColor();
-        drawSwatch(context, x, 102, 28, color, true);
-        drawStar(context, x, 102, 28, PaintOverlayClient.isFavoriteColor(color));
-        context.drawText(textRenderer, Text.literal(toHex(color)), x + 52, 112, 0xFFE6E6E6, false);
+        drawSwatch(context, x, BRUSH_SWATCH_Y, 28, color, true);
+        drawStar(context, x, BRUSH_SWATCH_Y, 28, PaintOverlayClient.isFavoriteColor(color));
+        context.drawText(textRenderer, Text.literal(toHex(color)), x + 40, 192, TEXT_PRIMARY, false);
 
-        context.drawText(textRenderer, Text.literal("HEX"), x, 128, 0xFFB8B8C2, false);
-        drawRecent(context, x, 166);
-        drawFavorites(context, x, 204);
-        drawRadiusControls(context, x, 292);
+        context.drawText(textRenderer, Text.literal("HEX-颜色代码"), x, 216, TEXT_SECONDARY, false);
+        drawSection(context, x - 8, 258, 166, 92);
+        drawRecent(context, x, BRUSH_RECENT_Y);
+        drawFavorites(context, x + BRUSH_FAVORITE_X_OFFSET, BRUSH_RECENT_Y);
+        drawSection(context, x - 8, 362, 166, 46);
+        drawRadiusControls(context, x, BRUSH_RADIUS_Y);
     }
 
     private void drawEraserPanel(DrawContext context, int x) {
-        context.drawText(textRenderer, Text.literal("Eraser"), x, 36, 0xFFFFFFFF, false);
-        drawRadiusControls(context, x, 64);
-        int modeY = 96;
+        drawSection(context, x - 8, 48, 166, 112);
+        drawSectionTitle(context, x, 56, "Eraser");
+        drawRadiusControls(context, x, ERASER_RADIUS_Y);
+        int modeY = ERASER_MODE_Y;
         boolean faceMode = PaintOverlayClient.eraserFaceMode();
-        drawToggle(context, x, modeY, 52, 18, "Pixel", !faceMode);
-        drawToggle(context, x + 58, modeY, 52, 18, "Face", faceMode);
+        drawToggle(context, x, modeY, 52, 18, "Pixel-像素格", !faceMode);
+        drawToggle(context, x + 58, modeY, 52, 18, "Face-方块面", faceMode);
     }
 
     private void drawPaperPanel(DrawContext context, int x) {
-        context.drawText(textRenderer, Text.literal("Paper"), x, 36, 0xFFFFFFFF, false);
-        int paperY = 64;
+        drawSection(context, x - 8, 48, 166, 124);
+        drawSectionTitle(context, x, 56, "Paper");
+        int paperY = PAPER_SIZE_Y;
         drawSmallButton(context, x, paperY, 22, 18, "-");
-        context.drawText(textRenderer, Text.literal("P " + PaintOverlayClient.selectedPaperSize()), x + 30, paperY + 5, 0xFFFFFFFF, false);
+        context.drawText(textRenderer, Text.literal("P " + PaintOverlayClient.selectedPaperSize()), x + 30, paperY + 5, TEXT_PRIMARY, false);
         drawSmallButton(context, x + 66, paperY, 22, 18, "+");
-        drawSmallButton(context, x, paperY + 34, 88, 18, "Import");
+        drawSmallButton(context, x, paperY + 34, 88, 18, "Import-导入图片");
     }
 
     private void drawViewPanel(DrawContext context, int x) {
-        context.drawText(textRenderer, Text.literal("View"), x, 36, 0xFFFFFFFF, false);
+        drawSection(context, x - 8, 48, 166, 80);
+        drawSectionTitle(context, x, 56, "View");
+        context.drawText(textRenderer, Text.literal("Free camera"), x, 82, TEXT_SECONDARY, false);
     }
 
     private void drawColorMap(DrawContext context, int x, int y) {
+        context.fill(x - 2, y - 2, x + MAP_SIZE + 2, y + MAP_SIZE + 2, 0x66000000);
         context.drawTexture(RenderPipelines.GUI_TEXTURED, COLOR_MAP_TEXTURE_ID, x, y, 0.0F, 0.0F, MAP_SIZE, MAP_SIZE, MAP_SIZE, MAP_SIZE);
         drawBorder(context, x, y, MAP_SIZE, MAP_SIZE);
     }
 
     private void drawHueBar(DrawContext context, int x, int y) {
+        context.fill(x - 2, y - 2, x + HUE_WIDTH + 2, y + MAP_SIZE + 2, 0x66000000);
         for (int row = 0; row < MAP_SIZE; row++) {
             int color = 0xFF000000 | hsvToRgb((float) row / (MAP_SIZE - 1), 1.0F, 1.0F);
             context.fill(x, y + row, x + HUE_WIDTH, y + row + 1, color);
@@ -374,16 +437,19 @@ public class PaintEditorScreen extends Screen {
     private void drawColorCursor(DrawContext context, int x, int y) {
         int sx = x + Math.round(saturation * (MAP_SIZE - 1));
         int sy = y + Math.round((1.0F - value) * (MAP_SIZE - 1));
+        context.fill(sx - 5, sy, sx + 6, sy + 1, 0xFF000000);
+        context.fill(sx, sy - 5, sx + 1, sy + 6, 0xFF000000);
         context.fill(sx - 4, sy, sx + 5, sy + 1, 0xFFFFFFFF);
         context.fill(sx, sy - 4, sx + 1, sy + 5, 0xFFFFFFFF);
 
         int hueX = x + MAP_SIZE + 8;
         int hy = y + Math.round(hue * (MAP_SIZE - 1));
+        context.fill(hueX - 3, hy - 2, hueX + HUE_WIDTH + 3, hy + 3, 0xFF000000);
         context.fill(hueX - 2, hy - 1, hueX + HUE_WIDTH + 2, hy + 2, 0xFFFFFFFF);
     }
 
     private void drawRecent(DrawContext context, int x, int y) {
-        context.drawText(textRenderer, Text.literal("Recent"), x, y - 12, 0xFFFFFFFF, false);
+        context.drawText(textRenderer, Text.literal("Recent-最近"), x, y - 12, TEXT_PRIMARY, false);
         List<Integer> recent = PaintOverlayClient.recentColors();
         for (int i = 0; i < 3; i++) {
             int slotX = x + i * 24;
@@ -396,7 +462,7 @@ public class PaintEditorScreen extends Screen {
     }
 
     private void drawFavorites(DrawContext context, int x, int y) {
-        context.drawText(textRenderer, Text.literal("Fav"), x, y - 12, 0xFFFFFFFF, false);
+        context.drawText(textRenderer, Text.literal("Fav-收藏"), x, y - 12, TEXT_PRIMARY, false);
         List<Integer> favorites = PaintOverlayClient.favoriteColors();
         int max = Math.min(9, favorites.size());
         for (int i = 0; i < 9; i++) {
@@ -413,7 +479,9 @@ public class PaintEditorScreen extends Screen {
     private void drawRadiusControls(DrawContext context, int x, int y) {
         int radius = PaintOverlayClient.selectedRadius();
         drawSmallButton(context, x, y, 22, 18, "-");
-        context.drawText(textRenderer, Text.literal("R " + radius), x + 30, y + 5, 0xFFFFFFFF, false);
+        context.fill(x + 28, y + 8, x + 62, y + 10, 0x664C5968);
+        context.fill(x + 28, y + 8, x + 28 + Math.min(34, radius), y + 10, ACCENT);
+        context.drawText(textRenderer, Text.literal("R " + radius), x + 30, y - 8, TEXT_SECONDARY, false);
         drawSmallButton(context, x + 66, y, 22, 18, "+");
     }
 
@@ -429,10 +497,10 @@ public class PaintEditorScreen extends Screen {
     }
 
     private PaintOverlayClient.EditorTool toolAt(double mouseX, double mouseY) {
-        if (isInside(10, 20, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.BRUSH;
-        if (isInside(10, 62, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.ERASER;
-        if (isInside(10, 104, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.PAPER;
-        if (isInside(10, 146, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.NONE;
+        if (isInside(TOOL_X, TOOL_BRUSH_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.BRUSH;
+        if (isInside(TOOL_X, TOOL_ERASER_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.ERASER;
+        if (isInside(TOOL_X, TOOL_PAPER_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.PAPER;
+        if (isInside(TOOL_X, TOOL_NONE_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.NONE;
         return null;
     }
 
@@ -450,32 +518,32 @@ public class PaintEditorScreen extends Screen {
                 if (handleSwatches(mouseX, mouseY, x)) {
                     return true;
                 }
-                return handleRadiusClick(mouseX, mouseY, x, 292) || true;
+                return handleRadiusClick(mouseX, mouseY, x, BRUSH_RADIUS_Y) || true;
             }
             case ERASER -> {
-                if (handleRadiusClick(mouseX, mouseY, x, 64)) {
+                if (handleRadiusClick(mouseX, mouseY, x, ERASER_RADIUS_Y)) {
                     return true;
                 }
-                if (isInside(x, 96, 52, 18, mouseX, mouseY)) {
+                if (isInside(x, ERASER_MODE_Y, 52, 18, mouseX, mouseY)) {
                     PaintOverlayClient.setEraserFaceMode(false);
                     return true;
                 }
-                if (isInside(x + 58, 96, 52, 18, mouseX, mouseY)) {
+                if (isInside(x + 58, ERASER_MODE_Y, 52, 18, mouseX, mouseY)) {
                     PaintOverlayClient.setEraserFaceMode(true);
                     return true;
                 }
                 return true;
             }
             case PAPER -> {
-                if (isInside(x, 64, 22, 18, mouseX, mouseY)) {
+                if (isInside(x, PAPER_SIZE_Y, 22, 18, mouseX, mouseY)) {
                     PaintOverlayClient.setSelectedPaperSize(PaintOverlayClient.selectedPaperSize() - 1);
                     return true;
                 }
-                if (isInside(x + 66, 64, 22, 18, mouseX, mouseY)) {
+                if (isInside(x + 66, PAPER_SIZE_Y, 22, 18, mouseX, mouseY)) {
                     PaintOverlayClient.setSelectedPaperSize(PaintOverlayClient.selectedPaperSize() + 1);
                     return true;
                 }
-                if (isInside(x, 98, 88, 18, mouseX, mouseY)) {
+                if (isInside(x, PAPER_SIZE_Y + 34, 88, 18, mouseX, mouseY)) {
                     client.setScreen(new PaintPaperImportScreen());
                     return true;
                 }
@@ -500,28 +568,60 @@ public class PaintEditorScreen extends Screen {
         return false;
     }
 
+    private boolean handleValueScroll(double mouseX, double mouseY, double verticalAmount) {
+        int delta = verticalAmount > 0.0D ? 1 : -1;
+        int x = rightX() + 16;
+        return switch (selectedTool) {
+            case BRUSH -> {
+                if (isInside(x - 8, 362, 166, 46, mouseX, mouseY)
+                        || isInside(x, BRUSH_RADIUS_Y - 12, 90, 34, mouseX, mouseY)) {
+                    PaintOverlayClient.setSelectedRadius(PaintOverlayClient.selectedRadius() + delta);
+                    yield true;
+                }
+                yield false;
+            }
+            case ERASER -> {
+                if (isInside(x - 8, 48, 166, 112, mouseX, mouseY)
+                        || isInside(x, ERASER_RADIUS_Y - 12, 90, 34, mouseX, mouseY)) {
+                    PaintOverlayClient.setSelectedRadius(PaintOverlayClient.selectedRadius() + delta);
+                    yield true;
+                }
+                yield false;
+            }
+            case PAPER -> {
+                if (isInside(x - 8, 48, 166, 124, mouseX, mouseY)
+                        || isInside(x, PAPER_SIZE_Y - 8, 90, 30, mouseX, mouseY)) {
+                    PaintOverlayClient.setSelectedPaperSize(PaintOverlayClient.selectedPaperSize() + delta);
+                    yield true;
+                }
+                yield false;
+            }
+            case NONE -> false;
+        };
+    }
+
     private boolean handleSwatches(double mouseX, double mouseY, int x) {
         int color = PaintOverlayClient.selectedColor();
-        if (isInsideStar(x, 102, 28, mouseX, mouseY)) {
+        if (isInsideStar(x, BRUSH_SWATCH_Y, 28, mouseX, mouseY)) {
             PaintOverlayClient.toggleFavoriteColor(color);
             return true;
         }
         List<Integer> recent = PaintOverlayClient.recentColors();
         for (int i = 0; i < recent.size(); i++) {
             int slotX = x + i * 24;
-            if (isInsideStar(slotX, 166, SWATCH, mouseX, mouseY)) {
+            if (isInsideStar(slotX, BRUSH_RECENT_Y, SWATCH, mouseX, mouseY)) {
                 PaintOverlayClient.toggleFavoriteColor(recent.get(i));
                 return true;
             }
-            if (isInside(slotX, 166, SWATCH, SWATCH, mouseX, mouseY)) {
+            if (isInside(slotX, BRUSH_RECENT_Y, SWATCH, SWATCH, mouseX, mouseY)) {
                 selectColor(recent.get(i), false);
                 return true;
             }
         }
         List<Integer> favorites = PaintOverlayClient.favoriteColors();
         for (int i = 0; i < Math.min(9, favorites.size()); i++) {
-            int slotX = x + (i % 3) * 24;
-            int slotY = 204 + (i / 3) * 24;
+            int slotX = x + BRUSH_FAVORITE_X_OFFSET + (i % 3) * 24;
+            int slotY = BRUSH_RECENT_Y + (i / 3) * 24;
             if (isInsideStar(slotX, slotY, SWATCH, mouseX, mouseY)) {
                 PaintOverlayClient.toggleFavoriteColor(favorites.get(i));
                 return true;
@@ -536,7 +636,7 @@ public class PaintEditorScreen extends Screen {
 
     private boolean pickColor(double mouseX, double mouseY, boolean dragging) {
         int x = rightX() + 16;
-        int y = 28;
+        int y = BRUSH_COLOR_Y;
         if (mouseX >= x && mouseX < x + MAP_SIZE && mouseY >= y && mouseY < y + MAP_SIZE) {
             saturation = MathHelper.clamp((float) ((mouseX - x) / (MAP_SIZE - 1)), 0.0F, 1.0F);
             value = MathHelper.clamp(1.0F - (float) ((mouseY - y) / (MAP_SIZE - 1)), 0.0F, 1.0F);
@@ -642,33 +742,75 @@ public class PaintEditorScreen extends Screen {
     }
 
     private void drawSwatch(DrawContext context, int x, int y, int size, int color, boolean filled) {
-        context.fill(x, y, x + size, y + size, filled ? color : 0x55202028);
+        context.fill(x - 1, y - 1, x + size + 1, y + size + 1, 0x66000000);
+        fillChamfered(context, x, y, size, size, Math.min(3, CHAMFER), filled ? color : 0x55202028);
         drawBorder(context, x, y, size, size);
     }
 
     private void drawBorder(DrawContext context, int x, int y, int w, int h) {
-        context.fill(x, y, x + w, y + 1, 0x99FFFFFF);
-        context.fill(x, y + h - 1, x + w, y + h, 0x99000000);
-        context.fill(x, y, x + 1, y + h, 0x99FFFFFF);
-        context.fill(x + w - 1, y, x + w, y + h, 0x99000000);
+        int c = Math.min(CHAMFER, Math.max(1, Math.min(w, h) / 3));
+        context.fill(x + c, y, x + w - c, y + 1, OUTLINE);
+        context.fill(x + c, y + h - 1, x + w - c, y + h, OUTLINE_SOFT);
+        context.fill(x, y + c, x + 1, y + h - c, OUTLINE);
+        context.fill(x + w - 1, y + c, x + w, y + h - c, OUTLINE_SOFT);
+        for (int i = 0; i < c; i++) {
+            context.fill(x + i, y + c - i - 1, x + i + 1, y + c - i, OUTLINE);
+            context.fill(x + w - c + i, y + i, x + w - c + i + 1, y + i + 1, OUTLINE);
+            context.fill(x + i, y + h - c + i, x + i + 1, y + h - c + i + 1, OUTLINE_SOFT);
+            context.fill(x + w - i - 1, y + h - c + i, x + w - i, y + h - c + i + 1, OUTLINE_SOFT);
+        }
     }
 
     private void drawStar(DrawContext context, int x, int y, int size, boolean favorite) {
         int sx = x + size - 8;
         int sy = y + 1;
-        context.drawText(textRenderer, Text.literal("*"), sx, sy, favorite ? 0xFFFFD75E : 0xFFFFFFFF, true);
+        context.drawText(textRenderer, Text.literal("*"), sx, sy, favorite ? 0xFFFFD75E : TEXT_SECONDARY, true);
     }
 
     private void drawSmallButton(DrawContext context, int x, int y, int w, int h, String text) {
-        context.fill(x, y, x + w, y + h, 0xAA303038);
-        drawBorder(context, x, y, w, h);
-        context.drawText(textRenderer, Text.literal(text), x + 6, y + 5, 0xFFFFFFFF, false);
+        drawControlSurface(context, x, y, w, h, false, false);
+        int textX = x + Math.max(4, (w - textRenderer.getWidth(text)) / 2);
+        context.drawText(textRenderer, Text.literal(text), textX, y + 5, TEXT_PRIMARY, false);
     }
 
     private void drawToggle(DrawContext context, int x, int y, int w, int h, String text, boolean active) {
-        context.fill(x, y, x + w, y + h, active ? 0xFF2E6A84 : 0xAA303038);
+        drawControlSurface(context, x, y, w, h, active, false);
+        context.drawText(textRenderer, Text.literal(text), x + 6, y + 5, active ? TEXT_PRIMARY : TEXT_SECONDARY, false);
+    }
+
+    private void drawSection(DrawContext context, int x, int y, int w, int h) {
+        fillChamfered(context, x, y, w, h, CHAMFER, SURFACE_SOFT);
         drawBorder(context, x, y, w, h);
-        context.drawText(textRenderer, Text.literal(text), x + 6, y + 5, 0xFFFFFFFF, false);
+    }
+
+    private void drawSectionTitle(DrawContext context, int x, int y, String text) {
+        context.fill(x, y + 10, x + 12, y + 11, ACCENT);
+        context.drawText(textRenderer, Text.literal(text), x + 16, y + 5, TEXT_PRIMARY, false);
+    }
+
+    private void drawControlSurface(DrawContext context, int x, int y, int w, int h, boolean active, boolean hover) {
+        int fill = active ? ACCENT_DARK : (hover ? SURFACE_HOVER : SURFACE_SOFT);
+        fillChamfered(context, x, y, w, h, CHAMFER, fill);
+        drawBorder(context, x, y, w, h);
+    }
+
+    private static void fillChamfered(DrawContext context, int x, int y, int w, int h, int cut, int color) {
+        int c = Math.min(cut, Math.max(0, Math.min(w, h) / 3));
+        context.fill(x + c, y, x + w - c, y + h, color);
+        context.fill(x, y + c, x + w, y + h - c, color);
+        for (int i = 0; i < c; i++) {
+            context.fill(x + c - i - 1, y + i, x + w - c + i + 1, y + i + 1, color);
+            context.fill(x + c - i - 1, y + h - i - 1, x + w - c + i + 1, y + h - i, color);
+        }
+    }
+
+    private String selectedToolName() {
+        return switch (selectedTool) {
+            case BRUSH -> "Brush";
+            case ERASER -> "Eraser";
+            case PAPER -> "Paper";
+            case NONE -> "View";
+        };
     }
 
     private int rightX() {

@@ -230,7 +230,7 @@ public class PaintBrushColorScreen extends Screen {
         context.drawText(textRenderer, Text.literal(toHex(color)), previewX + PREVIEW_SIZE + 8, previewY + 10, 0xFFE6E6E6, false);
 
         context.drawText(textRenderer, Text.literal("HEX Search"), controlX, mapY + 44, 0xFFB8B8C2, false);
-        context.drawText(textRenderer, Text.literal("Recent"), controlX, mapY + 80, 0xFFFFFFFF, false);
+        context.drawText(textRenderer, Text.literal("最近取色"), controlX, mapY + 80, 0xFFFFFFFF, false);
 
         List<Integer> recent = PaintOverlayClient.recentColors();
         int recentY = mapY + 93;
@@ -249,7 +249,7 @@ public class PaintBrushColorScreen extends Screen {
     }
 
     private void drawFavoriteColumn(DrawContext context) {
-        context.drawText(textRenderer, Text.literal("Fav"), favoriteX, mapY, 0xFFFFFFFF, false);
+        context.drawText(textRenderer, Text.literal("Fav-收藏"), favoriteX, mapY, 0xFFFFFFFF, false);
         List<Integer> favorites = PaintOverlayClient.favoriteColors();
         int slots = maxFavoriteSlots();
         for (int i = 0; i < slots; i++) {

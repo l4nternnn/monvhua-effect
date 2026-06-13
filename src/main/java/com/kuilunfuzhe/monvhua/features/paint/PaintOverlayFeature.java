@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.paint;
 
 import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
+import com.kuilunfuzhe.monvhua.command.PaintGraffitiCommand;
 import com.kuilunfuzhe.monvhua.item.paint.PaintBrushItem;
 import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
 import com.kuilunfuzhe.monvhua.item.paint.PaintPaperItem;
@@ -38,6 +39,7 @@ public final class PaintOverlayFeature {
     public static final int MIN_PAPER_SIZE = 1;
     public static final int MAX_PAPER_SIZE = 25;
     private static final double SYNC_DISTANCE_SQUARED = 128.0D * 128.0D;
+    private static final double INTERACTION_DISTANCE_SQUARED = 64.0D * 64.0D;
     private static final Map<UUID, BrushSettings> BRUSH_SETTINGS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> PAPER_SIZES = new ConcurrentHashMap<>();
     private static final Map<UUID, PlayerSyncKey> PLAYER_SYNC_KEYS = new ConcurrentHashMap<>();
@@ -61,6 +63,9 @@ public final class PaintOverlayFeature {
                 context.server().execute(() -> setBrushSettings(context.player(), packet.color(), packet.radius())));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PaperSizeC2S.ID, (packet, context) ->
                 context.server().execute(() -> setPaperSize(context.player(), packet.size())));
+        ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.ImportPaintPaperC2S.ID, (packet, context) ->
+                context.server().execute(() -> PaintGraffitiCommand.importUploadedImage(
+                        context.player(), packet.filename(), packet.scale(), packet.imageBytes())));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PaintStrokeC2S.ID, (packet, context) ->
                 context.server().execute(() -> handlePaintStroke(context.player(), packet)));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.EditorPaintStrokeC2S.ID, (packet, context) ->
@@ -109,7 +114,7 @@ public final class PaintOverlayFeature {
         if (!(player.getWorld() instanceof ServerWorld world)) {
             return;
         }
-        if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > 64.0D) {
+        if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
             return;
         }
         if (isHoldingPaintBrush(player)) {
@@ -130,7 +135,7 @@ public final class PaintOverlayFeature {
         if (!(player.getWorld() instanceof ServerWorld world) || !hasPaintEditorAccess(player)) {
             return;
         }
-        if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > 100.0D) {
+        if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
             return;
         }
         if (packet.tool() == 1) {
@@ -152,7 +157,7 @@ public final class PaintOverlayFeature {
             return;
         }
         PaintOverlayPackets.FaceData face = packet.faceData();
-        if (Vec3d.ofCenter(face.pos()).squaredDistanceTo(player.getEyePos()) > 100.0D) {
+        if (Vec3d.ofCenter(face.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
             return;
         }
         setFacePixels(world, face.pos(), face.face(), face.pixels());
@@ -210,7 +215,7 @@ public final class PaintOverlayFeature {
         if (!(player.getWorld() instanceof ServerWorld world)) {
             return;
         }
-        if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > 100.0D) {
+        if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
             return;
         }
         ItemStack paper = findPaintEditorItem(player, PaintItems.PAINT_PAPER);
@@ -225,7 +230,7 @@ public final class PaintOverlayFeature {
         if (!(player.getWorld() instanceof ServerWorld world) || !player.isCreative()) {
             return;
         }
-        if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > 64.0D) {
+        if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
             return;
         }
         if (world.getBlockEntity(packet.pos()) instanceof PaintBucketBlockEntity bucket) {
@@ -237,7 +242,7 @@ public final class PaintOverlayFeature {
         if (!(player.getWorld() instanceof ServerWorld world) || player.isCreative()) {
             return;
         }
-        if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > 100.0D) {
+        if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
             return;
         }
         ItemStack brush = findHeldPaintBrush(player);
@@ -267,7 +272,7 @@ public final class PaintOverlayFeature {
         if (!(entity instanceof ItemDisplayEntity display)) {
             return;
         }
-        if (display.getPos().squaredDistanceTo(player.getEyePos()) > 64.0D) {
+        if (display.getPos().squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
             return;
         }
         ItemStack stack = display.getItemStack().copy();
@@ -319,7 +324,7 @@ public final class PaintOverlayFeature {
         if (!(entity instanceof ItemDisplayEntity display)) {
             return;
         }
-        if (display.getPos().squaredDistanceTo(player.getEyePos()) > 100.0D) {
+        if (display.getPos().squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
             return;
         }
         ItemStack stack = display.getItemStack().copy();

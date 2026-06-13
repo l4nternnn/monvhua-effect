@@ -1,6 +1,8 @@
 package com.kuilunfuzhe.monvhua.features.paint;
 
 import com.kuilunfuzhe.monvhua.MonvhuaMod;
+import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
+import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.DrawContext;
@@ -34,6 +36,7 @@ public class PaintPaperImportScreen extends Screen {
     private static final int LIST_WIDTH = 210;
     private static final int ROW_HEIGHT = 18;
     private static final int PREVIEW_SIZE = 210;
+    private static final int MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
     private static final Map<Path, CachedImage> IMAGE_CACHE = new HashMap<>();
 
     private final List<ImageEntry> images = new ArrayList<>();
@@ -241,12 +244,24 @@ public class PaintPaperImportScreen extends Screen {
     private void importSelected() {
         ImageEntry entry = selectedEntry();
         MinecraftClient client = MinecraftClient.getInstance();
-        if (entry == null || client.player == null || client.player.networkHandler == null) {
+        if (entry == null || client.player == null) {
+            return;
+        }
+        byte[] imageBytes;
+        try {
+            long size = Files.size(entry.path());
+            if (size > MAX_UPLOAD_BYTES) {
+                status = "Image too large, max 8 MiB";
+                return;
+            }
+            imageBytes = Files.readAllBytes(entry.path());
+        } catch (IOException e) {
+            status = "Failed to read image: " + e.getMessage();
             return;
         }
         importing = true;
-        status = "Importing...";
-        client.player.networkHandler.sendChatCommand("monvhua-graffiti import_scaled " + formatScale(scale) + " " + entry.name());
+        status = "Uploading...";
+        SafeClientNetworking.send(new PaintOverlayPackets.ImportPaintPaperC2S(entry.name(), scale, imageBytes));
     }
 
     private void setScale(double nextScale) {

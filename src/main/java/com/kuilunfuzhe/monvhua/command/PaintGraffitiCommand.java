@@ -27,6 +27,7 @@ import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -46,6 +47,7 @@ public final class PaintGraffitiCommand {
     private static final int IMPORT_COLOR_STEP = 16;
     private static final int MAX_GRID_CLEAR_RADIUS = 2048;
     private static final int MAX_CHUNK_CLEAR_RADIUS = 128;
+    private static final int MAX_UPLOADED_IMAGE_BYTES = 8 * 1024 * 1024;
     private static final ConcurrentHashMap<Path, CachedImportImage> IMPORT_IMAGE_CACHE = new ConcurrentHashMap<>();
 
     private PaintGraffitiCommand() {
@@ -190,6 +192,32 @@ public final class PaintGraffitiCommand {
         return 1;
     }
 
+    public static void importUploadedImage(ServerPlayerEntity player, String filename, double scale, byte[] imageBytes) {
+        if (player == null) {
+            return;
+        }
+        if (imageBytes == null || imageBytes.length == 0) {
+            player.sendMessage(Text.literal("No uploaded image data."), false);
+            return;
+        }
+        if (imageBytes.length > MAX_UPLOADED_IMAGE_BYTES) {
+            player.sendMessage(Text.literal("Uploaded image is too large, max 8 MiB."), false);
+            return;
+        }
+
+        MinecraftServer server = player.getServer();
+        if (server == null) {
+            return;
+        }
+        UUID playerId = player.getUuid();
+        String safeFilename = safeFilename(filename);
+        double safeScale = Math.max(0.05D, Math.min(8.0D, scale));
+        byte[] copiedBytes = imageBytes.clone();
+        player.sendMessage(Text.literal("Started importing uploaded " + safeFilename + " at " + formatScale(safeScale) + "x..."), false);
+        CompletableFuture.supplyAsync(() -> loadImport(safeFilename, copiedBytes, safeScale))
+                .thenAccept(result -> server.execute(() -> finishImport(server, playerId, result)));
+    }
+
     private static ImportResult loadImport(Path imagePath, double scale) {
         BufferedImage image;
         try {
@@ -229,6 +257,51 @@ public final class PaintGraffitiCommand {
         }
 
         return new ImportResult(null, imagePath.getFileName().toString(), scale, paperColumns, paperRows, papers);
+    }
+
+    private static ImportResult loadImport(String filename, byte[] imageBytes, double scale) {
+        BufferedImage image;
+        try (ByteArrayInputStream input = new ByteArrayInputStream(imageBytes)) {
+            image = ImageIO.read(input);
+        } catch (IOException e) {
+            return ImportResult.error("Failed to read uploaded image: " + e.getMessage());
+        }
+        if (image == null) {
+            return ImportResult.error("Unsupported uploaded image file: " + filename);
+        }
+        return loadImport(filename, image, scale);
+    }
+
+    private static ImportResult loadImport(String filename, BufferedImage image, double scale) {
+        image = scaledImage(image, scale);
+
+        int paperColumns = Math.max(1, (image.getWidth() + PAPER_PIXEL_SIZE - 1) / PAPER_PIXEL_SIZE);
+        int paperRows = Math.max(1, (image.getHeight() + PAPER_PIXEL_SIZE - 1) / PAPER_PIXEL_SIZE);
+        if (paperColumns * paperRows > MAX_IMPORTED_PAPERS) {
+            return ImportResult.error("Scaled image is too large: " + paperColumns + "x" + paperRows + " papers, max 25x25.");
+        }
+
+        String imageName = baseName(filename);
+        List<ImportedPaper> papers = new ArrayList<>();
+        for (int paperY = 0; paperY < paperRows; paperY++) {
+            for (int paperX = 0; paperX < paperColumns; paperX++) {
+                int pixelStartX = paperX * PAPER_PIXEL_SIZE;
+                int pixelStartY = paperY * PAPER_PIXEL_SIZE;
+                int remainingWidth = Math.max(1, image.getWidth() - pixelStartX);
+                int remainingHeight = Math.max(1, image.getHeight() - pixelStartY);
+                int tileColumns = Math.min(PAPER_TILE_SIZE, Math.max(1, (remainingWidth + TILE_SIZE - 1) / TILE_SIZE));
+                int tileRows = Math.min(PAPER_TILE_SIZE, Math.max(1, (remainingHeight + TILE_SIZE - 1) / TILE_SIZE));
+                int paperSize = Math.max(tileColumns, tileRows);
+                List<PaintPaperStore.Cell> cells = paperCells(image, paperX, paperY, tileColumns, tileRows);
+                papers.add(new ImportedPaper(
+                        imageName + "(" + (paperX + 1) + "," + (paperY + 1) + ")",
+                        paperSize,
+                        cells
+                ));
+            }
+        }
+
+        return new ImportResult(null, filename, scale, paperColumns, paperRows, papers);
     }
 
     private static CachedImportImage cachedImportImage(Path imagePath) throws IOException {
@@ -349,6 +422,15 @@ public final class PaintGraffitiCommand {
         int dot = filename.lastIndexOf('.');
         String name = dot <= 0 ? filename : filename.substring(0, dot);
         return name.isBlank() ? "image" : name;
+    }
+
+    private static String safeFilename(String filename) {
+        if (filename == null || filename.isBlank()) {
+            return "image.png";
+        }
+        String safe = Path.of(filename).getFileName().toString();
+        safe = safe.replaceAll("[\\\\/:*?\"<>|]", "_");
+        return safe.isBlank() ? "image.png" : safe;
     }
 
     private static String formatScale(double scale) {

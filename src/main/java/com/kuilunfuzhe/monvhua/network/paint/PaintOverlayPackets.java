@@ -27,6 +27,7 @@ public final class PaintOverlayPackets {
     public static void registerC2S() {
         BrushSettingsC2S.register();
         PaperSizeC2S.register();
+        ImportPaintPaperC2S.register();
         PaintStrokeC2S.register();
         EditorPaintStrokeC2S.register();
         EditorModelPaintStrokeC2S.register();
@@ -207,6 +208,49 @@ public final class PaintOverlayPackets {
 
         private void write(RegistryByteBuf buf) {
             buf.writeVarInt(size);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record ImportPaintPaperC2S(String filename, double scale, byte[] imageBytes) implements CustomPayload {
+        private static final int MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+        public static final Id<ImportPaintPaperC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "import_paint_paper"));
+        public static final PacketCodec<RegistryByteBuf, ImportPaintPaperC2S> CODEC = PacketCodec.of(ImportPaintPaperC2S::write, ImportPaintPaperC2S::new);
+        private static boolean registered = false;
+
+        public ImportPaintPaperC2S {
+            filename = filename == null ? "image.png" : filename;
+            if (filename.length() > 128) {
+                filename = filename.substring(0, 128);
+            }
+            scale = Math.max(0.05D, Math.min(8.0D, scale));
+            imageBytes = imageBytes == null ? new byte[0] : imageBytes.clone();
+            if (imageBytes.length > MAX_IMAGE_BYTES) {
+                byte[] limited = new byte[MAX_IMAGE_BYTES];
+                System.arraycopy(imageBytes, 0, limited, 0, MAX_IMAGE_BYTES);
+                imageBytes = limited;
+            }
+        }
+
+        private ImportPaintPaperC2S(RegistryByteBuf buf) {
+            this(buf.readString(128), buf.readDouble(), buf.readByteArray(MAX_IMAGE_BYTES));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(filename);
+            buf.writeDouble(scale);
+            buf.writeByteArray(imageBytes);
         }
 
         public static void register() {
