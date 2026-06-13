@@ -68,7 +68,7 @@ public class CarryManager {
 	}
 
 	public static boolean hasCarryExperience(ServerPlayerEntity carrier) {
-		return !shouldDrainCarryExperience(carrier) || carrier.experienceLevel > 0;
+		return !shouldDrainCarryExperience(carrier) || getCarryExperiencePoints(carrier) >= CARRY_XP_DRAIN_RATE;
 	}
 
 	public static void syncCarryPose(ServerPlayerEntity carrier, Entity carried, boolean active) {
@@ -212,9 +212,8 @@ public class CarryManager {
 			int tickCount = CARRY_XP_TICK_COUNTER.merge(carrier, 1, (oldVal, v) -> oldVal + 1);
 			if (tickCount >= 20) {
 				CARRY_XP_TICK_COUNTER.put(carrier, 0);
-				if (carrier.experienceLevel > 0) {
-					carrier.addExperienceLevels(-CARRY_XP_DRAIN_RATE);
-					if (carrier.experienceLevel < 0) carrier.experienceLevel = 0;
+				if (getCarryExperiencePoints(carrier) >= CARRY_XP_DRAIN_RATE) {
+					removeCarryExperiencePoints(carrier, CARRY_XP_DRAIN_RATE);
 				} else {
 					releaseCarried(carrier, carried);
 					carrier.sendMessage(Text.literal("§c体力耗尽，无法继续抱起"), false);
@@ -224,6 +223,38 @@ public class CarryManager {
 				}
 			}
 		}
+	}
+
+	private static int getCarryExperiencePoints(ServerPlayerEntity player) {
+		int points = getExperiencePointsAtLevel(player.experienceLevel);
+		points += (int) Math.floor(player.experienceProgress * getExperiencePointsToNextLevel(player.experienceLevel) + 1.0E-4F);
+		return points;
+	}
+
+	private static void removeCarryExperiencePoints(ServerPlayerEntity player, int amount) {
+		int remaining = Math.max(0, getCarryExperiencePoints(player) - amount);
+		player.totalExperience = 0;
+		player.experienceLevel = 0;
+		player.experienceProgress = 0.0F;
+		player.addExperience(remaining);
+	}
+
+	private static int getExperiencePointsAtLevel(int level) {
+		int total = 0;
+		for (int i = 0; i < level; i++) {
+			total += getExperiencePointsToNextLevel(i);
+		}
+		return total;
+	}
+
+	private static int getExperiencePointsToNextLevel(int level) {
+		if (level >= 30) {
+			return 112 + (level - 30) * 9;
+		}
+		if (level >= 15) {
+			return 37 + (level - 15) * 5;
+		}
+		return 7 + level * 2;
 	}
 
 	public static void cleanupForDisconnect(ServerPlayerEntity player) {

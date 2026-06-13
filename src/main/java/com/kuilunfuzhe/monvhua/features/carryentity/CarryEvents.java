@@ -202,12 +202,12 @@ public class CarryEvents {
 					.executes(ctx -> {
 						int amount = IntegerArgumentType.getInteger(ctx, "amount");
 						CarryManager.CARRY_XP_DRAIN_RATE = amount;
-						ctx.getSource().sendMessage(Text.literal("§a搬运经验消耗率已设置为 " + amount));
+						ctx.getSource().sendMessage(Text.literal("§a搬运经验消耗已设置为每秒 " + amount + " 点"));
 						return 1;
 					})
 				)
 				.executes(ctx -> {
-					ctx.getSource().sendMessage(Text.literal("§e当前搬运经验消耗率: " + CarryManager.CARRY_XP_DRAIN_RATE));
+					ctx.getSource().sendMessage(Text.literal("§e当前搬运经验消耗: 每秒 " + CarryManager.CARRY_XP_DRAIN_RATE + " 点"));
 					return 1;
 				})
 			);
