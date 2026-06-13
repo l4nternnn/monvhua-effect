@@ -18,6 +18,7 @@ import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.FloatingConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
+import com.kuilunfuzhe.monvhua.item.config.PlantMagicConfig;
 import com.kuilunfuzhe.monvhua.item.config.ThroughConfig;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
@@ -25,6 +26,7 @@ import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ChargeSyncS2C;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ConfigS2C;
+import com.kuilunfuzhe.monvhua.network.plant.PlantMagicPackets;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.StateS2C;
 import com.kuilunfuzhe.monvhua.network.through.ThroughConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughStateS2CPacket;
@@ -170,6 +172,16 @@ public class ClientPacketHandler {
                 FloatingConfig.syncInstance(config);
                 if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
                     screen.receiveFloatingConfig(config);
+                }
+            });
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(PlantMagicPackets.ConfigS2C.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                PlantMagicConfig config = PlantMagicConfig.fromJson(packet.json());
+                PlantMagicConfig.syncInstance(config);
+                if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
+                    screen.receivePlantMagicConfig(config);
                 }
             });
         });

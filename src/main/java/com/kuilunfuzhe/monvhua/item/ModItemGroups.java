@@ -6,6 +6,7 @@ import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
+import com.kuilunfuzhe.monvhua.item.plant.PlantMagicItems;
 import com.kuilunfuzhe.monvhua.item.through.ThroughItem;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.minecraft.item.ItemGroup;
@@ -32,6 +33,7 @@ public class ModItemGroups {
                             entries.add(Evil_Eyes.CLAIRVOYANCE_ITEM);
                             entries.add(ModItems.MAGIC_STICK);
                             entries.add(GravityItems.GRAVITY_WAND);
+                            entries.add(PlantMagicItems.PLANT_WAND);
                             entries.add(PaintItems.PAINT_BRUSH);
                             entries.add(PaintItems.ERASER);
                             entries.add(PaintItems.PAINT_PAPER);

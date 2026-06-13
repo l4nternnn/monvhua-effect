@@ -7,6 +7,7 @@ import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.command.argument.EntityAnchorArgumentType;
 import net.minecraft.command.argument.EntityArgumentType;
@@ -19,6 +20,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.particle.ParticleEffect;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.scoreboard.Scoreboard;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -43,15 +45,12 @@ public class Gazeguidance {
 	private static final long COOLDOWN_TICKS = 100;
 	private static final Map<UUID, Long> lastFocusEndTime = new ConcurrentHashMap<>();
 
-	private static UUID currentFocusEntityId = null;
-	private static UUID temporaryFocusPlayerId = null;
-	private static UUID temporaryFocusEntityId = null;
-
 	private static final Map<UUID, Double> playerEnergy = new ConcurrentHashMap<>();
-	private static final Map<UUID, Long> markedEntities = new ConcurrentHashMap<>();
+	private static final Map<UUID, Map<UUID, Long>> playerMarkedEntities = new ConcurrentHashMap<>();
+	private static final Map<UUID, UUID> markedEntityOwners = new ConcurrentHashMap<>();
+	private static final Map<UUID, FocusState> playerFocusStates = new ConcurrentHashMap<>();
 
 	private static final Map<UUID, Integer> lastSentStage = new ConcurrentHashMap<>();
-	private static int currentStage = 1;
 	private static final Map<UUID, Long> focusStartTime = new ConcurrentHashMap<>();
 
 	private static int globalEnergySyncTick = 0;
@@ -59,7 +58,7 @@ public class Gazeguidance {
 
 	// 焦点类型枚举
 	private enum FocusType { SELF, ENTITY, STATIC }
-	private static FocusType currentFocusType = null;
+	private record FocusState(UUID focusEntityId, FocusType focusType) {}
 
 	private static final Set<String> SPECIAL_NAMES = Set.of("shushuwonie", "Remio","Ice_in_North");
 
@@ -142,7 +141,8 @@ public class Gazeguidance {
 						.then(CommandManager.literal("clearmarks_清除诱导标记实体")
 								.requires(source -> source.hasPermissionLevel(2))  // 需要 OP 权限（2级）或创造模式可自行调整
 								.executes(context -> {
-									markedEntities.clear();
+									playerMarkedEntities.clear();
+									markedEntityOwners.clear();
 									// 广播标记数量清零给所有在线玩家
 									for (ServerPlayerEntity player : context.getSource().getServer().getPlayerManager().getPlayerList()) {
 										ServerPlayNetworking.send(player, new MarkCountPacket(0));
@@ -206,6 +206,8 @@ public class Gazeguidance {
 			return stack.getItem() == ModItems.MAGIC_STICK ? ActionResult.FAIL : ActionResult.PASS;
 		});
 
+		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> cleanupPlayerState(handler.player));
+
 		// 右键长按开始/结束诱导
 		ServerPlayNetworking.registerGlobalReceiver(RightClickActionPacket.ID, (payload, context) -> {
 			context.server().execute(() -> {
@@ -249,7 +251,7 @@ public class Gazeguidance {
                     if (player.getCommandTags().contains("Silenced")) { player.sendMessage(net.minecraft.text.Text.literal("§c你难以集中精神"), true); return; }
 				var entity = world.getEntityById(payload.entityId());
 				if (entity instanceof LivingEntity target && player.getMainHandStack().getItem() == ModItems.MAGIC_STICK) {
-					double maxRange = 50.0;
+					double maxRange = 30.0;
 					if (player.squaredDistanceTo(target) > maxRange * maxRange) {
 						player.sendMessage(Text.literal("§c目标过远，无法标记"), true);
 						return;
@@ -259,25 +261,31 @@ public class Gazeguidance {
 					int stage = getPlayerStage(player);
 					int maxMarks = getMaxMarkedCount(stage);
 
-					if (markedEntities.containsKey(targetUuid)) {
+					Map<UUID, Long> marks = getMarks(player.getUuid());
+					if (marks.containsKey(targetUuid)) {
 						// 取消标记
-						markedEntities.remove(targetUuid);
+						removeMark(player.getUuid(), targetUuid);
 						player.sendMessage(Text.literal("§e已取消标记 " + target.getName().getString()), true);
 						if (player instanceof ServerPlayerEntity sp) {
 							sendStageIfChanged(sp, stage);
-							ServerPlayNetworking.send(sp, new MarkCountPacket(markedEntities.size()));
+							ServerPlayNetworking.send(sp, new MarkCountPacket(getMarkCount(player.getUuid())));
 						}
 					} else {
-						if (markedEntities.size() >= maxMarks) {
+						UUID owner = markedEntityOwners.get(targetUuid);
+						if (owner != null && !owner.equals(player.getUuid())) {
+							player.sendMessage(Text.literal("§c该实体已被其他玩家标记"), true);
+							return;
+						}
+						if (marks.size() >= maxMarks) {
 							player.sendMessage(Text.literal("§c标记已达上限，无法继续标记"), true);
 							return;
 						}
 						long expiryTime = world.getTime() + 1200;
-						markedEntities.put(targetUuid, expiryTime);
+						addMark(player.getUuid(), targetUuid, expiryTime);
 						player.sendMessage(Text.literal("§a已标记 " + target.getName().getString() + " (持续60秒)"), true);
 						if (player instanceof ServerPlayerEntity sp) {
 							sendStageIfChanged(sp, stage);
-							ServerPlayNetworking.send(sp, new MarkCountPacket(markedEntities.size()));
+							ServerPlayNetworking.send(sp, new MarkCountPacket(getMarkCount(player.getUuid())));
 						}
 //						LOGGER.info("标记 {} (阶段 {})", target.getName().getString(), stage);
 					}
@@ -287,112 +295,61 @@ public class Gazeguidance {
 
 		// 每 tick 处理
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
-			// 更新当前阶段
-			if (temporaryFocusPlayerId != null) {
-				PlayerEntity p = server.getPlayerManager().getPlayer(temporaryFocusPlayerId);
-				if (p != null) {
-					int newStage = getPlayerStage(p);
-					if (newStage != currentStage) {
-						currentStage = newStage;
-						if (p instanceof ServerPlayerEntity sp) sendStageIfChanged(sp, newStage);
-					}
+			for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+				FocusState state = playerFocusStates.get(player.getUuid());
+				if (state == null) continue;
+
+				int newStage = getPlayerStage(player);
+				sendStageIfChanged(player, newStage);
+
+				Entity focus = findEntity(server, state.focusEntityId());
+				if (focus == null || !focus.isAlive()) {
+					endFocus(player);
+					continue;
+				}
+
+				boolean valid = player.getMainHandStack().getItem() == ModItems.MAGIC_STICK;
+				if (valid && state.focusType() == FocusType.SELF && !player.isSneaking()) {
+					valid = false;
+				}
+				if (!valid) {
+					endFocus(player);
+					player.sendMessage(Text.literal("§c诱导条件不满足，已结束"), true);
 				}
 			}
 
-			// 焦点实体有效性检查
-			if (temporaryFocusEntityId != null) {
-				World w = server.getWorld(World.OVERWORLD);
-				if (w instanceof ServerWorld sw) {
-					Entity e = sw.getEntity(temporaryFocusEntityId);
-					if (e == null || !e.isAlive()) {
-						temporaryFocusEntityId = null;
-						currentFocusEntityId = null;
-						temporaryFocusPlayerId = null;
-						currentFocusType = null;
-					} else {
-						currentFocusEntityId = temporaryFocusEntityId;
-					}
-				}
+			cleanupExpiredMarks(server);
+
+			if (server.getTicks() % 5 == 0) {
+				autoMarkEntitiesLookingAtHolders(server);
 			}
 
-			// 自我诱导持续条件检查：必须手持魔杖且潜行，否则立即结束
-			if (temporaryFocusPlayerId != null && currentFocusType == FocusType.SELF) {
-				PlayerEntity fp = server.getPlayerManager().getPlayer(temporaryFocusPlayerId);
-				if (fp != null) {
-					boolean stillValid = fp.getMainHandStack().getItem() == ModItems.MAGIC_STICK && fp.isSneaking();
-					if (!stillValid) {
-						endFocus(fp);
-					}
-				}
-			}
+			// 能量管理：各玩家独立
+			for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+				FocusState state = playerFocusStates.get(player.getUuid());
+				if (state == null) continue;
+				Entity focus = findEntity(server, state.focusEntityId());
+				if (focus == null || !focus.isAlive()) continue;
 
-			// 检查诱导玩家是否仍满足条件：
-			// 1. 必须手持魔法棒；
-			// 2. 如果是自我诱导，还必须保持潜行。
-			if (temporaryFocusPlayerId != null && currentFocusEntityId != null) {
-				PlayerEntity fp = server.getPlayerManager().getPlayer(temporaryFocusPlayerId);
-				if (fp != null) {
-					boolean valid = fp.getMainHandStack().getItem() == ModItems.MAGIC_STICK;
-					if (valid && currentFocusType == FocusType.SELF && !fp.isSneaking()) {
-						valid = false;
-					}
-					if (!valid) {
-						endFocus(fp);
-						fp.sendMessage(Text.literal("§c诱导条件不满足，已结束"), true);
-					}
+				int stage = getPlayerStage(player);
+				int markedCount = getMarkCount(player.getUuid());
+				double drainRate = GazeConfig.getInstance().getEnergyDrain(stage);
+				double energyCost = markedCount * drainRate / 20.0;
+				double currentEnergy = playerEnergy.getOrDefault(player.getUuid(), GazeConfig.getInstance().maxEnergy);
+				currentEnergy -= energyCost;
+				if (currentEnergy <= 0) {
+					endFocus(player);
+					player.sendMessage(Text.literal("§c能量耗尽，诱导结束"), true);
+				} else {
+					playerEnergy.put(player.getUuid(), currentEnergy);
 				}
-			}
-
-
-			// 清理过期标记和已死亡的实体
-			World overworld = server.getWorld(World.OVERWORLD);
-			if (overworld != null) {
-				long now = overworld.getTime();
-				boolean removed = false; // 标记是否有移除
-				Iterator<Map.Entry<UUID, Long>> iterator = markedEntities.entrySet().iterator();
-				while (iterator.hasNext()) {
-					Map.Entry<UUID, Long> entry = iterator.next();
-					Entity e = overworld.getEntity(entry.getKey());
-					if (entry.getValue() <= now || e == null || !e.isAlive()) {
-						iterator.remove();
-						removed = true;
-					}
-				}
-				// 如果移除了标记，需要通知诱导玩家更新计数
-				if (removed && temporaryFocusPlayerId != null) {
-					PlayerEntity fp = server.getPlayerManager().getPlayer(temporaryFocusPlayerId);
-					if (fp instanceof ServerPlayerEntity sp) {
-						ServerPlayNetworking.send(sp, new MarkCountPacket(markedEntities.size()));
-					}
-				}
-			}
-
-			// 能量管理
-			if (temporaryFocusPlayerId != null && currentFocusEntityId != null) {
-				PlayerEntity fp = server.getPlayerManager().getPlayer(temporaryFocusPlayerId);
-				if (fp != null) {
-					int markedCount = markedEntities.size();
-					double drainRate = GazeConfig.getInstance().getEnergyDrain(currentStage);
-					double energyCost = markedCount * drainRate / 20.0;
-					double currentEnergy = playerEnergy.getOrDefault(fp.getUuid(), GazeConfig.getInstance().maxEnergy);
-					currentEnergy -= energyCost;
-					if (currentEnergy <= 0) {
-						endFocus(fp);
-						fp.sendMessage(Text.literal("§c能量耗尽，诱导结束"), true);
-					} else {
-						playerEnergy.put(fp.getUuid(), currentEnergy);
-					}
-				}
-			} else if (temporaryFocusPlayerId != null) {
-				PlayerEntity fp = server.getPlayerManager().getPlayer(temporaryFocusPlayerId);
-				if (fp != null) endFocus(fp);
 			}
 
 			// 能量回复
 			for (Map.Entry<UUID, Double> entry : playerEnergy.entrySet()) {
-				PlayerEntity p = server.getPlayerManager().getPlayer(entry.getKey());
+				ServerPlayerEntity p = server.getPlayerManager().getPlayer(entry.getKey());
 				if (p == null) continue;
-				if (temporaryFocusPlayerId == null || !temporaryFocusPlayerId.equals(p.getUuid())) {
+				if (!playerFocusStates.containsKey(p.getUuid())) {
 					double regenRate = GazeConfig.getInstance().getEnergyRegen(getPlayerStage(p));
 					double newEnergy = entry.getValue() + regenRate / 20.0;
 					if (newEnergy > GazeConfig.getInstance().maxEnergy) newEnergy = GazeConfig.getInstance().maxEnergy;
@@ -416,17 +373,15 @@ public class Gazeguidance {
 			// 每 tick 递增粒子计数器
 			// 每 tick 递增粒子计数器
 			particleTickCounter++;
-			if (particleTickCounter >= 15 && temporaryFocusPlayerId != null) {
+			if (particleTickCounter >= 15) {
 				particleTickCounter = 0;
-				PlayerEntity fp = server.getPlayerManager().getPlayer(temporaryFocusPlayerId);
-				if (fp instanceof ServerPlayerEntity sp) {
-					// 直接使用上面已经定义的 overworld 变量（需要在外部定义且不为 null）
-					if (overworld instanceof ServerWorld serverWorld) {
-						for (UUID uuid : markedEntities.keySet()) {
-							Entity e = serverWorld.getEntity(uuid);
-							if (e instanceof LivingEntity living && living.isAlive()) {
-								ServerPlayNetworking.send(sp, new MarkParticleS2CPacket(living.getPos()));
-							}
+				for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+					Map<UUID, Long> marks = playerMarkedEntities.get(player.getUuid());
+					if (marks == null || marks.isEmpty()) continue;
+					for (UUID uuid : marks.keySet()) {
+						Entity e = findEntity(server, uuid);
+						if (e instanceof LivingEntity living && living.isAlive()) {
+							ServerPlayNetworking.send(player, new MarkParticleS2CPacket(living.getPos()));
 						}
 					}
 				}
@@ -437,17 +392,20 @@ public class Gazeguidance {
 
 
 			// 吸引逻辑
-			if (currentFocusEntityId != null && overworld instanceof ServerWorld serverWorld) {
-				Entity focus = serverWorld.getEntity(currentFocusEntityId);
-				if (focus != null && focus.isAlive()) {
-					Vec3d focusPos = focus.getPos();
-					double attractRadius = getAttractRadiusFromStage(currentStage);
-					for (UUID uuid : markedEntities.keySet()) {
-						Entity e = serverWorld.getEntity(uuid);
-						if (e instanceof LivingEntity living && living.isAlive() && !living.getUuid().equals(currentFocusEntityId)) {
-							if (living.getPos().squaredDistanceTo(focusPos) <= attractRadius * attractRadius) {
-								living.lookAt(EntityAnchorArgumentType.EntityAnchor.EYES, focusPos);
-							}
+			for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+				FocusState state = playerFocusStates.get(player.getUuid());
+				if (state == null) continue;
+				Entity focus = findEntity(server, state.focusEntityId());
+				if (focus == null || !focus.isAlive()) continue;
+				Vec3d focusPos = focus.getPos();
+				double attractRadius = getAttractRadiusFromStage(getPlayerStage(player));
+				Map<UUID, Long> marks = playerMarkedEntities.get(player.getUuid());
+				if (marks == null || marks.isEmpty()) continue;
+				for (UUID uuid : marks.keySet()) {
+					Entity e = findEntity(server, uuid);
+					if (e instanceof LivingEntity living && living.isAlive() && !living.getUuid().equals(state.focusEntityId())) {
+						if (living.getPos().squaredDistanceTo(focusPos) <= attractRadius * attractRadius) {
+							living.lookAt(EntityAnchorArgumentType.EntityAnchor.EYES, focusPos);
 						}
 					}
 				}
@@ -505,38 +463,46 @@ public class Gazeguidance {
 
 	// 结束诱导
 	private static void endFocus(PlayerEntity player) {
-		if (temporaryFocusPlayerId != null && temporaryFocusPlayerId.equals(player.getUuid())) {
-			Long startTime = focusStartTime.get(player.getUuid());
-			long duration = 0;
-			if (startTime != null) {
-				duration = player.getWorld().getTime() - startTime;
-				focusStartTime.remove(player.getUuid());
-			}
-			if (duration >= 40) {
-				lastFocusEndTime.put(player.getUuid(), player.getWorld().getTime());
-				player.sendMessage(Text.literal("§e诱导结束，进入5秒冷却"), true);
-			} else {
-				player.sendMessage(Text.literal("§7诱导结束（持续时间过短，无冷却）"), true);
-			}
-
-			if (temporaryFocusEntityId != null) {
-				World w = player.getWorld();
-				if (w instanceof ServerWorld sw) {
-					Entity old = sw.getEntity(temporaryFocusEntityId);
-					if (old instanceof ArmorStandEntity) old.discard();
-				}
-			}
-
-			temporaryFocusPlayerId = null;
-			temporaryFocusEntityId = null;
-			currentFocusEntityId = null;
-			currentFocusType = null;
-			markedEntities.clear();
-
-			if (player instanceof ServerPlayerEntity sp) {
-				ServerPlayNetworking.send(sp, new FocusStatusPacket(false));
-			}
+		FocusState state = playerFocusStates.remove(player.getUuid());
+		if (state == null) {
+			return;
 		}
+
+		Long startTime = focusStartTime.get(player.getUuid());
+		long duration = 0;
+		if (startTime != null) {
+			duration = player.getWorld().getTime() - startTime;
+			focusStartTime.remove(player.getUuid());
+		}
+		if (duration >= 40) {
+			lastFocusEndTime.put(player.getUuid(), player.getWorld().getTime());
+			player.sendMessage(Text.literal("§e诱导结束，进入5秒冷却"), true);
+		} else {
+			player.sendMessage(Text.literal("§7诱导结束（持续时间过短，无冷却）"), true);
+		}
+
+		if (state.focusType() == FocusType.STATIC) {
+			Entity old = findEntity(player.getServer(), state.focusEntityId());
+			if (old instanceof ArmorStandEntity) old.discard();
+		}
+
+		clearMarksForPlayer(player.getUuid());
+
+		if (player instanceof ServerPlayerEntity sp) {
+			ServerPlayNetworking.send(sp, new FocusStatusPacket(false));
+			ServerPlayNetworking.send(sp, new MarkCountPacket(0));
+		}
+	}
+
+	private static void cleanupPlayerState(PlayerEntity player) {
+		FocusState state = playerFocusStates.remove(player.getUuid());
+		if (state != null && state.focusType() == FocusType.STATIC) {
+			Entity old = findEntity(player.getServer(), state.focusEntityId());
+			if (old instanceof ArmorStandEntity) old.discard();
+		}
+		clearMarksForPlayer(player.getUuid());
+		focusStartTime.remove(player.getUuid());
+		lastSentStage.remove(player.getUuid());
 	}
 
 	private static void setTemporaryFocus(PlayerEntity player, World world, boolean self) {
@@ -548,17 +514,12 @@ public class Gazeguidance {
 			return;
 		}
 
-		if (temporaryFocusPlayerId != null && !temporaryFocusPlayerId.equals(player.getUuid())) {
-			player.sendMessage(Text.literal("§c已有其他玩家正在诱导，请等待"), true);
-			return;
-		}
-		if (temporaryFocusPlayerId != null && temporaryFocusPlayerId.equals(player.getUuid())) {
+		if (playerFocusStates.containsKey(player.getUuid())) {
 			player.sendMessage(Text.literal("§c你已经有一个诱导焦点，请先结束"), true);
 			return;
 		}
 
 		ServerWorld serverWorld = (ServerWorld) world;
-		temporaryFocusPlayerId = player.getUuid();
 
 		// 初始化能量
 		playerEnergy.put(player.getUuid(), GazeConfig.getInstance().maxEnergy);
@@ -569,60 +530,165 @@ public class Gazeguidance {
 		}
 
 		if (self) {
-			if (temporaryFocusEntityId != null && temporaryFocusEntityId.equals(player.getUuid())) return;
-			if (temporaryFocusEntityId != null) {
-				Entity old = serverWorld.getEntity(temporaryFocusEntityId);
-				if (old instanceof ArmorStandEntity) old.discard();
-			}
-			temporaryFocusEntityId = player.getUuid();
-			currentFocusType = FocusType.SELF;
+			playerFocusStates.put(player.getUuid(), new FocusState(player.getUuid(), FocusType.SELF));
 			player.sendMessage(Text.literal("诱导开启 (自己)"), true);
 		} else {
 			double placementRange = 20.0;
 			Entity targetEntity = getTargetEntity(player, placementRange);
 			if (targetEntity != null) {
-				if (temporaryFocusEntityId != null && temporaryFocusEntityId.equals(targetEntity.getUuid())) return;
-				if (temporaryFocusEntityId != null) {
-					Entity old = serverWorld.getEntity(temporaryFocusEntityId);
-					if (old instanceof ArmorStandEntity) old.discard();
-				}
-				temporaryFocusEntityId = targetEntity.getUuid();
-				currentFocusType = FocusType.ENTITY;
+				playerFocusStates.put(player.getUuid(), new FocusState(targetEntity.getUuid(), FocusType.ENTITY));
 				player.sendMessage(Text.literal("诱导开启 (实体)"), true);
 			} else {
 				Vec3d hitPos = getPlayerLookBlockPosition(player, placementRange);
 				if (hitPos != null) {
-					if (temporaryFocusEntityId != null) {
-						Entity old = serverWorld.getEntity(temporaryFocusEntityId);
-						if (old instanceof ArmorStandEntity) {
-							if (old.getPos().squaredDistanceTo(hitPos) < 0.01) return;
-							old.discard();
-						}
-					}
 					ArmorStandEntity focus = new ArmorStandEntity(EntityType.ARMOR_STAND, serverWorld);
 					focus.setInvisible(true);
 					focus.setInvulnerable(true);
 					focus.setNoGravity(true);
 					focus.setPosition(hitPos.x, hitPos.y, hitPos.z);
 					serverWorld.spawnEntity(focus);
-					temporaryFocusEntityId = focus.getUuid();
-					currentFocusType = FocusType.STATIC;
+					playerFocusStates.put(player.getUuid(), new FocusState(focus.getUuid(), FocusType.STATIC));
 					if (player instanceof ServerPlayerEntity sp) {
 						ServerPlayNetworking.send(sp, new ParticlePacket(hitPos));
 					}
 					player.sendMessage(Text.literal("诱导开启 (静态点)"), true);
 				} else {
 					player.sendMessage(Text.literal("无法诱导，请对准实体或方块"), true);
-					temporaryFocusPlayerId = null;
 					return;
 				}
 			}
 		}
-		currentFocusEntityId = temporaryFocusEntityId;
 		if (player instanceof ServerPlayerEntity sp) {
 			ServerPlayNetworking.send(sp, new FocusStatusPacket(true));
 		}
 		focusStartTime.put(player.getUuid(), world.getTime());
+	}
+
+	private static Map<UUID, Long> getMarks(UUID playerUuid) {
+		return playerMarkedEntities.computeIfAbsent(playerUuid, key -> new ConcurrentHashMap<>());
+	}
+
+	private static int getMarkCount(UUID playerUuid) {
+		Map<UUID, Long> marks = playerMarkedEntities.get(playerUuid);
+		return marks == null ? 0 : marks.size();
+	}
+
+	private static void addMark(UUID playerUuid, UUID entityUuid, long expiryTime) {
+		getMarks(playerUuid).put(entityUuid, expiryTime);
+		markedEntityOwners.put(entityUuid, playerUuid);
+	}
+
+	private static void removeMark(UUID playerUuid, UUID entityUuid) {
+		Map<UUID, Long> marks = playerMarkedEntities.get(playerUuid);
+		if (marks != null) {
+			marks.remove(entityUuid);
+			if (marks.isEmpty()) {
+				playerMarkedEntities.remove(playerUuid);
+			}
+		}
+		markedEntityOwners.remove(entityUuid, playerUuid);
+	}
+
+	private static void clearMarksForPlayer(UUID playerUuid) {
+		Map<UUID, Long> marks = playerMarkedEntities.remove(playerUuid);
+		if (marks == null) {
+			return;
+		}
+		for (UUID entityUuid : marks.keySet()) {
+			markedEntityOwners.remove(entityUuid, playerUuid);
+		}
+	}
+
+	private static void cleanupExpiredMarks(MinecraftServer server) {
+		long now = getServerTime(server);
+		for (Map.Entry<UUID, Map<UUID, Long>> playerEntry : new ArrayList<>(playerMarkedEntities.entrySet())) {
+			UUID playerUuid = playerEntry.getKey();
+			Map<UUID, Long> marks = playerEntry.getValue();
+			boolean removed = false;
+			Iterator<Map.Entry<UUID, Long>> iterator = marks.entrySet().iterator();
+			while (iterator.hasNext()) {
+				Map.Entry<UUID, Long> mark = iterator.next();
+				Entity entity = findEntity(server, mark.getKey());
+				if (mark.getValue() <= now || entity == null || !entity.isAlive()) {
+					iterator.remove();
+					markedEntityOwners.remove(mark.getKey(), playerUuid);
+					removed = true;
+				}
+			}
+			if (marks.isEmpty()) {
+				playerMarkedEntities.remove(playerUuid);
+			}
+			if (removed) {
+				ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerUuid);
+				if (player != null) {
+					ServerPlayNetworking.send(player, new MarkCountPacket(marks.size()));
+				}
+			}
+		}
+	}
+
+	private static void autoMarkEntitiesLookingAtHolders(MinecraftServer server) {
+		long expiryTime = getServerTime(server) + 1200;
+		for (ServerPlayerEntity holder : server.getPlayerManager().getPlayerList()) {
+			if (holder.getMainHandStack().getItem() != ModItems.MAGIC_STICK) continue;
+			if (holder.getCommandTags().contains("Silenced")) continue;
+
+			int stage = getPlayerStage(holder);
+			int maxMarks = getMaxMarkedCount(stage);
+			Map<UUID, Long> marks = getMarks(holder.getUuid());
+
+			ServerWorld world = holder.getWorld();
+			Box searchBox = holder.getBoundingBox().expand(30.0);
+			for (LivingEntity entity : world.getEntitiesByClass(LivingEntity.class, searchBox,
+					e -> e.isAlive() && !e.getUuid().equals(holder.getUuid()))) {
+				UUID entityUuid = entity.getUuid();
+				if (marks.containsKey(entityUuid)) {
+					addMark(holder.getUuid(), entityUuid, expiryTime);
+					continue;
+				}
+				UUID owner = markedEntityOwners.get(entityUuid);
+				if (owner != null && !owner.equals(holder.getUuid())) continue;
+				if (marks.size() >= maxMarks) break;
+				if (!canEntitySeePlayer(entity, holder, 30.0)) continue;
+
+				addMark(holder.getUuid(), entityUuid, expiryTime);
+				sendStageIfChanged(holder, stage);
+				ServerPlayNetworking.send(holder, new MarkCountPacket(marks.size()));
+			}
+		}
+	}
+
+	private static boolean canEntitySeePlayer(LivingEntity entity, ServerPlayerEntity player, double maxRange) {
+		Vec3d start = entity.getEyePos();
+		Vec3d target = player.getEyePos();
+		if (start.squaredDistanceTo(target) > maxRange * maxRange) {
+			return false;
+		}
+		Vec3d toPlayer = target.subtract(start).normalize();
+		if (entity.getRotationVec(1.0F).dotProduct(toPlayer) < 0.75D) {
+			return false;
+		}
+		BlockHitResult blockHit = entity.getWorld().raycast(new RaycastContext(start, target,
+				RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE, entity));
+		return blockHit.getType() == HitResult.Type.MISS || blockHit.getPos().squaredDistanceTo(start) >= target.squaredDistanceTo(start) - 0.01D;
+	}
+
+	private static Entity findEntity(MinecraftServer server, UUID entityUuid) {
+		if (server == null || entityUuid == null) {
+			return null;
+		}
+		for (ServerWorld world : server.getWorlds()) {
+			Entity entity = world.getEntity(entityUuid);
+			if (entity != null) {
+				return entity;
+			}
+		}
+		return null;
+	}
+
+	private static long getServerTime(MinecraftServer server) {
+		ServerWorld world = server.getOverworld();
+		return world == null ? server.getTicks() : world.getTime();
 	}
 
 	private static Entity getTargetEntity(PlayerEntity player, double maxRange) {

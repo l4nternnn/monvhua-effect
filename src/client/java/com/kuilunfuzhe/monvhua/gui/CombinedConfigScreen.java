@@ -4,6 +4,7 @@ import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.FloatingConfig;
 import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
+import com.kuilunfuzhe.monvhua.item.config.PlantMagicConfig;
 import com.kuilunfuzhe.monvhua.item.config.ThroughConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecretConfig;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.GlobalConfigS2C;
@@ -15,6 +16,7 @@ import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
 import com.kuilunfuzhe.monvhua.network.imitate.RequestImitateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.UpdateImitateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ConfigUpdateC2S;
+import com.kuilunfuzhe.monvhua.network.plant.PlantMagicPackets;
 import com.kuilunfuzhe.monvhua.network.secret.SecretPackets;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.RequestConfigC2S;
@@ -38,10 +40,10 @@ import java.util.List;
  */
 public class CombinedConfigScreen extends Screen {
     /** 配置类型枚举，对应顶部五个标签页 */
-    private enum ConfigType { EVIL_EYES, GAZE_GUIDANCE, MIRROR, THROUGH, STAGE_RANGE, IMITATE, FLOATING, SECRET }
+    private enum ConfigType { EVIL_EYES, GAZE_GUIDANCE, MIRROR, THROUGH, STAGE_RANGE, IMITATE, FLOATING, SECRET, PLANT }
     private ConfigType currentType = ConfigType.EVIL_EYES;
 
-    private ButtonWidget btnEvilEyes, btnGaze, btnMirror, btnThrough, btnStageRange, btnImitate, btnFloating, btnSecret;
+    private ButtonWidget btnEvilEyes, btnGaze, btnMirror, btnThrough, btnStageRange, btnImitate, btnFloating, btnSecret, btnPlant;
     private int panelX, panelY, panelWidth, panelHeight;
     private int leftWidth, rightWidth;
 
@@ -102,6 +104,13 @@ public class CombinedConfigScreen extends Screen {
     private final List<TextWidget> floatingLabels = new ArrayList<>();
     private static FloatingConfig cachedFloatingConfig = null;
 
+    private final List<ButtonWidget> plantStageButtons = new ArrayList<>();
+    private int plantCurrentStage = 1;
+    private TextFieldWidget plantMoveSpeedField, plantCoverageField, plantCooldownField;
+    private ButtonWidget savePlantButton;
+    private final List<TextWidget> plantLabels = new ArrayList<>();
+    private static PlantMagicConfig cachedPlantMagicConfig = null;
+
     // ===== 窃密配置组件 =====
     private final List<ButtonWidget> secretStageButtons = new ArrayList<>();
     private int secretCurrentStage = 1;
@@ -123,6 +132,7 @@ public class CombinedConfigScreen extends Screen {
         ClientPlayNetworking.send(new RequestImitateConfigC2SPacket());
         ClientPlayNetworking.send(new SecretPackets.RequestConfigC2S());
         ClientPlayNetworking.send(new FloatingPackets.RequestConfigC2S());
+        ClientPlayNetworking.send(new PlantMagicPackets.RequestConfigC2S());
         if (cachedGazeConfig == null) {
             cachedGazeConfig = createDefaultGazeConfig();
         }
@@ -137,6 +147,9 @@ public class CombinedConfigScreen extends Screen {
         }
         if (cachedFloatingConfig == null) {
             cachedFloatingConfig = new FloatingConfig();
+        }
+        if (cachedPlantMagicConfig == null) {
+            cachedPlantMagicConfig = new PlantMagicConfig();
         }
         if (cachedSecretConfig == null) {
             cachedSecretConfig = new SecretConfig();
@@ -222,12 +235,12 @@ public class CombinedConfigScreen extends Screen {
         rightWidth = panelWidth - leftWidth - 15;  // 15px 分隔线间距
 
         // 顶部标签按钮尺寸
-        int btnWidth = 68, btnHeight = 20;
+        int btnWidth = 60, btnHeight = 20;
         // 按钮放在面板上方5px处
         int btnY = panelY - btnHeight - 5;
         int centerX = panelX + panelWidth / 2;
         int tabGap = 4;
-        int tabCount = 8;
+        int tabCount = 9;
         int tabStartX = centerX - (btnWidth * tabCount + tabGap * (tabCount - 1)) / 2;
 
         btnEvilEyes = ButtonWidget.builder(Text.literal("千里眼"), btn -> switchTo(ConfigType.EVIL_EYES))
@@ -246,6 +259,9 @@ public class CombinedConfigScreen extends Screen {
                 .dimensions(tabStartX + (btnWidth + tabGap) * 5, btnY, btnWidth, btnHeight).build();
         btnFloating = ButtonWidget.builder(Text.literal("漂浮"), btn -> switchTo(ConfigType.FLOATING))
                 .dimensions(tabStartX + (btnWidth + tabGap) * 6, btnY, btnWidth, btnHeight).build();
+        btnPlant = ButtonWidget.builder(Text.literal("\u690d\u7269"), btn -> switchTo(ConfigType.PLANT))
+                .dimensions(tabStartX + (btnWidth + tabGap) * 7, btnY, btnWidth, btnHeight).build();
+        btnStageRange.setX(tabStartX + (btnWidth + tabGap) * 8);
         addDrawableChild(btnEvilEyes);
         addDrawableChild(btnGaze);
         addDrawableChild(btnMirror);
@@ -254,6 +270,7 @@ public class CombinedConfigScreen extends Screen {
         addDrawableChild(btnImitate);
         addDrawableChild(btnSecret);
         addDrawableChild(btnFloating);
+        addDrawableChild(btnPlant);
 
         buildEvilEyesUI();
         buildGazeGuidanceUI();
@@ -261,7 +278,8 @@ public class CombinedConfigScreen extends Screen {
         buildThroughUI();
         buildStageRangeUI();
         buildImitateUI();
-                buildFloatingUI();
+        buildFloatingUI();
+        buildPlantMagicUI();
         buildSecretUI();
         switchTo(ConfigType.EVIL_EYES);
     }
@@ -574,6 +592,44 @@ public class CombinedConfigScreen extends Screen {
                 .dimensions(rightX, rowY + 3 * rowHeight + 10, 80, 20).build();
         addDrawableChild(saveFloatingButton);
     }
+
+    private void buildPlantMagicUI() {
+        int leftX = panelX + 5;
+        for (int i = 1; i <= 7; i++) {
+            int stage = i;
+            ButtonWidget btn = ButtonWidget.builder(Text.literal("\u9636\u6bb5 " + i), button -> {
+                plantCurrentStage = stage;
+                loadPlantMagicStageUI();
+            }).dimensions(leftX, stageButtonY(i), leftWidth - 10, 20).build();
+            addDrawableChild(btn);
+            plantStageButtons.add(btn);
+        }
+
+        int rightX = panelX + leftWidth + 5;
+        int rowY = panelY + 10;
+        int rowHeight = 22;
+        int labelWidth = 130;
+        int inputWidth = 80;
+
+        String[] labels = {
+                "\u6811\u53f6\u79fb\u52a8\u901f\u5ea6(\u683c/s):",
+                "\u7403\u58f3\u8986\u76d6\u89d2\u5ea6:",
+                "\u51b7\u5374\u65f6\u95f4(s):"
+        };
+        for (int i = 0; i < labels.length; i++) {
+            TextWidget label = new TextWidget(rightX, rowY + i * rowHeight + 4, labelWidth, 9, Text.literal(labels[i]), textRenderer);
+            addDrawableChild(label);
+            plantLabels.add(label);
+        }
+
+        plantMoveSpeedField = createField(rightX + labelWidth, rowY, inputWidth);
+        plantCoverageField = createField(rightX + labelWidth, rowY + rowHeight, inputWidth);
+        plantCooldownField = createField(rightX + labelWidth, rowY + 2 * rowHeight, inputWidth);
+
+        savePlantButton = ButtonWidget.builder(Text.literal("\u4fdd\u5b58"), btn -> savePlantMagicConfig())
+                .dimensions(rightX, rowY + 3 * rowHeight + 10, 80, 20).build();
+        addDrawableChild(savePlantButton);
+    }
     /**
      * 创建一个限制最大输入长度为6的文本输入框。
      */
@@ -599,6 +655,8 @@ public class CombinedConfigScreen extends Screen {
         btnSecret.setMessage(currentType == ConfigType.SECRET ? Text.literal("§l§a窃密") : Text.literal("窃密"));
         btnFloating.setMessage(currentType == ConfigType.FLOATING ? Text.literal("§l§a漂浮") : Text.literal("漂浮"));
 
+        btnPlant.setMessage(currentType == ConfigType.PLANT ? Text.literal("\u00a7l\u00a7a\u690d\u7269") : Text.literal("\u690d\u7269"));
+
         setEvilComponentsVisible(currentType == ConfigType.EVIL_EYES);
         setGazeComponentsVisible(currentType == ConfigType.GAZE_GUIDANCE);
         setMirrorComponentsVisible(currentType == ConfigType.MIRROR);
@@ -606,6 +664,7 @@ public class CombinedConfigScreen extends Screen {
         setStageRangeComponentsVisible(currentType == ConfigType.STAGE_RANGE);
         setImitateComponentsVisible(currentType == ConfigType.IMITATE);
         setFloatingComponentsVisible(currentType == ConfigType.FLOATING);
+        setPlantMagicComponentsVisible(currentType == ConfigType.PLANT);
         setSecretComponentsVisible(currentType == ConfigType.SECRET);
 
         switch (currentType) {
@@ -617,6 +676,7 @@ public class CombinedConfigScreen extends Screen {
             case IMITATE -> loadImitateStageUI();
             case FLOATING -> loadFloatingStageUI();
             case SECRET -> loadSecretStageUI();
+            case PLANT -> loadPlantMagicStageUI();
         }
     }
 
@@ -699,6 +759,15 @@ public class CombinedConfigScreen extends Screen {
         if (floatingSpeedField != null) floatingSpeedField.visible = visible;
         if (floatingRegenField != null) floatingRegenField.visible = visible;
         if (saveFloatingButton != null) saveFloatingButton.visible = visible;
+    }
+
+    private void setPlantMagicComponentsVisible(boolean visible) {
+        for (ButtonWidget btn : plantStageButtons) btn.visible = visible;
+        for (TextWidget label : plantLabels) label.visible = visible;
+        if (plantMoveSpeedField != null) plantMoveSpeedField.visible = visible;
+        if (plantCoverageField != null) plantCoverageField.visible = visible;
+        if (plantCooldownField != null) plantCooldownField.visible = visible;
+        if (savePlantButton != null) savePlantButton.visible = visible;
     }
 
     private void loadEvilStageUI() {
@@ -1029,6 +1098,18 @@ public class CombinedConfigScreen extends Screen {
         floatingRegenField.setText(String.valueOf(cachedFloatingConfig.getEnergyRegen(floatingCurrentStage)));
     }
 
+    private void loadPlantMagicStageUI() {
+        if (cachedPlantMagicConfig == null) {
+            plantMoveSpeedField.setText("2.0");
+            plantCoverageField.setText("120");
+            plantCooldownField.setText("10");
+            return;
+        }
+        plantMoveSpeedField.setText(String.valueOf(cachedPlantMagicConfig.getLeafMoveSpeed(plantCurrentStage)));
+        plantCoverageField.setText(String.valueOf(cachedPlantMagicConfig.getShellCoverageDegrees(plantCurrentStage)));
+        plantCooldownField.setText(String.valueOf(cachedPlantMagicConfig.getCooldownSeconds(plantCurrentStage)));
+    }
+
     private void saveSecretConfig() {
         try {
             int range = Integer.parseInt(secretRangeField.getText().trim());
@@ -1069,6 +1150,28 @@ public class CombinedConfigScreen extends Screen {
         }
     }
 
+    private void savePlantMagicConfig() {
+        try {
+            double moveSpeed = Double.parseDouble(plantMoveSpeedField.getText().trim());
+            double coverageDegrees = Double.parseDouble(plantCoverageField.getText().trim());
+            int cooldownSeconds = Integer.parseInt(plantCooldownField.getText().trim());
+
+            if (cachedPlantMagicConfig == null) cachedPlantMagicConfig = new PlantMagicConfig();
+            cachedPlantMagicConfig.setLeafMoveSpeed(plantCurrentStage, moveSpeed);
+            cachedPlantMagicConfig.setShellCoverageDegrees(plantCurrentStage, coverageDegrees);
+            cachedPlantMagicConfig.setCooldownSeconds(plantCurrentStage, cooldownSeconds);
+
+            ClientPlayNetworking.send(new PlantMagicPackets.UpdateConfigC2S(cachedPlantMagicConfig.toJson()));
+            if (client != null && client.player != null) {
+                client.player.sendMessage(Text.literal("\u00a7aPlant magic config submitted"), true);
+            }
+        } catch (NumberFormatException e) {
+            if (client != null && client.player != null) {
+                client.player.sendMessage(Text.literal("\u00a7cInvalid number"), true);
+            }
+        }
+    }
+
     public void receiveSecretConfig(SecretConfig config) {
         if (config == null) return;
         cachedSecretConfig = config;
@@ -1082,6 +1185,14 @@ public class CombinedConfigScreen extends Screen {
         cachedFloatingConfig = config;
         if (currentType == ConfigType.FLOATING) {
             loadFloatingStageUI();
+        }
+    }
+
+    public void receivePlantMagicConfig(PlantMagicConfig config) {
+        if (config == null) return;
+        cachedPlantMagicConfig = config;
+        if (currentType == ConfigType.PLANT) {
+            loadPlantMagicStageUI();
         }
     }
 
@@ -1131,6 +1242,11 @@ public class CombinedConfigScreen extends Screen {
         if (currentType == ConfigType.FLOATING) {
             context.drawText(textRenderer, "浮动配置", panelX + 5, panelY + 5, 0x55AAFF, false);
             context.drawText(textRenderer, "当前编辑: 阶段 " + floatingCurrentStage, panelX + leftWidth + 5, panelY + 5, 0x55AAFF, false);
+        }
+
+        if (currentType == ConfigType.PLANT) {
+            context.drawText(textRenderer, "\u690d\u7269\u9b54\u6cd5\u9636\u6bb5\u914d\u7f6e", panelX + 5, panelY + 5, 0x66FF88, false);
+            context.drawText(textRenderer, "\u5f53\u524d\u7f16\u8f91: \u9636\u6bb5 " + plantCurrentStage, panelX + leftWidth + 5, panelY + 5, 0x66FF88, false);
         }
 
         super.render(context, mouseX, mouseY, delta);

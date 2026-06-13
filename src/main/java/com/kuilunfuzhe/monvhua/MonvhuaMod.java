@@ -25,6 +25,7 @@ import com.kuilunfuzhe.monvhua.features.guidance.Gazeguidance;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import com.kuilunfuzhe.monvhua.features.imitate.ImitateManager;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayFeature;
+import com.kuilunfuzhe.monvhua.features.plant.PlantMagic;
 import com.kuilunfuzhe.monvhua.item.ModItemGroups;
 import com.kuilunfuzhe.monvhua.item.block_hole.BlockHoleItems;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
@@ -32,6 +33,7 @@ import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
 import com.kuilunfuzhe.monvhua.item.imitate.ImitateItem;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
 import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
+import com.kuilunfuzhe.monvhua.item.plant.PlantMagicItems;
 import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
@@ -63,6 +65,7 @@ import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.RequestConfigC2S;
 import com.kuilunfuzhe.monvhua.network.openback.CarryEntityPayload;
 import com.kuilunfuzhe.monvhua.network.openback.OpenOtherInventoryPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
+import com.kuilunfuzhe.monvhua.network.plant.PlantMagicPackets;
 import com.kuilunfuzhe.monvhua.network.through.RequestThroughConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughConfigUpdateC2SPacket;
@@ -397,6 +400,25 @@ public class MonvhuaMod implements ModInitializer {
             });
         });
 
+        ServerPlayNetworking.registerGlobalReceiver(PlantMagicPackets.RequestConfigC2S.ID, (packet, context) ->
+                ServerPlayNetworking.send(context.player(), new PlantMagicPackets.ConfigS2C(PlantMagicConfig.getInstance().toJson())));
+
+        ServerPlayNetworking.registerGlobalReceiver(PlantMagicPackets.UpdateConfigC2S.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity player = context.player();
+                if (!player.hasPermissionLevel(2) && !player.isCreative()) {
+                    player.sendMessage(Text.literal("\u00a7cNo permission to update plant magic config"), true);
+                    return;
+                }
+                PlantMagicConfig newConfig = PlantMagicConfig.fromJson(packet.json());
+                PlantMagicConfig.setInstance(newConfig);
+                for (ServerPlayerEntity p : context.server().getPlayerManager().getPlayerList()) {
+                    ServerPlayNetworking.send(p, new PlantMagicPackets.ConfigS2C(newConfig.toJson()));
+                }
+                player.sendMessage(Text.literal("\u00a7aPlant magic config updated"), true);
+            });
+        });
+
         ServerPlayNetworking.registerGlobalReceiver(FloatingPackets.ToggleC2S.ID, (packet, context) -> {
             context.server().execute(() -> {
                 ServerPlayerEntity player = context.player();
@@ -480,6 +502,7 @@ public class MonvhuaMod implements ModInitializer {
             MirrorCommand.syncToClient(player);
             ServerPlayNetworking.send(player, new ThroughConfigS2CPacket(ThroughConfig.getInstance().toJson()));
             ServerPlayNetworking.send(player, new FloatingPackets.ConfigS2C(FloatingConfig.getInstance().toJson()));
+            ServerPlayNetworking.send(player, new PlantMagicPackets.ConfigS2C(PlantMagicConfig.getInstance().toJson()));
             GravityMagic.syncAreaGravityTo(player);
 
             // 同步漂浮魔法标签（完全魔女化 + Floating）
@@ -523,6 +546,8 @@ public class MonvhuaMod implements ModInitializer {
         ModItems.initialize();
         GravityItems.initialize();
         GravityMagic.initialize();
+        PlantMagicItems.initialize();
+        PlantMagic.initialize(configManager);
         BlockHoleItems.initialize();
         PaintItems.initialize();
         PaintOverlayFeature.initialize();

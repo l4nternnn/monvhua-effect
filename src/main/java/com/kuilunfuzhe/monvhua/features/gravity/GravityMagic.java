@@ -4,8 +4,10 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
 import com.kuilunfuzhe.monvhua.network.gravity.GravityPackets;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.block.Block;
@@ -37,15 +39,19 @@ import net.minecraft.sound.SoundCategory;
 import net.minecraft.state.property.Properties;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
 import net.minecraft.util.PlayerInput;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.WorldSavePath;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.world.BlockView;
+import net.minecraft.world.RaycastContext;
 import net.minecraft.world.World;
 
 import java.io.IOException;
@@ -86,9 +92,11 @@ public final class GravityMagic {
     private static final double INVERTED_CEILING_PROBE = 0.09D;
     private static final double INVERTED_STEP_HEIGHT = 0.6D;
     private static final int INVERTED_JUMP_DETACH_TICKS = 8;
+    private static final double LIGHTEN_ENTITY_REACH = 32.0D;
+    private static final int DIRECTED_ENTITY_GRAVITY_TICKS = 200;
     private static final Map<UUID, LaunchMode> PLAYER_MODES = new ConcurrentHashMap<>();
     private static final Map<UUID, Double> PLAYER_GRAVITY = new ConcurrentHashMap<>();
-    private static final Map<UUID, Double> ENTITY_GRAVITY = new ConcurrentHashMap<>();
+    private static final Map<UUID, DirectedEntityGravity> ENTITY_GRAVITY = new ConcurrentHashMap<>();
     private static final Map<UUID, InvertedPlayerState> SERVER_INVERTED_PLAYER_STATES = new ConcurrentHashMap<>();
     private static final Map<UUID, InvertedPlayerState> CLIENT_INVERTED_PLAYER_STATES = new ConcurrentHashMap<>();
     private static final List<AreaGravityField> AREA_FIELDS = new CopyOnWriteArrayList<>();
@@ -108,6 +116,12 @@ public final class GravityMagic {
     }
 
     private record AreaEdit(List<AreaSnapshot> added, List<AreaSnapshot> removed) {
+    }
+
+    private record DirectedEntityGravity(RegistryKey<World> world, Vec3d direction, double acceleration, int ticks, boolean previousNoGravity) {
+        private DirectedEntityGravity ticked() {
+            return new DirectedEntityGravity(world, direction, acceleration, ticks - 1, previousNoGravity);
+        }
     }
 
     private GravityMagic() {
@@ -135,6 +149,7 @@ public final class GravityMagic {
         });
 
         UseBlockCallback.EVENT.register(GravityMagic::useInvertedBlockSurface);
+        UseEntityCallback.EVENT.register(GravityMagic::useGravityWandOnEntity);
     }
 
     public static LaunchMode toggleMode(ServerPlayerEntity player) {
@@ -167,8 +182,7 @@ public final class GravityMagic {
             } else if (entity instanceof ServerPlayerEntity) {
                 setSelectedGravity(player, clamped);
             } else if (entity != null) {
-                ENTITY_GRAVITY.put(entity.getUuid(), clamped);
-                entity.setNoGravity(true);
+                setDirectedEntityGravity(entity, new Vec3d(0.0D, -1.0D, 0.0D), clamped, DIRECTED_ENTITY_GRAVITY_TICKS);
             } else {
                 setSelectedGravity(player, clamped);
             }
@@ -176,6 +190,96 @@ public final class GravityMagic {
             setSelectedGravity(player, clamped);
         }
         return clamped;
+    }
+
+    public static boolean lightenLookedAtEntity(ServerPlayerEntity player) {
+        Entity target = findLookedAtEntity(player, LIGHTEN_ENTITY_REACH);
+        return target != null && lightenEntity(player, target);
+    }
+
+    public static boolean lightenEntity(ServerPlayerEntity player, Entity entity) {
+        return lightenEntity(player, entity, player.getRotationVec(1.0F));
+    }
+
+    public static boolean lightenEntity(ServerPlayerEntity player, Entity entity, Vec3d direction) {
+        if (player == null || entity == null || !entity.isAlive()) {
+            return false;
+        }
+
+        double gravity = getSelectedGravity(player);
+        setDirectedEntityGravity(entity, direction, gravity, DIRECTED_ENTITY_GRAVITY_TICKS);
+        player.sendMessage(Text.literal("\u00a7b[Gravity] Lightened " + entity.getName().getString()
+                + " g=" + format(gravity) + " ticks=" + DIRECTED_ENTITY_GRAVITY_TICKS), true);
+        return true;
+    }
+
+    private static void setDirectedEntityGravity(Entity entity, Vec3d direction, double acceleration, int ticks) {
+        Vec3d normalized = direction == null || direction.lengthSquared() < 1.0E-6D
+                ? new Vec3d(0.0D, -1.0D, 0.0D)
+                : direction.normalize();
+        double clamped = clampGravity(acceleration);
+        DirectedEntityGravity previous = ENTITY_GRAVITY.get(entity.getUuid());
+        boolean previousNoGravity = previous == null ? entity.hasNoGravity() : previous.previousNoGravity();
+        ENTITY_GRAVITY.put(entity.getUuid(), new DirectedEntityGravity(
+                entity.getWorld().getRegistryKey(),
+                normalized,
+                clamped,
+                Math.max(1, ticks),
+                previousNoGravity
+        ));
+        entity.setNoGravity(true);
+        if (entity instanceof GravityBlockEntity gravityBlock) {
+            gravityBlock.setGravityY(0.0D);
+        }
+    }
+
+    private static ActionResult useGravityWandOnEntity(PlayerEntity player, World world, Hand hand, Entity entity, net.minecraft.util.hit.EntityHitResult hitResult) {
+        if (player.getStackInHand(hand).getItem() != GravityItems.GRAVITY_WAND) {
+            return ActionResult.PASS;
+        }
+        if (world.isClient()) {
+            return ActionResult.SUCCESS;
+        }
+        if (player instanceof ServerPlayerEntity serverPlayer && lightenEntity(serverPlayer, entity, serverPlayer.getRotationVec(1.0F))) {
+            return ActionResult.SUCCESS_SERVER;
+        }
+        return ActionResult.FAIL;
+    }
+
+    private static Entity findLookedAtEntity(ServerPlayerEntity player, double reach) {
+        ServerWorld world = player.getWorld();
+        Vec3d start = player.getEyePos();
+        Vec3d end = start.add(player.getRotationVec(1.0F).multiply(reach));
+        double maxDistanceSq = reach * reach;
+
+        BlockHitResult blockHit = world.raycast(new RaycastContext(
+                start,
+                end,
+                RaycastContext.ShapeType.COLLIDER,
+                RaycastContext.FluidHandling.NONE,
+                player
+        ));
+        if (blockHit.getType() != HitResult.Type.MISS) {
+            maxDistanceSq = start.squaredDistanceTo(blockHit.getPos());
+        }
+
+        Vec3d ray = end.subtract(start);
+        Box searchBox = player.getBoundingBox().stretch(ray).expand(1.0D);
+        Entity nearest = null;
+        double nearestDistanceSq = maxDistanceSq;
+        for (Entity entity : world.getOtherEntities(player, searchBox, entity -> entity.isAlive() && entity.canHit())) {
+            Box box = entity.getBoundingBox().expand(0.35D);
+            java.util.Optional<Vec3d> hit = box.raycast(start, end);
+            if (hit.isEmpty()) {
+                continue;
+            }
+            double distanceSq = start.squaredDistanceTo(hit.get());
+            if (distanceSq < nearestDistanceSq) {
+                nearest = entity;
+                nearestDistanceSq = distanceSq;
+            }
+        }
+        return nearest;
     }
 
     public static int launch(ServerWorld world, ServerPlayerEntity player, BlockPos origin, boolean group) {
@@ -681,18 +785,29 @@ public final class GravityMagic {
     }
 
     private static void applyEntityGravity(ServerWorld world) {
-        ENTITY_GRAVITY.entrySet().removeIf(entry -> {
-            Entity entity = world.getEntity(entry.getKey());
+        for (Map.Entry<UUID, DirectedEntityGravity> entry : ENTITY_GRAVITY.entrySet()) {
+            UUID entityId = entry.getKey();
+            DirectedEntityGravity gravity = entry.getValue();
+            if (!gravity.world().equals(world.getRegistryKey())) {
+                continue;
+            }
+
+            Entity entity = world.getEntity(entityId);
             if (entity == null || !entity.isAlive()) {
-                return true;
+                ENTITY_GRAVITY.remove(entityId, gravity);
+                continue;
             }
-            if (entity instanceof GravityBlockEntity) {
-                return false;
+
+            if (gravity.ticks() <= 0) {
+                entity.setNoGravity(gravity.previousNoGravity());
+                ENTITY_GRAVITY.remove(entityId, gravity);
+                continue;
             }
+
             entity.setNoGravity(true);
-            entity.setVelocity(entity.getVelocity().add(0.0D, -entry.getValue(), 0.0D));
-            return false;
-        });
+            entity.setVelocity(entity.getVelocity().add(gravity.direction().multiply(gravity.acceleration())));
+            ENTITY_GRAVITY.replace(entityId, gravity, gravity.ticked());
+        }
     }
 
     private static void tickAreaGravity(ServerWorld world) {
