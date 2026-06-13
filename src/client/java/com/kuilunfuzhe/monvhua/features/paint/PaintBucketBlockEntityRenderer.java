@@ -26,7 +26,7 @@ public class PaintBucketBlockEntityRenderer implements BlockEntityRenderer<Paint
 
         float min = 0.25F;
         float max = 0.75F;
-        float y = 0.63F;
+        float y = 0.55F;
         vertex(vertices, matrix, min, y, min, r, g, b, a);
         vertex(vertices, matrix, max, y, min, r, g, b, a);
         vertex(vertices, matrix, max, y, max, r, g, b, a);

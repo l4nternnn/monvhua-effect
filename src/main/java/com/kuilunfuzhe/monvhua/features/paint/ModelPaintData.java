@@ -40,19 +40,27 @@ public final class ModelPaintData {
     }
 
     public static boolean paint(NbtCompound root, String surface, Direction face, int x, int y, int radius, int color, boolean clearFace, boolean slim) {
+        return paintLimited(root, surface, face, x, y, radius, color, clearFace, slim, Integer.MAX_VALUE).changed();
+    }
+
+    public static PaintResult paintLimited(NbtCompound root, String surface, Direction face, int x, int y,
+                                           int radius, int color, boolean clearFace, boolean slim, int budget) {
         if (surface == null || surface.isEmpty()) {
-            return false;
+            return PaintResult.NONE;
         }
         FaceSize size = size(surface, face, slim);
         NbtList list = root.getListOrEmpty(MODEL_PAINT_KEY);
         int index = findFace(list, surface, face);
         if (clearFace) {
             if (index < 0) {
-                return false;
+                return PaintResult.NONE;
             }
             list.remove(index);
             writeList(root, list);
-            return true;
+            return new PaintResult(true, 0);
+        }
+        if (budget <= 0) {
+            return PaintResult.NONE;
         }
 
         int[] pixels = index >= 0
@@ -62,8 +70,12 @@ public final class ModelPaintData {
         radius = MathHelper.clamp(radius, 1, PaintOverlayFeature.MAX_RADIUS);
         int radiusSquared = radius * radius;
         boolean changed = false;
+        int changedPixels = 0;
         for (int dy = -radius + 1; dy <= radius - 1; dy++) {
             for (int dx = -radius + 1; dx <= radius - 1; dx++) {
+                if (changedPixels >= budget) {
+                    break;
+                }
                 if (dx * dx + dy * dy > radiusSquared) {
                     continue;
                 }
@@ -76,11 +88,12 @@ public final class ModelPaintData {
                 if (pixels[pixelIndex] != normalizedColor) {
                     pixels[pixelIndex] = normalizedColor;
                     changed = true;
+                    changedPixels++;
                 }
             }
         }
         if (!changed) {
-            return false;
+            return PaintResult.NONE;
         }
         if (index >= 0) {
             list.set(index, createFace(surface, face, size, pixels));
@@ -88,7 +101,7 @@ public final class ModelPaintData {
             list.add(createFace(surface, face, size, pixels));
         }
         writeList(root, list);
-        return true;
+        return new PaintResult(true, changedPixels);
     }
 
     private static int findFace(NbtList list, String surface, Direction face) {
@@ -232,5 +245,9 @@ public final class ModelPaintData {
             height = Math.max(1, height);
             pixels = sanitizePixels(pixels, width, height);
         }
+    }
+
+    public record PaintResult(boolean changed, int changedPixels) {
+        public static final PaintResult NONE = new PaintResult(false, 0);
     }
 }

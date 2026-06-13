@@ -26,7 +26,7 @@ import org.joml.Vector3d;
 import org.joml.Vector4d;
 
 public final class PaintModelOverlayClient {
-    private static final double MAX_DISTANCE = 6.0D;
+    private static final double DEFAULT_MAX_DISTANCE = 6.0D;
     private static final double TRIANGLE_EPSILON = 1.0E-7D;
     private static final double OUTER_PIXEL_DEPTH = 0.5D;
     private static final OuterSurfaceDef[] OUTER_EDGE_SURFACES = new OuterSurfaceDef[]{
@@ -64,15 +64,23 @@ public final class PaintModelOverlayClient {
             return null;
         }
         Vec3d eye = client.player.getEyePos();
-        Vec3d end = eye.add(client.player.getRotationVec(1.0F).multiply(MAX_DISTANCE));
+        Vec3d end = eye.add(client.player.getRotationVec(1.0F).multiply(DEFAULT_MAX_DISTANCE));
+        return raycastCombinedBody(client, eye, end);
+    }
+
+    public static ModelHit raycastCombinedBody(MinecraftClient client, Vec3d eye, Vec3d end) {
+        if (client.world == null || client.player == null) {
+            return null;
+        }
+        double maxDistance = Math.max(DEFAULT_MAX_DISTANCE, eye.distanceTo(end));
         ModelHit best = null;
-        double bestDistance = MAX_DISTANCE;
+        double bestDistance = maxDistance;
 
         for (Entity entity : client.world.getEntities()) {
             if (!(entity instanceof ItemDisplayEntity display) || !isCombinedBody(display.getItemStack())) {
                 continue;
             }
-            if (display.getPos().squaredDistanceTo(eye) > MAX_DISTANCE * MAX_DISTANCE + 4.0D) {
+            if (display.getPos().squaredDistanceTo(eye) > maxDistance * maxDistance + 4.0D) {
                 continue;
             }
             ModelHit hit = raycastDisplay(client, display, eye, end);

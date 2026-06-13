@@ -69,6 +69,15 @@ public class PaintPaperItem extends Item {
         return stack;
     }
 
+    public static void useFromEditor(ServerWorld world, ServerPlayerEntity player, ItemStack stack, BlockPos origin, Direction face, boolean save) {
+        UUID existingId = getPaperId(stack);
+        if (!save && existingId != null) {
+            paste(world, player, stack, existingId, origin, face);
+            return;
+        }
+        save(world, player, stack, origin, face);
+    }
+
     private static void save(ServerWorld world, ServerPlayerEntity player, ItemStack stack, BlockPos origin, Direction face) {
         int size = PaintOverlayFeature.getPaperSize(player);
         UUID id = getPaperId(stack);

@@ -1,6 +1,8 @@
 package com.kuilunfuzhe.monvhua.mixin;
 
 import com.kuilunfuzhe.monvhua.features.through.ThroughClientManager;
+import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.input.Input;
 import net.minecraft.client.input.KeyboardInput;
 import net.minecraft.util.PlayerInput;
@@ -15,6 +17,19 @@ public abstract class ThroughPhaseInputMixin extends Input {
 
     @Inject(method = "tick", at = @At("TAIL"))
     private void monvhua$lockSecrecyPhaseInput(CallbackInfo ci) {
+        if (PaintOverlayClient.isPaintEditorActive(MinecraftClient.getInstance())) {
+            this.playerInput = new PlayerInput(
+                    false,
+                    false,
+                    this.playerInput.left(),
+                    this.playerInput.right(),
+                    this.playerInput.jump(),
+                    this.playerInput.sneak(),
+                    false
+            );
+            this.movementVector = new Vec2f(this.movementVector.x, 0.0F);
+            return;
+        }
         if (!ThroughClientManager.isPhaseLocked()) {
             return;
         }

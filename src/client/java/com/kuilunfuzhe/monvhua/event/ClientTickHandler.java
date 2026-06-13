@@ -43,6 +43,12 @@ public class ClientTickHandler {
             ThroughClientManager.tick();
             ActionEditorFragment.tickActive();
             if (client.player == null) return;
+            if (PaintOverlayClient.isPaintEditorActive(client)) {
+                return;
+            }
+            if (PaintOverlayClient.consumePaintEditorKeyCooldown()) {
+                return;
+            }
             if (KeyBindingHandler.configKey.wasPressed() && client.player.isCreative()) {
                 client.setScreen(new CombinedConfigScreen());
             }

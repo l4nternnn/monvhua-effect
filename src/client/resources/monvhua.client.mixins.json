@@ -33,6 +33,8 @@
 		"SoundManagerMixin",
 		"ChatHudMixin",
 		"PaintInputMixin",
+		"PaintHudMixin",
+		"PaintMouseMixin",
 		"ThroughClientPhaseCollisionMixin",
 		"ThroughLookLockMixin",
 		"ThroughPhaseInputMixin",

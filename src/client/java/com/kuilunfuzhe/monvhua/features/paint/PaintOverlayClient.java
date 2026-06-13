@@ -17,6 +17,7 @@ import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.Frustum;
+import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.model.BakedQuad;
 import net.minecraft.client.render.model.BlockModelPart;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
@@ -37,13 +38,16 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.random.Random;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
+import net.minecraft.world.RaycastContext;
 import org.joml.Matrix4f;
 import org.joml.Vector3d;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWScrollCallbackI;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -57,6 +61,8 @@ public final class PaintOverlayClient {
     private static final int MAX_RECENT_COLORS = 3;
     private static final int MAX_FRAME_PAINT_VERTICES = 180_000;
     private static final int DENSE_CHUNK_VERTEX_THRESHOLD = 24_000;
+    private static final double EDITOR_RAY_DISTANCE = 64.0D;
+    private static final int REPEATED_STROKE_SKIP_CALLS = 1;
     private static final double FULL_DETAIL_DISTANCE_SQUARED = 12.0D * 12.0D;
     private static final double MEDIUM_DETAIL_DISTANCE_SQUARED = 32.0D * 32.0D;
     private static final MeshData EMPTY_MESH = new MeshData(new float[0], new int[0], new float[0]);
@@ -66,6 +72,7 @@ public final class PaintOverlayClient {
     private static final Map<ChunkPos, Set<PaintOverlayStore.FaceKey>> CHUNK_FACE_KEYS = new HashMap<>();
     private static final List<Integer> RECENT_COLORS = new ArrayList<>();
     private static final List<Integer> FAVORITE_COLORS = new ArrayList<>();
+    private static final Deque<PaintOverlayPackets.FaceData> EDITOR_UNDO = new ArrayDeque<>();
     private static GLFWScrollCallbackI previousScrollCallback;
     private static boolean scrollCallbackRegistered = false;
     private static int selectedRadius = 1;
@@ -75,6 +82,11 @@ public final class PaintOverlayClient {
     private static boolean wasUsePressed = false;
     private static Object lastStrokeKey;
     private static int repeatedStrokeTicks;
+    private static Boolean editorPreviousNoClip;
+    private static Boolean editorPreviousNoGravity;
+    private static int editorKeyCooldown;
+    private static boolean editorViewPassthrough;
+    private static PaintEditorScreen suspendedPaintEditorScreen;
 
     private PaintOverlayClient() {
     }
@@ -87,13 +99,27 @@ public final class PaintOverlayClient {
             tickContinuousPainting(client);
         });
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
-            if (!world.isClient() || player == null || world.getBlockState(hitResult.getBlockPos()).getBlock() != PaintItems.PAINT_BUCKET_BLOCK) {
+            if (!world.isClient() || player == null
+                    || world.getBlockState(hitResult.getBlockPos()).getBlock() != PaintItems.PAINT_BUCKET_BLOCK) {
                 return ActionResult.PASS;
             }
             MinecraftClient client = MinecraftClient.getInstance();
-            if (client.currentScreen == null) {
-                openPaintBucketColorScreen(client, hitResult.getBlockPos());
+            if (client.currentScreen != null) {
+                return ActionResult.SUCCESS;
             }
+            if (player.isCreative()) {
+                openPaintBucketColorScreen(client, hitResult.getBlockPos());
+                return ActionResult.SUCCESS;
+            }
+            if (!isPaintBrush(player.getMainHandStack()) && !isPaintBrush(player.getOffHandStack())) {
+                return ActionResult.PASS;
+            }
+            if (world.getBlockEntity(hitResult.getBlockPos()) instanceof PaintBucketBlockEntity bucket && bucket.isFilled()) {
+                int color = 0xFF000000 | bucket.getColor();
+                setSelectedColor(color);
+                recordPickedColor(color);
+            }
+            SafeClientNetworking.send(new PaintOverlayPackets.LoadBrushFromBucketC2S(hitResult.getBlockPos()));
             return ActionResult.SUCCESS;
         });
         BlockEntityRendererFactories.register(
@@ -112,7 +138,7 @@ public final class PaintOverlayClient {
             return false;
         }
         if (isHoldingPaintBrush(client)) {
-            client.setScreen(new PaintBrushColorScreen());
+            client.setScreen(new PaintEditorScreen());
             return true;
         }
         if (isHoldingPaintPaper(client)) {
@@ -122,8 +148,102 @@ public final class PaintOverlayClient {
         return false;
     }
 
+    public static boolean isPaintEditorActive(MinecraftClient client) {
+        return client != null && client.currentScreen instanceof PaintEditorScreen;
+    }
+
+    public static boolean shouldSuppressVanillaCrosshair(MinecraftClient client) {
+        return (isPaintEditorActive(client) || suspendedPaintEditorScreen != null) && !editorViewPassthrough;
+    }
+
+    public static boolean isEditorViewPassthrough() {
+        return editorViewPassthrough;
+    }
+
+    public static boolean isSuspendedPaintEditor(PaintEditorScreen screen) {
+        return editorViewPassthrough && suspendedPaintEditorScreen == screen;
+    }
+
+    public static void beginEditorViewPassthrough(PaintEditorScreen screen) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.player == null || editorViewPassthrough) {
+            return;
+        }
+        suspendedPaintEditorScreen = screen;
+        editorViewPassthrough = true;
+        client.mouse.lockCursor();
+    }
+
+    public static void endEditorViewPassthrough() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (!editorViewPassthrough) {
+            return;
+        }
+        PaintEditorScreen screen = suspendedPaintEditorScreen;
+        editorViewPassthrough = false;
+        suspendedPaintEditorScreen = null;
+        if (client != null) {
+            client.mouse.unlockCursor();
+            if (client.player != null && client.currentScreen == null && screen != null) {
+                client.setScreen(screen);
+            }
+        }
+    }
+
+    public static void markPaintEditorKeyConsumed() {
+        editorKeyCooldown = 2;
+    }
+
+    public static boolean consumePaintEditorKeyCooldown() {
+        if (editorKeyCooldown <= 0) {
+            return false;
+        }
+        editorKeyCooldown--;
+        return true;
+    }
+
+    public static void enterPaintEditor(MinecraftClient client) {
+        if (client.player == null) {
+            return;
+        }
+        if (editorPreviousNoClip == null) {
+            editorPreviousNoClip = client.player.noClip;
+        }
+        if (editorPreviousNoGravity == null) {
+            editorPreviousNoGravity = client.player.hasNoGravity();
+        }
+        client.player.noClip = true;
+        client.player.setNoGravity(true);
+        client.player.fallDistance = 0.0F;
+    }
+
+    public static void exitPaintEditor(MinecraftClient client) {
+        if (editorViewPassthrough) {
+            editorViewPassthrough = false;
+            suspendedPaintEditorScreen = null;
+        }
+        if (client.player == null) {
+            editorPreviousNoClip = null;
+            editorPreviousNoGravity = null;
+            lastStrokeKey = null;
+            repeatedStrokeTicks = 0;
+            return;
+        }
+        if (editorPreviousNoClip != null) {
+            client.player.noClip = editorPreviousNoClip;
+            editorPreviousNoClip = null;
+        }
+        if (editorPreviousNoGravity != null) {
+            client.player.setNoGravity(editorPreviousNoGravity);
+            editorPreviousNoGravity = null;
+        }
+        client.player.fallDistance = 0.0F;
+        lastStrokeKey = null;
+        repeatedStrokeTicks = 0;
+    }
+
     public static void openPaintBucketColorScreen(MinecraftClient client, BlockPos pos) {
-        if (client.player == null || client.world == null || client.world.getBlockState(pos).getBlock() != PaintItems.PAINT_BUCKET_BLOCK) {
+        if (client.player == null || !client.player.isCreative() || client.world == null || client.world.getBlockState(pos).getBlock() != PaintItems.PAINT_BUCKET_BLOCK) {
             return;
         }
         BlockEntity blockEntity = client.world.getBlockEntity(pos);
@@ -135,6 +255,36 @@ public final class PaintOverlayClient {
 
     public static int selectedRadius() {
         return selectedRadius;
+    }
+
+    public static int selectedPaperSize() {
+        return selectedPaperSize;
+    }
+
+    public static boolean eraserFaceMode() {
+        return eraserFaceMode;
+    }
+
+    public static void setSelectedRadius(int radius) {
+        int nextRadius = MathHelper.clamp(radius, PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_RADIUS);
+        if (nextRadius == selectedRadius) {
+            return;
+        }
+        selectedRadius = nextRadius;
+        syncSettings();
+    }
+
+    public static void setSelectedPaperSize(int size) {
+        int nextSize = MathHelper.clamp(size, PaintOverlayFeature.MIN_PAPER_SIZE, PaintOverlayFeature.MAX_PAPER_SIZE);
+        if (nextSize == selectedPaperSize) {
+            return;
+        }
+        selectedPaperSize = nextSize;
+        syncPaperSize();
+    }
+
+    public static void setEraserFaceMode(boolean faceMode) {
+        eraserFaceMode = faceMode;
     }
 
     public static int selectedColor() {
@@ -281,7 +431,7 @@ public final class PaintOverlayClient {
             boolean clear = eraser && eraserFaceMode;
             ModelStrokeKey key = new ModelStrokeKey(modelHit.entityId(), modelHit.surface(), modelHit.face(), modelHit.x(), modelHit.y(), clear);
             repeatedStrokeTicks++;
-            if (key.equals(lastStrokeKey) && repeatedStrokeTicks < 3) {
+            if (key.equals(lastStrokeKey) && repeatedStrokeTicks < REPEATED_STROKE_SKIP_CALLS) {
                 return;
             }
             lastStrokeKey = key;
@@ -304,7 +454,7 @@ public final class PaintOverlayClient {
         boolean clear = eraser && eraserFaceMode;
         StrokeKey key = new StrokeKey(pos, face, pixel[0], pixel[1], clear);
         repeatedStrokeTicks++;
-        if (key.equals(lastStrokeKey) && repeatedStrokeTicks < 3) {
+        if (key.equals(lastStrokeKey) && repeatedStrokeTicks < REPEATED_STROKE_SKIP_CALLS) {
             return;
         }
         lastStrokeKey = key;
@@ -313,11 +463,11 @@ public final class PaintOverlayClient {
     }
 
     public static boolean isBrushInputActive(MinecraftClient client) {
-        return client != null && client.player != null && client.currentScreen == null && isHoldingPaintBrush(client);
+        return isPaintEditorActive(client);
     }
 
     public static void handleBrushPickInput(MinecraftClient client) {
-        if (!isBrushInputActive(client)) {
+        if (client == null || client.player == null) {
             return;
         }
 
@@ -337,11 +487,288 @@ public final class PaintOverlayClient {
         client.player.sendMessage(Text.literal("取色 " + toHex(color)), true);
     }
 
+    public static void handleBrushPickInputAtScreenPoint(MinecraftClient client, double mouseX, double mouseY, int width, int height) {
+        if (client == null || client.player == null) {
+            return;
+        }
+        Ray ray = screenRay(client, mouseX, mouseY, width, height);
+        if (ray == null) {
+            return;
+        }
+        if (!client.player.isCreative()) {
+            BlockHitResult hit = raycastBlock(client, ray);
+            if (hit == null || hit.getType() != HitResult.Type.BLOCK || client.world == null
+                    || client.world.getBlockState(hit.getBlockPos()).getBlock() != PaintItems.PAINT_BUCKET_BLOCK
+                    || !(client.world.getBlockEntity(hit.getBlockPos()) instanceof PaintBucketBlockEntity bucket)
+                    || !bucket.isFilled()) {
+                client.player.sendMessage(Text.literal("Aim at a filled paint bucket"), true);
+                return;
+            }
+            int color = 0xFF000000 | bucket.getColor();
+            setSelectedColor(color);
+            recordPickedColor(color);
+            SafeClientNetworking.send(new PaintOverlayPackets.LoadBrushFromBucketC2S(hit.getBlockPos()));
+            client.player.sendMessage(Text.literal("Load brush " + toHex(color)), true);
+            return;
+        }
+
+        int color = pickModelColor(client, ray);
+        BlockHitResult hit = null;
+        if (color == 0) {
+            hit = raycastBlock(client, ray);
+            color = pickBlockColor(hit);
+        }
+        if (color == 0) {
+            if (hit == null) {
+                hit = raycastBlock(client, ray);
+            }
+            color = pickBlockTextureColor(client, hit);
+        }
+        if (color == 0) {
+            return;
+        }
+        setSelectedColor(color);
+        recordPickedColor(color);
+        client.player.sendMessage(Text.literal("Pick " + toHex(color)), true);
+    }
+
+    public static void performEditorUse(MinecraftClient client, EditorTool tool) {
+        performEditorUseAtScreenPoint(client, tool, -1.0D, -1.0D, 0, 0);
+    }
+
+    public static void performEditorUseAtScreenPoint(MinecraftClient client, EditorTool tool, double mouseX, double mouseY, int width, int height) {
+        if (client == null || client.player == null || tool == null || tool == EditorTool.NONE) {
+            lastStrokeKey = null;
+            repeatedStrokeTicks = 0;
+            return;
+        }
+        Ray ray = screenRay(client, mouseX, mouseY, width, height);
+        PaintModelOverlayClient.ModelHit modelHit = ray == null
+                ? PaintModelOverlayClient.raycastCombinedBody(client)
+                : PaintModelOverlayClient.raycastCombinedBody(client, ray.start(), ray.end());
+        if (modelHit != null && (tool == EditorTool.BRUSH || tool == EditorTool.ERASER)) {
+            boolean clear = tool == EditorTool.ERASER && eraserFaceMode;
+            ModelStrokeKey key = new ModelStrokeKey(modelHit.entityId(), modelHit.surface(), modelHit.face(), modelHit.x(), modelHit.y(), clear);
+            repeatedStrokeTicks++;
+            if (key.equals(lastStrokeKey) && repeatedStrokeTicks < REPEATED_STROKE_SKIP_CALLS) {
+                return;
+            }
+            lastStrokeKey = key;
+            repeatedStrokeTicks = 0;
+            SafeClientNetworking.send(new PaintOverlayPackets.EditorModelPaintStrokeC2S(
+                    modelHit.entityId(), modelHit.surface(), modelHit.face(), modelHit.x(), modelHit.y(), tool.networkId(), clear));
+            return;
+        }
+        BlockHitResult hit = ray == null ? crosshairBlockHit(client) : raycastBlock(client, ray);
+        if (hit == null || hit.getType() != HitResult.Type.BLOCK) {
+            lastStrokeKey = null;
+            repeatedStrokeTicks = 0;
+            return;
+        }
+
+        BlockPos pos = hit.getBlockPos();
+        Direction face = hit.getSide();
+        if (tool == EditorTool.PAPER) {
+            SafeClientNetworking.send(new PaintOverlayPackets.EditorPaperUseC2S(pos, face, client.player.isSneaking()));
+            lastStrokeKey = null;
+            repeatedStrokeTicks = 0;
+            return;
+        }
+
+        int[] pixel = PaintBrushItem.getPixel(hit.getPos(), pos, face);
+        boolean clear = tool == EditorTool.ERASER && eraserFaceMode;
+        StrokeKey key = new StrokeKey(pos, face, pixel[0], pixel[1], clear);
+        repeatedStrokeTicks++;
+        if (key.equals(lastStrokeKey) && repeatedStrokeTicks < REPEATED_STROKE_SKIP_CALLS) {
+            return;
+        }
+        lastStrokeKey = key;
+        repeatedStrokeTicks = 0;
+        pushUndo(pos, face);
+        SafeClientNetworking.send(new PaintOverlayPackets.EditorPaintStrokeC2S(pos, face, pixel[0], pixel[1], tool.networkId(), clear));
+    }
+
+    private static BlockHitResult crosshairBlockHit(MinecraftClient client) {
+        return client.crosshairTarget instanceof BlockHitResult hit && hit.getType() == HitResult.Type.BLOCK ? hit : null;
+    }
+
+    private static BlockHitResult raycastBlock(MinecraftClient client, Ray ray) {
+        if (client.world == null || client.player == null || ray == null) {
+            return null;
+        }
+        HitResult hit = client.world.raycast(new RaycastContext(
+                ray.start(),
+                ray.end(),
+                RaycastContext.ShapeType.OUTLINE,
+                RaycastContext.FluidHandling.NONE,
+                client.player
+        ));
+        return hit instanceof BlockHitResult blockHit && blockHit.getType() == HitResult.Type.BLOCK ? blockHit : null;
+    }
+
+    public static void stopEditorUse() {
+        lastStrokeKey = null;
+        repeatedStrokeTicks = 0;
+    }
+
+    public static void undoEditorStroke(MinecraftClient client) {
+        if (client == null || client.player == null || EDITOR_UNDO.isEmpty()) {
+            return;
+        }
+        SafeClientNetworking.send(new PaintOverlayPackets.RestoreFaceC2S(EDITOR_UNDO.pop()));
+    }
+
+    public static void moveEditorView(MinecraftClient client, double amount) {
+        if (client == null || client.player == null) {
+            return;
+        }
+        setEditorViewVelocity(client, amount, 0.0D);
+    }
+
+    public static void setEditorViewVelocity(MinecraftClient client, double forwardAmount, double strafeAmount) {
+        setEditorViewVelocity(client, forwardAmount, strafeAmount, 0.0D);
+    }
+
+    public static void setEditorViewVelocity(MinecraftClient client, double forwardAmount, double strafeAmount, double verticalAmount) {
+        if (client == null || client.player == null) {
+            return;
+        }
+        Vec3d look = client.player.getRotationVec(1.0F).normalize();
+        Vec3d up = new Vec3d(0.0D, 1.0D, 0.0D);
+        Vec3d right = look.crossProduct(up);
+        if (right.lengthSquared() < 1.0E-4D) {
+            right = new Vec3d(1.0D, 0.0D, 0.0D);
+        } else {
+            right = right.normalize();
+        }
+        Vec3d velocity = look.multiply(forwardAmount)
+                .add(right.multiply(strafeAmount))
+                .add(0.0D, verticalAmount, 0.0D);
+        client.player.setVelocity(velocity);
+        client.player.fallDistance = 0.0F;
+    }
+
+    public static void moveEditorViewTowardScreenPoint(MinecraftClient client, double mouseX, double mouseY, int width, int height, double amount) {
+        if (client == null || client.player == null || width <= 0 || height <= 0) {
+            return;
+        }
+        Vec3d direction = screenDirection(client, mouseX, mouseY, width, height);
+        if (direction == null) {
+            return;
+        }
+        client.player.updatePosition(
+                client.player.getX() + direction.x * amount,
+                client.player.getY() + direction.y * amount,
+                client.player.getZ() + direction.z * amount
+        );
+        client.player.setVelocity(Vec3d.ZERO);
+        client.player.fallDistance = 0.0F;
+    }
+
+    private static Ray screenRay(MinecraftClient client, double mouseX, double mouseY, int width, int height) {
+        if (client == null || client.player == null || width <= 0 || height <= 0 || mouseX < 0.0D || mouseY < 0.0D) {
+            return null;
+        }
+        Vec3d direction = screenDirection(client, mouseX, mouseY, width, height);
+        if (direction == null) {
+            return null;
+        }
+        Vec3d start = client.gameRenderer.getCamera().getPos();
+        return new Ray(start, start.add(direction.multiply(EDITOR_RAY_DISTANCE)));
+    }
+
+    private static Vec3d screenDirection(MinecraftClient client, double mouseX, double mouseY, int width, int height) {
+        if (client == null || client.player == null || width <= 0 || height <= 0) {
+            return null;
+        }
+        Camera camera = client.gameRenderer.getCamera();
+        float factorX = (float) MathHelper.clamp((mouseX / width - 0.5D) * 2.0D, -1.0D, 1.0D);
+        float factorY = (float) MathHelper.clamp((0.5D - mouseY / height) * 2.0D, -1.0D, 1.0D);
+        return camera.getProjection().getPosition(factorX, factorY).normalize();
+    }
+
+    public static void panEditorView(MinecraftClient client, double deltaX, double deltaY) {
+        if (client == null || client.player == null) {
+            return;
+        }
+        Vec3d look = client.player.getRotationVec(1.0F).normalize();
+        Vec3d up = new Vec3d(0.0D, 1.0D, 0.0D);
+        Vec3d right = look.crossProduct(up);
+        if (right.lengthSquared() < 1.0E-4D) {
+            right = new Vec3d(1.0D, 0.0D, 0.0D);
+        } else {
+            right = right.normalize();
+        }
+        double scale = 0.018D;
+        Vec3d offset = right.multiply(deltaX * scale).add(up.multiply(-deltaY * scale));
+        client.player.updatePosition(client.player.getX() + offset.x, client.player.getY() + offset.y, client.player.getZ() + offset.z);
+        client.player.setVelocity(Vec3d.ZERO);
+        client.player.fallDistance = 0.0F;
+    }
+
+    public static ScreenPanAnchor createEditorPanAnchor(MinecraftClient client, double mouseX, double mouseY, int width, int height) {
+        Ray ray = screenRay(client, mouseX, mouseY, width, height);
+        if (ray == null) {
+            return null;
+        }
+        BlockHitResult hit = raycastBlock(client, ray);
+        Vec3d point = hit != null && hit.getType() == HitResult.Type.BLOCK
+                ? hit.getPos()
+                : ray.start().add(ray.direction().multiply(8.0D));
+        return new ScreenPanAnchor(point, Math.max(0.25D, point.distanceTo(ray.start())));
+    }
+
+    public static void panEditorViewToScreenPoint(MinecraftClient client, ScreenPanAnchor anchor, double mouseX, double mouseY, int width, int height) {
+        if (client == null || client.player == null || anchor == null) {
+            return;
+        }
+        Vec3d direction = screenDirection(client, mouseX, mouseY, width, height);
+        if (direction == null) {
+            return;
+        }
+        Vec3d cameraPos = client.gameRenderer.getCamera().getPos();
+        Vec3d targetCameraPos = anchor.point().subtract(direction.multiply(anchor.distance()));
+        Vec3d delta = targetCameraPos.subtract(cameraPos);
+        client.player.updatePosition(client.player.getX() + delta.x, client.player.getY() + delta.y, client.player.getZ() + delta.z);
+        client.player.setVelocity(Vec3d.ZERO);
+        client.player.fallDistance = 0.0F;
+    }
+
+    public static void rotateEditorView(MinecraftClient client, double deltaX, double deltaY) {
+        rotateEditorView(client, deltaX, deltaY, 0.18F);
+    }
+
+    public static void rotateEditorView(MinecraftClient client, double deltaX, double deltaY, float sensitivity) {
+        if (client == null || client.player == null) {
+            return;
+        }
+        client.player.setYaw(client.player.getYaw() + (float) deltaX * sensitivity);
+        client.player.setPitch(MathHelper.clamp(client.player.getPitch() + (float) deltaY * sensitivity, -89.9F, 89.9F));
+    }
+
+    private static void pushUndo(BlockPos pos, Direction face) {
+        int[] pixels = FACE_PIXELS.get(new PaintOverlayStore.FaceKey(pos, face));
+        int[] snapshot = new int[PaintOverlayStore.FACE_PIXELS];
+        if (pixels != null) {
+            System.arraycopy(pixels, 0, snapshot, 0, Math.min(pixels.length, snapshot.length));
+        }
+        EDITOR_UNDO.push(new PaintOverlayPackets.FaceData(pos, face, snapshot));
+        while (EDITOR_UNDO.size() > 32) {
+            EDITOR_UNDO.removeLast();
+        }
+    }
+
     private static int pickBlockTextureColor(MinecraftClient client) {
         if (client.world == null || !(client.crosshairTarget instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK) {
             return 0;
         }
+        return pickBlockTextureColor(client, hit);
+    }
 
+    private static int pickBlockTextureColor(MinecraftClient client, BlockHitResult hit) {
+        if (client.world == null || hit == null || hit.getType() != HitResult.Type.BLOCK) {
+            return 0;
+        }
         BlockPos pos = hit.getBlockPos();
         BlockState state = client.world.getBlockState(pos);
         Vec3d localHit = hit.getPos().subtract(pos.getX(), pos.getY(), pos.getZ());
@@ -470,12 +897,7 @@ public final class PaintOverlayClient {
             return;
         }
         for (int slot = 0; slot < 3 && slot < client.options.hotbarKeys.length; slot++) {
-            boolean pressed = false;
             while (client.options.hotbarKeys[slot].wasPressed()) {
-                pressed = true;
-            }
-            if (pressed) {
-                selectRecentColorSlot(client, slot);
             }
         }
     }
@@ -496,6 +918,15 @@ public final class PaintOverlayClient {
 
     private static int pickModelColor(MinecraftClient client) {
         PaintModelOverlayClient.ModelHit modelHit = PaintModelOverlayClient.raycastCombinedBody(client);
+        return pickModelColor(client, modelHit);
+    }
+
+    private static int pickModelColor(MinecraftClient client, Ray ray) {
+        PaintModelOverlayClient.ModelHit modelHit = ray == null ? null : PaintModelOverlayClient.raycastCombinedBody(client, ray.start(), ray.end());
+        return pickModelColor(client, modelHit);
+    }
+
+    private static int pickModelColor(MinecraftClient client, PaintModelOverlayClient.ModelHit modelHit) {
         if (modelHit == null) {
             return 0;
         }
@@ -505,6 +936,13 @@ public final class PaintOverlayClient {
 
     private static int pickBlockColor(MinecraftClient client) {
         if (!(client.crosshairTarget instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK) {
+            return 0;
+        }
+        return pickBlockColor(hit);
+    }
+
+    private static int pickBlockColor(BlockHitResult hit) {
+        if (hit == null || hit.getType() != HitResult.Type.BLOCK) {
             return 0;
         }
         int[] pixel = PaintBrushItem.getPixel(hit.getPos(), hit.getBlockPos(), hit.getSide());
@@ -582,6 +1020,35 @@ public final class PaintOverlayClient {
             context.fill(slotX, slotY, slotX + 1, slotY + 18, 0x99FFFFFF);
             context.fill(slotX + 17, slotY, slotX + 18, slotY + 18, 0x99000000);
         }
+        renderBrushCharge(context, client);
+    }
+
+    private static void renderBrushCharge(DrawContext context, MinecraftClient client) {
+        if (client.player == null || client.player.isCreative()) {
+            return;
+        }
+        ItemStack brush = paintBrushStack(client);
+        if (brush.isEmpty()) {
+            return;
+        }
+        int remaining = PaintBrushItem.getRemainingPaint(brush);
+        int hotbarLeft = context.getScaledWindowWidth() / 2 - 91;
+        int slot;
+        int x;
+        if (isPaintBrush(client.player.getMainHandStack())) {
+            slot = client.player.getInventory().getSelectedSlot();
+            x = hotbarLeft + slot * 20 + 1;
+        } else {
+            x = hotbarLeft - 28;
+        }
+        int y = context.getScaledWindowHeight() - 34;
+        int width = 18;
+        int filled = MathHelper.clamp((int) Math.round(width * (remaining / (double) PaintBrushItem.MAX_PAINT_PIXELS)), 0, width);
+        int color = remaining > 0 ? 0xFF58D66D : 0xFF7A3030;
+        context.fill(x - 1, y - 1, x + width + 1, y + 5, 0xAA101015);
+        context.fill(x, y, x + width, y + 4, 0xFF2A2A30);
+        context.fill(x, y, x + filled, y + 4, color);
+        context.drawText(client.textRenderer, Text.literal(String.valueOf(remaining)), x + 2, y - 10, 0xFFE6E6E6, false);
     }
 
     private static boolean isHoldingPaintBrush(MinecraftClient client) {
@@ -589,6 +1056,19 @@ public final class PaintOverlayClient {
             return false;
         }
         return isPaintBrush(client.player.getMainHandStack()) || isPaintBrush(client.player.getOffHandStack());
+    }
+
+    private static ItemStack paintBrushStack(MinecraftClient client) {
+        if (client.player == null) {
+            return ItemStack.EMPTY;
+        }
+        if (isPaintBrush(client.player.getMainHandStack())) {
+            return client.player.getMainHandStack();
+        }
+        if (isPaintBrush(client.player.getOffHandStack())) {
+            return client.player.getOffHandStack();
+        }
+        return ItemStack.EMPTY;
     }
 
     private static boolean isPaintBrush(ItemStack stack) {
@@ -1030,6 +1510,15 @@ public final class PaintOverlayClient {
     private record TextureSample(BakedQuad quad, float u, float v, double distanceSquared) {
     }
 
+    private record Ray(Vec3d start, Vec3d end) {
+        private Vec3d direction() {
+            return end.subtract(start).normalize();
+        }
+    }
+
+    public record ScreenPanAnchor(Vec3d point, double distance) {
+    }
+
     private static class MeshBuilder {
         private float[] positions = new float[64 * 3];
         private int[] colors = new int[64];
@@ -1091,5 +1580,22 @@ public final class PaintOverlayClient {
     }
 
     private record ModelStrokeKey(int entityId, String surface, Direction face, int x, int y, boolean clear) {
+    }
+
+    public enum EditorTool {
+        NONE(0),
+        BRUSH(1),
+        ERASER(2),
+        PAPER(3);
+
+        private final int networkId;
+
+        EditorTool(int networkId) {
+            this.networkId = networkId;
+        }
+
+        public int networkId() {
+            return networkId;
+        }
     }
 }
