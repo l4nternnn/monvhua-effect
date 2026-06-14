@@ -329,7 +329,7 @@ public class MonvhuaMod implements ModInitializer {
                     return;
                 }
                 ThroughConfig newConfig = ThroughConfig.fromJson(packet.json());
-
+                ThroughConfig.setInstance(newConfig);
                 for (ServerPlayerEntity p : context.server().getPlayerManager().getPlayerList()) {
                     ServerPlayNetworking.send(p, new ThroughConfigS2CPacket(newConfig.toJson()));
                 }

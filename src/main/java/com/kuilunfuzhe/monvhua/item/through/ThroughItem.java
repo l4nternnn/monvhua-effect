@@ -164,8 +164,10 @@ public class ThroughItem extends Item {
             }
             user.setCurrentHand(hand);
             if (isSecrecyActive(player)) {
-                enterSecrecy(player);
-                player.sendMessage(Text.literal("§b正在集中精神..."), true);
+                enterSecrecy(player); int stage = getPlayerStage(player);
+                ThroughConfig config = ThroughConfig.getInstance();
+                int delaySeconds = config.getVanishDelaySeconds(stage);
+                player.sendMessage(Text.literal("§b正在集中精神..."+"("+delaySeconds+"秒)"), true);
             }
         } else {
             user.setCurrentHand(hand);
