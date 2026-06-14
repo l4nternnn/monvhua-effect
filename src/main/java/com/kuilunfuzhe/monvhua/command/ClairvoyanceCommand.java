@@ -6,6 +6,8 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.ViewModeS2C;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.command.CommandRegistryAccess;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.decoration.ArmorStandEntity;
@@ -54,12 +56,33 @@ public class ClairvoyanceCommand {
                         .then(CommandManager.literal("modern——新版服务端")
                                 .executes(ctx -> setViewMode(ctx, "modern"))
                         )
+                        .then(CommandManager.literal("viewport")
+                                .executes(ctx -> setViewMode(ctx, "viewport"))
+                        )
                         .executes(ctx -> {
                             ServerPlayerEntity player = ctx.getSource().getPlayer();
                             String current = MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "modern");
-                            String modeName = "legacy".equals(current) ? "§e旧版(客户端盔甲架)" : "§a新版(服务端CameraWatch)";
+                            String modeName = getViewModeDisplayName(current);
                             player.sendMessage(Text.literal("§6当前观看模式: " + modeName), false);
-                            player.sendMessage(Text.literal("§7使用 /clairvoyance viewmode <legacy|modern> 切换"), false);
+                            player.sendMessage(Text.literal("§7使用 /clairvoyance viewmode <legacy|modern|viewport> 切换"), false);
+                            return 1;
+                        })
+                )
+                .then(CommandManager.literal("viewmode")
+                        .then(CommandManager.literal("legacy")
+                                .executes(ctx -> setViewMode(ctx, "legacy"))
+                        )
+                        .then(CommandManager.literal("modern")
+                                .executes(ctx -> setViewMode(ctx, "modern"))
+                        )
+                        .then(CommandManager.literal("viewport")
+                                .executes(ctx -> setViewMode(ctx, "viewport"))
+                        )
+                        .executes(ctx -> {
+                            ServerPlayerEntity player = ctx.getSource().getPlayer();
+                            String current = MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "modern");
+                            player.sendMessage(Text.literal("current clairvoyance view mode: " + getViewModeDisplayName(current)), false);
+                            player.sendMessage(Text.literal("Use /clairvoyance viewmode <legacy|modern|viewport>"), false);
                             return 1;
                         })
                 )
@@ -74,6 +97,7 @@ public class ClairvoyanceCommand {
     private static int setViewMode(CommandContext<ServerCommandSource> ctx, String mode) throws CommandSyntaxException {
         ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
         MonvhuaMod.VIEW_MODE_PREFERENCE.put(player.getUuid(), mode);
+        ServerPlayNetworking.send(player, new ViewModeS2C(mode));
 
         // 如果在观看中，停止当前观看
         if (com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager.isWatching(player)) {
@@ -83,9 +107,17 @@ public class ClairvoyanceCommand {
             Evil_Eyes.forceStopWatching(player, player.getServer());
         }
 
-        String displayName = "legacy".equals(mode) ? "§e旧版(客户端盔甲架)" : "§a新版(服务端CameraWatch)";
+        String displayName = getViewModeDisplayName(mode);
         player.sendMessage(Text.literal("§a已切换到观看模式: " + displayName), false);
         return 1;
+    }
+
+    private static String getViewModeDisplayName(String mode) {
+        return switch (mode) {
+            case "legacy" -> "§e旧版(客户端盔甲架)";
+            case "viewport" -> "§bViewport(界面预览)";
+            default -> "§a新版(服务端CameraWatch)";
+        };
     }
 
     /**

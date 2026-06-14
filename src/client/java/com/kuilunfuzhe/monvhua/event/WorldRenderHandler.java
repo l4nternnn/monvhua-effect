@@ -27,8 +27,8 @@ public class WorldRenderHandler {
                 ItemStack mainHand = player.getMainHandStack();
                 // 仅当手持千里眼、凝视法杖或隐秘相关物品时渲染背景纹理和轨道
                 if (mainHand.getItem() == Evil_Eyes.CLAIRVOYANCE_ITEM || mainHand.getItem() == ModItems.MAGIC_STICK || SecrecyItem.isHoldingSecrecy(mainHand)) {
-                    BackTextureRenderer.render(context.matrixStack(), context.consumers(), player, MonvhuaModClient.currentPlayerStage);
-                    OrbitRenderer.render(context.matrixStack(), context.consumers(), player, MonvhuaModClient.currentPlayerStage);
+                    // BackTextureRenderer.render(context.matrixStack(), context.consumers(), player, MonvhuaModClient.currentPlayerStage);
+                    // OrbitRenderer.render(context.matrixStack(), context.consumers(), player, MonvhuaModClient.currentPlayerStage);
                 }
             }
             // 锚点按钮始终渲染（不受手持物品限制）

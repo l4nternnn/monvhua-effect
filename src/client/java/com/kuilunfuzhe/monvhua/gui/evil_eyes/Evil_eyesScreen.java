@@ -1,5 +1,7 @@
 package com.kuilunfuzhe.monvhua.gui.evil_eyes;
 
+import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceViewportRenderer;
+import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.SelectView;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.UnmarkEntityC2S;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -22,10 +24,13 @@ import java.util.concurrent.ConcurrentHashMap;
  * 右侧显示操作说明，每个实体旁边有删除按钮（✕）可取消标记。
  */
 public class Evil_eyesScreen extends Screen {
+    private static final int REFRESH_INTERVAL_TICKS = 40;
     /** 当前已标记的实体列表，UUID -> 标记时间戳 */
     private static Map<UUID, Long> currentMarks = new ConcurrentHashMap<>();
     private int panelWidth, panelHeight, panelX, panelY;
     private int leftWidth, rightWidth;
+    private int previewX, previewY, previewWidth, previewHeight;
+    private long nextAutoRefreshTick;
 
     public Evil_eyesScreen() {
         super(Text.empty());
@@ -67,17 +72,45 @@ public class Evil_eyesScreen extends Screen {
         panelY = (sh - panelHeight) / 2;
         leftWidth = panelWidth / 2;  // 左半边放实体列表
         rightWidth = panelWidth - leftWidth;
+        previewX = panelX + leftWidth + 8;
+        previewY = panelY + 34;
+        previewWidth = Math.max(1, rightWidth - 16);
+        previewHeight = Math.min(panelHeight - 46, Math.max(1, (int) (previewWidth * 9f / 16f)));
+        nextAutoRefreshTick = 0L;
 
         addDrawableChild(new TextWidget(panelX + 5, panelY + 10, leftWidth - 10, 20,
                 Text.literal("已标记实体列表"), textRenderer));
-        addDrawableChild(new TextWidget(panelX + leftWidth + 5, panelY + 10, rightWidth - 10, 20,
-                Text.literal("点击左侧实体名称"), textRenderer));
-        addDrawableChild(new TextWidget(panelX + leftWidth + 5, panelY + 35, rightWidth - 10, 20,
-                Text.literal("即可切换到该实体的"), textRenderer));
-        addDrawableChild(new TextWidget(panelX + leftWidth + 5, panelY + 60, rightWidth - 10, 20,
-                Text.literal("第二人称视角"), textRenderer));
+        if (Evil_EyesClient.isViewportMode()) {
+            addDrawableChild(new TextWidget(panelX + leftWidth + 5, panelY + 10, rightWidth - 10, 20,
+                    Text.literal("预览视角"), textRenderer));
+        } else {
+            addDrawableChild(new TextWidget(panelX + leftWidth + 5, panelY + 10, rightWidth - 10, 20,
+                    Text.literal("点击左侧实体名称"), textRenderer));
+            addDrawableChild(new TextWidget(panelX + leftWidth + 5, panelY + 35, rightWidth - 10, 20,
+                    Text.literal("即可切换到该实体的"), textRenderer));
+            addDrawableChild(new TextWidget(panelX + leftWidth + 5, panelY + 60, rightWidth - 10, 20,
+                    Text.literal("第二人称视角"), textRenderer));
+        }
 
         refreshEntityButtons();
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (client == null || client.world == null) {
+            return;
+        }
+        long now = client.world.getTime();
+        if (now < nextAutoRefreshTick) {
+            return;
+        }
+        nextAutoRefreshTick = now + REFRESH_INTERVAL_TICKS;
+        if (Evil_EyesClient.pruneLocalMarkedEntities(client)) {
+            updateMarkedList(Evil_EyesClient.localMarkedEntities);
+        } else {
+            refreshEntityButtons();
+        }
     }
 
     /**
@@ -94,12 +127,25 @@ public class Evil_eyesScreen extends Screen {
             }
         }
         children().removeAll(oldBtns);
+        if (Evil_EyesClient.isViewportMode()) {
+            UUID selected = ClairvoyanceViewportRenderer.getSelectedTarget();
+            if (selected == null || !currentMarks.containsKey(selected)) {
+                ClairvoyanceViewportRenderer.setSelectedTarget(currentMarks.keySet().stream().findFirst().orElse(null));
+            }
+        }
         int yOffset = 40;
         for (UUID uuid : currentMarks.keySet()) {
             String name = getEntityName(uuid);
             int btnWidth = leftWidth - 10 - 20;
             // 实体名称按钮 - 点击选择观看
             ButtonWidget nameBtn = ButtonWidget.builder(Text.literal(name), button -> {
+                        if (Evil_EyesClient.isViewportMode()) {
+                            ClairvoyanceViewportRenderer.setSelectedTarget(uuid);
+                            if (client != null && client.player != null) {
+                                client.player.sendMessage(Text.literal("\u00a7aPreview: " + name), true);
+                            }
+                            return;
+                        }
                         ClientPlayNetworking.send(new SelectView(uuid));
                         if (client != null && client.player != null) {
                             client.player.sendMessage(Text.literal("§a正在切换到 " + name), true);
@@ -110,6 +156,7 @@ public class Evil_eyesScreen extends Screen {
             addDrawableChild(nameBtn);
             // 删除按钮 - 点击取消标记（立即本地移除 + 服务端同步）
             ButtonWidget delBtn = ButtonWidget.builder(Text.literal("✕"), button -> {
+                        ClairvoyanceViewportRenderer.clearSelectedTarget(uuid);
                         removeFromLocalList(uuid);
                         ClientPlayNetworking.send(new UnmarkEntityC2S(uuid));
                     })
@@ -141,10 +188,20 @@ public class Evil_eyesScreen extends Screen {
         context.fill(panelX, panelY, panelX + leftWidth, panelY + panelHeight, 0xAA222222);
         context.fill(panelX + leftWidth + 1, panelY, panelX + panelWidth, panelY + panelHeight, 0xAA222222);
         super.render(context, mouseX, mouseY, delta);
+        if (Evil_EyesClient.isViewportMode()) {
+            context.fill(previewX - 1, previewY - 1, previewX + previewWidth + 1, previewY + previewHeight + 1, 0xFF555555);
+            ClairvoyanceViewportRenderer.renderPreviewRect(context, previewX, previewY, previewWidth, previewHeight);
+        }
     }
 
     @Override
     public boolean shouldPause() {
         return false;
+    }
+
+    @Override
+    public void removed() {
+        super.removed();
+        ClairvoyanceViewportRenderer.cleanup();
     }
 }

@@ -166,6 +166,7 @@ public class MonvhuaMod implements ModInitializer {
         ModNetworking.registerS2CPackets();
         GlobalConfigS2C.register();
         OpenUIS2C.register();
+        ViewModeS2C.register();
         EntityMarkedS2C.register();
         ToggleImagesS2CPacket.register();
         SelectView.register();

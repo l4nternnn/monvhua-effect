@@ -89,6 +89,10 @@ public class ClientPacketHandler {
             });
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(ViewModeS2C.ID, (packet, context) -> {
+            context.client().execute(() -> Evil_EyesClient.setViewMode(packet.mode()));
+        });
+
         // 3. 实体标记更新
         ClientPlayNetworking.registerGlobalReceiver(EntityMarkedS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
@@ -332,6 +336,8 @@ public class ClientPacketHandler {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             CarryPoseClientState.clear();
             ActionPoseClientState.clear();
+            Evil_EyesClient.setViewMode("modern");
+            com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceViewportRenderer.cleanup();
             com.kuilunfuzhe.monvhua.features.floating.floating.syncFullWitchTag(false, false);
             com.kuilunfuzhe.monvhua.features.floating.floating.resetStageRanges();
         });
