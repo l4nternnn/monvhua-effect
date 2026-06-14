@@ -44,5 +44,6 @@ public abstract class ThroughPhaseInputMixin extends Input {
                 !phaseStalled && this.playerInput.sprint()
         );
         this.movementVector = phaseStalled ? Vec2f.ZERO : new Vec2f(0.0F, this.movementVector.y);
+        ThroughClientManager.stopMotionWhenPhaseMovementStops();
     }
 }

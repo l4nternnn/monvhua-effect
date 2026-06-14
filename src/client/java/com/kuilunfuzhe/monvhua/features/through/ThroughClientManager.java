@@ -9,6 +9,7 @@ import net.minecraft.util.math.BlockPos;
 import java.util.EnumMap;
 import java.util.Map;
 
+
 /**
  * 隐秘状态客户端管理器。
  * 进入隐秘状态时将非玩家音效音量降至10%，仅保留PLAYERS类音效（心跳声）不变，
@@ -39,6 +40,14 @@ public final class ThroughClientManager {
     /** 虚化临时接管客户端 noClip 前的原状态，用于恢复创造/旁观/指令提供的原版穿墙视角 */
     private static Boolean previousNoClip = null;
 
+    private static void clearCurrentMotion(MinecraftClient client) {
+        if (client.player == null) {
+            return;
+        }
+        client.player.setVelocity(0.0D, 0.0D, 0.0D);
+        client.player.velocityModified = true;
+        client.player.fallDistance = 0.0F;
+    }
     private ThroughClientManager() {
     }
 
@@ -55,8 +64,8 @@ public final class ThroughClientManager {
      * 设置完整隐秘状态，同步穿墙 noClip、锁定输入和锁定视角。
      */
     public static void setState(boolean invisible, boolean newPhaseNoClip, boolean newPhaseLocked, boolean newPhaseStalled, float newLockedYaw, float newLockedPitch, int fadeOutTicks) {
+        MinecraftClient client = MinecraftClient.getInstance();
         if (invisible != active) {
-            MinecraftClient client = MinecraftClient.getInstance();
             if (client == null) {
                 active = invisible;
             } else if (invisible) {
@@ -67,6 +76,10 @@ public final class ThroughClientManager {
                 restoreOriginalOptions(client);
                 active = false;
             }
+        }
+
+        if (newPhaseStalled && !phaseStalled && client != null) {
+            clearCurrentMotion(client);
         }
 
         phaseNoClip = newPhaseNoClip;
@@ -104,6 +117,7 @@ public final class ThroughClientManager {
                 client.options.forwardKey.setPressed(false);
                 client.options.backKey.setPressed(false);
                 client.options.sprintKey.setPressed(false);
+                stopMotionWhenPhaseMovementStops();
             }
         }
     }
@@ -116,8 +130,20 @@ public final class ThroughClientManager {
         return phaseStalled;
     }
 
-    public static boolean isPhaseNoClip() {
-        return phaseNoClip;
+    public static void stopMotionWhenPhaseMovementStops() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.player == null || !phaseLocked) {
+            return;
+        }
+        if (phaseStalled || isPhaseMovementStopped(client)) {
+            clearCurrentMotion(client);
+        }
+    }
+
+    private static boolean isPhaseMovementStopped(MinecraftClient client) {
+        return !client.options.forwardKey.isPressed()
+                && !client.options.backKey.isPressed()
+                && !client.options.sneakKey.isPressed();
     }
 
     public static boolean shouldIgnorePhaseCollision(Entity entity, BlockPos pos) {
