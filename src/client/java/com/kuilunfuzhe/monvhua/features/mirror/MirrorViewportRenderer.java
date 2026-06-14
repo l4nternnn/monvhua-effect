@@ -2,6 +2,9 @@ package com.kuilunfuzhe.monvhua.features.mirror;
 
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.textures.GpuTextureView;
+import com.kuilunfuzhe.monvhua.compat.DhCompat;
+import com.kuilunfuzhe.monvhua.compat.IrisMirrorCompat;
 import com.kuilunfuzhe.monvhua.mixin.CameraAccessor;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.SimpleFramebuffer;
@@ -22,7 +25,7 @@ public class MirrorViewportRenderer {
 	/**
 	 * 渲染镜子视角到全屏 FBO（由 WorldRenderer HEAD mixin 调用）
 	 */
-	public static void renderFullScreenMirror(RenderTickCounter tickCounter, GpuBufferSlice fog, Vector4f fogColor, Camera mainCamera) {
+	public static void renderFullScreenMirror(RenderTickCounter tickCounter, GpuBufferSlice fog, Vector4f fogColor, Camera mainCamera, Matrix4f positionMatrix, Matrix4f projectionMatrix) {
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (client.world == null || client.player == null) return;
 		if (!MirrorClientManager.isActive()) return;
@@ -37,11 +40,25 @@ public class MirrorViewportRenderer {
 
 			float yaw = mainCamera.getYaw();
 			float pitch = mainCamera.getPitch();
-			Vec3d playerPos = client.player.getPos();
-			Vec3d pos = MirrorClientManager.getActiveSlotWorldPos(playerPos);
+			Vec3d pos = MirrorClientManager.getActiveSlotCameraPos(mainCamera.getPos());
 			if (pos == null) return;
 
+			RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(
+				fullMirrorFbo.getColorAttachment(),
+				0xFF000000,
+				fullMirrorFbo.getDepthAttachment(),
+				1.0
+			);
+
+			GpuTextureView previousColorOutput = RenderSystem.outputColorTextureOverride;
+			GpuTextureView previousDepthOutput = RenderSystem.outputDepthTextureOverride;
+			GpuBufferSlice previousFog = RenderSystem.getShaderFog();
+			RenderSystem.backupProjectionMatrix();
+			DhCompat.suspend();
+			IrisMirrorCompat.beginMirrorRender();
 			FramebufferOverride.setOverride(fullMirrorFbo);
+			RenderSystem.outputColorTextureOverride = fullMirrorFbo.getColorAttachmentView();
+			RenderSystem.outputDepthTextureOverride = fullMirrorFbo.getDepthAttachmentView();
 			try {
 				Camera cam = new Camera();
 				cam.update(client.world, client.player, false, false, tickCounter.getTickProgress(false));
@@ -49,27 +66,23 @@ public class MirrorViewportRenderer {
 				acc.invokeSetPos(pos.x, pos.y, pos.z);
 				acc.invokeSetRotation(yaw, pitch);
 
-				float fov = client.options.getFov().getValue().floatValue();
-				float aspect = (float) fbw / fbh;
-				Matrix4f proj = new Matrix4f().perspective(
-					fov * (float) (Math.PI / 180.0), aspect, 0.05f,
-					client.gameRenderer.getFarPlaneDistance()
-				);
+				Matrix4f view = new Matrix4f(positionMatrix);
+				Matrix4f projection = new Matrix4f(projectionMatrix);
 
-				// 用 lookAt 确保偏航/俯仰正确，然后清零平移（平移由 cam.getPos() 提供一次）
-				Vec3d forward = new Vec3d(
-					-Math.sin(yaw * (float)(Math.PI / 180.0)) * Math.cos(pitch * (float)(Math.PI / 180.0)),
-					-Math.sin(pitch * (float)(Math.PI / 180.0)),
-					Math.cos(yaw * (float)(Math.PI / 180.0)) * Math.cos(pitch * (float)(Math.PI / 180.0))
-				);
-				Matrix4f view = new Matrix4f().lookAt(0, 0, 0, (float)forward.x, (float)forward.y, (float)forward.z, 0, 1, 0);
-
+				client.worldRenderer.setupFrustum(pos, view, projection);
 				client.worldRenderer.render(
 					ObjectAllocator.TRIVIAL, tickCounter, false,
-					cam, view, proj, fog, fogColor, true
+					cam, view, projection, fog, fogColor, true
 				);
 			} finally {
+				client.worldRenderer.setupFrustum(mainCamera.getPos(), new Matrix4f(positionMatrix), new Matrix4f(projectionMatrix));
+				RenderSystem.restoreProjectionMatrix();
+				RenderSystem.setShaderFog(previousFog);
+				RenderSystem.outputColorTextureOverride = previousColorOutput;
+				RenderSystem.outputDepthTextureOverride = previousDepthOutput;
 				FramebufferOverride.clearOverride();
+				IrisMirrorCompat.endMirrorRender();
+				DhCompat.resume();
 			}
 		} finally {
 			renderingMirror.set(false);
@@ -92,31 +105,7 @@ public class MirrorViewportRenderer {
 
 		if (fullMirrorFbo.textureWidth != fbw || fullMirrorFbo.textureHeight != fbh) return;
 
-		var encoder = RenderSystem.getDevice().createCommandEncoder();
-		for (int row = 0; row < fbh; row++) {
-			int bx = fbw * (fbh - row) / fbh;
-			if (bx <= 0) continue;
-			if (bx > fbw) bx = fbw;
-
-			encoder.copyTextureToTexture(
-				fullMirrorFbo.getColorAttachment(),
-				mainFb.getColorAttachment(),
-				0,
-				0, row,
-				0, row,
-				bx, 1
-			);
-		}
-
-		// 绘制对角线
-		int sw = client.getWindow().getScaledWidth();
-		int sh = client.getWindow().getScaledHeight();
-//		for (int sy = 0; sy < sh; sy++) {
-//			int sx = sw * (sh - sy) / sh;
-//			if (sx >= 0 && sx < sw) {
-//				context.fill(sx, sy, sx + 1, sy + 1, 0xFFFFFFFF);
-//			}
-//		}
+		MirrorFramebufferCompositor.renderDiagonalSplit(fullMirrorFbo, mainFb);
 	}
 
 	private static SimpleFramebuffer resizeFbo(SimpleFramebuffer fbo, String name, int w, int h) {
@@ -132,5 +121,6 @@ public class MirrorViewportRenderer {
 			fullMirrorFbo.delete();
 			fullMirrorFbo = null;
 		}
+		MirrorFramebufferCompositor.cleanup();
 	}
 }

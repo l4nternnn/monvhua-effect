@@ -77,6 +77,13 @@ public class MirrorClientManager {
 		return data.mapPos().add(playerPos.subtract(data.hsPos())).add(VIEWPORT_OFFSET);
 	}
 
+	public static Vec3d getActiveSlotCameraPos(Vec3d cameraPos) {
+		Vec3d playerFeetPos = cameraPos.subtract(VIEWPORT_OFFSET);
+		CameraData data = getActiveSlot(playerFeetPos);
+		if (data == null) return null;
+		return data.mapPos().add(cameraPos.subtract(data.hsPos()));
+	}
+
 	public static CameraData getActiveSlot(Vec3d playerPos) {
 		for (CameraData data : slots) {
 			if (data.active() && playerPos.distanceTo(data.hsPos()) <= data.radius()) {

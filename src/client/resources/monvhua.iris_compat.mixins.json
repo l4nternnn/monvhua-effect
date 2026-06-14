@@ -1,0 +1,12 @@
+{
+	"required": false,
+	"package": "com.kuilunfuzhe.monvhua.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"plugin": "com.kuilunfuzhe.monvhua.mixin.compat.IrisCompatMixinPlugin",
+	"client": [
+		"multiple_perspectives.IrisPipelineManagerMirrorMixin"
+	],
+	"injectors": {
+		"defaultRequire": 0
+	}
+}
