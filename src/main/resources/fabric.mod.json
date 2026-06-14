@@ -29,6 +29,10 @@
 		{
 			"config": "monvhua.axiom_compat.mixins.json",
 			"environment": "client"
+		},
+		{
+			"config": "monvhua.iris_compat.mixins.json",
+			"environment": "client"
 		}
 	],
 	"depends": {

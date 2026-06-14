@@ -54,7 +54,7 @@ public class DhCompat {
         if (suspendDepth++ > 0) return;
 
         apiSuspended = suspendDhApiRendering();
-        eventsSuspended = suspendWorldRenderEvents();
+        eventsSuspended = false;
     }
 
     /**
