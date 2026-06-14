@@ -48,6 +48,34 @@ public class Evil_EyesClient {
     // 公开的标记实体映射（供其他类使用）
     public static final Map<UUID, Long> localMarkedEntities = new ConcurrentHashMap<>();
     public static final Map<UUID, String> localMarkedEntityNames = new ConcurrentHashMap<>();
+    private static volatile String viewMode = "modern";
+
+    public static void setViewMode(String mode) {
+        viewMode = mode == null || mode.isBlank() ? "modern" : mode;
+        if (!isViewportMode()) {
+            ClairvoyanceViewportRenderer.cleanup();
+        }
+    }
+
+    public static String getViewMode() {
+        return viewMode;
+    }
+
+    public static boolean isViewportMode() {
+        return "viewport".equals(viewMode);
+    }
+
+    public static boolean pruneLocalMarkedEntities(MinecraftClient client) {
+        if (client == null || client.world == null) {
+            return !localMarkedEntities.isEmpty() && localMarkedEntities.keySet().removeIf(uuid -> true);
+        }
+        long now = client.world.getTime();
+        return localMarkedEntities.entrySet().removeIf(entry -> {
+            if (entry.getValue() <= now) return true;
+            Entity entity = client.world.getEntity(entry.getKey());
+            return entity == null || !entity.isAlive();
+        });
+    }
 
     /**
      * 选择要观察的目标实体，创建虚拟相机并进入观察模式。

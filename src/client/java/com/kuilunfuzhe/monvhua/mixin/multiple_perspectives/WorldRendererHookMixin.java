@@ -1,5 +1,7 @@
 package com.kuilunfuzhe.monvhua.mixin.multiple_perspectives;
 
+import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceViewportRenderer;
+import com.kuilunfuzhe.monvhua.features.mirror.FramebufferOverride;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import net.minecraft.client.render.Camera;
@@ -28,6 +30,12 @@ public class WorldRendererHookMixin {
 		boolean shouldRenderSky,
 		CallbackInfo ci
 	) {
+		if (FramebufferOverride.getOverride() != null) {
+			return;
+		}
 		MirrorViewportRenderer.renderFullScreenMirror(tickCounter, fog, fogColor, camera, positionMatrix, projectionMatrix);
+		if (ClairvoyanceViewportRenderer.shouldRenderPreviewWorld()) {
+			ClairvoyanceViewportRenderer.renderPreviewWorld(tickCounter, fog, fogColor, camera, positionMatrix, projectionMatrix);
+		}
 	}
 }

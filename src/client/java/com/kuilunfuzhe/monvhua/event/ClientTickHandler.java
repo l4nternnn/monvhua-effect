@@ -159,6 +159,7 @@ public class ClientTickHandler {
                 if (!AnchorButtonRenderer.anchors.isEmpty()) AnchorButtonRenderer.anchors.clear();
                 MirrorClientManager.reset();
                 MirrorViewportRenderer.cleanup();
+                com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceViewportRenderer.cleanup();
                 return;
             }
             long now = System.currentTimeMillis();

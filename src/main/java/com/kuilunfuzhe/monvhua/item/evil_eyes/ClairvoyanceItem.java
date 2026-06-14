@@ -1,6 +1,8 @@
 package com.kuilunfuzhe.monvhua.item.evil_eyes;
 
+import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.OpenUIS2C;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.ViewModeS2C;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
@@ -36,6 +38,8 @@ public class ClairvoyanceItem extends Item {
                 player.sendMessage(Text.literal("§c你难以集中精神"), true);
                 return ActionResult.FAIL;
             }
+            String mode = MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "modern");
+            ServerPlayNetworking.send(player, new ViewModeS2C(mode));
             ServerPlayNetworking.send(player, new OpenUIS2C());
         }
         return ActionResult.SUCCESS;

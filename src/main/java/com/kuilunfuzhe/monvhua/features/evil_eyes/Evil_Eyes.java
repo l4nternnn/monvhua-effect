@@ -549,6 +549,7 @@ public class Evil_Eyes {
         // 6. 清理过期标记、死亡实体和超出范围实体
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             long now = server.getWorld(World.OVERWORLD).getTime();
+            boolean periodicSync = server.getTicks() % 40 == 0;
             for (Map.Entry<UUID, Map<UUID, Long>> playerEntry : playerMarkedEntities.entrySet()) {
                 UUID playerUuid = playerEntry.getKey();
                 Map<UUID, Long> marks = playerEntry.getValue();
@@ -601,7 +602,7 @@ public class Evil_Eyes {
                 if (outRange.isEmpty()) {
                     outOfRangeSince.remove(playerUuid);
                 }
-                if (changed && player != null) {
+                if ((changed || periodicSync) && player != null) {
                     int stage = getPlayerStage(player, configManager);
                     int maxMarks = configManager.getStageConfig(stage).maxMarks();
                     sendMarkedListToClient(player, marks, maxMarks);
