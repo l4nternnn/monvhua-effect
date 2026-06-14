@@ -42,6 +42,7 @@ public class ModNetworking {
         FloatingPackets.registerS2C();
         FullWitchTagSyncS2CPacket.register();
         MarkCountPacket.register();
+        MarkedListPacket.register();
         FocusStatusPacket.register();
         ParticlePacket.register();
         StrengthPacket.register();

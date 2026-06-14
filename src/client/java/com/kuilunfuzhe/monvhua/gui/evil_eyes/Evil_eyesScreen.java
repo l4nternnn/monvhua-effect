@@ -1,5 +1,7 @@
 package com.kuilunfuzhe.monvhua.gui.evil_eyes;
 
+import com.kuilunfuzhe.monvhua.event.tag_pitch;
+import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.SelectView;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.UnmarkEntityC2S;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -44,6 +46,7 @@ public class Evil_eyesScreen extends Screen {
     // 立即从本地列表中移除指定实体并刷新GUI（无需等待服务器回包）
     public static void removeFromLocalList(UUID entityUuid) {
         currentMarks.remove(entityUuid);
+        Evil_EyesClient.localMarkedEntityNames.remove(entityUuid);
         refreshCurrentScreen();
     }
 
@@ -122,9 +125,13 @@ public class Evil_eyesScreen extends Screen {
     }
 
     private String getEntityName(UUID uuid) {
+        String cachedName = Evil_EyesClient.localMarkedEntityNames.get(uuid);
+        if (cachedName != null && !cachedName.isBlank()) {
+            return tag_pitch.replaceTags(cachedName);
+        }
         if (client != null && client.world != null) {
             var entity = client.world.getEntity(uuid);
-            if (entity != null) return entity.getName().getString();
+            if (entity != null) return tag_pitch.entityDisplayName(entity);
         }
         return "未知实体";
     }

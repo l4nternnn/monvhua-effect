@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.evil_eyes;
 
+import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.gui.evil_eyes.Evil_eyesScreen;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
@@ -46,6 +47,7 @@ public class Evil_EyesClient {
 
     // 公开的标记实体映射（供其他类使用）
     public static final Map<UUID, Long> localMarkedEntities = new ConcurrentHashMap<>();
+    public static final Map<UUID, String> localMarkedEntityNames = new ConcurrentHashMap<>();
 
     /**
      * 选择要观察的目标实体，创建虚拟相机并进入观察模式。
@@ -79,7 +81,7 @@ public class Evil_EyesClient {
         client.cameraEntity = cameraEntity;
 
         if (client.player != null)
-            client.player.sendMessage(Text.literal("正在注视 " + target.getName().getString()), true);
+            client.player.sendMessage(Text.literal("正在注视 " + tag_pitch.entityDisplayName(target)), true);
 
         if (client.currentScreen instanceof Evil_eyesScreen) client.setScreen(null);
         isViewing = true;
@@ -99,6 +101,11 @@ public class Evil_EyesClient {
         isViewing = false;
         uiOpenTime = 0;
         if (client.currentScreen instanceof Evil_eyesScreen) client.setScreen(null);
+    }
+
+    public static void clearMarkedEntityCache() {
+        localMarkedEntities.clear();
+        localMarkedEntityNames.clear();
     }
 
     // 内部方法

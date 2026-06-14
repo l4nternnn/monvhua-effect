@@ -17,6 +17,9 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * 诱导法杖客户端。
  * 管理右键长按检测（发送网络包）、能量HUD渲染、阶段提示Toast，
@@ -36,6 +39,7 @@ public class GazeguidanceClient {
 	private static int currentMarkCount = 0;
 	/** 最大可标记数量 */
 	private static int currentMaxMarks = 0;
+	private static List<String> currentMarkedNames = List.of();
 
 	/**
 	 * 设置能量值（由网络接收器调用）。
@@ -53,6 +57,14 @@ public class GazeguidanceClient {
 	 */
 	public static void setMarkCount(int count) {
 		currentMarkCount = count;
+		if (count == 0) {
+			currentMarkedNames = List.of();
+		}
+	}
+
+	public static void setMarkedNames(List<String> names) {
+		currentMarkedNames = names == null ? List.of() : new ArrayList<>(names);
+		currentMarkCount = currentMarkedNames.size();
 	}
 
 	/**
@@ -134,10 +146,41 @@ public class GazeguidanceClient {
 			int textX = x + barWidth + 5; // 文字在能量条右侧5像素
 			int textY = y - 2; // 文字在能量条上方2像素
 			drawContext.drawText(client.textRenderer, text, textX, textY, 0xFF5555, true);
+			renderMarkedList(drawContext, client);
 		});
 
 //		System.out.println("GazeguidanceClient: Initialized (receivers moved to ClairvoyanceClient)")
 //		;
+	}
+
+	private static void renderMarkedList(net.minecraft.client.gui.DrawContext drawContext, MinecraftClient client) {
+		int x = 10;
+		int y = Math.max(36, drawContext.getScaledWindowHeight() / 2 - 58);
+		int width = 116;
+		int rowHeight = 11;
+		int visibleRows = Math.max(1, Math.min(currentMarkedNames.size(), 8));
+		int rows = currentMarkedNames.isEmpty() ? 1 : visibleRows;
+		int height = 22 + rows * rowHeight + 5;
+
+		drawContext.fill(x, y, x + width, y + height, 0x8809121D);
+		drawContext.fill(x, y, x + width, y + 1, 0xFF66BFFF);
+		drawContext.fill(x, y + height - 1, x + width, y + height, 0xFF66BFFF);
+		drawContext.fill(x, y, x + 1, y + height, 0xFF66BFFF);
+		drawContext.fill(x + width - 1, y, x + width, y + height, 0xFF66BFFF);
+
+		String title = "诱导标记 " + currentMarkCount + "/" + currentMaxMarks;
+		drawContext.drawText(client.textRenderer, title, x + 6, y + 6, 0xFFFFFF, true);
+		if (currentMarkedNames.isEmpty()) {
+			drawContext.drawText(client.textRenderer, "无标记", x + 8, y + 20, 0xFFAAAAAA, true);
+			return;
+		}
+		for (int i = 0; i < visibleRows; i++) {
+			String name = currentMarkedNames.get(i);
+			if (client.textRenderer.getWidth(name) > width - 18) {
+				name = client.textRenderer.trimToWidth(name, width - 24) + "...";
+			}
+			drawContext.drawText(client.textRenderer, (i + 1) + ". " + name, x + 8, y + 20 + i * rowHeight, 0xFFEAF6FF, true);
+		}
 	}
 
 		/**

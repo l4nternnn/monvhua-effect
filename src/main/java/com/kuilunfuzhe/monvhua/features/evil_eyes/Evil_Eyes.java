@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.evil_eyes;
 
 import com.kuilunfuzhe.monvhua.config.GlobalConfigManager;
+import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
 import com.kuilunfuzhe.monvhua.item.evil_eyes.ClairvoyanceItem;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
@@ -140,7 +141,7 @@ public class Evil_Eyes {
             Entity e = player.getWorld().getEntity(uuid);
             // 过滤锚点盔甲架
             if (isAnchorStand(e)) continue;
-            String name = (e != null) ? e.getName().getString() : "未知";
+            String name = tag_pitch.entityDisplayName(e);
             ServerPlayNetworking.send(player, new EntityMarkedS2C(uuid, name));
         }
     }
@@ -417,7 +418,7 @@ public class Evil_Eyes {
             if (marks.containsKey(targetUuid)) {
                 marks.remove(targetUuid);
                 recentlyUnmarked.put(targetUuid, world.getTime() + COOLDOWN_TICKS); // 5秒冷却
-                player.sendMessage(Text.literal("§e已取消标记 " + target.getName().getString()), true);
+                player.sendMessage(Text.literal("§e已取消标记 " + tag_pitch.entityDisplayName(target)), true);
                 sendMarkedListToClient(player, marks, maxMarks);
             } else {
                 if (marks.size() >= MAX_MARKED_ENTITIES) {
@@ -426,7 +427,7 @@ public class Evil_Eyes {
                 }
                 long expire = now + INITIAL_MARK_TICKS; // 2秒
                 marks.put(targetUuid, expire);
-                player.sendMessage(Text.literal("§a你感觉 " + target.getName().getString() + " 在§6注视§r你"), true);
+                player.sendMessage(Text.literal("§a你感觉 " + tag_pitch.entityDisplayName(target) + " 在§6注视§r你"), true);
                 sendMarkedListToClient(player, marks, maxMarks);
             }
         });
@@ -636,7 +637,7 @@ public class Evil_Eyes {
                     long now = world.getTime();
                     marks.put(entity.getUuid(), now + MARK_EXPIRE_TICKS); // 自动标记有效期20秒（400tick）
                     sendMarkedListToClient(player, marks, maxMarks);
-                    player.sendMessage(Text.literal( entity.getName().getString()+"在注视着你"), true);
+                    player.sendMessage(Text.literal(tag_pitch.entityDisplayName(entity) + "在注视着你"), true);
                 }
             }
         });
@@ -788,7 +789,7 @@ public class Evil_Eyes {
                     long expire = now + MARK_EXPIRE_TICKS;  // 20秒
                     marks.put(living.getUuid(), expire);
                     sendMarkedListToClient(owner, marks, maxMarks);
-                    owner.sendMessage(Text.literal("§a[锚点] " + living.getName().getString() + " 在注视着你"), true);
+                    owner.sendMessage(Text.literal("§a[锚点] " + tag_pitch.entityDisplayName(living) + " 在注视着你"), true);
                 }
             }
         });

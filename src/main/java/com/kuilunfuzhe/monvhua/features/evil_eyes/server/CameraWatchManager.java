@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.evil_eyes.server;
 
+import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.network.camerawatch.CameraUpdateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.camerawatch.CameraWatchUnbindS2CPacket;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -69,7 +70,7 @@ public class CameraWatchManager {
         }
         stopWatching(viewer, server);
         SESSIONS.put(viewer.getUuid(), new CameraSession(targetUuid, world.getTime()));
-        viewer.sendMessage(Text.literal("§a正在观看 " + target.getName().getString()), true);
+        viewer.sendMessage(Text.literal("§a正在观看 " + tag_pitch.entityDisplayName(target)), true);
     }
 
     /**

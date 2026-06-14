@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.evil_eyes;
 
+import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.*;
@@ -118,7 +119,7 @@ public class ViewingModeBlocker {
 						}
 						if (firstTime) {
 							if (markerPlayer != null) {
-								markerPlayer.sendMessage(Text.literal("§c[邪恶印记] " + player.getName().getString() + " 携带了你的标记物品"), true);
+								markerPlayer.sendMessage(Text.literal("§c[邪恶印记] " + tag_pitch.entityDisplayName(player) + " 携带了你的标记物品"), true);
 							}
 							player.sendMessage(Text.literal("§c这个物品感觉哪里怪怪的"), true);
 						}

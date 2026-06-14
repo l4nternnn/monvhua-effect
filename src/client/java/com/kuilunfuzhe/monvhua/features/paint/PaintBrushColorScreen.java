@@ -45,6 +45,7 @@ public class PaintBrushColorScreen extends Screen {
     private boolean updatingHexField;
     private boolean picking;
 
+
     public PaintBrushColorScreen() {
         this(null);
     }

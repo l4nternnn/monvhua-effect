@@ -4,6 +4,7 @@ import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.entity.Entity;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.BlockView;
 import org.joml.Quaternionf;
@@ -19,6 +20,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class GravityCameraMixin {
     @Shadow
     protected abstract void setPos(double x, double y, double z);
+
+    @Shadow
+    private Vec3d pos;
+
+    @Shadow
+    private float lastCameraY;
+
+    @Shadow
+    private float cameraY;
 
     @Shadow
     @Final
@@ -47,10 +57,15 @@ public abstract class GravityCameraMixin {
         this.verticalPlane.negate();
         this.diagonalPlane.negate();
 
+        Vec3d lerpedPos = focusedEntity.getLerpedPos(tickProgress);
+        double invertedEyeY = lerpedPos.y + focusedEntity.getHeight() - focusedEntity.getEyeHeight(focusedEntity.getPose());
         if (!thirdPerson) {
-            Vec3d pos = focusedEntity.getLerpedPos(tickProgress);
-            double eyeY = pos.y + focusedEntity.getHeight() - focusedEntity.getEyeHeight(focusedEntity.getPose());
-            this.setPos(pos.x, eyeY, pos.z);
+            this.setPos(lerpedPos.x, invertedEyeY, lerpedPos.z);
+            return;
         }
+
+        double vanillaEyeY = MathHelper.lerp(tickProgress, this.lastCameraY, this.cameraY) + lerpedPos.y;
+        double deltaY = invertedEyeY - vanillaEyeY;
+        this.setPos(this.pos.x, this.pos.y + deltaY, this.pos.z);
     }
 }

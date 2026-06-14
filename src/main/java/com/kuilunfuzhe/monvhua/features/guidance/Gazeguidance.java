@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.guidance;
 
+import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
@@ -132,7 +133,7 @@ public class Gazeguidance {
 										.executes(context -> {
 											PlayerEntity target = EntityArgumentType.getPlayer(context, "target");
 											lastFocusEndTime.remove(target.getUuid());
-											context.getSource().sendFeedback(() -> Text.literal("§a已重置 " + target.getName().getString() + " 的诱导冷却"), false);
+											context.getSource().sendFeedback(() -> Text.literal("§a已重置 " + tag_pitch.entityDisplayName(target) + " 的诱导冷却"), false);
 											return 1;
 										})
 								)
@@ -145,7 +146,7 @@ public class Gazeguidance {
 									markedEntityOwners.clear();
 									// 广播标记数量清零给所有在线玩家
 									for (ServerPlayerEntity player : context.getSource().getServer().getPlayerManager().getPlayerList()) {
-										ServerPlayNetworking.send(player, new MarkCountPacket(0));
+										syncMarkedState(player);
 									}
 									context.getSource().sendFeedback(() -> Text.literal("§a已清除所有标记实体"), false);
 									return 1;
@@ -169,7 +170,7 @@ public class Gazeguidance {
 											}
 											ServerPlayNetworking.send(target, new ToggleImagesS2CPacket(newState));
 											context.getSource().sendFeedback(() ->
-													Text.literal("§a已" + (newState ? "开启" : "关闭") + "玩家 " + target.getName().getString() + " 的图片显示"), false);
+													Text.literal("§a已" + (newState ? "开启" : "关闭") + "玩家 " + tag_pitch.entityDisplayName(target) + " 的图片显示"), false);
 											return 1;
 										})
 								)
@@ -189,7 +190,7 @@ public class Gazeguidance {
 											}
 											// 粒子环不需要客户端包，服务端直接判断集合即可
 											context.getSource().sendFeedback(() ->
-													Text.literal("§a已" + (newState ? "开启" : "关闭") + "玩家 " + target.getName().getString() + " 的粒子环显示"), false);
+													Text.literal("§a已" + (newState ? "开启" : "关闭") + "玩家 " + tag_pitch.entityDisplayName(target) + " 的粒子环显示"), false);
 											return 1;
 										})
 								)
@@ -265,10 +266,10 @@ public class Gazeguidance {
 					if (marks.containsKey(targetUuid)) {
 						// 取消标记
 						removeMark(player.getUuid(), targetUuid);
-						player.sendMessage(Text.literal("§e已取消标记 " + target.getName().getString()), true);
+						player.sendMessage(Text.literal("§e已取消标记 " + tag_pitch.entityDisplayName(target)), true);
 						if (player instanceof ServerPlayerEntity sp) {
 							sendStageIfChanged(sp, stage);
-							ServerPlayNetworking.send(sp, new MarkCountPacket(getMarkCount(player.getUuid())));
+							syncMarkedState(sp);
 						}
 					} else {
 						UUID owner = markedEntityOwners.get(targetUuid);
@@ -282,10 +283,10 @@ public class Gazeguidance {
 						}
 						long expiryTime = world.getTime() + 1200;
 						addMark(player.getUuid(), targetUuid, expiryTime);
-						player.sendMessage(Text.literal("§a已标记 " + target.getName().getString() + " (持续60秒)"), true);
+						player.sendMessage(Text.literal("§a已标记 " + tag_pitch.entityDisplayName(target) + " (持续60秒)"), true);
 						if (player instanceof ServerPlayerEntity sp) {
 							sendStageIfChanged(sp, stage);
-							ServerPlayNetworking.send(sp, new MarkCountPacket(getMarkCount(player.getUuid())));
+							syncMarkedState(sp);
 						}
 //						LOGGER.info("标记 {} (阶段 {})", target.getName().getString(), stage);
 					}
@@ -490,7 +491,7 @@ public class Gazeguidance {
 
 		if (player instanceof ServerPlayerEntity sp) {
 			ServerPlayNetworking.send(sp, new FocusStatusPacket(false));
-			ServerPlayNetworking.send(sp, new MarkCountPacket(0));
+			syncMarkedState(sp);
 		}
 	}
 
@@ -573,6 +574,19 @@ public class Gazeguidance {
 		return marks == null ? 0 : marks.size();
 	}
 
+	private static void syncMarkedState(ServerPlayerEntity player) {
+		List<String> names = new ArrayList<>();
+		Map<UUID, Long> marks = playerMarkedEntities.get(player.getUuid());
+		if (marks != null) {
+			for (UUID entityUuid : marks.keySet()) {
+				Entity entity = findEntity(player.getServer(), entityUuid);
+				names.add(entity == null ? "未知实体" : tag_pitch.entityDisplayName(entity));
+			}
+		}
+		ServerPlayNetworking.send(player, new MarkCountPacket(names.size()));
+		ServerPlayNetworking.send(player, new MarkedListPacket(names));
+	}
+
 	private static void addMark(UUID playerUuid, UUID entityUuid, long expiryTime) {
 		getMarks(playerUuid).put(entityUuid, expiryTime);
 		markedEntityOwners.put(entityUuid, playerUuid);
@@ -621,7 +635,7 @@ public class Gazeguidance {
 			if (removed) {
 				ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerUuid);
 				if (player != null) {
-					ServerPlayNetworking.send(player, new MarkCountPacket(marks.size()));
+					syncMarkedState(player);
 				}
 			}
 		}
@@ -653,7 +667,7 @@ public class Gazeguidance {
 
 				addMark(holder.getUuid(), entityUuid, expiryTime);
 				sendStageIfChanged(holder, stage);
-				ServerPlayNetworking.send(holder, new MarkCountPacket(marks.size()));
+				syncMarkedState(holder);
 			}
 		}
 	}
