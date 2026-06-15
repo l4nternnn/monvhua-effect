@@ -47,10 +47,14 @@ public final class DraggableResizableLayout {
     }
 
     public Bounds element(String id, int defaultX, int defaultY, int defaultWidth, int defaultHeight, int minWidth, int minHeight) {
+        return element(id, defaultX, defaultY, defaultWidth, defaultHeight, minWidth, minHeight, 0.0F);
+    }
+
+    public Bounds element(String id, int defaultX, int defaultY, int defaultWidth, int defaultHeight, int minWidth, int minHeight, float defaultRotationDegrees) {
         Element element = elements.get(id);
         if (element == null) {
             SavedBounds saved = namespaceConfig().get(id);
-            element = new Element(id, saved != null ? saved : SavedBounds.fromPixels(defaultX, defaultY, defaultWidth, defaultHeight, 0.0F, screenWidth, screenHeight),
+            element = new Element(id, saved != null ? saved : SavedBounds.fromPixels(defaultX, defaultY, defaultWidth, defaultHeight, defaultRotationDegrees, screenWidth, screenHeight),
                     minWidth, minHeight);
             elements.put(id, element);
         }

@@ -41,6 +41,16 @@ public class Evil_eyesScreen extends Screen {
     private static final int VIEW_SLOTS = 4;
     private static final int VIEW_CORNER_RADIUS = 8;
     private static final long VIEW_HOVER_ANIMATION_MS = 200L;
+    private static final boolean LAYOUT_EDITING_ENABLED = false;
+    private static final LayoutDefault MAIN_LAYOUT = new LayoutDefault(0.0F, 0.65410197F, 0.28103045F, 0.33481154F, -1.0795044F);
+    private static final LayoutDefault LIST_LAYOUT = new LayoutDefault(0.0F, 0.6585366F, 0.25058547F, 0.34146342F, 0.0F);
+    private static final LayoutDefault VIEW_LAYOUT = new LayoutDefault(0.0F, 0.0F, 1.0F, 0.2172949F, 179.91733F);
+    private static final LayoutDefault[] SLOT_LAYOUTS = new LayoutDefault[]{
+            new LayoutDefault(0.40983605F, 0.015521064F, 0.08782201F, 0.11086474F, 0.25355673F),
+            new LayoutDefault(0.3173302F, 0.022172948F, 0.08665106F, 0.10421286F, -0.07510233F),
+            new LayoutDefault(0.50351286F, 0.017738359F, 0.083138175F, 0.11086474F, 0.31312594F),
+            new LayoutDefault(0.59601873F, 0.022172948F, 0.08782201F, 0.10421286F, 0.0F)
+    };
     private static final int TEXT_MAIN = 0xFFF5E6D3;
     private static final int TEXT_MUTED = 0xFF9CA3AF;
     private static final int DANGER = 0xFFB91C1C;
@@ -127,14 +137,14 @@ public class Evil_eyesScreen extends Screen {
         int viewY = panelY + 34;
 
         layout = new DraggableResizableLayout("clairvoyance", sw, sh);
-        mainBounds = layout.element("main_background", panelX, panelY, panelWidth, panelHeight, 240, 120);
-        listBounds = layout.element("target_list", panelX + 14, panelY + 42, leftWidth - 28, panelHeight - 70, 120, 60);
-        viewBounds = layout.element("view_part", viewX, viewY, viewWidth, viewHeight, 180, 32);
+        mainBounds = element("main_background", MAIN_LAYOUT, 240, 120);
+        listBounds = element("target_list", LIST_LAYOUT, 120, 60);
+        viewBounds = element("view_part", VIEW_LAYOUT, 180, 32);
         int slotY = defaultViewSlotY(viewY, viewHeight);
         int slotWidth = defaultViewSlotWidth(viewWidth);
         int slotHeight = defaultViewSlotHeight(viewHeight);
         for (int slot = 0; slot < VIEW_SLOTS; slot++) {
-            viewSlotBounds[slot] = layout.element("view_slot_" + slot, defaultViewSlotX(viewX, viewWidth, slot), slotY, slotWidth, slotHeight, 48, 36);
+            viewSlotBounds[slot] = element("view_slot_" + slot, SLOT_LAYOUTS[slot], 48, 36);
         }
 
         nextAutoRefreshTick = 0L;
@@ -215,6 +225,21 @@ public class Evil_eyesScreen extends Screen {
         return Math.round(boardHeight * (VIEW_SLOT_TEXTURE_HEIGHT / (float) VIEW_PART_TEXTURE_HEIGHT));
     }
 
+    private DraggableResizableLayout.Bounds element(String id, LayoutDefault defaults, int minWidth, int minHeight) {
+        int sw = client.getWindow().getScaledWidth();
+        int sh = client.getWindow().getScaledHeight();
+        return layout.element(
+                id,
+                Math.round(defaults.x() * sw),
+                Math.round(defaults.y() * sh),
+                Math.round(defaults.width() * sw),
+                Math.round(defaults.height() * sh),
+                minWidth,
+                minHeight,
+                defaults.rotationDegrees()
+        );
+    }
+
     private void refreshEntityRows() {
         syncLayoutBounds();
         markedRows.clear();
@@ -276,7 +301,7 @@ public class Evil_eyesScreen extends Screen {
         } else {
             drawHintPanel(context);
         }
-        if (layout != null) {
+        if (LAYOUT_EDITING_ENABLED && layout != null) {
             layout.drawEditHandles(context);
         }
     }
@@ -471,7 +496,7 @@ public class Evil_eyesScreen extends Screen {
                 }
             }
         }
-        if (layout != null && layout.mouseClicked(mouseX, mouseY, button)) {
+        if (LAYOUT_EDITING_ENABLED && layout != null && layout.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
         if (button == 0) {
@@ -492,7 +517,7 @@ public class Evil_eyesScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        if (layout != null && layout.mouseDragged(mouseX, mouseY, button)) {
+        if (LAYOUT_EDITING_ENABLED && layout != null && layout.mouseDragged(mouseX, mouseY, button)) {
             syncLayoutBounds();
             refreshEntityRows();
             return true;
@@ -502,7 +527,7 @@ public class Evil_eyesScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (layout != null && layout.isEditing()) {
+        if (LAYOUT_EDITING_ENABLED && layout != null && layout.isEditing()) {
             DraggableResizableLayout.DragResult result = layout.mouseReleased(mouseX, mouseY, button);
             syncLayoutBounds();
             refreshEntityRows();
@@ -590,5 +615,8 @@ public class Evil_eyesScreen extends Screen {
             float delta = changedAt <= 0L ? 1.0F : Math.min(1.0F, (now - changedAt) / (float) VIEW_HOVER_ANIMATION_MS);
             return hovering ? MathHelper.lerp(delta, startProgress, 1.0F) : MathHelper.lerp(delta, startProgress, 0.0F);
         }
+    }
+
+    private record LayoutDefault(float x, float y, float width, float height, float rotationDegrees) {
     }
 }
