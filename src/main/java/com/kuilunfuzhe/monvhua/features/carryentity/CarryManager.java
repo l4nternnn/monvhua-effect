@@ -1,10 +1,13 @@
 package com.kuilunfuzhe.monvhua.features.carryentity;
 
+import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.scoreboard.Scoreboard;
+import net.minecraft.scoreboard.ScoreboardObjective;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
@@ -21,6 +24,7 @@ public class CarryManager {
 	private static final double CARRIED_PLAYER_FORWARD_DISTANCE = 1.5D;
 	private static final double CARRY_Y_OFFSET = 0.8D;
 	private static final double CARRY_BOX_EPSILON = 1.0E-7D;
+	private static final String STAMINA_OBJECTIVE = "stamina";
 
 	// 搬运者 -> 被搬运实体数据
 	public static final Map<ServerPlayerEntity, CarriedEntityData> CARRIED_ENTITIES = new ConcurrentHashMap<>();
@@ -31,8 +35,8 @@ public class CarryManager {
 	// 挣扎计数器：被搬运实体 -> 当前潜行次数
 	public static final Map<Entity, Integer> STRUGGLE_COUNTER = new ConcurrentHashMap<>();
 	// 经验消耗：搬运者 -> 累积刻数
-	public static final Map<ServerPlayerEntity, Integer> CARRY_XP_TICK_COUNTER = new ConcurrentHashMap<>();
-	public static int CARRY_XP_DRAIN_RATE = 1;
+	public static final Map<ServerPlayerEntity, Integer> CARRY_STAMINA_TICK_COUNTER = new ConcurrentHashMap<>();
+	public static int CARRY_STAMINA_DRAIN_RATE = 1;
 
 	private static final Set<UUID> FALL_DAMAGE_PROCESSING = ConcurrentHashMap.newKeySet();
 
@@ -64,11 +68,11 @@ public class CarryManager {
 	}
 
 	public static boolean shouldDrainCarryExperience(ServerPlayerEntity carrier) {
-		return CARRY_XP_DRAIN_RATE > 0 && !carrier.isCreative() && carrier.getCommandTags().contains("kebao");
+		return CARRY_STAMINA_DRAIN_RATE > 0 && !carrier.isCreative() && carrier.getCommandTags().contains("kebao");
 	}
 
 	public static boolean hasCarryExperience(ServerPlayerEntity carrier) {
-		return !shouldDrainCarryExperience(carrier) || getCarryExperiencePoints(carrier) >= CARRY_XP_DRAIN_RATE;
+		return !shouldDrainCarryExperience(carrier) || getCarryStaminaScore(carrier) >= CARRY_STAMINA_DRAIN_RATE;
 	}
 
 	public static void syncCarryPose(ServerPlayerEntity carrier, Entity carried, boolean active) {
@@ -110,7 +114,7 @@ public class CarryManager {
 			carriedPlayer.sendAbilitiesUpdate();
 		}
 		STRUGGLE_COUNTER.remove(carried);
-		CARRY_XP_TICK_COUNTER.remove(carrier);
+		CARRY_STAMINA_TICK_COUNTER.remove(carrier);
 		CARRIED_COOLDOWN.put(carried, System.currentTimeMillis() + 5000);
 		Vec3d pos = findSafeReleasePosition(carrier, carried, 0.5D);
 		carried.refreshPositionAndAngles(pos.x, pos.y, pos.z, carried.getYaw(), carried.getPitch());
@@ -179,7 +183,7 @@ public class CarryManager {
 				int threshold = getStruggleThreshold(carrier, carried);
 				if (threshold <= 1) {
 					releaseCarried(carrier, carriedPlayer);
-					carrier.sendMessage(Text.literal("§c" + carriedPlayer.getName().getString() + " 挣脱了"), false);
+					carrier.sendMessage(Text.literal("§c" + tag_pitch.entityDisplayName(carriedPlayer) + " 挣脱了"), false);
 					carriedPlayer.sendMessage(Text.literal("§c你按潜行挣脱了怀抱"), false);
 					STRUGGLE_COUNTER.remove(carried);
 				} else {
@@ -187,7 +191,7 @@ public class CarryManager {
 					carriedPlayer.sendMessage(Text.literal("§e挣扎进度: " + count + "/" + threshold), true);
 					if (count >= threshold) {
 						releaseCarried(carrier, carriedPlayer);
-						carrier.sendMessage(Text.literal("§c" + carriedPlayer.getName().getString() + " 挣脱了"), false);
+						carrier.sendMessage(Text.literal("§c" + tag_pitch.entityDisplayName(carriedPlayer) + " 挣脱了"), false);
 						carriedPlayer.sendMessage(Text.literal("§c你终于挣脱了怀抱"), false);
 						STRUGGLE_COUNTER.remove(carried);
 					}
@@ -209,52 +213,37 @@ public class CarryManager {
 		}
 
 		if (carried instanceof LivingEntity && shouldDrainCarryExperience(carrier)) {
-			int tickCount = CARRY_XP_TICK_COUNTER.merge(carrier, 1, (oldVal, v) -> oldVal + 1);
+			int tickCount = CARRY_STAMINA_TICK_COUNTER.merge(carrier, 1, (oldVal, v) -> oldVal + 1);
 			if (tickCount >= 20) {
-				CARRY_XP_TICK_COUNTER.put(carrier, 0);
-				if (getCarryExperiencePoints(carrier) >= CARRY_XP_DRAIN_RATE) {
-					removeCarryExperiencePoints(carrier, CARRY_XP_DRAIN_RATE);
+				CARRY_STAMINA_TICK_COUNTER.put(carrier, 0);
+				if (getCarryStaminaScore(carrier) >= CARRY_STAMINA_DRAIN_RATE) {
+					removeCarryStaminaScore(carrier, CARRY_STAMINA_DRAIN_RATE);
 				} else {
 					releaseCarried(carrier, carried);
 					carrier.sendMessage(Text.literal("§c体力耗尽，无法继续抱起"), false);
 					if (carried instanceof ServerPlayerEntity cp) {
-						cp.sendMessage(Text.literal("§c" + carrier.getName().getString() + "体力耗尽放下了你"), false);
+						cp.sendMessage(Text.literal("§c" + tag_pitch.entityDisplayName(carrier) + "体力耗尽放下了你"), false);
 					}
 				}
 			}
 		}
 	}
 
-	private static int getCarryExperiencePoints(ServerPlayerEntity player) {
-		int points = getExperiencePointsAtLevel(player.experienceLevel);
-		points += (int) Math.floor(player.experienceProgress * getExperiencePointsToNextLevel(player.experienceLevel) + 1.0E-4F);
-		return points;
+	private static int getCarryStaminaScore(ServerPlayerEntity player) {
+		Scoreboard scoreboard = player.getScoreboard();
+		ScoreboardObjective objective = scoreboard.getNullableObjective(STAMINA_OBJECTIVE);
+		if (objective == null) return 0;
+		var score = scoreboard.getScore(player, objective);
+		return score == null ? 0 : score.getScore();
 	}
 
-	private static void removeCarryExperiencePoints(ServerPlayerEntity player, int amount) {
-		int remaining = Math.max(0, getCarryExperiencePoints(player) - amount);
-		player.totalExperience = 0;
-		player.experienceLevel = 0;
-		player.experienceProgress = 0.0F;
-		player.addExperience(remaining);
-	}
-
-	private static int getExperiencePointsAtLevel(int level) {
-		int total = 0;
-		for (int i = 0; i < level; i++) {
-			total += getExperiencePointsToNextLevel(i);
-		}
-		return total;
-	}
-
-	private static int getExperiencePointsToNextLevel(int level) {
-		if (level >= 30) {
-			return 112 + (level - 30) * 9;
-		}
-		if (level >= 15) {
-			return 37 + (level - 15) * 5;
-		}
-		return 7 + level * 2;
+	private static void removeCarryStaminaScore(ServerPlayerEntity player, int amount) {
+		if (amount <= 0) return;
+		Scoreboard scoreboard = player.getScoreboard();
+		ScoreboardObjective objective = scoreboard.getNullableObjective(STAMINA_OBJECTIVE);
+		if (objective == null) return;
+		int remaining = Math.max(0, getCarryStaminaScore(player) - amount);
+		scoreboard.getOrCreateScore(player, objective).setScore(remaining);
 	}
 
 	public static void cleanupForDisconnect(ServerPlayerEntity player) {
@@ -289,7 +278,7 @@ public class CarryManager {
 		}
 		CARRIED_COOLDOWN.remove(player);
 		STRUGGLE_COUNTER.remove(player);
-		CARRY_XP_TICK_COUNTER.remove(player);
+		CARRY_STAMINA_TICK_COUNTER.remove(player);
 	}
 
 	public static void cleanupCooldowns() {

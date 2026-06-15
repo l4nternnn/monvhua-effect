@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.carryentity;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.network.openback.CarryEntityPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -107,7 +108,7 @@ public class CarryEvents {
 			CarryManager.CarriedEntityData currentData = CarryManager.CARRIED_ENTITIES.get(carrier);
 			if (currentData != null && currentData.entity == target) {
 				CarryManager.releaseCarried(carrier, target);
-				carrier.sendMessage(Text.literal("§a放下了" + target.getName().getString()), false);
+				carrier.sendMessage(Text.literal("§a放下了" + tag_pitch.entityDisplayName(target)), false);
 				return;
 			}
 
@@ -125,7 +126,7 @@ public class CarryEvents {
 				return;
 			}
 			if (!CarryManager.hasCarryExperience(carrier)) {
-				carrier.sendMessage(Text.literal("§c没有经验，无法抱起"), false);
+				carrier.sendMessage(Text.literal("§c体力不足，无法抱起"), false);
 				return;
 			}
 
@@ -146,7 +147,7 @@ public class CarryEvents {
 					carrier.sendMessage(Text.literal("§c§k1§r正在抱起其他存在，无法抱起"), false);
 					return;
 				}
-				carriedPlayer.sendMessage(Text.literal("§e你被 " + carrier.getName().getString() + " 抱起来了，按潜行键挣脱"), false);
+				carriedPlayer.sendMessage(Text.literal("§e你被 " + tag_pitch.entityDisplayName(carrier) + " 抱起来了，按潜行键挣脱"), false);
 			}
 
 			if (target instanceof MobEntity mob) {
@@ -160,7 +161,7 @@ public class CarryEvents {
 			CarryManager.CARRIED_ENTITIES.put(carrier, new CarryManager.CarriedEntityData(target, savedFlying, savedAllowFlying, savedInvulnerable));
 			CarryManager.CARRIED_BY.put(target, carrier);
 			CarryManager.syncCarryPose(carrier, target, true);
-			carrier.sendMessage(Text.literal("§a你抱起了 " + target.getName().getString()), false);
+			carrier.sendMessage(Text.literal("§a你抱起了 " + tag_pitch.entityDisplayName(target)), false);
 		});
 
 		// 放下被搬运实体请求
@@ -194,23 +195,29 @@ public class CarryEvents {
 			}
 		});
 
-		// carry-xp-rate command
+		// stamina drain rate commands. carry-xp-rate is kept as a compatibility alias.
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+			dispatcher.register(CommandManager.literal("carry-stamina-rate")
+					.requires(source -> source.hasPermissionLevel(2))
+					.then(CommandManager.argument("amount", IntegerArgumentType.integer(0, 100))
+							.executes(ctx -> setCarryStaminaDrainRate(ctx, IntegerArgumentType.getInteger(ctx, "amount"))))
+					.executes(ctx -> showCarryStaminaDrainRate(ctx)));
 			dispatcher.register(CommandManager.literal("carry-xp-rate")
-				.requires(source -> source.hasPermissionLevel(2))
-				.then(CommandManager.argument("amount", IntegerArgumentType.integer(0, 100))
-					.executes(ctx -> {
-						int amount = IntegerArgumentType.getInteger(ctx, "amount");
-						CarryManager.CARRY_XP_DRAIN_RATE = amount;
-						ctx.getSource().sendMessage(Text.literal("§a搬运经验消耗已设置为每秒 " + amount + " 点"));
-						return 1;
-					})
-				)
-				.executes(ctx -> {
-					ctx.getSource().sendMessage(Text.literal("§e当前搬运经验消耗: 每秒 " + CarryManager.CARRY_XP_DRAIN_RATE + " 点"));
-					return 1;
-				})
-			);
+					.requires(source -> source.hasPermissionLevel(2))
+					.then(CommandManager.argument("amount", IntegerArgumentType.integer(0, 100))
+							.executes(ctx -> setCarryStaminaDrainRate(ctx, IntegerArgumentType.getInteger(ctx, "amount"))))
+					.executes(ctx -> showCarryStaminaDrainRate(ctx)));
 		});
+	}
+
+	private static int setCarryStaminaDrainRate(com.mojang.brigadier.context.CommandContext<net.minecraft.server.command.ServerCommandSource> ctx, int amount) {
+		CarryManager.CARRY_STAMINA_DRAIN_RATE = amount;
+		ctx.getSource().sendMessage(Text.literal("§a抱人 stamina 消耗已设置为每秒 " + amount + " 分"));
+		return 1;
+	}
+
+	private static int showCarryStaminaDrainRate(com.mojang.brigadier.context.CommandContext<net.minecraft.server.command.ServerCommandSource> ctx) {
+		ctx.getSource().sendMessage(Text.literal("§e当前抱人 stamina 消耗: 每秒 " + CarryManager.CARRY_STAMINA_DRAIN_RATE + " 分"));
+		return 1;
 	}
 }
