@@ -24,41 +24,84 @@ import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector4f;
 
+import java.util.Collection;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class ClairvoyanceViewportRenderer {
 	private static final AtomicBoolean renderingPreview = new AtomicBoolean(false);
 	private static final double CAMERA_DISTANCE = 4.0;
+	private static final int MAX_TARGETS = 2;
 
-	private static UUID selectedTarget;
-	private static SimpleFramebuffer previewFramebuffer;
-	private static Float smoothYaw;
-	private static Double smoothDistance;
-	private static Vec3d smoothCameraPos;
+	private static final UUID[] selectedTargets = new UUID[MAX_TARGETS];
+	private static final SimpleFramebuffer[] previewFramebuffers = new SimpleFramebuffer[MAX_TARGETS];
+	private static final Float[] smoothYaws = new Float[MAX_TARGETS];
+	private static final Double[] smoothDistances = new Double[MAX_TARGETS];
+	private static final Vec3d[] smoothCameraPositions = new Vec3d[MAX_TARGETS];
 
 	private ClairvoyanceViewportRenderer() {
 	}
 
 	public static void setSelectedTarget(UUID target) {
-		if (target == null || !target.equals(selectedTarget)) {
-			resetSmoothing();
+		if (target == null) {
+			clearSlot(0);
+			return;
 		}
-		selectedTarget = target;
+		if (!target.equals(selectedTargets[0])) {
+			removeTarget(target);
+			shiftRightFrom(0);
+			selectedTargets[0] = target;
+			resetSmoothing(0);
+		}
 	}
 
 	public static UUID getSelectedTarget() {
-		return selectedTarget;
+		return selectedTargets[0];
 	}
 
 	public static void clearSelectedTarget(UUID target) {
-		if (target == null || target.equals(selectedTarget)) {
-			selectedTarget = null;
+		if (target == null) {
+			clearAllTargets();
+			return;
+		}
+		for (int i = 0; i < MAX_TARGETS; i++) {
+			if (target.equals(selectedTargets[i])) {
+				clearSlot(i);
+			}
+		}
+		compactTargets();
+	}
+
+	public static void syncPreviewTargets(Collection<UUID> candidates) {
+		if (candidates == null || candidates.isEmpty()) {
+			clearAllTargets();
+			return;
+		}
+		for (int i = 0; i < MAX_TARGETS; i++) {
+			UUID target = selectedTargets[i];
+			if (target != null && !candidates.contains(target)) {
+				clearSlot(i);
+			}
+		}
+		compactTargets();
+		for (UUID candidate : candidates) {
+			if (candidate == null || containsTarget(candidate)) {
+				continue;
+			}
+			int slot = firstEmptySlot();
+			if (slot < 0) {
+				break;
+			}
+			selectedTargets[slot] = candidate;
+			resetSmoothing(slot);
 		}
 	}
 
 	public static boolean hasPreviewTarget() {
-		return selectedTarget != null;
+		for (UUID target : selectedTargets) {
+			if (target != null) return true;
+		}
+		return false;
 	}
 
 	public static boolean shouldRenderPreviewWorld() {
@@ -70,67 +113,85 @@ public final class ClairvoyanceViewportRenderer {
 
 	public static void renderPreviewWorld(RenderTickCounter tickCounter, GpuBufferSlice fog, Vector4f fogColor, Camera mainCamera, Matrix4f positionMatrix, Matrix4f projectionMatrix) {
 		MinecraftClient client = MinecraftClient.getInstance();
-		if (client.world == null || client.player == null || selectedTarget == null) return;
+		if (client.world == null || client.player == null || !hasPreviewTarget()) return;
 		if (renderingPreview.getAndSet(true)) return;
 
 		try {
-			Entity target = client.world.getEntity(selectedTarget);
-			if (target == null) return;
-
-			int fbw = client.getFramebuffer().textureWidth;
-			int fbh = client.getFramebuffer().textureHeight;
-			if (fbw <= 0 || fbh <= 0) return;
-			previewFramebuffer = resizeFbo(previewFramebuffer, "clairvoyance_preview_full", fbw, fbh);
-
-			ViewPose pose = computeViewPose(client, target);
-			RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(
-				previewFramebuffer.getColorAttachment(),
-				0xFF000000,
-				previewFramebuffer.getDepthAttachment(),
-				1.0
-			);
-
-			GpuTextureView previousColorOutput = RenderSystem.outputColorTextureOverride;
-			GpuTextureView previousDepthOutput = RenderSystem.outputDepthTextureOverride;
-			GpuBufferSlice previousFog = RenderSystem.getShaderFog();
-			RenderSystem.backupProjectionMatrix();
-			DhCompat.suspend();
-			IrisMirrorCompat.beginMirrorRender();
-			FramebufferOverride.setOverride(previewFramebuffer);
-			RenderSystem.outputColorTextureOverride = previewFramebuffer.getColorAttachmentView();
-			RenderSystem.outputDepthTextureOverride = previewFramebuffer.getDepthAttachmentView();
-			try {
-				Camera camera = new Camera();
-				camera.update(client.world, client.player, false, false, tickCounter.getTickProgress(false));
-				CameraAccessor accessor = (CameraAccessor) camera;
-				accessor.invokeSetPos(pose.pos.x, pose.pos.y, pose.pos.z);
-				accessor.invokeSetRotation(pose.yaw, pose.pitch);
-
-				Quaternionf rotation = camera.getRotation().conjugate(new Quaternionf());
-				Matrix4f view = new Matrix4f().rotation(rotation);
-				Matrix4f projection = new Matrix4f(projectionMatrix);
-				client.worldRenderer.setupFrustum(pose.pos, view, projection);
-				client.worldRenderer.render(
-					ObjectAllocator.TRIVIAL, tickCounter, false,
-					camera, view, projection, fog, fogColor, true
-				);
-			} finally {
-				client.worldRenderer.setupFrustum(mainCamera.getPos(), new Matrix4f(positionMatrix), new Matrix4f(projectionMatrix));
-				RenderSystem.restoreProjectionMatrix();
-				RenderSystem.setShaderFog(previousFog);
-				RenderSystem.outputColorTextureOverride = previousColorOutput;
-				RenderSystem.outputDepthTextureOverride = previousDepthOutput;
-				FramebufferOverride.clearOverride();
-				IrisMirrorCompat.endMirrorRender();
-				DhCompat.resume();
+			for (int slot = 0; slot < MAX_TARGETS; slot++) {
+				UUID targetId = selectedTargets[slot];
+				if (targetId == null) continue;
+				Entity target = client.world.getEntity(targetId);
+				if (target == null || !target.isAlive()) {
+					clearSlot(slot);
+					continue;
+				}
+				renderPreviewSlot(slot, client, target, tickCounter, fog, fogColor, mainCamera, positionMatrix, projectionMatrix);
 			}
+			compactTargets();
 		} finally {
 			renderingPreview.set(false);
 		}
 	}
 
+	private static void renderPreviewSlot(int slot, MinecraftClient client, Entity target, RenderTickCounter tickCounter, GpuBufferSlice fog, Vector4f fogColor, Camera mainCamera, Matrix4f positionMatrix, Matrix4f projectionMatrix) {
+		int fbw = client.getFramebuffer().textureWidth;
+		int fbh = client.getFramebuffer().textureHeight;
+		if (fbw <= 0 || fbh <= 0) return;
+		previewFramebuffers[slot] = resizeFbo(previewFramebuffers[slot], "clairvoyance_preview_" + slot, fbw, fbh);
+		SimpleFramebuffer previewFramebuffer = previewFramebuffers[slot];
+
+		ViewPose pose = computeViewPose(slot, client, target);
+		RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(
+			previewFramebuffer.getColorAttachment(),
+			0xFF000000,
+			previewFramebuffer.getDepthAttachment(),
+			1.0
+		);
+
+		GpuTextureView previousColorOutput = RenderSystem.outputColorTextureOverride;
+		GpuTextureView previousDepthOutput = RenderSystem.outputDepthTextureOverride;
+		GpuBufferSlice previousFog = RenderSystem.getShaderFog();
+		RenderSystem.backupProjectionMatrix();
+		DhCompat.suspend();
+		IrisMirrorCompat.beginMirrorRender();
+		FramebufferOverride.setOverride(previewFramebuffer);
+		RenderSystem.outputColorTextureOverride = previewFramebuffer.getColorAttachmentView();
+		RenderSystem.outputDepthTextureOverride = previewFramebuffer.getDepthAttachmentView();
+		try {
+			Camera camera = new Camera();
+			camera.update(client.world, client.player, false, false, tickCounter.getTickProgress(false));
+			CameraAccessor accessor = (CameraAccessor) camera;
+			accessor.invokeSetPos(pose.pos.x, pose.pos.y, pose.pos.z);
+			accessor.invokeSetRotation(pose.yaw, pose.pitch);
+
+			Quaternionf rotation = camera.getRotation().conjugate(new Quaternionf());
+			Matrix4f view = new Matrix4f().rotation(rotation);
+			Matrix4f projection = new Matrix4f(projectionMatrix);
+			client.worldRenderer.setupFrustum(pose.pos, view, projection);
+			client.worldRenderer.render(
+				ObjectAllocator.TRIVIAL, tickCounter, false,
+				camera, view, projection, fog, fogColor, true
+			);
+		} finally {
+			client.worldRenderer.setupFrustum(mainCamera.getPos(), new Matrix4f(positionMatrix), new Matrix4f(projectionMatrix));
+			RenderSystem.restoreProjectionMatrix();
+			RenderSystem.setShaderFog(previousFog);
+			RenderSystem.outputColorTextureOverride = previousColorOutput;
+			RenderSystem.outputDepthTextureOverride = previousDepthOutput;
+			FramebufferOverride.clearOverride();
+			IrisMirrorCompat.endMirrorRender();
+			DhCompat.resume();
+		}
+	}
+
 	public static void renderPreviewRect(DrawContext context, int x, int y, int width, int height) {
-		if (previewFramebuffer == null || selectedTarget == null) return;
+		renderPreviewRect(context, 0, x, y, width, height);
+	}
+
+	public static void renderPreviewRect(DrawContext context, int slot, int x, int y, int width, int height) {
+		if (slot < 0 || slot >= MAX_TARGETS) return;
+		SimpleFramebuffer previewFramebuffer = previewFramebuffers[slot];
+		if (previewFramebuffer == null || selectedTargets[slot] == null) return;
 		MinecraftClient client = MinecraftClient.getInstance();
 		var mainFramebuffer = client.getFramebuffer();
 		if (previewFramebuffer.textureWidth != mainFramebuffer.textureWidth || previewFramebuffer.textureHeight != mainFramebuffer.textureHeight) {
@@ -140,18 +201,21 @@ public final class ClairvoyanceViewportRenderer {
 	}
 
 	public static void cleanup() {
-		if (previewFramebuffer != null) {
-			previewFramebuffer.delete();
-			previewFramebuffer = null;
+		for (int i = 0; i < MAX_TARGETS; i++) {
+			if (previewFramebuffers[i] != null) {
+				previewFramebuffers[i].delete();
+				previewFramebuffers[i] = null;
+			}
+			selectedTargets[i] = null;
+			resetSmoothing(i);
 		}
-		selectedTarget = null;
-		resetSmoothing();
 	}
 
-	private static ViewPose computeViewPose(MinecraftClient client, Entity target) {
+	private static ViewPose computeViewPose(int slot, MinecraftClient client, Entity target) {
 		float targetYaw = target.getYaw();
+		Float smoothYaw = smoothYaws[slot];
 		float yaw = smoothYaw == null ? targetYaw : smoothYaw + MathHelper.wrapDegrees(targetYaw - smoothYaw) * 0.5F;
-		smoothYaw = yaw;
+		smoothYaws[slot] = yaw;
 
 		Vec3d targetPos = target.getPos();
 		Vec3d targetEyePos = target.getEyePos();
@@ -173,13 +237,16 @@ public final class ClairvoyanceViewportRenderer {
 		} else {
 			rawDistance = CAMERA_DISTANCE;
 		}
+		Double smoothDistance = smoothDistances[slot];
 		if (smoothDistance != null) {
 			rawDistance = smoothDistance + (rawDistance - smoothDistance) * 0.15;
 		}
-		smoothDistance = Math.max(0.5, rawDistance);
-		Vec3d rawCameraPos = targetPos.add(backX * smoothDistance, 1.5, backZ * smoothDistance);
+		double distance = Math.max(0.5, rawDistance);
+		smoothDistances[slot] = distance;
+		Vec3d rawCameraPos = targetPos.add(backX * distance, 1.5, backZ * distance);
+		Vec3d smoothCameraPos = smoothCameraPositions[slot];
 		Vec3d cameraPos = smoothCameraPos == null ? rawCameraPos : smoothCameraPos.lerp(rawCameraPos, 0.35);
-		smoothCameraPos = cameraPos;
+		smoothCameraPositions[slot] = cameraPos;
 
 		double dx = targetEyePos.x - cameraPos.x;
 		double dy = targetEyePos.y - cameraPos.y;
@@ -190,10 +257,70 @@ public final class ClairvoyanceViewportRenderer {
 		return new ViewPose(cameraPos, cameraYaw, cameraPitch);
 	}
 
-	private static void resetSmoothing() {
-		smoothYaw = null;
-		smoothDistance = null;
-		smoothCameraPos = null;
+	private static void resetSmoothing(int slot) {
+		smoothYaws[slot] = null;
+		smoothDistances[slot] = null;
+		smoothCameraPositions[slot] = null;
+	}
+
+	private static void clearAllTargets() {
+		for (int i = 0; i < MAX_TARGETS; i++) {
+			clearSlot(i);
+		}
+	}
+
+	private static void clearSlot(int slot) {
+		selectedTargets[slot] = null;
+		resetSmoothing(slot);
+	}
+
+	private static void removeTarget(UUID target) {
+		for (int i = 0; i < MAX_TARGETS; i++) {
+			if (target.equals(selectedTargets[i])) {
+				clearSlot(i);
+			}
+		}
+		compactTargets();
+	}
+
+	private static boolean containsTarget(UUID target) {
+		for (UUID selectedTarget : selectedTargets) {
+			if (target.equals(selectedTarget)) return true;
+		}
+		return false;
+	}
+
+	private static int firstEmptySlot() {
+		for (int i = 0; i < MAX_TARGETS; i++) {
+			if (selectedTargets[i] == null) return i;
+		}
+		return -1;
+	}
+
+	private static void shiftRightFrom(int index) {
+		for (int i = MAX_TARGETS - 1; i > index; i--) {
+			selectedTargets[i] = selectedTargets[i - 1];
+			smoothYaws[i] = smoothYaws[i - 1];
+			smoothDistances[i] = smoothDistances[i - 1];
+			smoothCameraPositions[i] = smoothCameraPositions[i - 1];
+		}
+		clearSlot(index);
+	}
+
+	private static void compactTargets() {
+		int write = 0;
+		for (int read = 0; read < MAX_TARGETS; read++) {
+			if (selectedTargets[read] == null) continue;
+			if (write != read) {
+				selectedTargets[write] = selectedTargets[read];
+				smoothYaws[write] = smoothYaws[read];
+				smoothDistances[write] = smoothDistances[read];
+				smoothCameraPositions[write] = smoothCameraPositions[read];
+				selectedTargets[read] = null;
+				resetSmoothing(read);
+			}
+			write++;
+		}
 	}
 
 	private static SimpleFramebuffer resizeFbo(SimpleFramebuffer fbo, String name, int width, int height) {

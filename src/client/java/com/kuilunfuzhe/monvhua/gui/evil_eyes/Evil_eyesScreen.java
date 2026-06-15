@@ -31,6 +31,7 @@ public class Evil_eyesScreen extends Screen {
     private int panelWidth, panelHeight, panelX, panelY;
     private int leftWidth, rightWidth;
     private int previewX, previewY, previewWidth, previewHeight;
+    private int previewGap, previewSlotHeight;
     private long nextAutoRefreshTick;
 
     public Evil_eyesScreen() {
@@ -77,7 +78,9 @@ public class Evil_eyesScreen extends Screen {
         previewX = panelX + leftWidth + 8;
         previewY = panelY + 34;
         previewWidth = Math.max(1, rightWidth - 16);
-        previewHeight = Math.min(panelHeight - 46, Math.max(1, (int) (previewWidth * 9f / 16f)));
+        previewHeight = Math.max(1, panelHeight - 46);
+        previewGap = 6;
+        previewSlotHeight = Math.max(1, Math.min((previewHeight - previewGap) / 2, (int) (previewWidth * 9f / 16f)));
         nextAutoRefreshTick = 0L;
 
         addDrawableChild(new TextWidget(panelX + 5, panelY + 10, leftWidth - 10, 20,
@@ -130,10 +133,7 @@ public class Evil_eyesScreen extends Screen {
         }
         children().removeAll(oldBtns);
         if (Evil_EyesClient.isViewportMode()) {
-            UUID selected = ClairvoyanceViewportRenderer.getSelectedTarget();
-            if (selected == null || !currentMarks.containsKey(selected)) {
-                ClairvoyanceViewportRenderer.setSelectedTarget(currentMarks.keySet().stream().findFirst().orElse(null));
-            }
+            ClairvoyanceViewportRenderer.syncPreviewTargets(currentMarks.keySet());
         }
         int yOffset = 40;
         for (UUID uuid : currentMarks.keySet()) {
@@ -143,6 +143,7 @@ public class Evil_eyesScreen extends Screen {
             ButtonWidget nameBtn = ButtonWidget.builder(Text.literal(name), button -> {
                         if (Evil_EyesClient.isViewportMode()) {
                             ClairvoyanceViewportRenderer.setSelectedTarget(uuid);
+                            ClairvoyanceViewportRenderer.syncPreviewTargets(currentMarks.keySet());
                             if (client != null && client.player != null) {
                                 client.player.sendMessage(Text.literal("\u00a7aPreview: " + name), true);
                             }
@@ -195,8 +196,12 @@ public class Evil_eyesScreen extends Screen {
         context.fill(panelX + leftWidth + 1, panelY, panelX + panelWidth, panelY + panelHeight, 0xAA222222);
         super.render(context, mouseX, mouseY, delta);
         if (Evil_EyesClient.isViewportMode()) {
-            context.fill(previewX - 1, previewY - 1, previewX + previewWidth + 1, previewY + previewHeight + 1, 0xFF555555);
-            ClairvoyanceViewportRenderer.renderPreviewRect(context, previewX, previewY, previewWidth, previewHeight);
+            for (int slot = 0; slot < 2; slot++) {
+                int slotY = previewY + slot * (previewSlotHeight + previewGap);
+                context.fill(previewX - 1, slotY - 1, previewX + previewWidth + 1, slotY + previewSlotHeight + 1, 0xFF555555);
+                context.fill(previewX, slotY, previewX + previewWidth, slotY + previewSlotHeight, 0xFF05070A);
+                ClairvoyanceViewportRenderer.renderPreviewRect(context, slot, previewX, slotY, previewWidth, previewSlotHeight);
+            }
         }
     }
 
