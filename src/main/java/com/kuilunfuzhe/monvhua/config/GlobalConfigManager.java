@@ -44,7 +44,9 @@ public class GlobalConfigManager {
      * @param parrotDailyLimit 每日鹦鹉放置次数上限
      * @param maxActiveParrots 同时存在的最大鹦鹉数量
      */
-    public record StageConfig(int dailyLimit, int maxMarks, int minScore, int maxScore, int watchRequiredTicks, int parrotDailyLimit, int maxActiveParrots) {}
+    public record StageConfig(int dailyLimit, int maxMarks, int minScore, int maxScore, int watchRequiredTicks,
+                              int parrotDailyLimit, int maxActiveParrots,
+                              double uiDrainRate, double watchDrainRate, double regenRate) {}
 
 
     /** 每日标记使用量，下标为阶段号 */
@@ -70,7 +72,7 @@ public class GlobalConfigManager {
                 ConfigData data = GSON.fromJson(reader, ConfigData.class);
                 for (int i = 1; i <= STAGES; i++) {
                     StageConfig cfg = data.configs.get(i);
-                    configs.put(i, cfg != null ? cfg : getDefaultConfig(i));
+                    configs.put(i, normalizeConfig(cfg, getDefaultConfig(i)));
                 }
                 return;
             } catch (IOException e) {
@@ -95,25 +97,53 @@ public class GlobalConfigManager {
     /** 各阶段默认配置，阶段越高观察tick越少、限额越宽松 */
     private StageConfig getDefaultConfig(int stage) {
         return switch (stage) {
-            case 1 -> new StageConfig(10, 3, 0, 5, 40,2,2);
-            case 2 -> new StageConfig(10, 4, 6, 20, 40,3,2);
-            case 3 -> new StageConfig(8, 5, 21, 40, 40,5,2);
-            case 4 -> new StageConfig(8, 6, 41, 60, 40,7,2);
-            case 5 -> new StageConfig(6, 7, 61, 70, 40,8,2);
-            case 6 -> new StageConfig(6, 8, 71, 80, 40,9,2);
-            case 7 -> new StageConfig(5, 10, 81, 100, 40,10,2);
-            default -> new StageConfig(10, 5, 0, 100, 40,12,2);
+            case 1 -> new StageConfig(10, 3, 0, 5, 40, 2, 2, 1.0D, 8.0D, 2.0D);
+            case 2 -> new StageConfig(10, 4, 6, 20, 40, 3, 2, 1.0D, 8.0D, 2.5D);
+            case 3 -> new StageConfig(8, 5, 21, 40, 40, 5, 2, 1.2D, 9.0D, 3.0D);
+            case 4 -> new StageConfig(8, 6, 41, 60, 40, 7, 2, 1.2D, 9.0D, 3.5D);
+            case 5 -> new StageConfig(6, 7, 61, 70, 40, 8, 2, 1.5D, 10.0D, 4.0D);
+            case 6 -> new StageConfig(6, 8, 71, 80, 40, 9, 2, 1.5D, 10.0D, 4.5D);
+            case 7 -> new StageConfig(5, 10, 81, 100, 40, 10, 2, 2.0D, 12.0D, 5.0D);
+            default -> new StageConfig(10, 5, 0, 100, 40, 12, 2, 1.0D, 8.0D, 2.0D);
         };
+    }
+
+    private StageConfig normalizeConfig(StageConfig cfg, StageConfig fallback) {
+        if (cfg == null) {
+            return fallback;
+        }
+        return new StageConfig(
+                cfg.dailyLimit(),
+                cfg.maxMarks(),
+                cfg.minScore(),
+                cfg.maxScore(),
+                cfg.watchRequiredTicks() > 0 ? cfg.watchRequiredTicks() : fallback.watchRequiredTicks(),
+                cfg.parrotDailyLimit(),
+                cfg.maxActiveParrots() > 0 ? cfg.maxActiveParrots() : fallback.maxActiveParrots(),
+                cfg.uiDrainRate() > 0.0D ? cfg.uiDrainRate() : fallback.uiDrainRate(),
+                cfg.watchDrainRate() > 0.0D ? cfg.watchDrainRate() : fallback.watchDrainRate(),
+                cfg.regenRate() > 0.0D ? cfg.regenRate() : fallback.regenRate()
+        );
     }
 
     /** 获取指定阶段的配置，不存在则返回默认值 */
     public StageConfig getStageConfig(int stage) {
-        return configs.getOrDefault(stage, getDefaultConfig(stage));
+        return normalizeConfig(configs.get(stage), getDefaultConfig(stage));
     }
 
     /** 更新指定阶段配置并立即保存到文件 */
     public void updateStageConfig(int stage, int dailyLimit, int maxMarks, int minScore, int maxScore, int watchRequiredTicks, int parrotDailyLimit, int maxActiveParrots) {
-        configs.put(stage, new StageConfig(dailyLimit, maxMarks, minScore, maxScore, watchRequiredTicks,parrotDailyLimit,maxActiveParrots));
+        StageConfig existing = getStageConfig(stage);
+        configs.put(stage, new StageConfig(dailyLimit, maxMarks, minScore, maxScore, watchRequiredTicks, parrotDailyLimit, maxActiveParrots,
+                existing.uiDrainRate(), existing.watchDrainRate(), existing.regenRate()));
+        save();
+    }
+
+    public void updateStageConfig(int stage, int dailyLimit, int maxMarks, int minScore, int maxScore, int parrotDailyLimit,
+                                  double uiDrainRate, double watchDrainRate, double regenRate) {
+        StageConfig existing = getStageConfig(stage);
+        configs.put(stage, new StageConfig(dailyLimit, maxMarks, minScore, maxScore, existing.watchRequiredTicks(), parrotDailyLimit,
+                existing.maxActiveParrots(), uiDrainRate, watchDrainRate, regenRate));
         save();
     }
 
@@ -150,9 +180,7 @@ public class GlobalConfigManager {
         DailyParrotUsage usage = parrotDailyUsage.computeIfAbsent(playerUuid, k -> new DailyParrotUsage());
         StageConfig cfg = getStageConfig(stage);
         int dailyLimit = cfg.parrotDailyLimit();
-        int maxActive = cfg.maxActiveParrots();
-        int currentActive = activeParrots.getOrDefault(playerUuid, 0);
-        return usage.used[stage] < dailyLimit && currentActive < maxActive;
+        return usage.used[stage] < dailyLimit;
     }
 
     /** 导出所有阶段配置为JSON字符串（供前端展示或调试用） */
@@ -171,6 +199,12 @@ public class GlobalConfigManager {
                 watchRequiredTicks, parrotDailyLimit, maxActiveParrots);
     }
 
+    public void updateConfig(int stage, int dailyLimit, int maxMarks, int minScore, int maxScore, int parrotDailyLimit,
+                             double uiDrainRate, double watchDrainRate, double regenRate) {
+        updateStageConfig(stage, dailyLimit, maxMarks, minScore, maxScore, parrotDailyLimit,
+                uiDrainRate, watchDrainRate, regenRate);
+    }
+
     /** 记录一次鹦鹉放置：增加当日计数和活跃鹦鹉数 */
     public void recordPlaceParrot(UUID playerUuid, int stage) {
         checkDailyReset();
@@ -182,6 +216,10 @@ public class GlobalConfigManager {
     /** 减少玩家的一只活跃鹦鹉计数（鹦鹉被移除或消失时调用） */
     public void removeActiveParrot(UUID playerUuid) {
         activeParrots.computeIfPresent(playerUuid, (k, v) -> v > 0 ? v - 1 : 0);
+    }
+
+    public int getActiveParrotCount(UUID playerUuid) {
+        return activeParrots.getOrDefault(playerUuid, 0);
     }
 
     /** 根据分数反查阶段号，从高阶段向低阶段匹配，确保高分优先命中更高阶段 */

@@ -165,6 +165,7 @@ public class MonvhuaMod implements ModInitializer {
         // ===== 2. 网络包注册 =====
         ModNetworking.registerS2CPackets();
         GlobalConfigS2C.register();
+        ClairvoyanceEnergyS2C.register();
         OpenUIS2C.register();
         ViewModeS2C.register();
         EntityMarkedS2C.register();
@@ -480,7 +481,8 @@ public class MonvhuaMod implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(UpdateGlobalConfigC2S.ID, (packet, context) -> {
             if (context.player().hasPermissionLevel(2)) {
                 configManager.updateStageConfig(packet.stage(), packet.dailyLimit(), packet.maxMarks(),
-                        packet.minScore(), packet.maxScore(), packet.watchRequiredTicks(), packet.parrotDailyLimit(), packet.maxActiveParrots()
+                        packet.minScore(), packet.maxScore(), packet.parrotDailyLimit(),
+                        packet.uiDrainRate(), packet.watchDrainRate(), packet.regenRate()
                 );
                 for (ServerPlayerEntity player : context.player().getServer().getPlayerManager().getPlayerList()) {
                     sendGlobalConfigToPlayer(player, configManager);
@@ -979,6 +981,9 @@ public class MonvhuaMod implements ModInitializer {
             stageObj.addProperty("watchRequiredTicks", cfg.watchRequiredTicks());
             stageObj.addProperty("parrotDailyLimit", cfg.parrotDailyLimit());
             stageObj.addProperty("maxActiveParrots", cfg.maxActiveParrots());
+            stageObj.addProperty("uiDrainRate", cfg.uiDrainRate());
+            stageObj.addProperty("watchDrainRate", cfg.watchDrainRate());
+            stageObj.addProperty("regenRate", cfg.regenRate());
             root.add("stage" + i, stageObj);
         }
         String json = root.toString();

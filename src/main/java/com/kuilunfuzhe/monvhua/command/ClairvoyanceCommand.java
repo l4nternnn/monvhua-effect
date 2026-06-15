@@ -61,7 +61,7 @@ public class ClairvoyanceCommand {
                         )
                         .executes(ctx -> {
                             ServerPlayerEntity player = ctx.getSource().getPlayer();
-                            String current = MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "modern");
+                            String current = MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "viewport");
                             String modeName = getViewModeDisplayName(current);
                             player.sendMessage(Text.literal("§6当前观看模式: " + modeName), false);
                             player.sendMessage(Text.literal("§7使用 /clairvoyance viewmode <legacy|modern|viewport> 切换"), false);
@@ -80,7 +80,7 @@ public class ClairvoyanceCommand {
                         )
                         .executes(ctx -> {
                             ServerPlayerEntity player = ctx.getSource().getPlayer();
-                            String current = MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "modern");
+                            String current = MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "viewport");
                             player.sendMessage(Text.literal("current clairvoyance view mode: " + getViewModeDisplayName(current)), false);
                             player.sendMessage(Text.literal("Use /clairvoyance viewmode <legacy|modern|viewport>"), false);
                             return 1;

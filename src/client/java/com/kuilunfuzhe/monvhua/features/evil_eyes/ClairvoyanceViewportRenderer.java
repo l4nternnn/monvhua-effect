@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class ClairvoyanceViewportRenderer {
 	private static final AtomicBoolean renderingPreview = new AtomicBoolean(false);
 	private static final double CAMERA_DISTANCE = 4.0;
-	private static final int MAX_TARGETS = 2;
+	private static final int MAX_TARGETS = 4;
 
 	private static final UUID[] selectedTargets = new UUID[MAX_TARGETS];
 	private static final SimpleFramebuffer[] previewFramebuffers = new SimpleFramebuffer[MAX_TARGETS];
@@ -102,6 +102,14 @@ public final class ClairvoyanceViewportRenderer {
 			if (target != null) return true;
 		}
 		return false;
+	}
+
+	public static int previewTargetCount() {
+		int count = 0;
+		for (UUID target : selectedTargets) {
+			if (target != null) count++;
+		}
+		return count;
 	}
 
 	public static boolean shouldRenderPreviewWorld() {

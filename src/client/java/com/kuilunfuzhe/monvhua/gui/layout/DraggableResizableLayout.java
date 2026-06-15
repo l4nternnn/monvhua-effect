@@ -122,15 +122,16 @@ public final class DraggableResizableLayout {
     }
 
     public void drawEditHandles(DrawContext context) {
-        for (Element element : elements.values()) {
-            Bounds b = element.bounds;
-            context.fill(b.x, b.y, b.x + b.width, b.y + 1, 0x99D4A373);
-            context.fill(b.x, b.y, b.x + 1, b.y + b.height, 0x99D4A373);
-            context.fill(b.x, b.y, b.x + RESIZE_HANDLE, b.y + RESIZE_HANDLE, 0xCC3B82F6);
-            context.fill(b.x + 2, b.y + 2, b.x + RESIZE_HANDLE - 2, b.y + RESIZE_HANDLE - 2, 0xCC110B1A);
-            context.fill(b.x + b.width - ROTATE_HANDLE, b.y, b.x + b.width, b.y + ROTATE_HANDLE, 0xCCA855F7);
-            context.fill(b.x + b.width - ROTATE_HANDLE + 2, b.y + 2, b.x + b.width - 2, b.y + ROTATE_HANDLE - 2, 0xCC110B1A);
+        if (active == null) {
+            return;
         }
+        Bounds b = active.element.bounds;
+        context.fill(b.x, b.y, b.x + b.width, b.y + 1, 0x99D4A373);
+        context.fill(b.x, b.y, b.x + 1, b.y + b.height, 0x99D4A373);
+        context.fill(b.x, b.y, b.x + RESIZE_HANDLE, b.y + RESIZE_HANDLE, 0xCC3B82F6);
+        context.fill(b.x + 2, b.y + 2, b.x + RESIZE_HANDLE - 2, b.y + RESIZE_HANDLE - 2, 0xCC110B1A);
+        context.fill(b.x + b.width - ROTATE_HANDLE, b.y, b.x + b.width, b.y + ROTATE_HANDLE, 0xCCA855F7);
+        context.fill(b.x + b.width - ROTATE_HANDLE + 2, b.y + 2, b.x + b.width - 2, b.y + ROTATE_HANDLE - 2, 0xCC110B1A);
     }
 
     private void persist(Element element) {

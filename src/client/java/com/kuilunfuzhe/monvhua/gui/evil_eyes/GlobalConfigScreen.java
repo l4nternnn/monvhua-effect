@@ -21,9 +21,9 @@ public class GlobalConfigScreen extends Screen {
     /** 千里眼共7个阶段 */
     private static final int STAGES = 7;
     private int currentStage = 1;
-    private TextFieldWidget dailyField, marksField, minScoreField, maxScoreField, watchTimeField;
+    private TextFieldWidget dailyField, marksField, minScoreField, maxScoreField, uiDrainField, watchDrainField, regenField;
     /** 以下两个字段为后续扩展预留（鹦鹉相关功能） */
-    private TextFieldWidget parrotDailyField, maxActiveParrotsField;  // 新增
+    private TextFieldWidget parrotDailyField;
     private ButtonWidget saveButton;
     private int panelWidth, panelHeight, panelX, panelY;
     private int leftWidth, rightWidth;
@@ -101,10 +101,30 @@ public class GlobalConfigScreen extends Screen {
         maxScoreField.setTooltip(Tooltip.of(Text.literal("分数不超过此值（含）时处于该阶段")));
         addDrawableChild(maxScoreField);
 
+        addDrawableChild(new TextWidget(rightX, rowY + 4*rowHeight + 4, labelWidth, 9, Text.literal("\u754c\u9762\u6d88\u8017(/s):"), textRenderer));
+        uiDrainField = new TextFieldWidget(textRenderer, rightX + labelWidth, rowY + 4*rowHeight, inputWidth, 18, Text.empty());
+        uiDrainField.setMaxLength(8);
+        addDrawableChild(uiDrainField);
+
+        addDrawableChild(new TextWidget(rightX, rowY + 5*rowHeight + 4, labelWidth, 9, Text.literal("\u89c2\u770b\u6d88\u8017(/s):"), textRenderer));
+        watchDrainField = new TextFieldWidget(textRenderer, rightX + labelWidth, rowY + 5*rowHeight, inputWidth, 18, Text.empty());
+        watchDrainField.setMaxLength(8);
+        addDrawableChild(watchDrainField);
+
+        addDrawableChild(new TextWidget(rightX, rowY + 6*rowHeight + 4, labelWidth, 9, Text.literal("\u6062\u590d\u901f\u7387(/s):"), textRenderer));
+        regenField = new TextFieldWidget(textRenderer, rightX + labelWidth, rowY + 6*rowHeight, inputWidth, 18, Text.empty());
+        regenField.setMaxLength(8);
+        addDrawableChild(regenField);
+
+        addDrawableChild(new TextWidget(rightX, rowY + 7*rowHeight + 4, labelWidth, 9, Text.literal("\u6bcf\u65e5\u951a\u70b9\u653e\u7f6e:"), textRenderer));
+        parrotDailyField = new TextFieldWidget(textRenderer, rightX + labelWidth, rowY + 7*rowHeight, inputWidth, 18, Text.empty());
+        parrotDailyField.setMaxLength(3);
+        addDrawableChild(parrotDailyField);
+
 
 
         saveButton = ButtonWidget.builder(Text.literal("保存"), btn -> saveConfig())
-                .dimensions(rightX, rowY + 7*rowHeight + 10, 80, 20)
+                .dimensions(rightX, rowY + 8*rowHeight + 10, 80, 20)
                 .build();
         addDrawableChild(saveButton);
     }
@@ -115,10 +135,11 @@ public class GlobalConfigScreen extends Screen {
         marksField.setText(String.valueOf(configs[currentStage].maxMarks()));
         minScoreField.setText(String.valueOf(configs[currentStage].minScore()));
         maxScoreField.setText(String.valueOf(configs[currentStage].maxScore()));
-        // watchTimeField 在 CombinedConfigScreen 中使用，此处保留兼容
-        watchTimeField.setText(String.valueOf(configs[currentStage].watchRequiredTicks() / 20));
+        // Energy rates are persisted by the global clairvoyance config.
+        uiDrainField.setText(String.valueOf(configs[currentStage].uiDrainRate()));
+        watchDrainField.setText(String.valueOf(configs[currentStage].watchDrainRate()));
+        regenField.setText(String.valueOf(configs[currentStage].regenRate()));
         parrotDailyField.setText(String.valueOf(configs[currentStage].parrotDailyLimit()));
-        maxActiveParrotsField.setText(String.valueOf(configs[currentStage].maxActiveParrots()));
     }
 
     private void saveConfig() {
@@ -127,13 +148,15 @@ public class GlobalConfigScreen extends Screen {
             int marks = Integer.parseInt(marksField.getText().trim());
             int minScore = Integer.parseInt(minScoreField.getText().trim());
             int maxScore = Integer.parseInt(maxScoreField.getText().trim());
-            int watchSec = Integer.parseInt(watchTimeField.getText().trim());
-            int watchTicks = watchSec * 20;
+            double uiDrain = Double.parseDouble(uiDrainField.getText().trim());
+            double watchDrain = Double.parseDouble(watchDrainField.getText().trim());
+            double regen = Double.parseDouble(regenField.getText().trim());
+            int watchTicks = configs[currentStage] != null ? configs[currentStage].watchRequiredTicks() : 40;
             int parrotDaily = Integer.parseInt(parrotDailyField.getText().trim());
-            int maxActive = Integer.parseInt(maxActiveParrotsField.getText().trim());
+            int maxActive = configs[currentStage] != null ? configs[currentStage].maxActiveParrots() : 1;
 
-            ClientPlayNetworking.send(new UpdateGlobalConfigC2S(currentStage, daily, marks, minScore, maxScore, watchTicks,parrotDaily, maxActive
-            ));
+            ClientPlayNetworking.send(new UpdateGlobalConfigC2S(currentStage, daily, marks, minScore, maxScore, watchTicks,parrotDaily, maxActive,
+                    uiDrain, watchDrain, regen));
 
             if (client != null && client.player != null)
                 client.player.sendMessage(Text.literal("§a配置已提交"), true);

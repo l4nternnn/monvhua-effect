@@ -148,7 +148,9 @@ public class Evil_Eyes {
 
     private static int getCurrentMarkCount(UUID playerUuid) {
         Map<UUID, Long> marks = playerMarkedEntities.get(playerUuid);
-        return marks == null ? 0 : marks.size();
+        int markCount = marks == null ? 0 : marks.size();
+        int activeAnchors = configManager != null ? configManager.getActiveParrotCount(playerUuid) : 0;
+        return markCount + activeAnchors;
     }
 
     private static boolean isAnchorStand(Entity e) {
@@ -235,6 +237,7 @@ public class Evil_Eyes {
      */
     public static void forceStopWatching(ServerPlayerEntity player, MinecraftServer server) {
         watchingPlayers.remove(player.getUuid());
+        CameraWatchManager.stopWatching(player, server);
         ServerPlayNetworking.send(player, new ForceExitViewS2C());
     }
 
@@ -380,9 +383,10 @@ public class Evil_Eyes {
                     packet.maxMarks(),
                     packet.minScore(),
                     packet.maxScore(),
-                    packet.watchRequiredTicks(),
                     packet.parrotDailyLimit(),
-                    packet.maxActiveParrots()
+                    packet.uiDrainRate(),
+                    packet.watchDrainRate(),
+                    packet.regenRate()
             );
             // 保存配置到文件（如果需要持久化）
             configManager.save();
@@ -398,6 +402,10 @@ public class Evil_Eyes {
 
 
         // 1. 手动标记/取消标记（不消耗每日次数）
+        ServerPlayNetworking.registerGlobalReceiver(ClairvoyanceUiStateC2S.ID, (payload, context) -> {
+            CameraWatchManager.setUiState(context.player(), payload.open(), payload.previewCount(), payload.expanded());
+        });
+
         ServerPlayNetworking.registerGlobalReceiver(MarkEntityC2S.ID, (payload, context) -> {
             ServerPlayerEntity player = context.player();
             World world = player.getWorld();
@@ -460,10 +468,9 @@ public class Evil_Eyes {
                 int requiredTicks = configManager.getStageConfig(stage).watchRequiredTicks();
                 long elapsed = now - info.startTick;
 
-                if (elapsed >= requiredTicks) {
+                if (Boolean.getBoolean("monvhua.clairvoyance.legacyTimeout") && elapsed >= requiredTicks) {
                     if (!info.counted) {
                         // 第一次达到时长，扣除每日次数
-                        configManager.recordMark(playerUuid, stage);
                         player.sendMessage(Text.literal("§e魔力流失，观看消耗次数"), true);
                         info.counted = true;
                     }
@@ -513,17 +520,11 @@ public class Evil_Eyes {
                 player.sendMessage(Text.literal("§c目标不在任何锚点30格范围内"), true);
                 return;
             }
-
-            int stage = getPlayerStage(player, configManager);
-            if (!configManager.canMark(player.getUuid(), stage)) {
-                player.sendMessage(Text.literal("§c今日观看次数已达上限"), true);
-                return;
-            }
             watchingPlayers.remove(player.getUuid());
             watchingPlayers.put(player.getUuid(), new WatchingInfo(selected, player.getWorld().getTime()));
 
             // 根据玩家偏好选择观看系统
-            String mode = com.kuilunfuzhe.monvhua.MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "modern");
+            String mode = com.kuilunfuzhe.monvhua.MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "viewport");
             if ("legacy".equals(mode)) {
                 // 旧系统：通知客户端使用本地盔甲架相机
                 ServerPlayNetworking.send(player, new SelectView(selected));
@@ -629,7 +630,7 @@ public class Evil_Eyes {
                         e instanceof LivingEntity && e.isAlive() && !isAnchorStand(e))) {
                     if (marks.containsKey(entity.getUuid())) continue;
                     if (recentlyUnmarked.getOrDefault(entity.getUuid(), 0L) > world.getTime()) continue;
-                    if (marks.size() >= maxMarks) continue;
+                    if (getCurrentMarkCount(player.getUuid()) >= maxMarks) continue;
                     if (!hasLineOfSight(entity, player)) continue;
                     Vec3d toPlayer = player.getPos().subtract(entity.getPos()).normalize();
                     Vec3d entityLook = entity.getRotationVec(1.0f);
@@ -657,8 +658,13 @@ public class Evil_Eyes {
             }
 
             int stage = getPlayerStage(player, configManager);
+            int maxMarks = configManager.getStageConfig(stage).maxMarks();
+            if (getCurrentMarkCount(player.getUuid()) >= maxMarks) {
+                player.sendMessage(Text.literal("§c已达当前阶段最大总标记数 (" + maxMarks + ")"), true);
+                return;
+            }
             if (!configManager.canPlaceParrot(player.getUuid(), stage)) {
-                player.sendMessage(Text.literal("§c今日放置锚点次数已达上限或已达最大同时存在数"), true);
+                player.sendMessage(Text.literal("§c今日放置锚点次数已达上限"), true);
 //                LOGGER.warn("放置被拒绝：次数或活跃数达上限");
                 return;
             }
@@ -765,7 +771,7 @@ public class Evil_Eyes {
                 Map<UUID, Long> marks = playerMarkedEntities.computeIfAbsent(ownerId, k -> new ConcurrentHashMap<>());
                 int stage = getPlayerStage(owner, configManager);
                 int maxMarks = configManager.getStageConfig(stage).maxMarks();
-                if (marks.size() >= maxMarks) continue;
+                if (getCurrentMarkCount(ownerId) >= maxMarks) continue;
 
                 double range = ANCHOR_RANGE;
                 Box searchBox = stand.getBoundingBox().expand(range);
@@ -775,7 +781,7 @@ public class Evil_Eyes {
                 for (LivingEntity living : nearby) {
                     if (marks.containsKey(living.getUuid())) continue;
                     if (recentlyUnmarked.getOrDefault(living.getUuid(), 0L) > world.getTime()) continue;
-                    if (marks.size() >= maxMarks) break;
+                    if (getCurrentMarkCount(ownerId) >= maxMarks) break;
 
                     // 1. 视线检测：从实体眼睛到盔甲架是否有遮挡
                     if (!hasLineOfSight(living, stand)) continue;

@@ -50,7 +50,7 @@ public class CombinedConfigScreen extends Screen {
     // ===== 千里眼组件 =====
     private final List<ButtonWidget> stageButtons = new ArrayList<>();
     private int currentStage = 1;
-    private TextFieldWidget dailyField, marksField, watchTimeField, parrotDailyField, maxActiveField;
+    private TextFieldWidget dailyField, marksField, uiDrainField, watchDrainField, regenField, parrotDailyField;
     private ButtonWidget saveEvilButton;
     /** 已缓存的千里眼全局配置数据，索引1-7对应阶段1-7 */
     private static final GlobalConfigS2C.StageConfig[] CACHED_EVIL_CONFIGS = new GlobalConfigS2C.StageConfig[8];
@@ -309,24 +309,29 @@ public class CombinedConfigScreen extends Screen {
         int labelWidth = 100;
         int inputWidth = 60;
 
-        String[] labels = {
-                "每日可使用次数:", "最大标记数量:", "观看时长(秒):", "每日锚点放置:", "锚点同存数:"
-        };
-        for (int i = 0; i < labels.length; i++) {
-            TextWidget label = new TextWidget(rightX, rowY + i * rowHeight + 4, labelWidth, 9, Text.literal(labels[i]), textRenderer);
+        for (int i = 0; i < evilEyesLabels().length; i++) {
+            TextWidget label = new TextWidget(rightX, rowY + i * rowHeight + 4, labelWidth, 9, Text.literal(evilEyesLabels()[i]), textRenderer);
             addDrawableChild(label);
             evilLabels.add(label);
         }
 
         dailyField = createField(rightX + labelWidth, rowY, inputWidth);
         marksField = createField(rightX + labelWidth, rowY + rowHeight, inputWidth);
-        watchTimeField = createField(rightX + labelWidth, rowY + 2*rowHeight, inputWidth);
-        parrotDailyField = createField(rightX + labelWidth, rowY + 3*rowHeight, inputWidth);
-        maxActiveField = createField(rightX + labelWidth, rowY + 4*rowHeight, inputWidth);
+        uiDrainField = createField(rightX + labelWidth, rowY + 2*rowHeight, inputWidth);
+        watchDrainField = createField(rightX + labelWidth, rowY + 3*rowHeight, inputWidth);
+        regenField = createField(rightX + labelWidth, rowY + 4*rowHeight, inputWidth);
+        parrotDailyField = createField(rightX + labelWidth, rowY + 5*rowHeight, inputWidth);
 
         saveEvilButton = ButtonWidget.builder(Text.literal("保存"), btn -> saveEvilConfig())
-                .dimensions(rightX, rowY + 5*rowHeight + 10, 80, 20).build();
+                .dimensions(rightX, rowY + 6*rowHeight + 10, 80, 20).build();
         addDrawableChild(saveEvilButton);
+    }
+
+    private static String[] evilEyesLabels() {
+        return new String[]{
+                "\u6bcf\u65e5\u6253\u5f00\u6b21\u6570:", "\u6700\u5927\u603b\u6807\u8bb0\u6570:", "\u754c\u9762\u6d88\u8017(/s):",
+                "\u89c2\u770b\u6d88\u8017(/s):", "\u6062\u590d\u901f\u7387(/s):", "\u6bcf\u65e5\u951a\u70b9\u653e\u7f6e:"
+        };
     }
 
     // ==================== 视线诱导 UI ====================
@@ -686,9 +691,10 @@ public class CombinedConfigScreen extends Screen {
         for (TextWidget label : evilLabels) label.visible = visible;
         if (dailyField != null) dailyField.visible = visible;
         if (marksField != null) marksField.visible = visible;
-        if (watchTimeField != null) watchTimeField.visible = visible;
+        if (uiDrainField != null) uiDrainField.visible = visible;
+        if (watchDrainField != null) watchDrainField.visible = visible;
+        if (regenField != null) regenField.visible = visible;
         if (parrotDailyField != null) parrotDailyField.visible = visible;
-        if (maxActiveField != null) maxActiveField.visible = visible;
         if (saveEvilButton != null) saveEvilButton.visible = visible;
     }
 
@@ -775,38 +781,42 @@ public class CombinedConfigScreen extends Screen {
         if (cfg == null) {
             dailyField.setText("10");
             marksField.setText("3");
-            watchTimeField.setText("2");
+            uiDrainField.setText("1.0");
+            watchDrainField.setText("8.0");
+            regenField.setText("2.0");
             parrotDailyField.setText("5");
-            maxActiveField.setText("1");
             return;
         }
         dailyField.setText(String.valueOf(cfg.dailyLimit()));
         marksField.setText(String.valueOf(cfg.maxMarks()));
-        watchTimeField.setText(String.valueOf(cfg.watchRequiredTicks() / 20));
+        uiDrainField.setText(String.valueOf(cfg.uiDrainRate()));
+        watchDrainField.setText(String.valueOf(cfg.watchDrainRate()));
+        regenField.setText(String.valueOf(cfg.regenRate()));
         parrotDailyField.setText(String.valueOf(cfg.parrotDailyLimit()));
-        maxActiveField.setText(String.valueOf(cfg.maxActiveParrots()));
     }
 
     private void saveEvilConfig() {
         try {
             int daily = Integer.parseInt(dailyField.getText().trim());
             int marks = Integer.parseInt(marksField.getText().trim());
-            int watchSec = Integer.parseInt(watchTimeField.getText().trim());
+            double uiDrain = Double.parseDouble(uiDrainField.getText().trim());
+            double watchDrain = Double.parseDouble(watchDrainField.getText().trim());
+            double regen = Double.parseDouble(regenField.getText().trim());
             int parrotDaily = Integer.parseInt(parrotDailyField.getText().trim());
-            int maxActive = Integer.parseInt(maxActiveField.getText().trim());
-            int watchTicks = watchSec * 20;
 
             // Preserve existing minScore/maxScore from the currently stored config
             GlobalConfigS2C.StageConfig existing = CACHED_EVIL_CONFIGS[currentStage];
             int minScore = (existing != null) ? existing.minScore() : 0;
             int maxScore = (existing != null) ? existing.maxScore() : 5;
+            int watchTicks = (existing != null) ? existing.watchRequiredTicks() : 40;
+            int maxActive = (existing != null) ? existing.maxActiveParrots() : 1;
 
             CACHED_EVIL_CONFIGS[currentStage] = new GlobalConfigS2C.StageConfig(
-                    daily, marks, minScore, maxScore, watchTicks, parrotDaily, maxActive
+                    daily, marks, minScore, maxScore, watchTicks, parrotDaily, maxActive, uiDrain, watchDrain, regen
             );
 
             ClientPlayNetworking.send(new UpdateGlobalConfigC2S(
-                    currentStage, daily, marks, minScore, maxScore, watchTicks, parrotDaily, maxActive
+                    currentStage, daily, marks, minScore, maxScore, watchTicks, parrotDaily, maxActive, uiDrain, watchDrain, regen
             ));
 
             if (client != null && client.player != null)
@@ -998,13 +1008,16 @@ public class CombinedConfigScreen extends Screen {
             int watchTicks = (existing != null) ? existing.watchRequiredTicks() : 40;
             int parrotDaily = (existing != null) ? existing.parrotDailyLimit() : 5;
             int maxActive = (existing != null) ? existing.maxActiveParrots() : 1;
+            double uiDrain = (existing != null) ? existing.uiDrainRate() : 1.0D;
+            double watchDrain = (existing != null) ? existing.watchDrainRate() : 8.0D;
+            double regen = (existing != null) ? existing.regenRate() : 2.0D;
 
             CACHED_EVIL_CONFIGS[stageRangeCurrentStage] = new GlobalConfigS2C.StageConfig(
-                    daily, marks, minScore, maxScore, watchTicks, parrotDaily, maxActive
+                    daily, marks, minScore, maxScore, watchTicks, parrotDaily, maxActive, uiDrain, watchDrain, regen
             );
 
             ClientPlayNetworking.send(new UpdateGlobalConfigC2S(
-                    stageRangeCurrentStage, daily, marks, minScore, maxScore, watchTicks, parrotDaily, maxActive
+                    stageRangeCurrentStage, daily, marks, minScore, maxScore, watchTicks, parrotDaily, maxActive, uiDrain, watchDrain, regen
             ));
 
             if (client != null && client.player != null)

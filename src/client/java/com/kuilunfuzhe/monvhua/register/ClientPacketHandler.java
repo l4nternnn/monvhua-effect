@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.MonvhuaModClient;
+import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceEnergyClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
@@ -73,7 +74,10 @@ public class ClientPacketHandler {
                                 stageObj.get("maxScore").getAsInt(),
                                 stageObj.get("watchRequiredTicks").getAsInt(),
                                 stageObj.get("parrotDailyLimit").getAsInt(),
-                                stageObj.get("maxActiveParrots").getAsInt()
+                                jsonInt(stageObj, "maxActiveParrots", 1),
+                                jsonDouble(stageObj, "uiDrainRate", 1.0D),
+                                jsonDouble(stageObj, "watchDrainRate", 8.0D),
+                                jsonDouble(stageObj, "regenRate", 2.0D)
                         );
                     }
                     if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
@@ -85,6 +89,10 @@ public class ClientPacketHandler {
         });
 
         // 2. 打开/关闭 UI（旧系统）
+        ClientPlayNetworking.registerGlobalReceiver(ClairvoyanceEnergyS2C.ID, (packet, context) -> {
+            context.client().execute(() -> ClairvoyanceEnergyClient.setEnergy(packet.currentEnergy(), packet.maxEnergy()));
+        });
+
         ClientPlayNetworking.registerGlobalReceiver(OpenUIS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 if (context.client().currentScreen instanceof com.kuilunfuzhe.monvhua.gui.evil_eyes.Evil_eyesScreen) context.client().setScreen(null);
@@ -363,7 +371,7 @@ public class ClientPacketHandler {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             CarryPoseClientState.clear();
             ActionPoseClientState.clear();
-            Evil_EyesClient.setViewMode("modern");
+            Evil_EyesClient.setViewMode("viewport");
             com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceViewportRenderer.cleanup();
             com.kuilunfuzhe.monvhua.features.floating.floating.syncFullWitchTag(false, false);
             com.kuilunfuzhe.monvhua.features.floating.floating.resetStageRanges();
@@ -377,5 +385,13 @@ public class ClientPacketHandler {
     private static void showStageUpgradeToast(int newStage) {
         MinecraftClient client = MinecraftClient.getInstance();
         SystemToast.show(client.getToastManager(), SystemToast.Type.NARRATOR_TOGGLE, Text.literal("§6千里眼"), Text.literal("阶段提升至 §a" + newStage));
+    }
+
+    private static int jsonInt(JsonObject object, String key, int fallback) {
+        return object.has(key) ? object.get(key).getAsInt() : fallback;
+    }
+
+    private static double jsonDouble(JsonObject object, String key, double fallback) {
+        return object.has(key) ? object.get(key).getAsDouble() : fallback;
     }
 }

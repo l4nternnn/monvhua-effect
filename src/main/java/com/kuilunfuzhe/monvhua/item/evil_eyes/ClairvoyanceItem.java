@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.item.evil_eyes;
 
 import com.kuilunfuzhe.monvhua.MonvhuaMod;
+import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.OpenUIS2C;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.ViewModeS2C;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -38,7 +39,16 @@ public class ClairvoyanceItem extends Item {
                 player.sendMessage(Text.literal("§c你难以集中精神"), true);
                 return ActionResult.FAIL;
             }
-            String mode = MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "modern");
+            if (Evil_Eyes.configManager != null) {
+                int stage = Evil_Eyes.getPlayerStage(player, Evil_Eyes.configManager);
+                if (!Evil_Eyes.configManager.canMark(player.getUuid(), stage)) {
+                    player.sendMessage(Text.literal("§c今日千里眼界面打开次数已达上限"), true);
+                    return ActionResult.FAIL;
+                }
+                Evil_Eyes.configManager.recordMark(player.getUuid(), stage);
+            }
+            String mode = "viewport";
+            MonvhuaMod.VIEW_MODE_PREFERENCE.put(player.getUuid(), mode);
             ServerPlayNetworking.send(player, new ViewModeS2C(mode));
             ServerPlayNetworking.send(player, new OpenUIS2C());
         }

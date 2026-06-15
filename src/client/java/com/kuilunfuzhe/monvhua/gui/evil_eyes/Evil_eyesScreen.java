@@ -1,8 +1,10 @@
 package com.kuilunfuzhe.monvhua.gui.evil_eyes;
 
 import com.kuilunfuzhe.monvhua.event.tag_pitch;
+import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceEnergyClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceViewportRenderer;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.ClairvoyanceUiStateC2S;
 import com.kuilunfuzhe.monvhua.gui.layout.DraggableResizableLayout;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.SelectView;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.UnmarkEntityC2S;
@@ -15,6 +17,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 import org.joml.Matrix3x2fStack;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,6 +38,9 @@ public class Evil_eyesScreen extends Screen {
     private static final int VIEW_SLOT_TEXTURE_WIDTH = 222;
     private static final int VIEW_SLOT_TEXTURE_HEIGHT = 160;
     private static final int VIEW_SLOT_TEXTURE_GAP = 14;
+    private static final int VIEW_SLOTS = 4;
+    private static final int VIEW_CORNER_RADIUS = 8;
+    private static final long VIEW_HOVER_ANIMATION_MS = 200L;
     private static final int TEXT_MAIN = 0xFFF5E6D3;
     private static final int TEXT_MUTED = 0xFF9CA3AF;
     private static final int DANGER = 0xFFB91C1C;
@@ -56,9 +62,25 @@ public class Evil_eyesScreen extends Screen {
     private DraggableResizableLayout.Bounds mainBounds = DraggableResizableLayout.Bounds.EMPTY;
     private DraggableResizableLayout.Bounds listBounds = DraggableResizableLayout.Bounds.EMPTY;
     private DraggableResizableLayout.Bounds viewBounds = DraggableResizableLayout.Bounds.EMPTY;
-    private DraggableResizableLayout.Bounds viewSlot0Bounds = DraggableResizableLayout.Bounds.EMPTY;
-    private DraggableResizableLayout.Bounds viewSlot1Bounds = DraggableResizableLayout.Bounds.EMPTY;
+    private final DraggableResizableLayout.Bounds[] viewSlotBounds = new DraggableResizableLayout.Bounds[]{
+            DraggableResizableLayout.Bounds.EMPTY,
+            DraggableResizableLayout.Bounds.EMPTY,
+            DraggableResizableLayout.Bounds.EMPTY,
+            DraggableResizableLayout.Bounds.EMPTY
+    };
+    private final ViewAnimation[] viewAnimations = new ViewAnimation[]{
+            new ViewAnimation(),
+            new ViewAnimation(),
+            new ViewAnimation(),
+            new ViewAnimation()
+    };
+    private int expandedSlot = -1;
+    private int hoveredSlot = -1;
+    private long expandedStartedAt;
     private long nextAutoRefreshTick;
+    private boolean lastUiOpen;
+    private int lastPreviewCount = -1;
+    private boolean lastExpanded;
 
     public Evil_eyesScreen() {
         super(Text.empty());
@@ -108,16 +130,16 @@ public class Evil_eyesScreen extends Screen {
         mainBounds = layout.element("main_background", panelX, panelY, panelWidth, panelHeight, 240, 120);
         listBounds = layout.element("target_list", panelX + 14, panelY + 42, leftWidth - 28, panelHeight - 70, 120, 60);
         viewBounds = layout.element("view_part", viewX, viewY, viewWidth, viewHeight, 180, 32);
-        int slot0X = defaultViewSlotX(viewX, viewWidth, 0);
-        int slot1X = defaultViewSlotX(viewX, viewWidth, 1);
         int slotY = defaultViewSlotY(viewY, viewHeight);
         int slotWidth = defaultViewSlotWidth(viewWidth);
         int slotHeight = defaultViewSlotHeight(viewHeight);
-        viewSlot0Bounds = layout.element("view_slot_0", slot0X, slotY, slotWidth, slotHeight, 48, 36);
-        viewSlot1Bounds = layout.element("view_slot_1", slot1X, slotY, slotWidth, slotHeight, 48, 36);
+        for (int slot = 0; slot < VIEW_SLOTS; slot++) {
+            viewSlotBounds[slot] = layout.element("view_slot_" + slot, defaultViewSlotX(viewX, viewWidth, slot), slotY, slotWidth, slotHeight, 48, 36);
+        }
 
         nextAutoRefreshTick = 0L;
         refreshEntityRows();
+        syncUiState(true);
     }
 
     @Override
@@ -126,6 +148,7 @@ public class Evil_eyesScreen extends Screen {
         if (client == null || client.world == null) {
             return;
         }
+        syncUiState(false);
         long now = client.world.getTime();
         if (now < nextAutoRefreshTick) {
             return;
@@ -138,6 +161,31 @@ public class Evil_eyesScreen extends Screen {
         }
     }
 
+    private void syncUiState(boolean force) {
+        if (client == null || client.player == null || client.getNetworkHandler() == null) {
+            return;
+        }
+        boolean open = true;
+        int previewCount = Evil_EyesClient.isViewportMode() ? ClairvoyanceViewportRenderer.previewTargetCount() : 0;
+        boolean expanded = expandedSlot >= 0;
+        if (!force && lastUiOpen == open && lastPreviewCount == previewCount && lastExpanded == expanded) {
+            return;
+        }
+        lastUiOpen = open;
+        lastPreviewCount = previewCount;
+        lastExpanded = expanded;
+        ClientPlayNetworking.send(new ClairvoyanceUiStateC2S(open, previewCount, expanded));
+    }
+
+    private void sendClosedUiState() {
+        if (client != null && client.player != null && client.getNetworkHandler() != null) {
+            ClientPlayNetworking.send(new ClairvoyanceUiStateC2S(false, 0, false));
+        }
+        lastUiOpen = false;
+        lastPreviewCount = 0;
+        lastExpanded = false;
+    }
+
     private void syncLayoutBounds() {
         if (layout == null) {
             return;
@@ -145,8 +193,9 @@ public class Evil_eyesScreen extends Screen {
         mainBounds = layout.bounds("main_background");
         listBounds = layout.bounds("target_list");
         viewBounds = layout.bounds("view_part");
-        viewSlot0Bounds = layout.bounds("view_slot_0");
-        viewSlot1Bounds = layout.bounds("view_slot_1");
+        for (int slot = 0; slot < VIEW_SLOTS; slot++) {
+            viewSlotBounds[slot] = layout.bounds("view_slot_" + slot);
+        }
     }
 
     private static int defaultViewSlotX(int boardX, int boardWidth, int slot) {
@@ -171,6 +220,7 @@ public class Evil_eyesScreen extends Screen {
         markedRows.clear();
         if (Evil_EyesClient.isViewportMode()) {
             ClairvoyanceViewportRenderer.syncPreviewTargets(currentMarks.keySet());
+            syncUiState(false);
         }
 
         int rowHeight = 24;
@@ -204,14 +254,25 @@ public class Evil_eyesScreen extends Screen {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         syncLayoutBounds();
-        drawRotatedScaledTexture(context, MAIN_BACKGROUND, mainBounds, MAIN_TEXTURE_WIDTH, MAIN_TEXTURE_HEIGHT);
         drawHeader(context);
+        ClairvoyanceEnergyClient.renderBar(context, mainBounds.x + 16, mainBounds.y - 14, 132, 7, true);
         drawMarkedRows(context, mouseX, mouseY);
 
         if (Evil_EyesClient.isViewportMode()) {
             drawRotatedScaledTexture(context, VIEW_PART_BACKGROUND, viewBounds, VIEW_PART_TEXTURE_WIDTH, VIEW_PART_TEXTURE_HEIGHT);
-            renderPreviewSlot(context, 0, viewSlot0Bounds);
-            renderPreviewSlot(context, 1, viewSlot1Bounds);
+            updateViewAnimations(mouseX, mouseY);
+            for (int slot = 0; slot < VIEW_SLOTS; slot++) {
+                if (slot == expandedSlot || slot == hoveredSlot) {
+                    continue;
+                }
+                renderPreviewSlot(context, slot, animatedViewBounds(slot));
+            }
+            if (hoveredSlot >= 0 && hoveredSlot < VIEW_SLOTS && hoveredSlot != expandedSlot) {
+                renderPreviewSlot(context, hoveredSlot, animatedViewBounds(hoveredSlot));
+            }
+            if (expandedSlot >= 0 && expandedSlot < VIEW_SLOTS) {
+                renderPreviewSlot(context, expandedSlot, animatedViewBounds(expandedSlot));
+            }
         } else {
             drawHintPanel(context);
         }
@@ -251,7 +312,71 @@ public class Evil_eyesScreen extends Screen {
     }
 
     private void renderPreviewSlot(DrawContext context, int slot, DraggableResizableLayout.Bounds bounds) {
-        withRotation(context, bounds, () -> ClairvoyanceViewportRenderer.renderPreviewRect(context, slot, bounds.x, bounds.y, bounds.width, bounds.height));
+        withRotation(context, bounds, () -> {
+            ClairvoyanceViewportRenderer.renderPreviewRect(context, slot, bounds.x, bounds.y, bounds.width, bounds.height);
+        });
+    }
+
+    private void updateViewAnimations(int mouseX, int mouseY) {
+        long now = System.currentTimeMillis();
+        hoveredSlot = expandedSlot < 0 ? hoveredBaseSlot(mouseX, mouseY) : -1;
+        for (int slot = 0; slot < VIEW_SLOTS; slot++) {
+            boolean hovered = slot == hoveredSlot;
+            viewAnimations[slot].setHovering(hovered, now);
+        }
+    }
+
+    private int hoveredBaseSlot(double mouseX, double mouseY) {
+        for (int slot = VIEW_SLOTS - 1; slot >= 0; slot--) {
+            if (contains(viewSlotBounds[slot], mouseX, mouseY)) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    private DraggableResizableLayout.Bounds animatedViewBounds(int slot) {
+        DraggableResizableLayout.Bounds base = viewSlotBounds[slot];
+        long now = System.currentTimeMillis();
+        if (expandedSlot == slot) {
+            DraggableResizableLayout.Bounds target = expandedTargetBounds(base);
+            float progress = Math.min(1.0F, (now - expandedStartedAt) / (float) VIEW_HOVER_ANIMATION_MS);
+            return lerpBounds(base, target, progress);
+        }
+
+        float hoverProgress = viewAnimations[slot].progress(now);
+        if (hoverProgress <= 0.001F) {
+            return base;
+        }
+        int width = Math.round(base.width * (1.0F + hoverProgress));
+        int height = Math.round(base.height * (1.0F + hoverProgress));
+        return new DraggableResizableLayout.Bounds(base.x, base.y, width, height, base.rotationDegrees);
+    }
+
+    private DraggableResizableLayout.Bounds expandedTargetBounds(DraggableResizableLayout.Bounds base) {
+        int targetX = Math.max(8, width / 3);
+        int targetWidth = Math.max(80, width - targetX - 12);
+        float aspect = Math.max(0.1F, base.width / (float) Math.max(1, base.height));
+        int targetHeight = Math.min(height - 24, Math.round(targetWidth / aspect));
+        if (targetHeight < 60) {
+            targetHeight = Math.min(height - 24, 60);
+        }
+        int targetY = (height - targetHeight) / 2;
+        return new DraggableResizableLayout.Bounds(targetX, targetY, targetWidth, targetHeight, base.rotationDegrees);
+    }
+
+    private static DraggableResizableLayout.Bounds lerpBounds(DraggableResizableLayout.Bounds from, DraggableResizableLayout.Bounds to, float progress) {
+        progress = MathHelper.clamp(progress, 0.0F, 1.0F);
+        int x = Math.round(MathHelper.lerp(progress, from.x, to.x));
+        int y = Math.round(MathHelper.lerp(progress, from.y, to.y));
+        int w = Math.round(MathHelper.lerp(progress, from.width, to.width));
+        int h = Math.round(MathHelper.lerp(progress, from.height, to.height));
+        float r = MathHelper.lerp(progress, from.rotationDegrees, to.rotationDegrees);
+        return new DraggableResizableLayout.Bounds(x, y, w, h, r);
+    }
+
+    private static boolean contains(DraggableResizableLayout.Bounds bounds, double mouseX, double mouseY) {
+        return mouseX >= bounds.x && mouseX < bounds.x + bounds.width && mouseY >= bounds.y && mouseY < bounds.y + bounds.height;
     }
 
     private void drawScaledTexture(DrawContext context, Identifier texture, int x, int y, int width, int height, int textureWidth, int textureHeight) {
@@ -331,6 +456,21 @@ public class Evil_eyesScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button == 1 && Evil_EyesClient.isViewportMode()) {
+            if (expandedSlot >= 0) {
+                expandedSlot = -1;
+                syncUiState(true);
+                return true;
+            }
+            for (int slot = VIEW_SLOTS - 1; slot >= 0; slot--) {
+                if (contains(viewSlotBounds[slot], mouseX, mouseY)) {
+                    expandedSlot = slot;
+                    expandedStartedAt = System.currentTimeMillis();
+                    syncUiState(true);
+                    return true;
+                }
+            }
+        }
         if (layout != null && layout.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
@@ -338,6 +478,16 @@ public class Evil_eyesScreen extends Screen {
             return clickMarkedRow(mouseX, mouseY);
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && expandedSlot >= 0) {
+            expandedSlot = -1;
+            syncUiState(true);
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
@@ -370,6 +520,7 @@ public class Evil_eyesScreen extends Screen {
                 ClairvoyanceViewportRenderer.clearSelectedTarget(row.uuid);
                 removeFromLocalList(row.uuid);
                 ClientPlayNetworking.send(new UnmarkEntityC2S(row.uuid));
+                syncUiState(true);
             } else {
                 selectRow(row);
             }
@@ -382,6 +533,7 @@ public class Evil_eyesScreen extends Screen {
         if (Evil_EyesClient.isViewportMode()) {
             ClairvoyanceViewportRenderer.setSelectedTarget(row.uuid);
             ClairvoyanceViewportRenderer.syncPreviewTargets(currentMarks.keySet());
+            syncUiState(true);
             if (client != null && client.player != null) {
                 client.player.sendMessage(Text.literal("\u00a7aPreview: " + row.name), true);
             }
@@ -401,6 +553,7 @@ public class Evil_eyesScreen extends Screen {
     @Override
     public void removed() {
         super.removed();
+        sendClosedUiState();
         ClairvoyanceViewportRenderer.cleanup();
     }
 
@@ -416,6 +569,26 @@ public class Evil_eyesScreen extends Screen {
 
         int deleteX() {
             return x + width - 21;
+        }
+    }
+
+    private static final class ViewAnimation {
+        private boolean hovering;
+        private long changedAt;
+        private float startProgress;
+
+        private void setHovering(boolean hovering, long now) {
+            if (this.hovering == hovering) {
+                return;
+            }
+            startProgress = progress(now);
+            this.hovering = hovering;
+            changedAt = now;
+        }
+
+        private float progress(long now) {
+            float delta = changedAt <= 0L ? 1.0F : Math.min(1.0F, (now - changedAt) / (float) VIEW_HOVER_ANIMATION_MS);
+            return hovering ? MathHelper.lerp(delta, startProgress, 1.0F) : MathHelper.lerp(delta, startProgress, 0.0F);
         }
     }
 }

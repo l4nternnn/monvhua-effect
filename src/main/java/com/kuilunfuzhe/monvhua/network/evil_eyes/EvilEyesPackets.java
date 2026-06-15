@@ -19,6 +19,7 @@ public final class EvilEyesPackets {
         MarkEntityC2S.register();
         UnmarkEntityC2S.register();
         SelectView.register();
+        ClairvoyanceUiStateC2S.register();
         ExitViewC2S.register();
         RequestGlobalConfigC2S.register();
         UpdateGlobalConfigC2S.register();
@@ -28,6 +29,7 @@ public final class EvilEyesPackets {
 
     public static void registerS2C() {
         GlobalConfigS2C.register();
+        ClairvoyanceEnergyS2C.register();
         OpenUIS2C.register();
         ViewModeS2C.register();
         EntityMarkedS2C.register();
@@ -187,7 +189,55 @@ public final class EvilEyesPackets {
             return ID;
         }
 
-        public record StageConfig(int dailyLimit, int maxMarks, int minScore, int maxScore, int watchRequiredTicks, int parrotDailyLimit, int maxActiveParrots) {
+        public record StageConfig(int dailyLimit, int maxMarks, int minScore, int maxScore, int watchRequiredTicks,
+                                  int parrotDailyLimit, int maxActiveParrots,
+                                  double uiDrainRate, double watchDrainRate, double regenRate) {
+        }
+    }
+
+    public record ClairvoyanceUiStateC2S(boolean open, int previewCount, boolean expanded) implements CustomPayload {
+        public static final Id<ClairvoyanceUiStateC2S> ID = new Id<>(Identifier.of("monvhua", "clairvoyance_ui_state"));
+        public static final PacketCodec<RegistryByteBuf, ClairvoyanceUiStateC2S> CODEC = PacketCodec.of(
+                (packet, buf) -> {
+                    buf.writeBoolean(packet.open);
+                    buf.writeInt(packet.previewCount);
+                    buf.writeBoolean(packet.expanded);
+                },
+                buf -> new ClairvoyanceUiStateC2S(buf.readBoolean(), buf.readInt(), buf.readBoolean())
+        );
+        private static boolean registered = false;
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record ClairvoyanceEnergyS2C(double currentEnergy, double maxEnergy) implements CustomPayload {
+        public static final Id<ClairvoyanceEnergyS2C> ID = new Id<>(Identifier.of("monvhua", "clairvoyance_energy"));
+        public static final PacketCodec<PacketByteBuf, ClairvoyanceEnergyS2C> CODEC =
+                PacketCodec.tuple(PacketCodecs.DOUBLE, ClairvoyanceEnergyS2C::currentEnergy,
+                        PacketCodecs.DOUBLE, ClairvoyanceEnergyS2C::maxEnergy,
+                        ClairvoyanceEnergyS2C::new);
+        private static boolean registered = false;
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
         }
     }
 
@@ -379,18 +429,26 @@ public final class EvilEyesPackets {
         }
     }
 
-    public record UpdateGlobalConfigC2S(int stage, int dailyLimit, int maxMarks, int minScore, int maxScore, int watchRequiredTicks, int parrotDailyLimit, int maxActiveParrots) implements CustomPayload {
+    public record UpdateGlobalConfigC2S(int stage, int dailyLimit, int maxMarks, int minScore, int maxScore,
+                                        int watchRequiredTicks, int parrotDailyLimit, int maxActiveParrots,
+                                        double uiDrainRate, double watchDrainRate, double regenRate) implements CustomPayload {
         public static final Id<UpdateGlobalConfigC2S> ID = new Id<>(Identifier.of("monvhua", "update_global_config"));
-        public static final PacketCodec<RegistryByteBuf, UpdateGlobalConfigC2S> CODEC = PacketCodec.tuple(
-                PacketCodecs.INTEGER, UpdateGlobalConfigC2S::stage,
-                PacketCodecs.INTEGER, UpdateGlobalConfigC2S::dailyLimit,
-                PacketCodecs.INTEGER, UpdateGlobalConfigC2S::maxMarks,
-                PacketCodecs.INTEGER, UpdateGlobalConfigC2S::minScore,
-                PacketCodecs.INTEGER, UpdateGlobalConfigC2S::maxScore,
-                PacketCodecs.INTEGER, UpdateGlobalConfigC2S::watchRequiredTicks,
-                PacketCodecs.INTEGER, UpdateGlobalConfigC2S::parrotDailyLimit,
-                PacketCodecs.INTEGER, UpdateGlobalConfigC2S::maxActiveParrots,
-                UpdateGlobalConfigC2S::new
+        public static final PacketCodec<RegistryByteBuf, UpdateGlobalConfigC2S> CODEC = PacketCodec.of(
+                (packet, buf) -> {
+                    buf.writeInt(packet.stage);
+                    buf.writeInt(packet.dailyLimit);
+                    buf.writeInt(packet.maxMarks);
+                    buf.writeInt(packet.minScore);
+                    buf.writeInt(packet.maxScore);
+                    buf.writeInt(packet.watchRequiredTicks);
+                    buf.writeInt(packet.parrotDailyLimit);
+                    buf.writeInt(packet.maxActiveParrots);
+                    buf.writeDouble(packet.uiDrainRate);
+                    buf.writeDouble(packet.watchDrainRate);
+                    buf.writeDouble(packet.regenRate);
+                },
+                buf -> new UpdateGlobalConfigC2S(buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
+                        buf.readInt(), buf.readInt(), buf.readInt(), buf.readDouble(), buf.readDouble(), buf.readDouble())
         );
         private static boolean registered = false;
 

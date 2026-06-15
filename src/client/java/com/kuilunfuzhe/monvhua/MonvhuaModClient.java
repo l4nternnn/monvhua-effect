@@ -8,6 +8,7 @@ import com.kuilunfuzhe.monvhua.event.WorldRenderHandler;
 import com.kuilunfuzhe.monvhua.compat.DhCompat;
 import com.kuilunfuzhe.monvhua.compat.EmfCompat;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryTransformDebugCommand;
+import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceEnergyClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.ClientCameraWatchReceiver;
 import com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient;
@@ -86,6 +87,7 @@ public class MonvhuaModClient implements ClientModInitializer {
 
         // ===== 2. 功能模块客户端初始化 =====
         GazeguidanceClient.initialize();
+        ClairvoyanceEnergyClient.initialize();
         GravityClient.initialize();
         PaintOverlayClient.initialize();
         DhCompat.init(); // 远处地平线兼容初始化

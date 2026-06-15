@@ -1,8 +1,10 @@
 package com.kuilunfuzhe.monvhua.features.evil_eyes.server;
 
 import com.kuilunfuzhe.monvhua.event.tag_pitch;
+import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.network.camerawatch.CameraUpdateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.camerawatch.CameraWatchUnbindS2CPacket;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.ClairvoyanceEnergyS2C;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.Entity;
 import net.minecraft.server.MinecraftServer;
@@ -39,9 +41,15 @@ public class CameraWatchManager {
     private static final Map<UUID, Vec3d> prevCamPos = new ConcurrentHashMap<>();
     /** 上一帧的有效相机距离：观看者UUID → Double（用于碰撞距离平滑） */
     private static final Map<UUID, Double> prevCamDistance = new ConcurrentHashMap<>();
+    private static final double MAX_ENERGY = 100.0D;
+    private static final Map<UUID, Double> playerEnergy = new ConcurrentHashMap<>();
+    private static final Map<UUID, UiState> UI_STATES = new ConcurrentHashMap<>();
+    private static int energySyncTick;
 
     /** 观看会话记录：包含被观看实体UUID和会话开始游戏刻 */
     private record CameraSession(UUID targetUuid, long startTick) {}
+    private record UiState(boolean open, int previewCount, boolean expanded) {}
+    private record EnergyRates(double uiDrainRate, double watchDrainRate, double regenRate) {}
 
     /**
      * 判断玩家是否正处于服务端相机观看模式中。
@@ -51,6 +59,16 @@ public class CameraWatchManager {
      */
     public static boolean isWatching(ServerPlayerEntity player) {
         return SESSIONS.containsKey(player.getUuid());
+    }
+
+    public static void setUiState(ServerPlayerEntity player, boolean open, int previewCount, boolean expanded) {
+        UUID uuid = player.getUuid();
+        playerEnergy.putIfAbsent(uuid, MAX_ENERGY);
+        if (!open) {
+            UI_STATES.remove(uuid);
+            return;
+        }
+        UI_STATES.put(uuid, new UiState(true, MathHelper.clamp(previewCount, 0, 4), expanded));
     }
 
     /**
@@ -70,6 +88,8 @@ public class CameraWatchManager {
         }
         stopWatching(viewer, server);
         SESSIONS.put(viewer.getUuid(), new CameraSession(targetUuid, world.getTime()));
+        playerEnergy.putIfAbsent(viewer.getUuid(), MAX_ENERGY);
+        ClairvoyanceChunkLoader.startWatching(viewer.getUuid(), world, target.getPos(), world.getTime());
         viewer.sendMessage(Text.literal("§a正在观看 " + tag_pitch.entityDisplayName(target)), true);
     }
 
@@ -85,6 +105,7 @@ public class CameraWatchManager {
         smoothYaws.remove(uuid);
         prevCamPos.remove(uuid);
         prevCamDistance.remove(uuid);
+        ClairvoyanceChunkLoader.stopWatching(uuid, viewer.getWorld().getTime());
         ServerPlayNetworking.send(viewer, new CameraWatchUnbindS2CPacket());
     }
 
@@ -97,9 +118,69 @@ public class CameraWatchManager {
     public static void tick(MinecraftServer server) {
         for (Map.Entry<UUID, CameraSession> entry : SESSIONS.entrySet()) {
             ServerPlayerEntity viewer = server.getPlayerManager().getPlayer(entry.getKey());
-            if (viewer == null) continue;
+            if (viewer == null) {
+                SESSIONS.remove(entry.getKey());
+                ClairvoyanceChunkLoader.stopWatching(entry.getKey(), server.getOverworld().getTime());
+                continue;
+            }
             updateCameraForViewer(viewer, server);
         }
+        tickEnergy(server);
+        ClairvoyanceChunkLoader.tick(server);
+    }
+
+    private static void tickEnergy(MinecraftServer server) {
+        energySyncTick++;
+        boolean sync = energySyncTick >= 5;
+        if (sync) {
+            energySyncTick = 0;
+        }
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            UUID uuid = player.getUuid();
+            double energy = playerEnergy.getOrDefault(uuid, MAX_ENERGY);
+            EnergyRates rates = energyRates(player);
+            UiState uiState = UI_STATES.get(uuid);
+            double drainRate = 0.0D;
+            if (uiState != null && uiState.open()) {
+                drainRate += rates.uiDrainRate() * (1 + Math.max(0, uiState.previewCount()));
+                if (uiState.expanded()) {
+                    drainRate += rates.watchDrainRate();
+                }
+            }
+            if (isWatching(player)) {
+                drainRate += rates.watchDrainRate();
+            }
+
+            if (drainRate > 0.0D) {
+                energy = Math.max(0.0D, energy - drainRate / 20.0D);
+                playerEnergy.put(uuid, energy);
+                if (energy <= 0.0D) {
+                    UI_STATES.remove(uuid);
+                    Evil_Eyes.forceStopWatching(player, server);
+                    player.sendMessage(Text.literal("搂8鍗冮噷鐪艰兘閲忚€楀敖"), true);
+                }
+            } else {
+                energy = Math.min(MAX_ENERGY, energy + rates.regenRate() / 20.0D);
+                playerEnergy.put(uuid, energy);
+            }
+            if (sync) {
+                ServerPlayNetworking.send(player, new ClairvoyanceEnergyS2C(energy, MAX_ENERGY));
+            }
+        }
+        UI_STATES.keySet().removeIf(uuid -> server.getPlayerManager().getPlayer(uuid) == null);
+    }
+
+    private static EnergyRates energyRates(ServerPlayerEntity player) {
+        if (Evil_Eyes.configManager == null) {
+            return new EnergyRates(1.0D, 8.0D, 2.0D);
+        }
+        int stage = Evil_Eyes.getPlayerStage(player, Evil_Eyes.configManager);
+        var config = Evil_Eyes.configManager.getStageConfig(stage);
+        return new EnergyRates(
+                Math.max(0.0D, config.uiDrainRate()),
+                Math.max(0.0D, config.watchDrainRate()),
+                Math.max(0.0D, config.regenRate())
+        );
     }
 
     /**
@@ -122,9 +203,12 @@ public class CameraWatchManager {
         Entity target = world.getEntity(session.targetUuid);
         if (target == null || !target.isAlive()) {
             stopWatching(viewer, server);
+            Evil_Eyes.forceStopWatching(viewer, server);
             viewer.sendMessage(Text.literal("§c目标已消失"), true);
             return;
         }
+
+        ClairvoyanceChunkLoader.update(viewer.getUuid(), world, target.getPos(), world.getTime());
 
         CameraOffset offset = getOffset(viewer);
         double distance = offset.distance;

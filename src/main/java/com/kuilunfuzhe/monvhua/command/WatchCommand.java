@@ -88,11 +88,6 @@ public class WatchCommand {
             viewer.sendMessage(Text.literal("§c配置未初始化"), false);
             return 0;
         }
-        int stage = Evil_Eyes.getPlayerStage(viewer, Evil_Eyes.configManager);
-        if (!Evil_Eyes.configManager.canMark(viewer.getUuid(), stage)) {
-            viewer.sendMessage(Text.literal("§c今日观看次数已达上限"), false);
-            return 0;
-        }
 
         // 否则尝试观看准星指向的实体
         Entity target = RaycastHelper.getTargetEntity(viewer, 50.0);
@@ -130,12 +125,8 @@ public class WatchCommand {
             viewer.sendMessage(Text.literal("§c配置未初始化"), false);
             return 0;
         }
-        int stage = Evil_Eyes.getPlayerStage(viewer, Evil_Eyes.configManager);
-        if (!Evil_Eyes.configManager.canMark(viewer.getUuid(), stage)) {
-            viewer.sendMessage(Text.literal("§c今日观看次数已达上限"), false);
-            return 0;
-        }
 
+        int stage = Evil_Eyes.getPlayerStage(viewer, Evil_Eyes.configManager);
         Evil_Eyes.startWatchSession(viewer, target.getUuid(), viewer.getWorld().getTime());
         viewer.sendMessage(Text.literal("§a开始观看 " + target.getName().getString() + " (阶段" + stage + ")"), false);
         return 1;
