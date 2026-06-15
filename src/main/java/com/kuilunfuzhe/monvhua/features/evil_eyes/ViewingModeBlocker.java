@@ -74,7 +74,7 @@ public class ViewingModeBlocker {
 					if (!nbt.contains("signed_evil")) {
 						nbt.putString("signed_evil", serverPlayer.getUuid().toString());
 						mainHand.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
-						serverPlayer.sendMessage(Text.literal("§a物品已标记§c邪恶印记§a"), true);
+						serverPlayer.sendMessage(Text.literal("§a物品已标记§c洞察印记§a"), true);
 					} else {
 						serverPlayer.sendMessage(Text.literal("§c该物品已被标记"), true);
 					}
@@ -119,7 +119,7 @@ public class ViewingModeBlocker {
 						}
 						if (firstTime) {
 							if (markerPlayer != null) {
-								markerPlayer.sendMessage(Text.literal("§c[邪恶印记] " + tag_pitch.entityDisplayName(player) + " 携带了你的标记物品"), true);
+								markerPlayer.sendMessage(Text.literal("§c[洞察印记] " + tag_pitch.entityDisplayName(player) + " 携带了你的标记物品"), true);
 							}
 							player.sendMessage(Text.literal("§c这个物品感觉哪里怪怪的"), true);
 						}

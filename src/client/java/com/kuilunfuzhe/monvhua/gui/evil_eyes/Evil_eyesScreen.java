@@ -87,12 +87,12 @@ public class Evil_eyesScreen extends Screen {
                 Text.literal("已标记实体列表"), textRenderer));
         if (Evil_EyesClient.isViewportMode()) {
             addDrawableChild(new TextWidget(panelX + leftWidth + 5, panelY + 10, rightWidth - 10, 20,
-                    Text.literal("预览视角"), textRenderer));
+                    Text.literal("观看视角"), textRenderer));
         } else {
             addDrawableChild(new TextWidget(panelX + leftWidth + 5, panelY + 10, rightWidth - 10, 20,
-                    Text.literal("点击左侧实体名称"), textRenderer));
+                    Text.literal("点击左侧标记名称"), textRenderer));
             addDrawableChild(new TextWidget(panelX + leftWidth + 5, panelY + 35, rightWidth - 10, 20,
-                    Text.literal("即可切换到该实体的"), textRenderer));
+                    Text.literal("即可切换到该标记的"), textRenderer));
             addDrawableChild(new TextWidget(panelX + leftWidth + 5, panelY + 60, rightWidth - 10, 20,
                     Text.literal("第二人称视角"), textRenderer));
         }
@@ -151,7 +151,7 @@ public class Evil_eyesScreen extends Screen {
                         }
                         ClientPlayNetworking.send(new SelectView(uuid));
                         if (client != null && client.player != null) {
-                            client.player.sendMessage(Text.literal("§a正在切换到 " + name), true);
+                            client.player.sendMessage(Text.literal("§a正在观看 " + name), true);
                         }
                     })
                     .dimensions(panelX + 5, panelY + yOffset, btnWidth, 20)
@@ -180,7 +180,7 @@ public class Evil_eyesScreen extends Screen {
             var entity = client.world.getEntity(uuid);
             if (entity != null) return tag_pitch.entityDisplayName(entity);
         }
-        return "未知实体";
+        return "未知标记";
     }
 
     @Override
