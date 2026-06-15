@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.gui.evil_eyes;
 import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceViewportRenderer;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
+import com.kuilunfuzhe.monvhua.gui.layout.DraggableResizableLayout;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.SelectView;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.UnmarkEntityC2S;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -13,6 +14,7 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
+import org.joml.Matrix3x2fStack;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,8 +26,8 @@ public class Evil_eyesScreen extends Screen {
     private static final int REFRESH_INTERVAL_TICKS = 40;
     private static final Identifier MAIN_BACKGROUND = Identifier.of("monvhua", "textures/gui/clairvoyance_gui/main_background.png");
     private static final Identifier VIEW_PART_BACKGROUND = Identifier.of("monvhua", "textures/gui/clairvoyance_gui/view_part.png");
-    private static final int MAIN_TEXTURE_WIDTH = 4096;
-    private static final int MAIN_TEXTURE_HEIGHT = 2048;
+    private static final int MAIN_TEXTURE_WIDTH = 2564;
+    private static final int MAIN_TEXTURE_HEIGHT = 1441;
     private static final int VIEW_PART_TEXTURE_WIDTH = 2560;
     private static final int VIEW_PART_TEXTURE_HEIGHT = 334;
     private static final int VIEW_SLOT_TEXTURE_X = 570;
@@ -50,17 +52,12 @@ public class Evil_eyesScreen extends Screen {
     private static final Map<UUID, Long> currentMarks = new ConcurrentHashMap<>();
 
     private final List<MarkedRow> markedRows = new ArrayList<>();
-    private int panelWidth;
-    private int panelHeight;
-    private int panelX;
-    private int panelY;
-    private int leftWidth;
-    private int rightWidth;
-    private int previewX;
-    private int previewY;
-    private int previewWidth;
-    private int previewSlotHeight;
-    private int previewGap;
+    private DraggableResizableLayout layout;
+    private DraggableResizableLayout.Bounds mainBounds = DraggableResizableLayout.Bounds.EMPTY;
+    private DraggableResizableLayout.Bounds listBounds = DraggableResizableLayout.Bounds.EMPTY;
+    private DraggableResizableLayout.Bounds viewBounds = DraggableResizableLayout.Bounds.EMPTY;
+    private DraggableResizableLayout.Bounds viewSlot0Bounds = DraggableResizableLayout.Bounds.EMPTY;
+    private DraggableResizableLayout.Bounds viewSlot1Bounds = DraggableResizableLayout.Bounds.EMPTY;
     private long nextAutoRefreshTick;
 
     public Evil_eyesScreen() {
@@ -92,20 +89,32 @@ public class Evil_eyesScreen extends Screen {
         int sw = client.getWindow().getScaledWidth();
         int sh = client.getWindow().getScaledHeight();
 
-        panelWidth = Math.min(sw - 24, Math.max(480, (int) (sw * 0.72F)));
-        panelHeight = Math.min(sh - 24, Math.max(240, panelWidth / 2));
-        panelX = (sw - panelWidth) / 2;
-        panelY = (sh - panelHeight) / 2;
-        leftWidth = Math.max(200, (int) (panelWidth * 0.38F));
-        rightWidth = panelWidth - leftWidth;
+        int panelWidth = Math.min(sw - 24, Math.max(480, (int) (sw * 0.72F)));
+        int panelHeight = Math.min(sh - 24, Math.max(240, panelWidth / 2));
+        int panelX = (sw - panelWidth) / 2;
+        int panelY = (sh - panelHeight) / 2;
+        int leftWidth = Math.max(200, (int) (panelWidth * 0.38F));
+        int rightWidth = panelWidth - leftWidth;
 
         int availablePreviewWidth = Math.max(220, rightWidth - 24);
         int availablePreviewHeight = Math.max(80, panelHeight - 64);
         float viewAspect = VIEW_PART_TEXTURE_WIDTH / (float) VIEW_PART_TEXTURE_HEIGHT;
-        previewWidth = Math.min(availablePreviewWidth, Math.round(availablePreviewHeight * viewAspect));
-        previewSlotHeight = Math.min(availablePreviewHeight, Math.round(previewWidth / viewAspect));
-        previewX = panelX + leftWidth + Math.max(8, (rightWidth - previewWidth) / 2);
-        previewY = panelY + 34;
+        int viewWidth = Math.min(availablePreviewWidth, Math.round(availablePreviewHeight * viewAspect));
+        int viewHeight = Math.min(availablePreviewHeight, Math.round(viewWidth / viewAspect));
+        int viewX = panelX + leftWidth + Math.max(8, (rightWidth - viewWidth) / 2);
+        int viewY = panelY + 34;
+
+        layout = new DraggableResizableLayout("clairvoyance", sw, sh);
+        mainBounds = layout.element("main_background", panelX, panelY, panelWidth, panelHeight, 240, 120);
+        listBounds = layout.element("target_list", panelX + 14, panelY + 42, leftWidth - 28, panelHeight - 70, 120, 60);
+        viewBounds = layout.element("view_part", viewX, viewY, viewWidth, viewHeight, 180, 32);
+        int slot0X = defaultViewSlotX(viewX, viewWidth, 0);
+        int slot1X = defaultViewSlotX(viewX, viewWidth, 1);
+        int slotY = defaultViewSlotY(viewY, viewHeight);
+        int slotWidth = defaultViewSlotWidth(viewWidth);
+        int slotHeight = defaultViewSlotHeight(viewHeight);
+        viewSlot0Bounds = layout.element("view_slot_0", slot0X, slotY, slotWidth, slotHeight, 48, 36);
+        viewSlot1Bounds = layout.element("view_slot_1", slot1X, slotY, slotWidth, slotHeight, 48, 36);
 
         nextAutoRefreshTick = 0L;
         refreshEntityRows();
@@ -129,21 +138,50 @@ public class Evil_eyesScreen extends Screen {
         }
     }
 
+    private void syncLayoutBounds() {
+        if (layout == null) {
+            return;
+        }
+        mainBounds = layout.bounds("main_background");
+        listBounds = layout.bounds("target_list");
+        viewBounds = layout.bounds("view_part");
+        viewSlot0Bounds = layout.bounds("view_slot_0");
+        viewSlot1Bounds = layout.bounds("view_slot_1");
+    }
+
+    private static int defaultViewSlotX(int boardX, int boardWidth, int slot) {
+        int slotTextureX = VIEW_SLOT_TEXTURE_X + slot * (VIEW_SLOT_TEXTURE_WIDTH + VIEW_SLOT_TEXTURE_GAP);
+        return boardX + Math.round(boardWidth * (slotTextureX / (float) VIEW_PART_TEXTURE_WIDTH));
+    }
+
+    private static int defaultViewSlotY(int boardY, int boardHeight) {
+        return boardY + Math.round(boardHeight * (VIEW_SLOT_TEXTURE_Y / (float) VIEW_PART_TEXTURE_HEIGHT));
+    }
+
+    private static int defaultViewSlotWidth(int boardWidth) {
+        return Math.round(boardWidth * (VIEW_SLOT_TEXTURE_WIDTH / (float) VIEW_PART_TEXTURE_WIDTH));
+    }
+
+    private static int defaultViewSlotHeight(int boardHeight) {
+        return Math.round(boardHeight * (VIEW_SLOT_TEXTURE_HEIGHT / (float) VIEW_PART_TEXTURE_HEIGHT));
+    }
+
     private void refreshEntityRows() {
+        syncLayoutBounds();
         markedRows.clear();
         if (Evil_EyesClient.isViewportMode()) {
             ClairvoyanceViewportRenderer.syncPreviewTargets(currentMarks.keySet());
         }
 
-        int yOffset = 42;
         int rowHeight = 24;
         int rowGap = 5;
-        int rowWidth = leftWidth - 28;
+        int rowWidth = listBounds.width;
+        int yOffset = 20;
         for (UUID uuid : currentMarks.keySet()) {
             String name = getEntityName(uuid);
-            markedRows.add(new MarkedRow(uuid, name, panelX + 14, panelY + yOffset, rowWidth, rowHeight));
+            markedRows.add(new MarkedRow(uuid, name, listBounds.x, listBounds.y + yOffset, rowWidth, rowHeight));
             yOffset += rowHeight + rowGap;
-            if (yOffset > panelHeight - 28) {
+            if (yOffset + rowHeight > listBounds.height) {
                 break;
             }
         }
@@ -160,35 +198,37 @@ public class Evil_eyesScreen extends Screen {
                 return tag_pitch.entityDisplayName(entity);
             }
         }
-        return "未知标记";
+        return "Unknown";
     }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        drawScaledTexture(context, MAIN_BACKGROUND, panelX, panelY, panelWidth, panelHeight, MAIN_TEXTURE_WIDTH, MAIN_TEXTURE_HEIGHT);
+        syncLayoutBounds();
+        drawRotatedScaledTexture(context, MAIN_BACKGROUND, mainBounds, MAIN_TEXTURE_WIDTH, MAIN_TEXTURE_HEIGHT);
         drawHeader(context);
         drawMarkedRows(context, mouseX, mouseY);
 
         if (Evil_EyesClient.isViewportMode()) {
-            drawScaledTexture(context, VIEW_PART_BACKGROUND, previewX, previewY, previewWidth, previewSlotHeight, VIEW_PART_TEXTURE_WIDTH, VIEW_PART_TEXTURE_HEIGHT);
-            renderPreviewSlot(context, 0, previewX, previewY, previewWidth, previewSlotHeight);
-            renderPreviewSlot(context, 1, previewX, previewY, previewWidth, previewSlotHeight);
+            drawRotatedScaledTexture(context, VIEW_PART_BACKGROUND, viewBounds, VIEW_PART_TEXTURE_WIDTH, VIEW_PART_TEXTURE_HEIGHT);
+            renderPreviewSlot(context, 0, viewSlot0Bounds);
+            renderPreviewSlot(context, 1, viewSlot1Bounds);
         } else {
             drawHintPanel(context);
+        }
+        if (layout != null) {
+            layout.drawEditHandles(context);
         }
     }
 
     private void drawHeader(DrawContext context) {
-        String count = "千里眼  " + currentMarks.size() + " 个标记";
-        context.drawTextWithShadow(textRenderer, count, panelX + 16, panelY + 14, PALE_GOLD);
+        String count = "Clairvoyance  " + currentMarks.size() + " marks";
+        context.drawTextWithShadow(textRenderer, count, mainBounds.x + 16, mainBounds.y + 14, PALE_GOLD);
     }
 
     private void drawMarkedRows(DrawContext context, int mouseX, int mouseY) {
         if (markedRows.isEmpty()) {
-            int x = panelX + 20;
-            int y = panelY + 48;
-            context.drawTextWithShadow(textRenderer, "暂无标记目标", x, y, TEXT_MUTED);
-            context.drawTextWithShadow(textRenderer, "使用千里眼标记后会显示在这里", x, y + 14, TEXT_MUTED);
+            context.drawTextWithShadow(textRenderer, "No marked targets", listBounds.x + 6, listBounds.y + 22, TEXT_MUTED);
+            context.drawTextWithShadow(textRenderer, "Marked targets will appear here", listBounds.x + 6, listBounds.y + 36, TEXT_MUTED);
             return;
         }
 
@@ -210,13 +250,8 @@ public class Evil_eyesScreen extends Screen {
         }
     }
 
-    private void renderPreviewSlot(DrawContext context, int slot, int boardX, int boardY, int boardWidth, int boardHeight) {
-        int slotTextureX = VIEW_SLOT_TEXTURE_X + slot * (VIEW_SLOT_TEXTURE_WIDTH + VIEW_SLOT_TEXTURE_GAP);
-        int slotX = boardX + Math.round(boardWidth * (slotTextureX / (float) VIEW_PART_TEXTURE_WIDTH));
-        int slotY = boardY + Math.round(boardHeight * (VIEW_SLOT_TEXTURE_Y / (float) VIEW_PART_TEXTURE_HEIGHT));
-        int slotWidth = Math.round(boardWidth * (VIEW_SLOT_TEXTURE_WIDTH / (float) VIEW_PART_TEXTURE_WIDTH));
-        int slotHeight = Math.round(boardHeight * (VIEW_SLOT_TEXTURE_HEIGHT / (float) VIEW_PART_TEXTURE_HEIGHT));
-        ClairvoyanceViewportRenderer.renderPreviewRect(context, slot, slotX, slotY, slotWidth, slotHeight);
+    private void renderPreviewSlot(DrawContext context, int slot, DraggableResizableLayout.Bounds bounds) {
+        withRotation(context, bounds, () -> ClairvoyanceViewportRenderer.renderPreviewRect(context, slot, bounds.x, bounds.y, bounds.width, bounds.height));
     }
 
     private void drawScaledTexture(DrawContext context, Identifier texture, int x, int y, int width, int height, int textureWidth, int textureHeight) {
@@ -224,14 +259,34 @@ public class Evil_eyesScreen extends Screen {
                 width, height, textureWidth, textureHeight, textureWidth, textureHeight);
     }
 
+    private void drawRotatedScaledTexture(DrawContext context, Identifier texture, DraggableResizableLayout.Bounds bounds, int textureWidth, int textureHeight) {
+        withRotation(context, bounds, () -> drawScaledTexture(context, texture, bounds.x, bounds.y, bounds.width, bounds.height, textureWidth, textureHeight));
+    }
+
+    private void withRotation(DrawContext context, DraggableResizableLayout.Bounds bounds, Runnable renderAction) {
+        if (Math.abs(bounds.rotationDegrees) < 0.001F) {
+            renderAction.run();
+            return;
+        }
+        Matrix3x2fStack matrices = context.getMatrices();
+        float centerX = bounds.x + bounds.width * 0.5F;
+        float centerY = bounds.y + bounds.height * 0.5F;
+        matrices.pushMatrix();
+        try {
+            matrices.translate(centerX, centerY);
+            matrices.rotate((float) Math.toRadians(bounds.rotationDegrees));
+            matrices.translate(-centerX, -centerY);
+            renderAction.run();
+        } finally {
+            matrices.popMatrix();
+        }
+    }
+
     private void drawHintPanel(DrawContext context) {
-        int x = panelX + leftWidth + 18;
-        int y = panelY + 40;
-        int w = rightWidth - 34;
-        int h = Math.min(72, panelHeight - 56);
-        drawRoundedPanel(context, x, y, w, h, 7, 0x661E1530, ACCENT_SOFT);
-        context.drawTextWithShadow(textRenderer, "点击左侧标记", x + 14, y + 14, TEXT_MAIN);
-        context.drawTextWithShadow(textRenderer, "切换到该目标的第三人称视角。", x + 14, y + 32, TEXT_MUTED);
+        int h = Math.min(72, viewBounds.height);
+        drawRoundedPanel(context, viewBounds.x, viewBounds.y, viewBounds.width, h, 7, 0x661E1530, ACCENT_SOFT);
+        context.drawTextWithShadow(textRenderer, "Click a marked target", viewBounds.x + 14, viewBounds.y + 14, TEXT_MAIN);
+        context.drawTextWithShadow(textRenderer, "Switch to that target's view.", viewBounds.x + 14, viewBounds.y + 32, TEXT_MUTED);
     }
 
     private void drawRoundedPanel(DrawContext context, int x, int y, int width, int height, int radius, int fill, int border) {
@@ -276,22 +331,51 @@ public class Evil_eyesScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (layout != null && layout.mouseClicked(mouseX, mouseY, button)) {
+            return true;
+        }
         if (button == 0) {
-            for (MarkedRow row : markedRows) {
-                if (!row.contains(mouseX, mouseY)) {
-                    continue;
-                }
-                if (row.containsDelete(mouseX, mouseY)) {
-                    ClairvoyanceViewportRenderer.clearSelectedTarget(row.uuid);
-                    removeFromLocalList(row.uuid);
-                    ClientPlayNetworking.send(new UnmarkEntityC2S(row.uuid));
-                } else {
-                    selectRow(row);
-                }
-                return true;
-            }
+            return clickMarkedRow(mouseX, mouseY);
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (layout != null && layout.mouseDragged(mouseX, mouseY, button)) {
+            syncLayoutBounds();
+            refreshEntityRows();
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (layout != null && layout.isEditing()) {
+            DraggableResizableLayout.DragResult result = layout.mouseReleased(mouseX, mouseY, button);
+            syncLayoutBounds();
+            refreshEntityRows();
+            return result.moved() || clickMarkedRow(mouseX, mouseY);
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    private boolean clickMarkedRow(double mouseX, double mouseY) {
+        for (MarkedRow row : markedRows) {
+            if (!row.contains(mouseX, mouseY)) {
+                continue;
+            }
+            if (row.containsDelete(mouseX, mouseY)) {
+                ClairvoyanceViewportRenderer.clearSelectedTarget(row.uuid);
+                removeFromLocalList(row.uuid);
+                ClientPlayNetworking.send(new UnmarkEntityC2S(row.uuid));
+            } else {
+                selectRow(row);
+            }
+            return true;
+        }
+        return false;
     }
 
     private void selectRow(MarkedRow row) {
@@ -299,13 +383,13 @@ public class Evil_eyesScreen extends Screen {
             ClairvoyanceViewportRenderer.setSelectedTarget(row.uuid);
             ClairvoyanceViewportRenderer.syncPreviewTargets(currentMarks.keySet());
             if (client != null && client.player != null) {
-                client.player.sendMessage(Text.literal("§aPreview: " + row.name), true);
+                client.player.sendMessage(Text.literal("\u00a7aPreview: " + row.name), true);
             }
             return;
         }
         ClientPlayNetworking.send(new SelectView(row.uuid));
         if (client != null && client.player != null) {
-            client.player.sendMessage(Text.literal("§a正在观看 " + row.name), true);
+            client.player.sendMessage(Text.literal("\u00a7aViewing " + row.name), true);
         }
     }
 
