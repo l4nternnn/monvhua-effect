@@ -13,6 +13,8 @@ import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalLeftLegBlock
 import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalRightArmBlockEntity;
 import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalRightLegBlockEntity;
 import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalTorsoBlockEntity;
+import com.kuilunfuzhe.monvhua.features.paint.drawingboard.DrawingBoardBlockEntities;
+import com.kuilunfuzhe.monvhua.features.paint.drawingboard.DrawingBoardBlockEntity;
 import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
 import net.minecraft.block.entity.BlockEntityType;
@@ -96,11 +98,15 @@ public class ModBlockEntities {
             FabricBlockEntityTypeBuilder.create(SkeletalRightLegBlockEntity::new, ModBlocks.SKELETAL_RIGHT_LEG).build()
     );
 
+    public static final BlockEntityType<DrawingBoardBlockEntity> DRAWING_BOARD_BLOCK_ENTITY =
+            DrawingBoardBlockEntities.DRAWING_BOARD_BLOCK_ENTITY;
+
     /**
      * 模组初始化入口，目前留空。
      * 保留方法以维持统一的初始化调用约定。
      */
     public static void initialize() {
+        DrawingBoardBlockEntities.initialize();
 //        System.out.println("Registered TORSO_BLOCK_ENTITY: " + TORSO_BLOCK_ENTITY.getRegistryEntry().getIdAsString());
     }
 }

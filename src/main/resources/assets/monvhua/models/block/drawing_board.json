@@ -1,0 +1,261 @@
+{
+	"format_version": "1.21.6",
+	"credit": "Made with Blockbench",
+	"texture_size": [32, 32],
+	"textures": {
+		"1": "monvhua:block/drawing_board/1",
+		"2": "monvhua:block/drawing_board/2",
+		"3": "monvhua:block/drawing_board/3",
+		"4": "monvhua:block/drawing_board/4",
+		"5": "monvhua:block/drawing_board/5",
+		"6": "monvhua:block/drawing_board/6",
+		"7": "monvhua:block/drawing_board/7",
+		"8": "monvhua:block/drawing_board/8",
+		"9": "monvhua:block/drawing_board/9",
+		"10": "monvhua:block/drawing_board/10",
+		"11": "monvhua:block/drawing_board/11",
+		"12": "monvhua:block/drawing_board/12",
+		"13": "monvhua:block/drawing_board/13",
+		"14": "monvhua:block/drawing_board/14",
+		"particle": "monvhua:block/drawing_board/1"
+	},
+	"elements": [
+		{
+			"name": "左",
+			"from": [13, -1.19154, 6.78238],
+			"to": [14, 24.80846, 7.78238],
+			"rotation": {"angle": 10, "axis": "x", "origin": [8, 15.30558, 8.48584]},
+			"faces": {
+				"north": {"uv": [0, 0, 0.5, 13], "texture": "#14"},
+				"east": {"uv": [1, 0, 1.5, 13], "texture": "#14"},
+				"south": {"uv": [2, 0, 2.5, 13], "texture": "#14"},
+				"west": {"uv": [3, 0, 3.5, 13], "texture": "#14"},
+				"up": {"uv": [4.5, 0.5, 4, 0], "texture": "#14"},
+				"down": {"uv": [4.5, 1, 4, 1.5], "texture": "#14"}
+			}
+		},
+		{
+			"name": "右",
+			"from": [2, -1.19154, 6.78238],
+			"to": [3, 24.80846, 7.78238],
+			"rotation": {"angle": 10, "axis": "x", "origin": [8, 15.30558, 8.48584]},
+			"faces": {
+				"north": {"uv": [0, 0, 0.5, 13], "texture": "#13"},
+				"east": {"uv": [1, 0, 1.5, 13], "texture": "#13"},
+				"south": {"uv": [2, 0, 2.5, 13], "texture": "#13"},
+				"west": {"uv": [3, 0, 3.5, 13], "texture": "#13"},
+				"up": {"uv": [4.5, 0.5, 4, 0], "texture": "#13"},
+				"down": {"uv": [4.5, 1, 4, 1.5], "texture": "#13"}
+			}
+		},
+		{
+			"name": "中",
+			"from": [7.4, -1.19154, 6.78238],
+			"to": [8.4, 29.80846, 7.78238],
+			"rotation": {"angle": 10, "axis": "x", "origin": [8, 15.30558, 8.48584]},
+			"faces": {
+				"north": {"uv": [0, 0, 0.5, 15.5], "texture": "#12"},
+				"east": {"uv": [1, 0, 1.5, 15.5], "texture": "#12"},
+				"south": {"uv": [2, 0, 2.5, 15.5], "texture": "#12"},
+				"west": {"uv": [3, 0, 3.5, 15.5], "texture": "#12"},
+				"up": {"uv": [4.5, 0.5, 4, 0], "texture": "#12"},
+				"down": {"uv": [4.5, 1, 4, 1.5], "texture": "#12"}
+			}
+		},
+		{
+			"name": "后",
+			"from": [7.4, -2.50203, 10.02861],
+			"to": [8.4, 22.49797, 11.02861],
+			"rotation": {"angle": -14.5, "axis": "x", "origin": [8, 15.30558, 8.48584]},
+			"faces": {
+				"north": {"uv": [0, 0, 0.5, 12.5], "texture": "#11"},
+				"east": {"uv": [1, 0, 1.5, 12.5], "texture": "#11"},
+				"south": {"uv": [2, 0, 2.5, 12.5], "texture": "#11"},
+				"west": {"uv": [3, 0, 3.5, 12.5], "texture": "#11"},
+				"up": {"uv": [4.5, 0.5, 4, 0], "texture": "#11"},
+				"down": {"uv": [4.5, 1, 4, 1.5], "texture": "#11"}
+			}
+		},
+		{
+			"name": "左",
+			"from": [7.8, 12.5662, 7.59907],
+			"to": [8.8, 18.8662, 8.59907],
+			"rotation": {"angle": 27, "axis": "x", "origin": [8, 15.30558, 8.48584]},
+			"faces": {
+				"north": {"uv": [0, 0, 1, 6.5], "texture": "#10"},
+				"east": {"uv": [2, 0, 3, 6.5], "texture": "#10"},
+				"south": {"uv": [4, 0, 5, 6.5], "texture": "#10"},
+				"west": {"uv": [6, 0, 7, 6.5], "texture": "#10"},
+				"up": {"uv": [1, 9, 0, 8], "texture": "#10"},
+				"down": {"uv": [9, 0, 8, 1], "texture": "#10"}
+			}
+		},
+		{
+			"name": "右",
+			"from": [7, 12.5662, 7.59907],
+			"to": [8, 18.8662, 8.59907],
+			"rotation": {"angle": 27, "axis": "x", "origin": [8, 15.30558, 8.48584]},
+			"faces": {
+				"north": {"uv": [0, 0, 1, 6.5], "texture": "#9"},
+				"east": {"uv": [2, 0, 3, 6.5], "texture": "#9"},
+				"south": {"uv": [4, 0, 5, 6.5], "texture": "#9"},
+				"west": {"uv": [6, 0, 7, 6.5], "texture": "#9"},
+				"up": {"uv": [1, 9, 0, 8], "texture": "#9"},
+				"down": {"uv": [9, 0, 8, 1], "texture": "#9"}
+			}
+		},
+		{
+			"name": "下端",
+			"from": [2.5, 2.51218, 6.79588],
+			"to": [13.5, 3.51218, 7.79588],
+			"rotation": {"angle": 10, "axis": "x", "origin": [8, 15.30558, 8.48584]},
+			"faces": {
+				"north": {"uv": [0, 0, 11, 1], "texture": "#8"},
+				"east": {"uv": [0, 8, 1, 9], "texture": "#8"},
+				"south": {"uv": [0, 2, 11, 3], "texture": "#8"},
+				"west": {"uv": [2, 8, 3, 9], "texture": "#8"},
+				"up": {"uv": [11, 5, 0, 4], "texture": "#8"},
+				"down": {"uv": [11, 6, 0, 7], "texture": "#8"}
+			}
+		},
+		{
+			"name": "画板下",
+			"from": [1.5, 9.33043, 6.30443],
+			"to": [14.5, 10.33043, 7.30443],
+			"rotation": {"angle": 10, "axis": "x", "origin": [8, 15.30558, 8.48584]},
+			"faces": {
+				"north": {"uv": [0, 0, 13, 1], "texture": "#7"},
+				"east": {"uv": [0, 8, 1, 9], "texture": "#7"},
+				"south": {"uv": [0, 2, 13, 3], "texture": "#7"},
+				"west": {"uv": [2, 8, 3, 9], "texture": "#7"},
+				"up": {"uv": [13, 5, 0, 4], "texture": "#7"},
+				"down": {"uv": [13, 6, 0, 7], "texture": "#7"}
+			}
+		},
+		{
+			"name": "中段",
+			"from": [2.6, 9.63158, 6.86059],
+			"to": [13.6, 10.63158, 7.86059],
+			"rotation": {"angle": 10, "axis": "x", "origin": [8, 15.30558, 8.48584]},
+			"faces": {
+				"north": {"uv": [0, 0, 11, 1], "texture": "#6"},
+				"east": {"uv": [0, 8, 1, 9], "texture": "#6"},
+				"south": {"uv": [0, 2, 11, 3], "texture": "#6"},
+				"west": {"uv": [2, 8, 3, 9], "texture": "#6"},
+				"up": {"uv": [11, 5, 0, 4], "texture": "#6"},
+				"down": {"uv": [11, 6, 0, 7], "texture": "#6"}
+			}
+		},
+		{
+			"name": "上端",
+			"from": [6, 26.67993, 6.79924],
+			"to": [10, 27.67993, 7.79924],
+			"rotation": {"angle": 10, "axis": "x", "origin": [8, 15.30558, 8.48584]},
+			"faces": {
+				"north": {"uv": [0, 0, 4, 1], "texture": "#5"},
+				"east": {"uv": [5, 2, 6, 3], "texture": "#5"},
+				"south": {"uv": [0, 2, 4, 3], "texture": "#5"},
+				"west": {"uv": [5, 4, 6, 5], "texture": "#5"},
+				"up": {"uv": [4, 5, 0, 4], "texture": "#5"},
+				"down": {"uv": [9, 0, 5, 1], "texture": "#5"}
+			}
+		},
+		{
+			"name": "画板上",
+			"from": [4, 22.61914, 6.80447],
+			"to": [12, 23.61914, 7.80447],
+			"rotation": {"angle": 10, "axis": "x", "origin": [8, 15.30558, 8.48584]},
+			"faces": {
+				"north": {"uv": [0, 0, 8, 1], "texture": "#4"},
+				"east": {"uv": [0, 8, 1, 9], "texture": "#4"},
+				"south": {"uv": [0, 2, 8, 3], "texture": "#4"},
+				"west": {"uv": [2, 8, 3, 9], "texture": "#4"},
+				"up": {"uv": [8, 5, 0, 4], "texture": "#4"},
+				"down": {"uv": [8, 6, 0, 7], "texture": "#4"}
+			}
+		},
+		{
+			"name": "调节架",
+			"from": [5.9, 8.65701, 6.74431],
+			"to": [9.9, 9.65701, 7.74431],
+			"rotation": {"angle": 10, "axis": "x", "origin": [8, 15.30558, 8.48584]},
+			"faces": {
+				"north": {"uv": [0, 0, 4, 1], "texture": "#3"},
+				"east": {"uv": [5, 2, 6, 3], "texture": "#3"},
+				"south": {"uv": [0, 2, 4, 3], "texture": "#3"},
+				"west": {"uv": [5, 4, 6, 5], "texture": "#3"},
+				"up": {"uv": [4, 5, 0, 4], "texture": "#3"},
+				"down": {"uv": [9, 0, 5, 1], "texture": "#3"}
+			}
+		},
+		{
+			"name": "画板",
+			"from": [2.5, 9.64182, 6.57066],
+			"to": [13.5, 25.64182, 7.57066],
+			"rotation": {"angle": 10, "axis": "x", "origin": [8, 15.30558, 8.48584]},
+			"faces": {
+				"north": {"uv": [0, 0, 2.75, 4], "texture": "#2"},
+				"east": {"uv": [0, 4.25, 0.25, 8.25], "texture": "#2"},
+				"south": {"uv": [3, 0, 5.75, 4], "texture": "#2"},
+				"west": {"uv": [0.5, 4.25, 0.75, 8.25], "texture": "#2"},
+				"up": {"uv": [3.75, 4.5, 1, 4.25], "texture": "#2"},
+				"down": {"uv": [6.75, 4.25, 4, 4.5], "texture": "#2"}
+			}
+		},
+		{
+			"name": "画布",
+			"from": [3, 10.25607, 6.56851],
+			"to": [13, 25.25607, 7.56851],
+			"rotation": {"angle": 10, "axis": "x", "origin": [8, 15.30558, 8.58584]},
+			"faces": {
+				"north": {"uv": [0, 0, 5, 7.5], "texture": "#1"},
+				"east": {"uv": [0, 8, 0.5, 15.5], "texture": "#1"},
+				"south": {"uv": [5.5, 0, 10.5, 7.5], "texture": "#1"},
+				"west": {"uv": [1, 8, 1.5, 15.5], "texture": "#1"},
+				"up": {"uv": [7, 8.5, 2, 8], "texture": "#1"},
+				"down": {"uv": [12.5, 8, 7.5, 8.5], "texture": "#1"}
+			}
+		}
+	],
+	"groups": [
+		{
+			"name": "画板",
+			"origin": [7.9, -0.5, 11],
+			"scope": 0,
+			"color": 0,
+			"children": [
+				{
+					"name": "支撑柱",
+					"origin": [7.9, -0.5, 11],
+					"scope": 0,
+					"color": 0,
+					"children": [0, 1, 2, 3]
+				},
+				{
+					"name": "固定杆",
+					"origin": [7.9, -0.5, 11],
+					"scope": 0,
+					"color": 0,
+					"children": [
+						{
+							"name": "后支撑柱与中支撑",
+							"origin": [7.9, -0.5, 11],
+							"scope": 0,
+							"color": 0,
+							"children": [4, 5]
+						}
+					]
+				},
+				{
+					"name": "画板支撑架",
+					"origin": [7.9, -0.5, 11],
+					"scope": 0,
+					"color": 0,
+					"children": [6, 7, 8, 9, 10, 11]
+				},
+				12,
+				13
+			]
+		}
+	]
+}

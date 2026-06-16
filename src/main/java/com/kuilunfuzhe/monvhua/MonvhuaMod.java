@@ -41,6 +41,7 @@ import com.kuilunfuzhe.monvhua.network.bodypose.ApplySkeletalPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
+import com.kuilunfuzhe.monvhua.network.drawingboard.DrawingBoardPackets;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingEnergySyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
@@ -216,6 +217,7 @@ public class MonvhuaMod implements ModInitializer {
         ImitateSelectPacket.registerHandler();
         SilencePacket.register();
         SilenceEffectS2CPacket.register();
+        DrawingBoardPackets.registerReceivers();
 
         ServerPlayNetworking.registerGlobalReceiver(ToggleC2S.ID, (packet, context) -> {
             MirrorCommand.toggleViewport(context.player());

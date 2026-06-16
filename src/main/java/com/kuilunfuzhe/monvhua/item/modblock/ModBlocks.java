@@ -12,6 +12,7 @@ import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalLeftLegBlock
 import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalRightArmBlock;
 import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalRightLegBlock;
 import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalTorsoBlock;
+import com.kuilunfuzhe.monvhua.features.paint.drawingboard.DrawingBoardBlock;
 import net.minecraft.block.AbstractBlock;
 import net.minecraft.block.Block;
 import net.minecraft.block.MapColor;
@@ -78,6 +79,10 @@ public class ModBlocks {
     public static final Block SKELETAL_RIGHT_LEG = register("skeletal_right_leg",
             SkeletalRightLegBlock::new,
             AbstractBlock.Settings.create().mapColor(MapColor.OAK_TAN).strength(1.0F, 1.0F).nonOpaque().pistonBehavior(PistonBehavior.DESTROY));
+
+    public static final Block DRAWING_BOARD = register("drawing_board",
+            DrawingBoardBlock::new,
+            AbstractBlock.Settings.create().mapColor(MapColor.OAK_TAN).strength(1.5F, 3.0F).nonOpaque().pistonBehavior(PistonBehavior.DESTROY));
 
     // 通用注册方法（模仿原版 Blocks 中的 register）
     private static Block register(String path, Function<AbstractBlock.Settings, Block> factory, AbstractBlock.Settings settings) {

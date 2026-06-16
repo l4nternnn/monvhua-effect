@@ -28,6 +28,7 @@ public class Assembly_ModItems {
     public static final BlockItem SKELETAL_RIGHT_ARM_ITEM;
     public static final BlockItem SKELETAL_LEFT_LEG_ITEM;
     public static final BlockItem SKELETAL_RIGHT_LEG_ITEM;
+    public static final BlockItem DRAWING_BOARD_ITEM;
 
     // 静态初始化块：在类加载时创建所有身体部件 BlockItem，确保字段定义在注册之前
     static {
@@ -43,6 +44,7 @@ public class Assembly_ModItems {
         SKELETAL_RIGHT_ARM_ITEM = createBlockItem("skeletal_right_arm", ModBlocks.SKELETAL_RIGHT_ARM);
         SKELETAL_LEFT_LEG_ITEM = createBlockItem("skeletal_left_leg", ModBlocks.SKELETAL_LEFT_LEG);
         SKELETAL_RIGHT_LEG_ITEM = createBlockItem("skeletal_right_leg", ModBlocks.SKELETAL_RIGHT_LEG);
+        DRAWING_BOARD_ITEM = createBlockItem("drawing_board", ModBlocks.DRAWING_BOARD);
     }
 
     /**
@@ -79,6 +81,7 @@ public class Assembly_ModItems {
         register(SKELETAL_RIGHT_ARM_ITEM, "skeletal_right_arm");
         register(SKELETAL_LEFT_LEG_ITEM, "skeletal_left_leg");
         register(SKELETAL_RIGHT_LEG_ITEM, "skeletal_right_leg");
+        register(DRAWING_BOARD_ITEM, "drawing_board");
 
 
         ItemGroupEvents.modifyEntriesEvent(ItemGroups.BUILDING_BLOCKS)
@@ -95,6 +98,7 @@ public class Assembly_ModItems {
                     entries.add(SKELETAL_RIGHT_ARM_ITEM);
                     entries.add(SKELETAL_LEFT_LEG_ITEM);
                     entries.add(SKELETAL_RIGHT_LEG_ITEM);
+                    entries.add(DRAWING_BOARD_ITEM);
                 });
     }
 

@@ -52,6 +52,7 @@ public class ModItemGroups {
                             entries.add(Assembly_ModItems.SKELETAL_RIGHT_ARM_ITEM);
                             entries.add(Assembly_ModItems.SKELETAL_LEFT_LEG_ITEM);
                             entries.add(Assembly_ModItems.SKELETAL_RIGHT_LEG_ITEM);
+                            entries.add(Assembly_ModItems.DRAWING_BOARD_ITEM);
                         })
                         .build()
         );

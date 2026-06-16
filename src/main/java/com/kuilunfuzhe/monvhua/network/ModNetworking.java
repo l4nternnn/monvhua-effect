@@ -6,6 +6,7 @@ import com.kuilunfuzhe.monvhua.network.bodypose.ApplySkeletalPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
+import com.kuilunfuzhe.monvhua.network.drawingboard.DrawingBoardPackets;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingEnergySyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
@@ -56,6 +57,7 @@ public class ModNetworking {
         ActionPackets.registerS2C();
         GravityPackets.registerS2C();
         PaintOverlayPackets.registerS2C();
+        DrawingBoardPackets.registerS2C();
         PlantMagicPackets.registerS2C();
         ImitateOpenUIPacket.register();
         SoundWaveStartS2CPacket.register();
@@ -85,6 +87,7 @@ public class ModNetworking {
         FloatingPackets.registerC2S();
         GravityPackets.registerC2S();
         PaintOverlayPackets.registerC2S();
+        DrawingBoardPackets.registerC2S();
         PlantMagicPackets.registerC2S();
         SoundWavePacket.register();
         RequestImitateConfigC2SPacket.register();

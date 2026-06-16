@@ -12,6 +12,8 @@
   "item.monvhua.paint_paper": "画纸",
   "item.monvhua.paint_bucket": "油漆桶",
   "block.monvhua.paint_bucket": "油漆桶",
+  "item.monvhua.drawing_board": "画板",
+  "block.monvhua.drawing_board": "画板",
   "category.monvhua": "魔女化魔法相关配置菜单",
   "key.monvhua.body_pose_world_preview": "模型编辑器放置预览开关",
   "key.monvhua.mark": "标记实体 (G)",

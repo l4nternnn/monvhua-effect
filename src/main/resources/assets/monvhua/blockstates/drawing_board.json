@@ -1,0 +1,12 @@
+{
+  "variants": {
+    "facing=north,half=lower": { "model": "monvhua:block/drawing_board" },
+    "facing=east,half=lower": { "model": "monvhua:block/drawing_board", "y": 90 },
+    "facing=south,half=lower": { "model": "monvhua:block/drawing_board", "y": 180 },
+    "facing=west,half=lower": { "model": "monvhua:block/drawing_board", "y": 270 },
+    "facing=north,half=upper": { "model": "monvhua:block/drawing_board_upper" },
+    "facing=east,half=upper": { "model": "monvhua:block/drawing_board_upper" },
+    "facing=south,half=upper": { "model": "monvhua:block/drawing_board_upper" },
+    "facing=west,half=upper": { "model": "monvhua:block/drawing_board_upper" }
+  }
+}
