@@ -5,6 +5,8 @@ import com.kuilunfuzhe.monvhua.network.action.ActionPackets;
 import com.kuilunfuzhe.monvhua.network.bodypose.ApplySkeletalPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
+import com.kuilunfuzhe.monvhua.network.bodypose.PlaceTrueSkeletalBodyC2SPacket;
+import com.kuilunfuzhe.monvhua.network.bodypose.UpdateBodyPoseDefaultsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.drawingboard.DrawingBoardPackets;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets;
@@ -78,6 +80,8 @@ public class ModNetworking {
         ApplySkeletalPoseC2SPacket.register();
         PlacePoseEditorItemsC2SPacket.register();
         PlacePosedBodyC2SPacket.register();
+        PlaceTrueSkeletalBodyC2SPacket.register();
+        UpdateBodyPoseDefaultsC2SPacket.register();
         CameraWatchStartC2SPacket.register();
         CameraWatchStopC2SPacket.register();
         MirrorPackets.registerC2S();

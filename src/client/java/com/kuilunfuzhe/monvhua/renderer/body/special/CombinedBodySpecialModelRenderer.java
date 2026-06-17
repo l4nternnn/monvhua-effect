@@ -7,6 +7,7 @@ import com.kuilunfuzhe.monvhua.features.paint.ModelPaintData;
 import com.kuilunfuzhe.monvhua.features.paint.PaintRenderLayers;
 import com.kuilunfuzhe.monvhua.features.paint.SkinTexturePixels;
 import com.kuilunfuzhe.monvhua.renderer.body.SkinOuterLayerVoxelRenderer;
+import com.kuilunfuzhe.monvhua.renderer.bodypose.skeletal.BodyPoseSkeletalPreviewRenderer;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.LightmapTextureManager;
@@ -18,11 +19,14 @@ import net.minecraft.client.render.entity.model.LoadedEntityModels;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.RotationAxis;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -57,6 +61,10 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
     @Override
     protected void renderModel(MatrixStack matrices, VertexConsumerProvider vertexConsumers,
                                RenderLayer renderLayer, int light, int overlay, Data data) {
+        if (renderTrueSkeletalModel(matrices, vertexConsumers, light, data)) {
+            return;
+        }
+
         VertexConsumer vertexConsumer = vertexConsumers.getBuffer(renderLayer);
         boolean slim = "slim".equals(data.armModel());
         PlayerEntityModel activeModel = slim ? slimModel : model;
@@ -129,6 +137,45 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         renderModelPaint(matrices, vertexConsumers, activeModel, slim, data.texture(), data.customData(), light);
 
         matrices.pop();
+    }
+
+    private boolean renderTrueSkeletalModel(MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, Data data) {
+        NbtCompound customData = data.customData();
+        if (customData == null || !"true_skeletal".equals(customData.getString("body_pose_mode", ""))) {
+            return false;
+        }
+
+        Map<String, float[]> rotations = new HashMap<>();
+        Map<String, Float> scales = new HashMap<>();
+        NbtList bones = customData.getListOrEmpty("true_skeletal_bones");
+        for (int i = 0; i < bones.size(); i++) {
+            NbtCompound bone = bones.getCompound(i).orElse(null);
+            if (bone == null) {
+                continue;
+            }
+            String name = bone.getString("name", "");
+            if (name.isEmpty()) {
+                continue;
+            }
+            float pitch = bone.getFloat("pitch", 0.0F);
+            float yaw = bone.getFloat("yaw", 0.0F);
+            float roll = bone.getFloat("roll", 0.0F);
+            float scale = Math.max(0.1F, bone.getFloat("scale", 1.0F));
+            if (pitch != 0.0F || yaw != 0.0F || roll != 0.0F) {
+                rotations.put(name, new float[] { pitch, yaw, roll });
+            }
+            if (scale != 1.0F) {
+                scales.put(name, scale);
+            }
+        }
+
+        matrices.push();
+        matrices.scale(1.0F, -1.0F, 1.0F);
+        applyTrueSkeletalPlacementTransform(matrices, customData);
+        boolean rendered = BodyPoseSkeletalPreviewRenderer.render(matrices, vertexConsumers, data.texture(), light,
+                rotations, scales, Set.of());
+        matrices.pop();
+        return rendered;
     }
 
     /**
@@ -797,6 +844,21 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(data.getFloat("pose_model_pitch", 0.0F)));
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-data.getFloat("pose_model_yaw", 0.0F)));
         matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(data.getFloat("pose_model_roll", 0.0F)));
+        float scale = Math.max(0.1F, data.getFloat("pose_model_scale", 1.0F));
+        matrices.scale(scale, scale, scale);
+    }
+
+    private static void applyTrueSkeletalPlacementTransform(MatrixStack matrices, NbtCompound data) {
+        if (data == null) {
+            return;
+        }
+        matrices.translate(
+                data.getFloat("pose_model_offset_x", 0.0F),
+                data.getFloat("pose_model_offset_y", 0.0F),
+                data.getFloat("pose_model_offset_z", 0.0F));
+        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-data.getFloat("pose_model_pitch", 0.0F)));
+        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(data.getFloat("pose_model_yaw", 0.0F)));
+        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(-data.getFloat("pose_model_roll", 0.0F)));
         float scale = Math.max(0.1F, data.getFloat("pose_model_scale", 1.0F));
         matrices.scale(scale, scale, scale);
     }

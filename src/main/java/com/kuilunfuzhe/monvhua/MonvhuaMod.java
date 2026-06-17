@@ -8,6 +8,7 @@ import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.kuilunfuzhe.monvhua.command.*;
 import com.kuilunfuzhe.monvhua.command.mirror.MirrorCommand;
 import com.kuilunfuzhe.monvhua.command.mirror.MirrorDataStore;
+import com.kuilunfuzhe.monvhua.config.BodyPoseDefaultsConfig;
 import com.kuilunfuzhe.monvhua.config.GlobalConfigManager;
 import com.kuilunfuzhe.monvhua.effect.DisplayOnlyEffect;
 import com.kuilunfuzhe.monvhua.entity.ModBlockEntities;
@@ -40,6 +41,8 @@ import com.kuilunfuzhe.monvhua.network.ModNetworking;
 import com.kuilunfuzhe.monvhua.network.bodypose.ApplySkeletalPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
+import com.kuilunfuzhe.monvhua.network.bodypose.PlaceTrueSkeletalBodyC2SPacket;
+import com.kuilunfuzhe.monvhua.network.bodypose.UpdateBodyPoseDefaultsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.drawingboard.DrawingBoardPackets;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
@@ -300,6 +303,44 @@ public class MonvhuaMod implements ModInitializer {
             });
         });
 
+        ServerPlayNetworking.registerGlobalReceiver(PlaceTrueSkeletalBodyC2SPacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity player = context.player();
+                if (!player.isCreative() && !player.hasPermissionLevel(2)) {
+                    player.sendMessage(Text.literal("No permission to place true skeletal body model"), true);
+                    return;
+                }
+                if (packet.playerSkin()) {
+                    ServerPlayerEntity source = context.server().getPlayerManager().getPlayer(packet.playerName());
+                    if (source == null) {
+                        player.sendMessage(Text.literal("Player " + packet.playerName() + " is not online"), true);
+                        return;
+                    }
+                    if (packet.fixedBase()) {
+                        BodyPartManager.createTrueSkeletalCombinedDisplayAt(player, new Vec3d(packet.baseX(), packet.baseY(), packet.baseZ()),
+                                new ProfileComponent(source.getGameProfile()), packet.slimModel(), packet.bones(),
+                                packet.offsetX(), packet.offsetY(), packet.offsetZ(),
+                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale(), packet.backpackEnabled());
+                    } else {
+                        BodyPartManager.createTrueSkeletalCombinedDisplay(player, new ProfileComponent(source.getGameProfile()), packet.slimModel(), packet.bones(),
+                                packet.offsetX(), packet.offsetY(), packet.offsetZ(),
+                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale(), packet.backpackEnabled());
+                    }
+                } else {
+                    if (packet.fixedBase()) {
+                        BodyPartManager.createTrueSkeletalCombinedDisplayAt(player, new Vec3d(packet.baseX(), packet.baseY(), packet.baseZ()),
+                                packet.skinName(), packet.slimModel(), packet.bones(),
+                                packet.offsetX(), packet.offsetY(), packet.offsetZ(),
+                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale(), packet.backpackEnabled());
+                    } else {
+                        BodyPartManager.createTrueSkeletalCombinedDisplay(player, packet.skinName(), packet.slimModel(), packet.bones(),
+                                packet.offsetX(), packet.offsetY(), packet.offsetZ(),
+                                packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale(), packet.backpackEnabled());
+                    }
+                }
+            });
+        });
+
         ServerPlayNetworking.registerGlobalReceiver(PlacePoseEditorItemsC2SPacket.ID, (packet, context) -> {
             context.server().execute(() -> {
                 ServerPlayerEntity player = context.player();
@@ -323,6 +364,18 @@ public class MonvhuaMod implements ModInitializer {
                     return;
                 }
                 BodyPartManager.applySkeletalPose(player, packet.poseValues(), packet.bendValues(), packet.radius());
+            });
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(UpdateBodyPoseDefaultsC2SPacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity player = context.player();
+                if (!player.isCreative() && !player.hasPermissionLevel(2)) {
+                    player.sendMessage(Text.literal("No permission to update body pose defaults"), true);
+                    return;
+                }
+                BodyPoseDefaultsConfig.update(packet.slimModel(), packet.poseMode());
+                player.sendMessage(Text.literal("Body pose defaults saved on server"), true);
             });
         });
 

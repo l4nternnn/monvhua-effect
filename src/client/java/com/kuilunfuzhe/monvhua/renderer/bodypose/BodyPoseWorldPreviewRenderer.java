@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.renderer.bodypose;
 
 import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorFragment;
+import com.kuilunfuzhe.monvhua.renderer.bodypose.skeletal.BodyPoseSkeletalPreviewRenderer;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.*;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
@@ -116,8 +117,6 @@ public class BodyPoseWorldPreviewRenderer {
 		PlayerEntityModel model = getWorldModelInstance(client);
 		if (model != null) {
 			Identifier skinTexture = BodyPoseEditorFragment.getWorldSkinTexture();
-			RenderLayer modelLayer = RenderLayer.getEntityTranslucent(skinTexture);
-			VertexConsumer modelVc = vertexConsumers.getBuffer(modelLayer);
 			BlockPos lightPos = BlockPos.ofFloored(worldPos.x, worldPos.y + 1, worldPos.z);
 			int light = WorldRenderer.getLightmapCoordinates(client.world, lightPos);
 
@@ -129,7 +128,12 @@ public class BodyPoseWorldPreviewRenderer {
 			matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-totalYaw));
 			matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(totalRoll));
 			matrices.scale(bodyScale, bodyScale, bodyScale);
-			renderPlayerModelParts(model, matrices, modelVc, light);
+			if (!BodyPoseEditorFragment.isTrueSkeletalPoseMode()
+					|| !BodyPoseSkeletalPreviewRenderer.render(matrices, vertexConsumers, skinTexture, light)) {
+				RenderLayer modelLayer = RenderLayer.getEntityTranslucent(skinTexture);
+				VertexConsumer modelVc = vertexConsumers.getBuffer(modelLayer);
+				renderPlayerModelParts(model, matrices, modelVc, light);
+			}
 			matrices.pop();
 		}
 

@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.mixin;
 
 import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorScreen;
+import com.kuilunfuzhe.monvhua.renderer.bodypose.skeletal.BodyPoseSkeletalPreviewRenderer;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.gui.render.PlayerSkinGuiElementRenderer;
@@ -86,8 +87,11 @@ public abstract class PlayerSkinGuiElementRendererMixin {
 			matrixStack.translate(0.0F, state.yPivot(), 0.0F);
 			matrixStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-state.yRotation()));
 			matrixStack.translate(0.0F, -1.6010001F, 0.0F);
-			RenderLayer renderLayer = state.playerModel().getLayer(state.texture());
-			state.playerModel().render(matrixStack, vertexConsumers.getBuffer(renderLayer), 15728880, OverlayTexture.DEFAULT_UV);
+			if (!BodyPoseEditorFragment.isTrueSkeletalPoseMode()
+					|| !BodyPoseSkeletalPreviewRenderer.renderEditorPreview(matrixStack, vertexConsumers, state.texture(), 15728880)) {
+				RenderLayer renderLayer = state.playerModel().getLayer(state.texture());
+				state.playerModel().render(matrixStack, vertexConsumers.getBuffer(renderLayer), 15728880, OverlayTexture.DEFAULT_UV);
+			}
 			vertexConsumers.draw();
 		} finally {
 			matrixStack.pop();

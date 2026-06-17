@@ -6,6 +6,7 @@ import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalBodyPartBloc
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
+import com.kuilunfuzhe.monvhua.network.bodypose.PlaceTrueSkeletalBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.screen.BodyPartScreenHandler;
 import com.kuilunfuzhe.monvhua.util.ImplementedInventory;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
@@ -733,6 +734,42 @@ public class BodyPartManager {
 		player.sendMessage(Text.literal("Placed posed body model"), true);
 	}
 
+	public static void createTrueSkeletalCombinedDisplay(ServerPlayerEntity player, String skinName, boolean slim,
+			List<PlaceTrueSkeletalBodyC2SPacket.BonePose> bones,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale,
+			boolean backpackEnabled) {
+		createTrueSkeletalCombinedDisplayAt(player, getDefaultPosePlacementBase(player), skinName, slim, bones,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, backpackEnabled);
+	}
+
+	public static void createTrueSkeletalCombinedDisplayAt(ServerPlayerEntity player, Vec3d pos, String skinName, boolean slim,
+			List<PlaceTrueSkeletalBodyC2SPacket.BonePose> bones,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale,
+			boolean backpackEnabled) {
+		ServerWorld world = (ServerWorld) player.getWorld();
+		createCombinedDisplay(world, pos, skinName, backpackEnabled ? DefaultedList.ofSize(9, ItemStack.EMPTY) : null, null, slim, null, null, false,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, backpackEnabled, bones);
+		player.sendMessage(Text.literal("Placed true skeletal body model"), true);
+	}
+
+	public static void createTrueSkeletalCombinedDisplay(ServerPlayerEntity player, ProfileComponent profile, boolean slim,
+			List<PlaceTrueSkeletalBodyC2SPacket.BonePose> bones,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale,
+			boolean backpackEnabled) {
+		createTrueSkeletalCombinedDisplayAt(player, getDefaultPosePlacementBase(player), profile, slim, bones,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, backpackEnabled);
+	}
+
+	public static void createTrueSkeletalCombinedDisplayAt(ServerPlayerEntity player, Vec3d pos, ProfileComponent profile, boolean slim,
+			List<PlaceTrueSkeletalBodyC2SPacket.BonePose> bones,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale,
+			boolean backpackEnabled) {
+		ServerWorld world = (ServerWorld) player.getWorld();
+		createCombinedDisplay(world, pos, "", backpackEnabled ? DefaultedList.ofSize(9, ItemStack.EMPTY) : null, profile, slim, null, null, false,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, backpackEnabled, bones);
+		player.sendMessage(Text.literal("Placed true skeletal body model"), true);
+	}
+
 	public static void createPoseEditorItemDisplays(ServerPlayerEntity player, List<PlacePoseEditorItemsC2SPacket.ItemPlacement> placements) {
 		createPoseEditorItemDisplays(player, placements, getDefaultPosePlacementBase(player));
 	}
@@ -771,17 +808,27 @@ public class BodyPartManager {
 			boolean slim, float[] poseValues, float[] bendValues, boolean lyingDown,
 			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale,
 			boolean interactionEnabled) {
+		createCombinedDisplay(world, pos, skinName, torsoInv, profile, slim, poseValues, bendValues, lyingDown,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, interactionEnabled, null);
+	}
+
+	private static void createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile,
+			boolean slim, float[] poseValues, float[] bendValues, boolean lyingDown,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale,
+			boolean interactionEnabled, List<PlaceTrueSkeletalBodyC2SPacket.BonePose> trueSkeletalBones) {
 		ItemStack combinedStack = new ItemStack(Items.NETHERITE_SCRAP);
 		combinedStack.set(DataComponentTypes.ITEM_MODEL, Identifier.of("monvhua", "combined_body"));
 		if (profile != null) {
 			combinedStack.set(DataComponentTypes.PROFILE, profile);
-			if (poseValues != null || bendValues != null || slim || hasPlacementTransform(offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale)) {
+			if (poseValues != null || bendValues != null || trueSkeletalBones != null || slim
+					|| hasPlacementTransform(offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale)) {
 				NbtCompound nbt = new NbtCompound();
 				if (slim) {
 					nbt.putString("arm_model", "slim");
 				}
 				writePoseValues(nbt, poseValues);
 				writeBendValues(nbt, bendValues);
+				writeTrueSkeletalPoseValues(nbt, trueSkeletalBones);
 				writePlacementTransform(nbt, offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
 				combinedStack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
 			}
@@ -793,6 +840,7 @@ public class BodyPartManager {
 			}
 			writePoseValues(nbt, poseValues);
 			writeBendValues(nbt, bendValues);
+			writeTrueSkeletalPoseValues(nbt, trueSkeletalBones);
 			writePlacementTransform(nbt, offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
 			combinedStack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
 		}
@@ -872,6 +920,27 @@ public class BodyPartManager {
 		nbt.putFloat("bend_" + part + "_pitch", values[offset]);
 		nbt.putFloat("bend_" + part + "_yaw", values[offset + 1]);
 		nbt.putFloat("bend_" + part + "_roll", values[offset + 2]);
+	}
+
+	private static void writeTrueSkeletalPoseValues(NbtCompound nbt, List<PlaceTrueSkeletalBodyC2SPacket.BonePose> bones) {
+		if (bones == null) {
+			return;
+		}
+		nbt.putString("body_pose_mode", "true_skeletal");
+		NbtList list = new NbtList();
+		for (PlaceTrueSkeletalBodyC2SPacket.BonePose pose : bones) {
+			if (pose.name().isBlank()) {
+				continue;
+			}
+			NbtCompound entry = new NbtCompound();
+			entry.putString("name", pose.name());
+			entry.putFloat("pitch", pose.pitch());
+			entry.putFloat("yaw", pose.yaw());
+			entry.putFloat("roll", pose.roll());
+			entry.putFloat("scale", Math.max(0.1F, pose.scale()));
+			list.add(entry);
+		}
+		nbt.put("true_skeletal_bones", list);
 	}
 
 	private static boolean hasPlacementTransform(float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll,

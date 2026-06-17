@@ -1,12 +1,16 @@
 package com.kuilunfuzhe.monvhua.gui.body.bodypose;
 
 import com.kuilunfuzhe.monvhua.features.block.body.BodyModelSelectionCatalog;
+import com.kuilunfuzhe.monvhua.config.BodyPoseDefaultsConfig;
 import com.kuilunfuzhe.monvhua.model.CombinedBodyModelData;
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.model.TorsoBendFollower;
 import com.kuilunfuzhe.monvhua.network.bodypose.ApplySkeletalPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
+import com.kuilunfuzhe.monvhua.network.bodypose.PlaceTrueSkeletalBodyC2SPacket;
+import com.kuilunfuzhe.monvhua.network.bodypose.UpdateBodyPoseDefaultsC2SPacket;
+import com.kuilunfuzhe.monvhua.renderer.bodypose.skeletal.BodyPoseSkeletalPreviewRenderer;
 import icyllis.modernui.core.Context;
 import icyllis.modernui.fragment.Fragment;
 import icyllis.modernui.R;
@@ -45,6 +49,7 @@ import net.minecraft.item.ItemDisplayContext;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
 import net.minecraft.util.hit.HitResult;
@@ -153,6 +158,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final List<EditorItemModel> EDITOR_ITEMS = new ArrayList<>();
     private static final Map<String, PartPose> PART_POSES = createPartPoses();
     private static final Map<String, PartPose> SKELETAL_POSES = createPartPoses();
+    private static final Map<String, PartPose> TRUE_SKELETAL_POSES = new HashMap<>();
 
     private static boolean worldPreviewEnabled = true;
     private static PreviewMode worldPreviewMode = PreviewMode.FOLLOW_PLAYER;
@@ -235,9 +241,12 @@ public class BodyPoseEditorFragment extends Fragment {
     private LinearLayout poseControlsContainer;
     private LinearLayout playerListContainer;
     private LinearLayout itemListContainer;
+    private final Map<Button, String> partButtonValues = new HashMap<>();
     private Button playerButton;
     private Button modelTypeButton;
+    private Button setDefaultModelButton;
     private Button poseModeButton;
+    private Button setDefaultPoseModeButton;
     private Button itemButton;
     private Button itemDisplayModeButton;
     private Button placeItemsButton;
@@ -288,7 +297,8 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private static void resetEditorOpenState() {
         selectedPart = getDefaultSelectedPart();
-        poseEditMode = PoseEditMode.SKELETAL;
+        slimModel = BodyPoseDefaultsConfig.getDefaultSlimModel();
+        poseEditMode = poseEditModeFromConfig(BodyPoseDefaultsConfig.getDefaultPoseMode());
         showWholePreview = true;
         worldPreviewEnabled = true;
         EDITOR_ITEMS.clear();
@@ -370,9 +380,16 @@ public class BodyPoseEditorFragment extends Fragment {
         loadSkinState(stack, nbt);
         resetPoseMap(PART_POSES);
         resetPoseMap(SKELETAL_POSES);
+        resetTrueSkeletalPoseMap();
         loadPoseMap(PART_POSES, nbt);
         loadPoseMap(SKELETAL_POSES, nbt);
         loadBendMap(SKELETAL_POSES, nbt);
+        if ("true_skeletal".equals(nbt.getString("body_pose_mode", ""))) {
+            poseEditMode = PoseEditMode.TRUE_SKELETAL;
+            loadTrueSkeletalPoseMap(nbt);
+        } else {
+            poseEditMode = PoseEditMode.SKELETAL;
+        }
         loadPlacementState(nbt);
     }
 
@@ -420,6 +437,11 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
+    private static void resetTrueSkeletalPoseMap() {
+        TRUE_SKELETAL_POSES.clear();
+        ensureTrueSkeletalPoses();
+    }
+
     private static void loadPoseMap(Map<String, PartPose> poses, NbtCompound nbt) {
         for (String part : POSE_PART_ORDER) {
             PartPose pose = poses.computeIfAbsent(part, ignored -> new PartPose());
@@ -436,6 +458,26 @@ public class BodyPoseEditorFragment extends Fragment {
             pose.bendPitch = clampPreview(nbt.getFloat("bend_" + part + "_pitch", 0.0F), -180.0F, 180.0F);
             pose.bendYaw = normalizeDegrees(nbt.getFloat("bend_" + part + "_yaw", 0.0F));
             pose.bendRoll = normalizeDegrees(nbt.getFloat("bend_" + part + "_roll", 0.0F));
+        }
+    }
+
+    private static void loadTrueSkeletalPoseMap(NbtCompound nbt) {
+        ensureTrueSkeletalPoses();
+        NbtList bones = nbt.getListOrEmpty("true_skeletal_bones");
+        for (int i = 0; i < bones.size(); i++) {
+            NbtCompound bone = bones.getCompound(i).orElse(null);
+            if (bone == null) {
+                continue;
+            }
+            String name = bone.getString("name", "");
+            if (name.isEmpty()) {
+                continue;
+            }
+            PartPose pose = TRUE_SKELETAL_POSES.computeIfAbsent(name, ignored -> new PartPose());
+            pose.pitch = clampPreview(bone.getFloat("pitch", 0.0F), -180.0F, 180.0F);
+            pose.yaw = normalizeDegrees(bone.getFloat("yaw", 0.0F));
+            pose.roll = normalizeDegrees(bone.getFloat("roll", 0.0F));
+            pose.scale = clampPreview(bone.getFloat("scale", 1.0F), MODEL_SCALE_MIN, MODEL_SCALE_MAX);
         }
     }
 
@@ -724,6 +766,38 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
+    private static String getPoseModeLabel() {
+        return switch (poseEditMode) {
+            case STATIC_PART -> "Static-普通模型";
+            case SKELETAL -> "Skeletal-可弯曲模型";
+            case TRUE_SKELETAL -> "TrueSkeletal-真骨骼";
+        };
+    }
+
+    private static String getPoseModeConfigId() {
+        return switch (poseEditMode) {
+            case STATIC_PART -> BodyPoseDefaultsConfig.MODE_STATIC_PART;
+            case SKELETAL -> BodyPoseDefaultsConfig.MODE_SKELETAL;
+            case TRUE_SKELETAL -> BodyPoseDefaultsConfig.MODE_TRUE_SKELETAL;
+        };
+    }
+
+    private static PoseEditMode poseEditModeFromConfig(String value) {
+        return switch (BodyPoseDefaultsConfig.normalizePoseMode(value)) {
+            case BodyPoseDefaultsConfig.MODE_STATIC_PART -> PoseEditMode.STATIC_PART;
+            case BodyPoseDefaultsConfig.MODE_SKELETAL -> PoseEditMode.SKELETAL;
+            default -> PoseEditMode.TRUE_SKELETAL;
+        };
+    }
+
+    private static PoseEditMode nextPoseEditMode() {
+        return switch (poseEditMode) {
+            case STATIC_PART -> PoseEditMode.SKELETAL;
+            case SKELETAL -> PoseEditMode.TRUE_SKELETAL;
+            case TRUE_SKELETAL -> PoseEditMode.STATIC_PART;
+        };
+    }
+
     private static void setButtonPressedFeedback(View view, boolean pressed) {
         if (!view.isEnabled()) {
             pressed = false;
@@ -820,11 +894,21 @@ public class BodyPoseEditorFragment extends Fragment {
 
         // ── 模型类型 ──
         addSectionLabel(panel, ctx, "模型");
+        LinearLayout modelTypeRow = new LinearLayout(ctx);
+        modelTypeRow.setOrientation(LinearLayout.HORIZONTAL);
         modelTypeButton = createStyledButton(ctx);
-        panel.addView(modelTypeButton, new LinearLayout.LayoutParams(-1, -2));
+        modelTypeRow.addView(modelTypeButton, new LinearLayout.LayoutParams(0, -2, 2f));
+        setDefaultModelButton = createStyledButton(ctx);
+        modelTypeRow.addView(setDefaultModelButton, new LinearLayout.LayoutParams(0, -2, 1f));
+        panel.addView(modelTypeRow, new LinearLayout.LayoutParams(-1, -2));
 
+        LinearLayout poseModeRow = new LinearLayout(ctx);
+        poseModeRow.setOrientation(LinearLayout.HORIZONTAL);
         poseModeButton = createStyledButton(ctx);
-        panel.addView(poseModeButton, new LinearLayout.LayoutParams(-1, -2));
+        poseModeRow.addView(poseModeButton, new LinearLayout.LayoutParams(0, -2, 2f));
+        setDefaultPoseModeButton = createStyledButton(ctx);
+        poseModeRow.addView(setDefaultPoseModeButton, new LinearLayout.LayoutParams(0, -2, 1f));
+        panel.addView(poseModeRow, new LinearLayout.LayoutParams(-1, -2));
 
         // ── 部位选择 ──
         addSectionLabel(panel, ctx, "部位");
@@ -1053,27 +1137,89 @@ public class BodyPoseEditorFragment extends Fragment {
         Context ctx = getContext();
         partButtonsContainer.removeAllViews();
         partButtons.clear();
+        partButtonValues.clear();
 
-        for (String part : BodyModelSelectionCatalog.PARTS) {
-            Button button = createStyledButton(ctx);
-            boolean selected = part.equals(selectedPart);
-            String prefix = selected ? "> " : "  ";
-            button.setText(prefix + part);
-            button.setTextColor(selected ? 0xFFFFDD66 : 0xFFE8E8E8);
-            button.setOnClickListener(v -> {
-                selectedPart = part;
-                rebuildPoseControls();
-                refreshButtonLabels();
-                refreshNumericValueBindings();
-                invalidatePreview();
-            });
-            partButtonsContainer.addView(button, new LinearLayout.LayoutParams(-1, -2));
-            partButtons.add(button);
+        if (poseEditMode == PoseEditMode.TRUE_SKELETAL) {
+            rebuildTrueSkeletalPartButtons(ctx);
+            return;
         }
+
+        for (String part : getSelectableParts()) {
+            addPartButton(partButtonsContainer, ctx, part, part, -1.0F);
+        }
+    }
+
+    private void rebuildTrueSkeletalPartButtons(Context ctx) {
+        addPartButton(partButtonsContainer, ctx, "all", "all", -1.0F);
+        addTrueSkeletalPartGroup(ctx, "head", "头");
+        addTrueSkeletalPartGroup(ctx, "torso", "躯干", "torso_low", "torso_midium", "torso_on");
+        addTrueSkeletalPartGroup(ctx, "left_arm", "左臂", "left_arm_on", "left_arm_low");
+        addTrueSkeletalPartGroup(ctx, "right_arm", "右臂", "right_arm_on", "right_arm_low");
+        addTrueSkeletalPartGroup(ctx, "left_leg", "左腿", "left_leg_on", "left_leg_low");
+        addTrueSkeletalPartGroup(ctx, "right_leg", "右腿", "right_leg_on", "right_leg_low");
+    }
+
+    private void addTrueSkeletalPartGroup(Context ctx, String mainPart, String mainLabel, String... subParts) {
+        LinearLayout row = new LinearLayout(ctx);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, 0, 0, 2);
+        partButtonsContainer.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        addPartButton(row, ctx, mainPart, mainLabel, 1.6F);
+        for (String subPart : subParts) {
+            addPartButton(row, ctx, subPart, getTrueSkeletalPartShortLabel(subPart), 1.0F);
+        }
+    }
+
+    private void addPartButton(LinearLayout parent, Context ctx, String partId, String label, float weight) {
+        Button button = createStyledButton(ctx);
+        boolean selected = partId.equals(selectedPart);
+        button.setText((selected ? "> " : "  ") + label);
+        button.setTextColor(selected ? 0xFFFFDD66 : 0xFFE8E8E8);
+        button.setOnClickListener(v -> {
+            selectedPart = partId;
+            rebuildPoseControls();
+            refreshButtonLabels();
+            refreshNumericValueBindings();
+            invalidatePreview();
+        });
+        if (weight > 0.0F) {
+            parent.addView(button, new LinearLayout.LayoutParams(0, -2, weight));
+        } else {
+            parent.addView(button, new LinearLayout.LayoutParams(-1, -2));
+        }
+        partButtons.add(button);
+        partButtonValues.put(button, partId);
+    }
+
+    private static String getPartButtonLabel(String part) {
+        if (poseEditMode == PoseEditMode.TRUE_SKELETAL) {
+            return switch (part) {
+                case "head" -> "头";
+                case "torso" -> "躯干";
+                case "left_arm" -> "左臂";
+                case "right_arm" -> "右臂";
+                case "left_leg" -> "左腿";
+                case "right_leg" -> "右腿";
+                default -> getTrueSkeletalPartShortLabel(part);
+            };
+        }
+        return part;
+    }
+
+    private static String getTrueSkeletalPartShortLabel(String part) {
+        return switch (part) {
+            case "torso_low" -> "下";
+            case "torso_midium" -> "中";
+            case "torso_on" -> "上";
+            case "left_arm_on", "right_arm_on", "left_leg_on", "right_leg_on" -> "上";
+            case "left_arm_low", "right_arm_low", "left_leg_low", "right_leg_low" -> "下";
+            default -> part;
+        };
     }
 
     private void rebuildPoseControls() {
         if (poseControlsContainer == null || getContext() == null) return;
+        ensureValidSelectedPartForMode();
         Context ctx = getContext();
         poseControlsContainer.removeAllViews();
         poseButtons.clear();
@@ -1454,7 +1600,9 @@ public class BodyPoseEditorFragment extends Fragment {
         PlayerEntityModel model = getPreviewModel();
         if (model == null) return;
 
-        preparePreviewModel(model);
+        if (!isTrueSkeletalPoseMode()) {
+            preparePreviewModel(model);
+        }
         float scale = previewScale > 0.0F
                 ? previewScale
                 : getPreviewBaseScale(previewAreaRight - previewAreaLeft, previewAreaBottom - previewAreaTop) * previewZoom;
@@ -1618,22 +1766,47 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void renderModelOffsetReadout(DrawContext context) {
-        int x = previewAreaLeft + 4;
-        int y = previewAreaTop + 56;
-        context.drawTextWithShadow(MinecraftClient.getInstance().textRenderer,
-                getActiveModelLabel(), x, y, 0xFFE2E8F0);
-        context.drawTextWithShadow(MinecraftClient.getInstance().textRenderer,
-                "X " + formatOffset(getActiveOffsetX()), x, y + 12, 0xFFFF7777);
-        context.drawTextWithShadow(MinecraftClient.getInstance().textRenderer,
-                "Y " + formatOffset(getActiveOffsetY()), x, y + 24, 0xFF77FF77);
-        context.drawTextWithShadow(MinecraftClient.getInstance().textRenderer,
-                "Z " + formatOffset(getActiveOffsetZ()), x, y + 36, 0xFF8CA0FF);
-        context.drawTextWithShadow(MinecraftClient.getInstance().textRenderer,
-                "Rot P " + formatDegrees(getActivePitch()), x, y + 54, 0xFFFF7777);
-        context.drawTextWithShadow(MinecraftClient.getInstance().textRenderer,
-                "Rot Y " + formatDegrees(getActiveYaw()), x, y + 66, 0xFF77FF77);
-        context.drawTextWithShadow(MinecraftClient.getInstance().textRenderer,
-                "Rot R " + formatDegrees(getActiveRoll()), x, y + 78, 0xFF8CA0FF);
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.textRenderer == null) {
+            return;
+        }
+
+        String label = hasSelectedItemModel() ? "Item " + (selectedEditorItemIndex + 1) : "Player";
+        String line1 = label + "  pos "
+                + formatOffset(getActiveOffsetX()) + " "
+                + formatOffset(getActiveOffsetY()) + " "
+                + formatOffset(getActiveOffsetZ());
+        String line2 = "rot "
+                + formatDegrees(getActivePitch()) + " "
+                + formatDegrees(getActiveYaw()) + " "
+                + formatDegrees(getActiveRoll());
+        String line3 = "scale " + formatOffset(wholeBodyScale);
+
+        int x = previewAreaLeft + 6;
+        int y = Math.max(previewAreaTop + 6, previewAreaBottom - 34);
+        int width = Math.min(previewAreaRight - previewAreaLeft - 12, 156);
+        context.fill(x - 3, y - 3, x + width, y + 29, 0xA8141820);
+        context.drawBorder(x - 3, y - 3, width + 3, 32, 0x664D5B6B);
+        drawPreviewReadoutText(context, client, line1, x, y, 0xFFDDE6F3);
+        drawPreviewReadoutText(context, client, line2, x, y + 10, 0xFFBFD2FF);
+        drawPreviewReadoutText(context, client, line3, x, y + 20, 0xFFC8FACC);
+    }
+
+    private static void drawPreviewReadoutText(DrawContext context, MinecraftClient client,
+                                               String text, int x, int y, int color) {
+        try {
+            context.drawText(client.textRenderer, sanitizePreviewText(text), x, y, color, false);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private static String sanitizePreviewText(String text) {
+        StringBuilder builder = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            builder.append(c >= 32 && c < 127 ? c : '?');
+        }
+        return builder.toString();
     }
 
     private void renderEditorItemPreviews(DrawContext context) {
@@ -2274,8 +2447,12 @@ public class BodyPoseEditorFragment extends Fragment {
         }
         // 部位按钮
         for (Button btn : partButtons) {
-            String text = btn.getText().toString().replace("> ", "").replace("  ", "").trim();
-            boolean isSelected = text.equals(selectedPart);
+            String part = partButtonValues.get(btn);
+            if (part == null) {
+                continue;
+            }
+            String text = getPartButtonLabel(part);
+            boolean isSelected = part.equals(selectedPart);
             btn.setText((isSelected ? "> " : "  ") + text);
             btn.setTextColor(isSelected ? 0xFFFFDD66 : 0xFFE8E8E8);
         }
@@ -2297,15 +2474,25 @@ public class BodyPoseEditorFragment extends Fragment {
                 refreshButtonLabels();
             });
         }
+        if (setDefaultModelButton != null) {
+            setDefaultModelButton.setText("设为默认");
+            setDefaultModelButton.setOnClickListener(v -> saveDefaultSlimModel());
+        }
         if (poseModeButton != null) {
-            poseModeButton.setText("Pose Mode: " + (poseEditMode == PoseEditMode.STATIC_PART ? "Static-普通模型" : "Skeletal-可弯曲模型"));
+            poseModeButton.setText("Pose Mode: " + getPoseModeLabel());
             poseModeButton.setOnClickListener(v -> {
-                poseEditMode = poseEditMode == PoseEditMode.STATIC_PART ? PoseEditMode.SKELETAL : PoseEditMode.STATIC_PART;
+                poseEditMode = nextPoseEditMode();
+                ensureValidSelectedPartForMode();
+                rebuildPartButtons();
                 rebuildPoseControls();
                 refreshButtonLabels();
                 refreshNumericValueBindings();
                 invalidatePreview();
             });
+        }
+        if (setDefaultPoseModeButton != null) {
+            setDefaultPoseModeButton.setText("设为默认");
+            setDefaultPoseModeButton.setOnClickListener(v -> saveDefaultPoseMode());
         }
         if (resetPoseButton != null) {
             resetPoseButton.setText("重置当前姿势");
@@ -2400,6 +2587,35 @@ public class BodyPoseEditorFragment extends Fragment {
     //  动作命令 / 网络
     // ═══════════════════════════════════════════════════════
 
+    private void saveDefaultSlimModel() {
+        BodyPoseDefaultsConfig.setDefaultSlimModel(slimModel);
+        sendDefaultsToServer();
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null && client.player != null) {
+            client.player.sendMessage(Text.literal("默认体型已保存: " + (slimModel ? "slim" : "default")), true);
+        }
+    }
+
+    private void saveDefaultPoseMode() {
+        BodyPoseDefaultsConfig.setDefaultPoseMode(getPoseModeConfigId());
+        sendDefaultsToServer();
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null && client.player != null) {
+            client.player.sendMessage(Text.literal("默认模型已保存: " + getPoseModeLabel()), true);
+        }
+    }
+
+    private static void sendDefaultsToServer() {
+        try {
+            if (ClientPlayNetworking.canSend(UpdateBodyPoseDefaultsC2SPacket.ID)) {
+                ClientPlayNetworking.send(new UpdateBodyPoseDefaultsC2SPacket(
+                        BodyPoseDefaultsConfig.getDefaultSlimModel(),
+                        BodyPoseDefaultsConfig.getDefaultPoseMode()));
+            }
+        } catch (IllegalArgumentException | IllegalStateException ignored) {
+        }
+    }
+
     private void runGiveCommand() {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.player == null || client.player.networkHandler == null) return;
@@ -2416,6 +2632,10 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void placePosedBody(boolean backpackEnabled) {
+        if (poseEditMode == PoseEditMode.TRUE_SKELETAL) {
+            placeTrueSkeletalBody(backpackEnabled);
+            return;
+        }
         boolean skeletalMode = poseEditMode == PoseEditMode.SKELETAL;
         float[] poseValues = skeletalMode ? createSkeletalPoseValueArray() : createStaticPoseValueArray();
         float[] bendValues = skeletalMode ? createSkeletalBendValueArray() : null;
@@ -2433,6 +2653,25 @@ public class BodyPoseEditorFragment extends Fragment {
         ClientPlayNetworking.send(new PlacePosedBodyC2SPacket(selectedSkin, slimModel,
                 poseValues, bendValues,
                 selectedSkinSource == SkinSource.PLAYER, selectedPlayerName,
+                modelOffsetX, modelOffsetY, modelOffsetZ,
+                modelPitch, modelYaw, modelRoll, wholeBodyScale, backpackEnabled));
+        closeEditorScreen();
+    }
+
+    private void placeTrueSkeletalBody(boolean backpackEnabled) {
+        List<PlaceTrueSkeletalBodyC2SPacket.BonePose> bones = createTrueSkeletalBonePoseList();
+        Vec3d fixedBase = getFixedPlacementBaseForPacket();
+        if (fixedBase != null) {
+            ClientPlayNetworking.send(new PlaceTrueSkeletalBodyC2SPacket(selectedSkin, slimModel,
+                    selectedSkinSource == SkinSource.PLAYER, selectedPlayerName, bones,
+                    modelOffsetX, modelOffsetY, modelOffsetZ,
+                    modelPitch, modelYaw, modelRoll, wholeBodyScale,
+                    fixedBase.x, fixedBase.y, fixedBase.z, backpackEnabled));
+            closeEditorScreen();
+            return;
+        }
+        ClientPlayNetworking.send(new PlaceTrueSkeletalBodyC2SPacket(selectedSkin, slimModel,
+                selectedSkinSource == SkinSource.PLAYER, selectedPlayerName, bones,
                 modelOffsetX, modelOffsetY, modelOffsetZ,
                 modelPitch, modelYaw, modelRoll, wholeBodyScale, backpackEnabled));
         closeEditorScreen();
@@ -2547,6 +2786,127 @@ public class BodyPoseEditorFragment extends Fragment {
     public static float getWorldModelYaw() { return modelYaw; }
     public static float getWorldModelRoll() { return modelRoll; }
     public static float getWorldBodyScale() { return wholeBodyScale; }
+
+    public static boolean isTrueSkeletalPoseMode() {
+        return poseEditMode == PoseEditMode.TRUE_SKELETAL;
+    }
+
+    public static Map<String, float[]> getWorldSkeletalBoneRotations() {
+        if (poseEditMode == PoseEditMode.TRUE_SKELETAL) {
+            ensureTrueSkeletalPoses();
+            Map<String, float[]> rotations = new HashMap<>();
+            for (Map.Entry<String, PartPose> entry : TRUE_SKELETAL_POSES.entrySet()) {
+                PartPose pose = entry.getValue();
+                putTrueSkeletalPoseRotation(rotations, entry.getKey(), pose);
+            }
+            return rotations;
+        }
+        Map<String, float[]> rotations = new HashMap<>();
+        Map<String, PartPose> poses = getActivePoseMap();
+        putPoseRotation(rotations, "head", poses.get("head"));
+
+        PartPose torso = poses.get("torso");
+        putPoseRotation(rotations, "torso_low", torso);
+        if (poseEditMode == PoseEditMode.SKELETAL && torso != null) {
+            putRotation(rotations, "torso_midium", torso.bendPitch * 0.5F, torso.bendYaw * 0.5F, torso.bendRoll * 0.5F);
+            putRotation(rotations, "torso_on", torso.bendPitch * 0.5F, torso.bendYaw * 0.5F, torso.bendRoll * 0.5F);
+        }
+
+        putLimbRotation(rotations, "left_arm_on", "left_arm_low", poses.get("left_arm"));
+        putLimbRotation(rotations, "right_arm_on", "right_arm_low", poses.get("right_arm"));
+        putLimbRotation(rotations, "left_leg_on", "left_leg_low", poses.get("left_leg"));
+        putLimbRotation(rotations, "right_leg_on", "right_leg_low", poses.get("right_leg"));
+        return rotations;
+    }
+
+    public static Map<String, Float> getWorldSkeletalBoneScales() {
+        if (poseEditMode != PoseEditMode.TRUE_SKELETAL) {
+            return Map.of();
+        }
+        ensureTrueSkeletalPoses();
+        Map<String, Float> scales = new HashMap<>();
+        for (Map.Entry<String, PartPose> entry : TRUE_SKELETAL_POSES.entrySet()) {
+            putTrueSkeletalPoseScale(scales, entry.getKey(), entry.getValue());
+        }
+        return scales;
+    }
+
+    public static Set<String> getWorldVisibleSkeletalParts() {
+        boolean showAll = showWholePreview || selectedPart.equals("all");
+        if (showAll) {
+            return Set.of();
+        }
+        if (poseEditMode == PoseEditMode.TRUE_SKELETAL) {
+            return Set.of(BodyPoseSkeletalPreviewRenderer.getPartNameForBone(selectedPart));
+        }
+        return Set.of(selectedPart);
+    }
+
+    private static void putLimbRotation(Map<String, float[]> rotations, String upperBone, String lowerBone, PartPose pose) {
+        putPoseRotation(rotations, upperBone, pose);
+        if (poseEditMode == PoseEditMode.SKELETAL && pose != null) {
+            putRotation(rotations, lowerBone, pose.bendPitch, pose.bendYaw, pose.bendRoll);
+        }
+    }
+
+    private static void putPoseRotation(Map<String, float[]> rotations, String bone, PartPose pose) {
+        if (pose != null) {
+            putRotation(rotations, bone, pose.pitch, pose.yaw, pose.roll);
+        }
+    }
+
+    private static void putRotation(Map<String, float[]> rotations, String bone, float pitch, float yaw, float roll) {
+        if (pitch != 0.0F || yaw != 0.0F || roll != 0.0F) {
+            rotations.put(bone, new float[] { pitch, yaw, roll });
+        }
+    }
+
+    private static void putTrueSkeletalPoseRotation(Map<String, float[]> rotations, String part, PartPose pose) {
+        if (pose == null || (pose.pitch == 0.0F && pose.yaw == 0.0F && pose.roll == 0.0F)) {
+            return;
+        }
+        for (String bone : getTrueSkeletalRotationTargets(part)) {
+            addRotation(rotations, bone, pose.pitch, pose.yaw, pose.roll);
+        }
+    }
+
+    private static void addRotation(Map<String, float[]> rotations, String bone, float pitch, float yaw, float roll) {
+        float[] existing = rotations.computeIfAbsent(bone, ignored -> new float[] { 0.0F, 0.0F, 0.0F });
+        existing[0] += pitch;
+        existing[1] += yaw;
+        existing[2] += roll;
+    }
+
+    private static void putTrueSkeletalPoseScale(Map<String, Float> scales, String part, PartPose pose) {
+        if (pose == null || pose.scale == 1.0F) {
+            return;
+        }
+        for (String bone : getTrueSkeletalScaleTargets(part)) {
+            scales.merge(bone, pose.scale, (left, right) -> left * right);
+        }
+    }
+
+    private static List<String> getTrueSkeletalRotationTargets(String part) {
+        return switch (part) {
+            case "torso" -> List.of("torso_low");
+            case "left_arm" -> List.of("left_arm_on");
+            case "right_arm" -> List.of("right_arm_on");
+            case "left_leg" -> List.of("left_leg_on");
+            case "right_leg" -> List.of("right_leg_on");
+            default -> List.of(part);
+        };
+    }
+
+    private static List<String> getTrueSkeletalScaleTargets(String part) {
+        return switch (part) {
+            case "torso" -> List.of("torso_low", "torso_midium", "torso_on");
+            case "left_arm" -> List.of("left_arm_on", "left_arm_low");
+            case "right_arm" -> List.of("right_arm_on", "right_arm_low");
+            case "left_leg" -> List.of("left_leg_on", "left_leg_low");
+            case "right_leg" -> List.of("right_leg_on", "right_leg_low");
+            default -> List.of(part);
+        };
+    }
 
     public static String getStaticHighlightedMoveAxis() {
         BodyPoseEditorFragment inst = activeInstance;
@@ -2732,13 +3092,53 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private static Map<String, PartPose> createPartPoses() {
         Map<String, PartPose> poses = new HashMap<>();
-        for (String part : BodyModelSelectionCatalog.PARTS) {
+        for (String part : getSelectableParts()) {
             if (!part.equals("all")) poses.put(part, new PartPose());
         }
         return poses;
     }
 
+    private static List<String> getSelectableParts() {
+        if (poseEditMode != PoseEditMode.TRUE_SKELETAL) {
+            return Arrays.asList(BodyModelSelectionCatalog.PARTS);
+        }
+        ensureTrueSkeletalPoses();
+        List<String> parts = new ArrayList<>();
+        parts.addAll(Arrays.asList(BodyModelSelectionCatalog.PARTS));
+        for (String bone : BodyPoseSkeletalPreviewRenderer.getEditableBoneNames()) {
+            if (!parts.contains(bone)) {
+                parts.add(bone);
+            }
+        }
+        return parts;
+    }
+
+    private static void ensureTrueSkeletalPoses() {
+        for (String part : BodyModelSelectionCatalog.PARTS) {
+            if (!"all".equals(part) && !TRUE_SKELETAL_POSES.containsKey(part)) {
+                TRUE_SKELETAL_POSES.put(part, new PartPose());
+            }
+        }
+        List<String> bones = new ArrayList<>(BodyPoseSkeletalPreviewRenderer.getEditableBoneNames());
+        for (String bone : bones) {
+            if (!TRUE_SKELETAL_POSES.containsKey(bone)) {
+                TRUE_SKELETAL_POSES.put(bone, new PartPose());
+            }
+        }
+    }
+
+    private static void ensureValidSelectedPartForMode() {
+        if (getSelectableParts().contains(selectedPart)) {
+            return;
+        }
+        selectedPart = "all";
+    }
+
     private static Map<String, PartPose> getActivePoseMap() {
+        if (poseEditMode == PoseEditMode.TRUE_SKELETAL) {
+            ensureTrueSkeletalPoses();
+            return TRUE_SKELETAL_POSES;
+        }
         return poseEditMode == PoseEditMode.SKELETAL ? SKELETAL_POSES : PART_POSES;
     }
 
@@ -2877,6 +3277,25 @@ public class BodyPoseEditorFragment extends Fragment {
         writeBend(values, 12, SKELETAL_POSES.get("left_leg"));
         writeBend(values, 15, SKELETAL_POSES.get("right_leg"));
         return values;
+    }
+
+    private static List<PlaceTrueSkeletalBodyC2SPacket.BonePose> createTrueSkeletalBonePoseList() {
+        Map<String, float[]> rotations = getWorldSkeletalBoneRotations();
+        Map<String, Float> scales = getWorldSkeletalBoneScales();
+        Set<String> names = new LinkedHashSet<>();
+        names.addAll(rotations.keySet());
+        names.addAll(scales.keySet());
+        List<PlaceTrueSkeletalBodyC2SPacket.BonePose> poses = new ArrayList<>();
+        for (String name : names) {
+            float[] rotation = rotations.get(name);
+            float scale = scales.getOrDefault(name, 1.0F);
+            poses.add(new PlaceTrueSkeletalBodyC2SPacket.BonePose(name,
+                    rotation != null && rotation.length > 0 ? rotation[0] : 0.0F,
+                    rotation != null && rotation.length > 1 ? rotation[1] : 0.0F,
+                    rotation != null && rotation.length > 2 ? rotation[2] : 0.0F,
+                    scale));
+        }
+        return poses;
     }
 
     private static float[] createPoseValueArray(Map<String, PartPose> poses) {
@@ -3058,7 +3477,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private enum Axis { PITCH, YAW, ROLL }
     private enum MoveAxis { NONE, X, Y, Z }
     private enum RotationAxis { NONE, PITCH, YAW, ROLL }
-    private enum PoseEditMode { STATIC_PART, SKELETAL }
+    private enum PoseEditMode { STATIC_PART, SKELETAL, TRUE_SKELETAL }
 
     public enum PreviewMode {
         FOLLOW_PLAYER,

@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.kuilunfuzhe.monvhua.config.BodyPoseDefaultsConfig;
 import com.kuilunfuzhe.monvhua.features.block.body.BodyModelSelectionCatalog;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import net.minecraft.command.CommandRegistryAccess;
@@ -35,7 +36,7 @@ public class GiveBodyPartCommand {
                                         .executes(ctx -> giveAllParts(
                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                 EntityArgumentType.getPlayer(ctx, "source"),
-                                                false
+                                                defaultSlim()
                                         ))
                                         .then(CommandManager.literal("slim")
                                                 .executes(ctx -> giveAllParts(
@@ -50,7 +51,7 @@ public class GiveBodyPartCommand {
                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                 EntityArgumentType.getPlayer(ctx, "source"),
                                                 "torso",
-                                                false
+                                                defaultSlim()
                                         ))
                                         .then(CommandManager.literal("slim")
                                                 .executes(ctx -> giveBodyPart(
@@ -66,7 +67,7 @@ public class GiveBodyPartCommand {
                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                 EntityArgumentType.getPlayer(ctx, "source"),
                                                 "left_arm",
-                                                false
+                                                defaultSlim()
                                         ))
                                         .then(CommandManager.literal("slim")
                                                 .executes(ctx -> giveBodyPart(
@@ -82,7 +83,7 @@ public class GiveBodyPartCommand {
                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                 EntityArgumentType.getPlayer(ctx, "source"),
                                                 "right_arm",
-                                                false
+                                                defaultSlim()
                                         ))
                                         .then(CommandManager.literal("slim")
                                                 .executes(ctx -> giveBodyPart(
@@ -98,7 +99,7 @@ public class GiveBodyPartCommand {
                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                 EntityArgumentType.getPlayer(ctx, "source"),
                                                 "left_leg",
-                                                false
+                                                defaultSlim()
                                         ))
                                         .then(CommandManager.literal("slim")
                                                 .executes(ctx -> giveBodyPart(
@@ -114,7 +115,7 @@ public class GiveBodyPartCommand {
                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                 EntityArgumentType.getPlayer(ctx, "source"),
                                                 "right_leg",
-                                                false
+                                                defaultSlim()
                                         ))
                                         .then(CommandManager.literal("slim")
                                                 .executes(ctx -> giveBodyPart(
@@ -130,7 +131,7 @@ public class GiveBodyPartCommand {
                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                 EntityArgumentType.getPlayer(ctx, "source"),
                                                 "head",
-                                                false
+                                                defaultSlim()
                                         ))
                                 )
                         )
@@ -142,7 +143,7 @@ public class GiveBodyPartCommand {
                                                 .executes(ctx -> giveAllLocalSkinParts(
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         StringArgumentType.getString(ctx, "skinName"),
-                                                        false
+                                                        defaultSlim()
                                                 ))
                                                 .then(CommandManager.literal("slim")
                                                         .executes(ctx -> giveAllLocalSkinParts(
@@ -157,7 +158,7 @@ public class GiveBodyPartCommand {
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         StringArgumentType.getString(ctx, "skinName"),
                                                         "torso",
-                                                        false
+                                                        defaultSlim()
                                                 ))
                                                 .then(CommandManager.literal("slim")
                                                         .executes(ctx -> giveLocalSkinPart(
@@ -173,7 +174,7 @@ public class GiveBodyPartCommand {
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         StringArgumentType.getString(ctx, "skinName"),
                                                         "left_arm",
-                                                        false
+                                                        defaultSlim()
                                                 ))
                                                 .then(CommandManager.literal("slim")
                                                         .executes(ctx -> giveLocalSkinPart(
@@ -189,7 +190,7 @@ public class GiveBodyPartCommand {
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         StringArgumentType.getString(ctx, "skinName"),
                                                         "right_arm",
-                                                        false
+                                                        defaultSlim()
                                                 ))
                                                 .then(CommandManager.literal("slim")
                                                         .executes(ctx -> giveLocalSkinPart(
@@ -205,7 +206,7 @@ public class GiveBodyPartCommand {
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         StringArgumentType.getString(ctx, "skinName"),
                                                         "left_leg",
-                                                        false
+                                                        defaultSlim()
                                                 ))
                                                 .then(CommandManager.literal("slim")
                                                         .executes(ctx -> giveLocalSkinPart(
@@ -221,7 +222,7 @@ public class GiveBodyPartCommand {
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         StringArgumentType.getString(ctx, "skinName"),
                                                         "right_leg",
-                                                        false
+                                                        defaultSlim()
                                                 ))
                                                 .then(CommandManager.literal("slim")
                                                         .executes(ctx -> giveLocalSkinPart(
@@ -237,7 +238,7 @@ public class GiveBodyPartCommand {
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         StringArgumentType.getString(ctx, "skinName"),
                                                         "head",
-                                                        false
+                                                        defaultSlim()
                                                 ))
                                                 .then(CommandManager.literal("slim")
                                                         .executes(ctx -> giveLocalSkinPart(
@@ -252,6 +253,10 @@ public class GiveBodyPartCommand {
                         )
                 )
         );
+    }
+
+    private static boolean defaultSlim() {
+        return BodyPoseDefaultsConfig.getDefaultSlimModel();
     }
 
     private static int giveBodyPart(PlayerEntity target, PlayerEntity source, String part, boolean slim) {
