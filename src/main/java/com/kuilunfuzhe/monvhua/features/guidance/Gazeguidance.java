@@ -523,7 +523,9 @@ public class Gazeguidance {
 		ServerWorld serverWorld = (ServerWorld) world;
 
 		// 初始化能量
-		playerEnergy.put(player.getUuid(), GazeConfig.getInstance().maxEnergy);
+		double maxEnergy = GazeConfig.getInstance().maxEnergy;
+		playerEnergy.compute(player.getUuid(), (uuid, energy) ->
+				energy == null ? maxEnergy : Math.max(0.0, Math.min(energy, maxEnergy)));
 
 		int stage = getPlayerStage(player);
 		if (player instanceof ServerPlayerEntity sp) {
@@ -561,6 +563,7 @@ public class Gazeguidance {
 		}
 		if (player instanceof ServerPlayerEntity sp) {
 			ServerPlayNetworking.send(sp, new FocusStatusPacket(true));
+			ServerPlayNetworking.send(sp, new EnergySyncPacket(playerEnergy.getOrDefault(player.getUuid(), maxEnergy), maxEnergy));
 		}
 		focusStartTime.put(player.getUuid(), world.getTime());
 	}

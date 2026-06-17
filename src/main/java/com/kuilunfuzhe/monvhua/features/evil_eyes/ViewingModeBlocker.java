@@ -118,6 +118,12 @@ public class ViewingModeBlocker {
 							Evil_Eyes.syncMarkedListToClient(markerPlayer);
 						}
 						if (firstTime) {
+							Text markerChatMessage = Text.literal("\u00A7c[\u6D1E\u5BDF\u5370\u8BB0] " + tag_pitch.entityDisplayName(player) + " \u643A\u5E26\u4E86\u4F60\u7684\u6807\u8BB0\u7269\u54C1");
+							Text holderChatMessage = Text.literal("\u00A7c\u8FD9\u4E2A\u7269\u54C1\u611F\u89C9\u54EA\u91CC\u602A\u602A\u7684");
+							if (markerPlayer != null) {
+								markerPlayer.sendMessage(markerChatMessage, false);
+							}
+							player.sendMessage(holderChatMessage, false);
 							if (markerPlayer != null) {
 								markerPlayer.sendMessage(Text.literal("§c[洞察印记] " + tag_pitch.entityDisplayName(player) + " 携带了你的标记物品"), true);
 							}
