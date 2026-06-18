@@ -7,9 +7,10 @@ import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.item.config.PlantMagicConfig;
 import com.kuilunfuzhe.monvhua.item.config.ThroughConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecretConfig;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.GlobalConfigS2C;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.RequestGlobalConfigC2S;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.UpdateGlobalConfigC2S;
+import com.kuilunfuzhe.monvhua.gui.stage.general_stage;
+import com.kuilunfuzhe.monvhua.network.general_stage.GeneralStagePackets.GlobalConfigS2C;
+import com.kuilunfuzhe.monvhua.network.general_stage.GeneralStagePackets.RequestGlobalConfigC2S;
+import com.kuilunfuzhe.monvhua.network.general_stage.GeneralStagePackets.UpdateGlobalConfigC2S;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.RequestConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.UpdateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
@@ -22,7 +23,6 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.RequestConfigC2S;
 import com.kuilunfuzhe.monvhua.network.through.RequestThroughConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughConfigUpdateC2SPacket;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -73,11 +73,7 @@ public class CombinedConfigScreen extends Screen {
     private static MirrorConfig cachedMirrorConfig = null;
 
     // ===== 阶段区间组件 =====
-    private final List<ButtonWidget> stageRangeStageButtons = new ArrayList<>();
-    private int stageRangeCurrentStage = 1;
-    private TextFieldWidget stageRangeMinField, stageRangeMaxField;
-    private ButtonWidget saveStageRangeButton;
-    private final List<TextWidget> stageRangeLabels = new ArrayList<>();
+    private final general_stage stageRangeUi = new general_stage(CACHED_EVIL_CONFIGS);
 
     // ===== 穿墙配置组件 =====
     private final List<ButtonWidget> throughStageButtons = new ArrayList<>();
@@ -276,7 +272,7 @@ public class CombinedConfigScreen extends Screen {
         buildGazeGuidanceUI();
         buildMirrorUI();
         buildThroughUI();
-        buildStageRangeUI();
+        stageRangeUi.build(widget -> addDrawableChild(widget), textRenderer, panelX, panelY, leftWidth, this::stageButtonY);
         buildImitateUI();
         buildFloatingUI();
         buildPlantMagicUI();
@@ -440,40 +436,6 @@ public class CombinedConfigScreen extends Screen {
         saveThroughButton = ButtonWidget.builder(Text.literal("保存"), btn -> saveThroughConfig())
                 .dimensions(rightX, rowY + 2*rowHeight + 10, 80, 20).build();
         addDrawableChild(saveThroughButton);
-    }
-
-    // ==================== 阶段区间 UI ====================
-    private void buildStageRangeUI() {
-        int leftX = panelX + 5;
-        for (int i = 1; i <= 7; i++) {
-            int stage = i;
-            ButtonWidget btn = ButtonWidget.builder(Text.literal("阶段 " + i), button -> {
-                stageRangeCurrentStage = stage;
-                loadStageRangeUI();
-            }).dimensions(leftX, stageButtonY(i), leftWidth - 10, 20).build();
-            addDrawableChild(btn);
-            stageRangeStageButtons.add(btn);
-        }
-
-        int rightX = panelX + leftWidth + 5;
-        int rowY = panelY + 10;
-        int rowHeight = 22;
-        int labelWidth = 100;
-        int inputWidth = 60;
-
-        String[] labels = {"触发区间(下限):", "触发区间(上限):"};
-        for (int i = 0; i < labels.length; i++) {
-            TextWidget label = new TextWidget(rightX, rowY + i * rowHeight + 4, labelWidth, 9, Text.literal(labels[i]), textRenderer);
-            addDrawableChild(label);
-            stageRangeLabels.add(label);
-        }
-
-        stageRangeMinField = createField(rightX + labelWidth, rowY, inputWidth);
-        stageRangeMaxField = createField(rightX + labelWidth, rowY + rowHeight, inputWidth);
-
-        saveStageRangeButton = ButtonWidget.builder(Text.literal("保存"), btn -> saveStageRangeConfig())
-                .dimensions(rightX, rowY + 2*rowHeight + 10, 80, 20).build();
-        addDrawableChild(saveStageRangeButton);
     }
 
     private void buildImitateUI() {
@@ -677,7 +639,7 @@ public class CombinedConfigScreen extends Screen {
             case GAZE_GUIDANCE -> loadGazeStageUI();
             case MIRROR -> loadMirrorStageUI();
             case THROUGH -> loadThroughStageUI();
-            case STAGE_RANGE -> loadStageRangeUI();
+            case STAGE_RANGE -> stageRangeUi.load();
             case IMITATE -> loadImitateStageUI();
             case FLOATING -> loadFloatingStageUI();
             case SECRET -> loadSecretStageUI();
@@ -728,11 +690,7 @@ public class CombinedConfigScreen extends Screen {
     }
 
     private void setStageRangeComponentsVisible(boolean visible) {
-        for (ButtonWidget btn : stageRangeStageButtons) btn.visible = visible;
-        for (TextWidget label : stageRangeLabels) label.visible = visible;
-        if (stageRangeMinField != null) stageRangeMinField.visible = visible;
-        if (stageRangeMaxField != null) stageRangeMaxField.visible = visible;
-        if (saveStageRangeButton != null) saveStageRangeButton.visible = visible;
+        stageRangeUi.setVisible(visible);
     }
 
     private void setImitateComponentsVisible(boolean visible) {
@@ -838,7 +796,7 @@ public class CombinedConfigScreen extends Screen {
         }
         if (currentType == ConfigType.EVIL_EYES || currentType == ConfigType.STAGE_RANGE) {
             loadEvilStageUI();
-            loadStageRangeUI();
+            stageRangeUi.load();
         }
     }
 
@@ -982,49 +940,6 @@ public class CombinedConfigScreen extends Screen {
         cachedThroughConfig = config;
         if (currentType == ConfigType.THROUGH) {
             loadThroughStageUI();
-        }
-    }
-
-    // ========== 阶段区间配置 ==========
-    private void loadStageRangeUI() {
-        GlobalConfigS2C.StageConfig cfg = CACHED_EVIL_CONFIGS[stageRangeCurrentStage];
-        if (cfg == null) {
-            stageRangeMinField.setText("0");
-            stageRangeMaxField.setText("5");
-            return;
-        }
-        stageRangeMinField.setText(String.valueOf(cfg.minScore()));
-        stageRangeMaxField.setText(String.valueOf(cfg.maxScore()));
-    }
-
-    private void saveStageRangeConfig() {
-        try {
-            int minScore = Integer.parseInt(stageRangeMinField.getText().trim());
-            int maxScore = Integer.parseInt(stageRangeMaxField.getText().trim());
-
-            GlobalConfigS2C.StageConfig existing = CACHED_EVIL_CONFIGS[stageRangeCurrentStage];
-            int daily = (existing != null) ? existing.dailyLimit() : 10;
-            int marks = (existing != null) ? existing.maxMarks() : 3;
-            int watchTicks = (existing != null) ? existing.watchRequiredTicks() : 40;
-            int parrotDaily = (existing != null) ? existing.parrotDailyLimit() : 5;
-            int maxActive = (existing != null) ? existing.maxActiveParrots() : 1;
-            double uiDrain = (existing != null) ? existing.uiDrainRate() : 1.0D;
-            double watchDrain = (existing != null) ? existing.watchDrainRate() : 8.0D;
-            double regen = (existing != null) ? existing.regenRate() : 2.0D;
-
-            CACHED_EVIL_CONFIGS[stageRangeCurrentStage] = new GlobalConfigS2C.StageConfig(
-                    daily, marks, minScore, maxScore, watchTicks, parrotDaily, maxActive, uiDrain, watchDrain, regen
-            );
-
-            ClientPlayNetworking.send(new UpdateGlobalConfigC2S(
-                    stageRangeCurrentStage, daily, marks, minScore, maxScore, watchTicks, parrotDaily, maxActive, uiDrain, watchDrain, regen
-            ));
-
-            if (client != null && client.player != null)
-                client.player.sendMessage(Text.literal("§e阶段 " + stageRangeCurrentStage + " 区间配置已提交"), true);
-        } catch (NumberFormatException e) {
-            if (client != null && client.player != null)
-                client.player.sendMessage(Text.literal("§c请输入有效的整数数字"), true);
         }
     }
 
@@ -1239,8 +1154,7 @@ public class CombinedConfigScreen extends Screen {
                 context.drawText(textRenderer, "当前编辑: 阶段 " + throughCurrentStage, panelX + leftWidth + 5, panelY + 5, 0x55FFFF, false);
             }
             case STAGE_RANGE -> {
-                context.drawText(textRenderer, "阶段区间配置", panelX + 5, panelY + 5, 0xFFFFFF, false);
-                context.drawText(textRenderer, "当前编辑: 阶段 " + stageRangeCurrentStage, panelX + leftWidth + 5, panelY + 5, 0xFFFFFF, false);
+                stageRangeUi.renderHeader(context, textRenderer, panelX, panelY, leftWidth);
             }
             case IMITATE -> {
                 context.drawText(textRenderer, "模仿魔法配置", panelX + 5, panelY + 5, 0xFFAAFF, false);

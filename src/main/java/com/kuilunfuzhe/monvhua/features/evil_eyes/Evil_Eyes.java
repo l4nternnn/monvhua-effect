@@ -5,6 +5,7 @@ import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
 import com.kuilunfuzhe.monvhua.item.evil_eyes.ClairvoyanceItem;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
+import com.kuilunfuzhe.monvhua.network.general_stage.GeneralStagePackets.*;
 //import com.shushuwonie.client.network.clairvoyance.*;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;

@@ -26,6 +26,7 @@ import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
+import com.kuilunfuzhe.monvhua.network.general_stage.GeneralStagePackets.*;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ChargeSyncS2C;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ConfigS2C;
 import com.kuilunfuzhe.monvhua.network.plant.PlantMagicPackets;

@@ -12,6 +12,7 @@ import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
+import com.kuilunfuzhe.monvhua.network.general_stage.GeneralStagePackets.*;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.MagicPacket;
 import com.kuilunfuzhe.monvhua.network.openback.OpenOtherInventoryPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;

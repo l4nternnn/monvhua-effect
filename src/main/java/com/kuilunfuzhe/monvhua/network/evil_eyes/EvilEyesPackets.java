@@ -21,14 +21,11 @@ public final class EvilEyesPackets {
         SelectView.register();
         ClairvoyanceUiStateC2S.register();
         ExitViewC2S.register();
-        RequestGlobalConfigC2S.register();
-        UpdateGlobalConfigC2S.register();
         PlaceParrotC2S.register();
         AnchorDestroyC2S.register();
     }
 
     public static void registerS2C() {
-        GlobalConfigS2C.register();
         ClairvoyanceEnergyS2C.register();
         OpenUIS2C.register();
         ViewModeS2C.register();
@@ -36,7 +33,6 @@ public final class EvilEyesPackets {
         SelectView.register();
         ForceExitViewS2C.register();
         AnchorParticleS2C.register();
-        PlayerStageS2C.register();
         ExplosionParticleS2C.register();
     }
 
@@ -171,30 +167,6 @@ public final class EvilEyesPackets {
         }
     }
 
-    public record GlobalConfigS2C(String json) implements CustomPayload {
-        public static final Id<GlobalConfigS2C> ID = new Id<>(Identifier.of("monvhua", "global_config"));
-        public static final PacketCodec<PacketByteBuf, GlobalConfigS2C> CODEC =
-                PacketCodec.tuple(PacketCodecs.STRING, GlobalConfigS2C::json, GlobalConfigS2C::new);
-        private static boolean registered = false;
-
-        public static void register() {
-            if (!registered) {
-                PayloadTypeRegistry.playS2C().register(ID, CODEC);
-                registered = true;
-            }
-        }
-
-        @Override
-        public Id<? extends CustomPayload> getId() {
-            return ID;
-        }
-
-        public record StageConfig(int dailyLimit, int maxMarks, int minScore, int maxScore, int watchRequiredTicks,
-                                  int parrotDailyLimit, int maxActiveParrots,
-                                  double uiDrainRate, double watchDrainRate, double regenRate) {
-        }
-    }
-
     public record ClairvoyanceUiStateC2S(boolean open, int previewCount, boolean expanded) implements CustomPayload {
         public static final Id<ClairvoyanceUiStateC2S> ID = new Id<>(Identifier.of("monvhua", "clairvoyance_ui_state"));
         public static final PacketCodec<RegistryByteBuf, ClairvoyanceUiStateC2S> CODEC = PacketCodec.of(
@@ -315,43 +287,6 @@ public final class EvilEyesPackets {
         }
     }
 
-    public record PlayerStageS2C(int stage) implements CustomPayload {
-        public static final Id<PlayerStageS2C> ID = new Id<>(Identifier.of("monvhua", "player_stage"));
-        public static final PacketCodec<PacketByteBuf, PlayerStageS2C> CODEC =
-                PacketCodec.tuple(PacketCodecs.INTEGER, PlayerStageS2C::stage, PlayerStageS2C::new);
-        private static boolean registered = false;
-
-        public static void register() {
-            if (!registered) {
-                PayloadTypeRegistry.playS2C().register(ID, CODEC);
-                registered = true;
-            }
-        }
-
-        @Override
-        public Id<? extends CustomPayload> getId() {
-            return ID;
-        }
-    }
-
-    public record RequestGlobalConfigC2S() implements CustomPayload {
-        public static final Id<RequestGlobalConfigC2S> ID = new Id<>(Identifier.of("monvhua", "request_global_config"));
-        public static final PacketCodec<RegistryByteBuf, RequestGlobalConfigC2S> CODEC = PacketCodec.unit(new RequestGlobalConfigC2S());
-        private static boolean registered = false;
-
-        public static void register() {
-            if (!registered) {
-                PayloadTypeRegistry.playC2S().register(ID, CODEC);
-                registered = true;
-            }
-        }
-
-        @Override
-        public Id<? extends CustomPayload> getId() {
-            return ID;
-        }
-    }
-
     public record RequestViewC2S(UUID entityUuid) implements CustomPayload {
         public static final Id<RequestViewC2S> ID = new Id<>(Identifier.of("monvhua", "request_view"));
         public static final PacketCodec<RegistryByteBuf, RequestViewC2S> CODEC = PacketCodec.tuple(
@@ -420,42 +355,6 @@ public final class EvilEyesPackets {
             if (!registered) {
                 registered = true;
                 PayloadTypeRegistry.playC2S().register(ID, CODEC);
-            }
-        }
-
-        @Override
-        public Id<? extends CustomPayload> getId() {
-            return ID;
-        }
-    }
-
-    public record UpdateGlobalConfigC2S(int stage, int dailyLimit, int maxMarks, int minScore, int maxScore,
-                                        int watchRequiredTicks, int parrotDailyLimit, int maxActiveParrots,
-                                        double uiDrainRate, double watchDrainRate, double regenRate) implements CustomPayload {
-        public static final Id<UpdateGlobalConfigC2S> ID = new Id<>(Identifier.of("monvhua", "update_global_config"));
-        public static final PacketCodec<RegistryByteBuf, UpdateGlobalConfigC2S> CODEC = PacketCodec.of(
-                (packet, buf) -> {
-                    buf.writeInt(packet.stage);
-                    buf.writeInt(packet.dailyLimit);
-                    buf.writeInt(packet.maxMarks);
-                    buf.writeInt(packet.minScore);
-                    buf.writeInt(packet.maxScore);
-                    buf.writeInt(packet.watchRequiredTicks);
-                    buf.writeInt(packet.parrotDailyLimit);
-                    buf.writeInt(packet.maxActiveParrots);
-                    buf.writeDouble(packet.uiDrainRate);
-                    buf.writeDouble(packet.watchDrainRate);
-                    buf.writeDouble(packet.regenRate);
-                },
-                buf -> new UpdateGlobalConfigC2S(buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
-                        buf.readInt(), buf.readInt(), buf.readInt(), buf.readDouble(), buf.readDouble(), buf.readDouble())
-        );
-        private static boolean registered = false;
-
-        public static void register() {
-            if (!registered) {
-                PayloadTypeRegistry.playC2S().register(ID, CODEC);
-                registered = true;
             }
         }
 

@@ -1,8 +1,8 @@
 package com.kuilunfuzhe.monvhua.gui.evil_eyes;
 
-import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.GlobalConfigS2C;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.RequestGlobalConfigC2S;
-import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.UpdateGlobalConfigC2S;
+import com.kuilunfuzhe.monvhua.network.general_stage.GeneralStagePackets.GlobalConfigS2C;
+import com.kuilunfuzhe.monvhua.network.general_stage.GeneralStagePackets.RequestGlobalConfigC2S;
+import com.kuilunfuzhe.monvhua.network.general_stage.GeneralStagePackets.UpdateGlobalConfigC2S;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
