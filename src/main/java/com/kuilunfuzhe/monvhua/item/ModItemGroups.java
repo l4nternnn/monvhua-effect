@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.item;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
+import com.kuilunfuzhe.monvhua.item.imitate.ImitateItem;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
@@ -34,12 +35,14 @@ public class ModItemGroups {
                             entries.add(ModItems.MAGIC_STICK);
                             entries.add(GravityItems.GRAVITY_WAND);
                             entries.add(PlantMagicItems.PLANT_WAND);
+                            entries.add(ThroughItem.THROUGH_ITEM);
+                            entries.add(mirror_of_then_and_now.MIRROR_ITEM);
+                            entries.add(ImitateItem.IMITATE_ITEM);
                             entries.add(PaintItems.PAINT_BRUSH);
                             entries.add(PaintItems.ERASER);
                             entries.add(PaintItems.PAINT_PAPER);
                             entries.add(PaintItems.PAINT_BUCKET);
-                            entries.add(ThroughItem.THROUGH_ITEM);
-                            entries.add(mirror_of_then_and_now.MIRROR_ITEM);
+                            entries.add(Assembly_ModItems.DRAWING_BOARD_ITEM);
                             entries.add(Assembly_ModItems.TORSO_ITEM);
                             entries.add(Assembly_ModItems.LEFT_ARM_ITEM);
                             entries.add(Assembly_ModItems.RIGHT_ARM_ITEM);
@@ -52,7 +55,6 @@ public class ModItemGroups {
                             entries.add(Assembly_ModItems.SKELETAL_RIGHT_ARM_ITEM);
                             entries.add(Assembly_ModItems.SKELETAL_LEFT_LEG_ITEM);
                             entries.add(Assembly_ModItems.SKELETAL_RIGHT_LEG_ITEM);
-                            entries.add(Assembly_ModItems.DRAWING_BOARD_ITEM);
                         })
                         .build()
         );

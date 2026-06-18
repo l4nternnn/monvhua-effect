@@ -84,14 +84,24 @@ public final class EvilEyesPackets {
         }
     }
 
-    public record EntityMarkedS2C(UUID entityUuid, String entityName) implements CustomPayload {
+    public record EntityMarkedS2C(UUID entityUuid, String entityName, String entityTag) implements CustomPayload {
         public static final Id<EntityMarkedS2C> ID = new Id<>(Identifier.of("monvhua", "entity_marked"));
-        public static final PacketCodec<RegistryByteBuf, EntityMarkedS2C> CODEC = PacketCodec.tuple(
-                PacketCodecs.STRING.xmap(UUID::fromString, UUID::toString), EntityMarkedS2C::entityUuid,
-                PacketCodecs.STRING, EntityMarkedS2C::entityName,
-                EntityMarkedS2C::new
-        );
+        public static final PacketCodec<RegistryByteBuf, EntityMarkedS2C> CODEC = PacketCodec.of(EntityMarkedS2C::write, EntityMarkedS2C::new);
         private static boolean registered = false;
+
+        public EntityMarkedS2C(UUID entityUuid, String entityName) {
+            this(entityUuid, entityName, "");
+        }
+
+        private EntityMarkedS2C(RegistryByteBuf buf) {
+            this(UUID.fromString(buf.readString()), buf.readString(), buf.readString());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(entityUuid.toString());
+            buf.writeString(entityName == null ? "" : entityName);
+            buf.writeString(entityTag == null ? "" : entityTag);
+        }
 
         public static void register() {
             if (!registered) {

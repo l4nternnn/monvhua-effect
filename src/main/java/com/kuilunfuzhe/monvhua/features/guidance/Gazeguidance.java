@@ -578,16 +578,18 @@ public class Gazeguidance {
 	}
 
 	private static void syncMarkedState(ServerPlayerEntity player) {
-		List<String> names = new ArrayList<>();
+		List<MarkedListPacket.Entry> entries = new ArrayList<>();
 		Map<UUID, Long> marks = playerMarkedEntities.get(player.getUuid());
 		if (marks != null) {
 			for (UUID entityUuid : marks.keySet()) {
 				Entity entity = findEntity(player.getServer(), entityUuid);
-				names.add(entity == null ? "未知实体" : tag_pitch.entityDisplayName(entity));
+				entries.add(new MarkedListPacket.Entry(
+						entity == null ? "未知实体" : entity.getName().getString(),
+						tag_pitch.tagForEntity(entity)));
 			}
 		}
-		ServerPlayNetworking.send(player, new MarkCountPacket(names.size()));
-		ServerPlayNetworking.send(player, new MarkedListPacket(names));
+		ServerPlayNetworking.send(player, new MarkCountPacket(entries.size()));
+		ServerPlayNetworking.send(player, new MarkedListPacket(entries));
 	}
 
 	private static void addMark(UUID playerUuid, UUID entityUuid, long expiryTime) {

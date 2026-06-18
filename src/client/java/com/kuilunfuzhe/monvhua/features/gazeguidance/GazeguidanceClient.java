@@ -1,6 +1,8 @@
 package com.kuilunfuzhe.monvhua.features.gazeguidance;
 
+import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
+import com.kuilunfuzhe.monvhua.network.gazeguidance.MarkedListPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.RightClickActionPacket;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -39,7 +41,10 @@ public class GazeguidanceClient {
 	private static int currentMarkCount = 0;
 	/** 最大可标记数量 */
 	private static int currentMaxMarks = 0;
-	private static List<String> currentMarkedNames = List.of();
+	private static List<MarkedName> currentMarkedNames = List.of();
+
+	private record MarkedName(Text text, String plain) {
+	}
 
 	/**
 	 * 设置能量值（由网络接收器调用）。
@@ -62,8 +67,18 @@ public class GazeguidanceClient {
 		}
 	}
 
-	public static void setMarkedNames(List<String> names) {
-		currentMarkedNames = names == null ? List.of() : new ArrayList<>(names);
+	public static void setMarkedNames(List<MarkedListPacket.Entry> entries) {
+		if (entries == null) {
+			currentMarkedNames = List.of();
+		} else {
+			List<MarkedName> names = new ArrayList<>(entries.size());
+			for (MarkedListPacket.Entry entry : entries) {
+				names.add(new MarkedName(
+						tag_pitch.coloredNameForTagOrName(entry.tag(), entry.name()),
+						tag_pitch.replaceTags(entry.name())));
+			}
+			currentMarkedNames = names;
+		}
 		currentMarkCount = currentMarkedNames.size();
 	}
 
@@ -156,7 +171,7 @@ public class GazeguidanceClient {
 	private static void renderMarkedList(net.minecraft.client.gui.DrawContext drawContext, MinecraftClient client) {
 		int x = 10;
 		int y = Math.max(36, drawContext.getScaledWindowHeight() / 2 - 58);
-		int width = 116;
+		int width = 140;
 		int rowHeight = 11;
 		int visibleRows = Math.max(1, Math.min(currentMarkedNames.size(), 8));
 		int rows = currentMarkedNames.isEmpty() ? 1 : visibleRows;
@@ -175,11 +190,16 @@ public class GazeguidanceClient {
 			return;
 		}
 		for (int i = 0; i < visibleRows; i++) {
-			String name = currentMarkedNames.get(i);
-			if (client.textRenderer.getWidth(name) > width - 18) {
-				name = client.textRenderer.trimToWidth(name, width - 24) + "...";
+			MarkedName name = currentMarkedNames.get(i);
+			String prefix = (i + 1) + ". ";
+			int rowY = y + 20 + i * rowHeight;
+			drawContext.drawText(client.textRenderer, prefix, x + 8, rowY, 0xFFEAF6FF, true);
+			int nameX = x + 8 + client.textRenderer.getWidth(prefix);
+			Text nameText = name.text();
+			if (client.textRenderer.getWidth(nameText) > width - 26) {
+				nameText = Text.literal(client.textRenderer.trimToWidth(name.plain(), width - 34) + "...").formatted(net.minecraft.util.Formatting.LIGHT_PURPLE);
 			}
-			drawContext.drawText(client.textRenderer, (i + 1) + ". " + name, x + 8, y + 20 + i * rowHeight, 0xFFEAF6FF, true);
+			drawContext.drawText(client.textRenderer, nameText, nameX, rowY, 0xFFEAF6FF, true);
 		}
 	}
 

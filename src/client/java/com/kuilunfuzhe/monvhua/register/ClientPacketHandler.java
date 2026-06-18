@@ -22,6 +22,11 @@ import com.kuilunfuzhe.monvhua.item.config.FloatingConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.item.config.PlantMagicConfig;
 import com.kuilunfuzhe.monvhua.item.config.ThroughConfig;
+import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
+import com.kuilunfuzhe.monvhua.item.imitate.ImitateItem;
+import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
+import com.kuilunfuzhe.monvhua.item.plant.PlantMagicItems;
+import com.kuilunfuzhe.monvhua.item.through.ThroughItem;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
@@ -41,6 +46,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.toast.SystemToast;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.text.Text;
@@ -54,6 +60,50 @@ import java.util.UUID;
  */
 public class ClientPacketHandler {
     private static volatile int lastNotifiedStage = 1;
+
+    private static void showStageUpgradeToast(String magicName, int newStage) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        SystemToast.show(client.getToastManager(), SystemToast.Type.NARRATOR_TOGGLE,
+                Text.literal("§6" + magicName),
+                Text.literal("阶段 §a" + newStage));
+    }
+
+    private static String currentStageToastMagicName(MinecraftClient client) {
+        if (client == null || client.player == null) {
+            return null;
+        }
+        String main = stageToastMagicName(client.player.getMainHandStack());
+        if (main != null) {
+            return main;
+        }
+        return stageToastMagicName(client.player.getOffHandStack());
+    }
+
+    private static String stageToastMagicName(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return null;
+        }
+        Item item = stack.getItem();
+        if (item == Evil_Eyes.CLAIRVOYANCE_ITEM) {
+            return "千里眼";
+        }
+        if (item == mirror_of_then_and_now.MIRROR_ITEM) {
+            return "镜子";
+        }
+        if (item == ThroughItem.THROUGH_ITEM) {
+            return "穿墙";
+        }
+        if (item == ImitateItem.IMITATE_ITEM) {
+            return "模仿";
+        }
+        if (item == PlantMagicItems.PLANT_WAND) {
+            return "植物";
+        }
+        if (item == GravityItems.GRAVITY_WAND) {
+            return "重力";
+        }
+        return null;
+    }
 
     /**
      * 注册所有 S2C 网络包的客户端处理回调。
@@ -117,7 +167,7 @@ public class ClientPacketHandler {
                 }
                 long expire = context.client().world != null ? context.client().world.getTime() + 60 : System.currentTimeMillis() / 50 + 60;
                 Evil_EyesClient.localMarkedEntities.put(uuid, expire);
-                Evil_EyesClient.localMarkedEntityNames.put(uuid, tag_pitch.replaceTags(packet.entityName()));
+                Evil_EyesClient.localMarkedEntityNames.put(uuid, new Evil_EyesClient.MarkedEntityName(packet.entityName(), packet.entityTag()));
                 com.kuilunfuzhe.monvhua.gui.evil_eyes.Evil_eyesScreen.updateMarkedList(Evil_EyesClient.localMarkedEntities);
             });
         });
@@ -233,7 +283,7 @@ public class ClientPacketHandler {
         });
 
         ClientPlayNetworking.registerGlobalReceiver(MarkedListPacket.ID, (packet, context) -> {
-            context.client().execute(() -> GazeguidanceClient.setMarkedNames(packet.names()));
+            context.client().execute(() -> GazeguidanceClient.setMarkedNames(packet.entries()));
         });
 
         // 11. 粒子效果（静态点）
@@ -282,11 +332,11 @@ public class ClientPacketHandler {
                 MonvhuaModClient.currentPlayerStage = newStage;
                 MinecraftClient client = context.client();
                 if (client.player != null) {
-                    ItemStack mainHand = client.player.getMainHandStack();
-                    if (mainHand.getItem() == Evil_Eyes.CLAIRVOYANCE_ITEM) {
+                    String magicName = currentStageToastMagicName(client);
+                    if (magicName != null) {
                         if (newStage != lastNotifiedStage) {
                             lastNotifiedStage = newStage;
-                            showStageUpgradeToast(newStage);
+                            showStageUpgradeToast(magicName, newStage);
                         }
                     }
                 }

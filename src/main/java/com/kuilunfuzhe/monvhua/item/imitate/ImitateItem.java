@@ -39,7 +39,7 @@ public class ImitateItem extends Item {
     public ActionResult use(World world, PlayerEntity user, Hand hand) {
         if (!world.isClient) {
             ServerPlayerEntity player = (ServerPlayerEntity) user;
-            int stage = ImitateManager.getWitchScore(player);
+            int stage = ImitateManager.getPlayerStage(player);
             ServerPlayNetworking.send(player, new ImitateOpenUIPacket(stage));
         }
         return ActionResult.SUCCESS;

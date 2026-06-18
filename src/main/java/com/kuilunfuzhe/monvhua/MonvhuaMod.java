@@ -13,6 +13,7 @@ import com.kuilunfuzhe.monvhua.config.GlobalConfigManager;
 import com.kuilunfuzhe.monvhua.effect.DisplayOnlyEffect;
 import com.kuilunfuzhe.monvhua.entity.ModBlockEntities;
 import com.kuilunfuzhe.monvhua.entity.ModEntities;
+import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.features.action.ActionConfig;
 import com.kuilunfuzhe.monvhua.features.action.ActionEngine;
 import com.kuilunfuzhe.monvhua.features.action.ActionExecutor;
@@ -54,10 +55,12 @@ import com.kuilunfuzhe.monvhua.network.general_stage.GeneralStagePackets.*;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateSelectPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.RequestImitateConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.imitate.RequestSilenceTargetsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SilenceEffect;
 import com.kuilunfuzhe.monvhua.network.imitate.SilenceEffectS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SilenceServerManager;
 import com.kuilunfuzhe.monvhua.network.imitate.SilencePacket;
+import com.kuilunfuzhe.monvhua.network.imitate.SilenceTargetsS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SoundWavePacket;
 import com.kuilunfuzhe.monvhua.network.imitate.UpdateImitateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.action.ActionPackets.*;
@@ -220,7 +223,9 @@ public class MonvhuaMod implements ModInitializer {
         ImitateSelectPacket.register();
         ImitateSelectPacket.registerHandler();
         SilencePacket.register();
+        RequestSilenceTargetsC2SPacket.register();
         SilenceEffectS2CPacket.register();
+        SilenceTargetsS2CPacket.register();
         DrawingBoardPackets.registerReceivers();
 
         ServerPlayNetworking.registerGlobalReceiver(ToggleC2S.ID, (packet, context) -> {
@@ -625,6 +630,32 @@ public class MonvhuaMod implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(SilencePacket.ID, (packet, context) -> {
             context.server().execute(() -> {
                 SilenceEffect.execute(context.player(), packet.targetUUID());
+            });
+        });
+        ServerPlayNetworking.registerGlobalReceiver(RequestSilenceTargetsC2SPacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity caster = context.player();
+                double radius = Math.max(0.0D, packet.radius());
+                List<SilenceTargetsS2CPacket.Entry> entries = new ArrayList<>();
+                for (ServerPlayerEntity target : context.server().getPlayerManager().getPlayerList()) {
+                    if (target.getUuid().equals(caster.getUuid())) {
+                        continue;
+                    }
+                    double distance = caster.distanceTo(target);
+                    if (distance > radius) {
+                        continue;
+                    }
+                    entries.add(new SilenceTargetsS2CPacket.Entry(
+                            target.getUuid(),
+                            target.getGameProfile().getName(),
+                            tag_pitch.tagForEntity(target),
+                            distance
+                    ));
+                }
+                entries.sort(Comparator
+                        .comparingDouble(SilenceTargetsS2CPacket.Entry::distance)
+                        .thenComparing(entry -> tag_pitch.replaceTags(entry.name())));
+                ServerPlayNetworking.send(caster, new SilenceTargetsS2CPacket(radius, entries));
             });
         });
 

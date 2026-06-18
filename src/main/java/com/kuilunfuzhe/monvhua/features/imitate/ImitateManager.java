@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.imitate;
 
 import com.kuilunfuzhe.monvhua.WitchStage;
+import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
@@ -43,30 +44,6 @@ public class ImitateManager {
             "典狱长",
             "月代雪"
     };
-
-    private static final Map<String, Text> ROLE_COLORS = new ConcurrentHashMap<>();
-
-    static {
-        ROLE_COLORS.put("樱羽艾玛", Text.literal("◆ ").withColor(0xfc8eac).append(Text.literal("樱羽艾玛").withColor(0xfc8eac)));
-        ROLE_COLORS.put("二阶堂希罗", Text.literal("◆ ").withColor(0x8b0000).append(Text.literal("二阶堂希罗").withColor(0x8b0000)));
-        ROLE_COLORS.put("泽渡可可", Text.literal("◆ ").withColor(0xff6700).append(Text.literal("泽渡可可").withColor(0xff6700)));
-        ROLE_COLORS.put("橘雪莉", Text.literal("◆ ").withColor(0x1e90ff).append(Text.literal("橘雪莉").withColor(0x1e90ff)));
-        ROLE_COLORS.put("远野汉娜", Text.literal("◆ ").withColor(0x5f9e3f).append(Text.literal("远野汉娜").withColor(0x5f9e3f)));
-        ROLE_COLORS.put("夏目安安", Text.literal("◆ ").withColor(0x240090).append(Text.literal("夏目安安").withColor(0x240090)));
-        ROLE_COLORS.put("城崎诺亚", Text.literal("◆ ").formatted(Formatting.AQUA)
-                .append(Text.literal("城").formatted(Formatting.AQUA))
-                .append(Text.literal("崎").formatted(Formatting.RED))
-                .append(Text.literal("诺").formatted(Formatting.YELLOW))
-                .append(Text.literal("亚").formatted(Formatting.LIGHT_PURPLE)));
-        ROLE_COLORS.put("莲见蕾雅", Text.literal("◆ ").formatted(Formatting.GOLD).append(Text.literal("莲见蕾雅").formatted(Formatting.GOLD)));
-        ROLE_COLORS.put("佐伯米利亚", Text.literal("◆ ").formatted(Formatting.YELLOW).append(Text.literal("佐伯米利亚").formatted(Formatting.YELLOW)));
-        ROLE_COLORS.put("黑部奈叶香", Text.literal("◆ ").formatted(Formatting.DARK_GRAY).append(Text.literal("黑部奈叶香").formatted(Formatting.DARK_GRAY)));
-        ROLE_COLORS.put("宝生玛格", Text.literal("◆ ").formatted(Formatting.DARK_PURPLE).append(Text.literal("宝生玛格").formatted(Formatting.DARK_PURPLE)));
-        ROLE_COLORS.put("紫藤亚里沙", Text.literal("◆ ").withColor(0xB1B7AC).append(Text.literal("紫藤亚里沙").withColor(0xB1B7AC)));
-        ROLE_COLORS.put("冰上梅露露", Text.literal("◆ ").withColor(0xddb6ff).append(Text.literal("冰上梅露露").withColor(0xddb6ff)));
-        ROLE_COLORS.put("典狱长", Text.literal("◆ ").formatted(Formatting.WHITE).append(Text.literal("典狱长").formatted(Formatting.WHITE)));
-        ROLE_COLORS.put("月代雪", Text.literal("◆ ").withColor(0xe0ffff).append(Text.literal("月代雪").withColor(0xe0ffff)));
-    }
 
     public static WitchStage getWitchStage(ServerPlayerEntity player) {
         Scoreboard scoreboard = player.getScoreboard();
@@ -224,7 +201,7 @@ public class ImitateManager {
     }
 
     public static Text getColoredRoleName(String roleName) {
-        return ROLE_COLORS.getOrDefault(roleName, Text.literal("◆ " + roleName).formatted(Formatting.LIGHT_PURPLE));
+        return tag_pitch.coloredNameForName(roleName);
     }
 
     public static boolean canUseSilence(ServerPlayerEntity player) {

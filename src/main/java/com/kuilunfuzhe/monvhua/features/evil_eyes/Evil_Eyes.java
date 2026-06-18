@@ -142,8 +142,8 @@ public class Evil_Eyes {
             Entity e = player.getWorld().getEntity(uuid);
             // 过滤锚点盔甲架
             if (isAnchorStand(e)) continue;
-            String name = tag_pitch.entityDisplayName(e);
-            ServerPlayNetworking.send(player, new EntityMarkedS2C(uuid, name));
+            String name = e == null ? "未知实体" : e.getName().getString();
+            ServerPlayNetworking.send(player, new EntityMarkedS2C(uuid, name, tag_pitch.tagForEntity(e)));
         }
     }
 

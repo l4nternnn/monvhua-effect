@@ -1,23 +1,24 @@
 package com.kuilunfuzhe.monvhua.gui.imitate;
 
+import com.kuilunfuzhe.monvhua.event.tag_pitch;
+import com.kuilunfuzhe.monvhua.network.imitate.RequestSilenceTargetsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SilencePacket;
+import com.kuilunfuzhe.monvhua.network.imitate.SilenceTargetsS2CPacket;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextWidget;
-import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
 public class SilenceTargetScreen extends Screen {
 
-    private static final int BUTTON_WIDTH = 150;
+    private static final int BUTTON_WIDTH = 180;
     private static final int BUTTON_HEIGHT = 22;
     private static final int BUTTON_SPACING = 4;
     private static final int HEADER_HEIGHT = 30;
@@ -31,6 +32,7 @@ public class SilenceTargetScreen extends Screen {
     private int panelY;
     private final List<PlayerInfo> nearbyPlayers = new ArrayList<>();
     private final double radius;
+    private boolean loadedTargets;
 
     public SilenceTargetScreen(double radius) {
         super(Text.literal("屏蔽声音"));
@@ -39,12 +41,14 @@ public class SilenceTargetScreen extends Screen {
 
     private static class PlayerInfo {
         final UUID uuid;
-        final String name;
+        final Text name;
+        final String sortName;
         final double distance;
 
-        PlayerInfo(UUID uuid, String name, double distance) {
+        PlayerInfo(UUID uuid, Text name, String sortName, double distance) {
             this.uuid = uuid;
             this.name = name;
+            this.sortName = sortName;
             this.distance = distance;
         }
     }
@@ -52,20 +56,31 @@ public class SilenceTargetScreen extends Screen {
     @Override
     protected void init() {
         super.init();
+        requestTargets();
+        rebuildWidgets();
+    }
 
+    public void receiveTargets(SilenceTargetsS2CPacket packet) {
         nearbyPlayers.clear();
-        if (client != null && client.player != null && client.world != null) {
-            UUID myUuid = client.player.getUuid();
-            for (PlayerEntity player : client.world.getPlayers()) {
-                if (!player.getUuid().equals(myUuid)) {
-                    double distance = client.player.distanceTo(player);
-                    if (distance <= radius) {
-                        nearbyPlayers.add(new PlayerInfo(player.getUuid(), player.getName().getString(), distance));
-                    }
-                }
-            }
-            nearbyPlayers.sort(Comparator.comparingDouble(p -> p.distance));
+        for (SilenceTargetsS2CPacket.Entry entry : packet.entries()) {
+            nearbyPlayers.add(new PlayerInfo(
+                    entry.uuid(),
+                    tag_pitch.coloredNameForTagOrName(entry.tag(), entry.name()),
+                    tag_pitch.replaceTags(entry.name()),
+                    entry.distance()));
         }
+        loadedTargets = true;
+        rebuildWidgets();
+    }
+
+    private void requestTargets() {
+        if (client != null && client.player != null) {
+            ClientPlayNetworking.send(new RequestSilenceTargetsC2SPacket(radius));
+        }
+    }
+
+    private void rebuildWidgets() {
+        clearChildren();
 
         int totalButtons = nearbyPlayers.size();
         int rows = Math.min(totalButtons, MAX_ROWS);
@@ -92,8 +107,10 @@ public class SilenceTargetScreen extends Screen {
             PlayerInfo info = nearbyPlayers.get(i);
             int y = startY + i * (BUTTON_HEIGHT + BUTTON_SPACING);
 
-            String displayText = info.name + " (" + String.format("%.1f", info.distance) + "m)";
-            ButtonWidget playerBtn = ButtonWidget.builder(Text.literal(displayText), button -> {
+            Text displayText = Text.empty()
+                    .append(info.name)
+                    .append(Text.literal(" (" + String.format("%.1f", info.distance) + "m)").formatted(Formatting.GRAY));
+            ButtonWidget playerBtn = ButtonWidget.builder(displayText, button -> {
                         ClientPlayNetworking.send(new SilencePacket(info.uuid));
                         if (client != null) {
                             client.setScreen(null);
@@ -130,11 +147,13 @@ public class SilenceTargetScreen extends Screen {
         context.fill(panelX, panelY, panelX + panelWidth, panelY + HEADER_HEIGHT - 5, 0xFF663333);
 
         if (nearbyPlayers.isEmpty()) {
-            Text noPlayersText = Text.literal("§e附近没有可静音的玩家").formatted(Formatting.YELLOW);
-            int textWidth = textRenderer.getWidth(noPlayersText);
+            Text message = loadedTargets
+                    ? Text.literal("§e附近没有可静音的玩家").formatted(Formatting.YELLOW)
+                    : Text.literal("§7正在获取目标...").formatted(Formatting.GRAY);
+            int textWidth = textRenderer.getWidth(message);
             int textX = panelX + (panelWidth - textWidth) / 2;
             int textY = panelY + HEADER_HEIGHT + 20;
-            context.drawTextWithShadow(textRenderer, noPlayersText, textX, textY, 0xFFFFFF);
+            context.drawTextWithShadow(textRenderer, message, textX, textY, 0xFFFFFF);
         }
 
         super.render(context, mouseX, mouseY, delta);

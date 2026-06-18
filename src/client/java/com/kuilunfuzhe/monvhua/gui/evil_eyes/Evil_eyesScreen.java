@@ -253,7 +253,7 @@ public class Evil_eyesScreen extends Screen {
         int rowWidth = listBounds.width;
         int yOffset = 20;
         for (UUID uuid : currentMarks.keySet()) {
-            String name = getEntityName(uuid);
+            DisplayName name = getEntityName(uuid);
             markedRows.add(new MarkedRow(uuid, name, listBounds.x, listBounds.y + yOffset, rowWidth, rowHeight));
             yOffset += rowHeight + rowGap;
             if (yOffset + rowHeight > listBounds.height) {
@@ -262,18 +262,20 @@ public class Evil_eyesScreen extends Screen {
         }
     }
 
-    private String getEntityName(UUID uuid) {
-        String cachedName = Evil_EyesClient.localMarkedEntityNames.get(uuid);
-        if (cachedName != null && !cachedName.isBlank()) {
-            return tag_pitch.replaceTags(cachedName);
+    private DisplayName getEntityName(UUID uuid) {
+        Evil_EyesClient.MarkedEntityName cachedName = Evil_EyesClient.localMarkedEntityNames.get(uuid);
+        if (cachedName != null && cachedName.name() != null && !cachedName.name().isBlank()) {
+            return new DisplayName(
+                    tag_pitch.coloredNameForTagOrName(cachedName.tag(), cachedName.name()),
+                    tag_pitch.replaceTags(cachedName.name()));
         }
         if (client != null && client.world != null) {
             var entity = client.world.getEntity(uuid);
             if (entity != null) {
-                return tag_pitch.entityDisplayName(entity);
+                return new DisplayName(tag_pitch.entityColoredName(entity), tag_pitch.entityDisplayName(entity));
             }
         }
-        return "Unknown";
+        return new DisplayName(Text.literal("Unknown"), "Unknown");
     }
 
     @Override
@@ -327,7 +329,10 @@ public class Evil_eyesScreen extends Screen {
             drawRoundedPanel(context, row.x, row.y, row.width, row.height, 6, fill, border);
 
             context.fill(row.x + 8, row.y + 9, row.x + 12, row.y + 13, selectedRow ? ARCANE_BLUE : ACCENT);
-            String label = trimToWidth(row.name, row.width - 52);
+            Text label = row.name.text();
+            if (textRenderer.getWidth(label) > row.width - 52) {
+                label = Text.literal(trimToWidth(row.name.plain(), row.width - 52));
+            }
             context.drawTextWithShadow(textRenderer, label, row.x + 18, row.y + 7, selectedRow ? TEXT_MAIN : 0xFFE8D7C2);
 
             boolean deleteHover = row.containsDelete(mouseX, mouseY);
@@ -582,7 +587,10 @@ public class Evil_eyesScreen extends Screen {
         ClairvoyanceViewportRenderer.cleanup();
     }
 
-    private record MarkedRow(UUID uuid, String name, int x, int y, int width, int height) {
+    private record DisplayName(Text text, String plain) {
+    }
+
+    private record MarkedRow(UUID uuid, DisplayName name, int x, int y, int width, int height) {
         boolean contains(double mouseX, double mouseY) {
             return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
         }

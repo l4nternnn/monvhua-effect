@@ -22,7 +22,7 @@ public class ImitateScreen extends Screen {
     private static final int HEADER_HEIGHT = 30;
     private static final int FOOTER_HEIGHT = 50;
     private static final int PADDING = 10;
-    private static final int WITCH_STAGE_THRESHOLD = 80;
+    private static final int ADVANCED_STAGE_THRESHOLD = 7;
 
     private int panelWidth;
     private int panelHeight;
@@ -42,8 +42,8 @@ public class ImitateScreen extends Screen {
         int totalButtons = ImitateManager.ROLES.length;
         int rows = (int) Math.ceil((double) totalButtons / COLUMNS);
 
-        boolean showSoundWave = witchStage >= WITCH_STAGE_THRESHOLD;
-        boolean showSilence = witchStage >= WITCH_STAGE_THRESHOLD;
+        boolean showSoundWave = witchStage >= ADVANCED_STAGE_THRESHOLD;
+        boolean showSilence = witchStage >= ADVANCED_STAGE_THRESHOLD;
         int extraFooterHeight = showSoundWave ? (showSilence ? 60 : 30) : 0;
 
         panelWidth = COLUMNS * (BUTTON_WIDTH + BUTTON_SPACING) - BUTTON_SPACING + PADDING * 2;
@@ -173,7 +173,7 @@ public class ImitateScreen extends Screen {
         context.fill(panelX, panelY, panelX + panelWidth, panelY + HEADER_HEIGHT - 5, 0xFF333366);
         context.drawCenteredTextWithShadow(textRenderer, "§d✦ 模仿魔法 §r✦", panelX + panelWidth / 2, panelY + 8, 0xFFFFFF);
 
-        if (witchStage >= WITCH_STAGE_THRESHOLD) {
+        if (witchStage >= ADVANCED_STAGE_THRESHOLD) {
             context.drawCenteredTextWithShadow(textRenderer, "§b[魔女化阶段] 声音震荡已解锁", panelX + panelWidth / 2, panelY + panelHeight - 15, 0xAAAAFF);
         }
 

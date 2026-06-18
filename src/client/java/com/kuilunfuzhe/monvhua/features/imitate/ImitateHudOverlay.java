@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.imitate;
 
 import com.kuilunfuzhe.monvhua.client.imitate.ImitateClientManager;
+import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -82,26 +83,6 @@ public class ImitateHudOverlay {
     }
 
     private static Text getColoredRoleName(String roleName) {
-        return switch (roleName) {
-            case "樱羽艾玛" -> Text.literal(roleName).withColor(0xfc8eac);
-            case "二阶堂希罗" -> Text.literal(roleName).withColor(0x8b0000);
-            case "泽渡可可" -> Text.literal(roleName).withColor(0xff6700);
-            case "橘雪莉" -> Text.literal(roleName).withColor(0x1e90ff);
-            case "远野汉娜" -> Text.literal(roleName).withColor(0x5f9e3f);
-            case "夏目安安" -> Text.literal(roleName).withColor(0x240090);
-            case "城崎诺亚" -> Text.literal("城").formatted(Formatting.AQUA)
-                    .append(Text.literal("崎").formatted(Formatting.RED))
-                    .append(Text.literal("诺").formatted(Formatting.YELLOW))
-                    .append(Text.literal("亚").formatted(Formatting.LIGHT_PURPLE));
-            case "莲见蕾雅" -> Text.literal(roleName).formatted(Formatting.GOLD);
-            case "佐伯米利亚" -> Text.literal(roleName).formatted(Formatting.YELLOW);
-            case "黑部奈叶香" -> Text.literal(roleName).formatted(Formatting.DARK_GRAY);
-            case "宝生玛格" -> Text.literal(roleName).formatted(Formatting.DARK_PURPLE);
-            case "紫藤亚里沙" -> Text.literal(roleName).withColor(0xB1B7AC);
-            case "冰上梅露露" -> Text.literal(roleName).withColor(0xddb6ff);
-            case "典狱长" -> Text.literal(roleName).formatted(Formatting.DARK_RED);
-            case "月代雪" -> Text.literal(roleName).withColor(0xe0ffff);
-            default -> Text.literal(roleName).formatted(Formatting.LIGHT_PURPLE);
-        };
+        return tag_pitch.coloredNameForName(roleName);
     }
 }

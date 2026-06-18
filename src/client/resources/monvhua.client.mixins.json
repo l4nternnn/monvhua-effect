@@ -7,16 +7,15 @@
 		"ExampleClientMixin",
 		"HideHandMixin",
 		"CameraAccessor",
-		"FramebufferOverrideMixin",
-		"WorldRendererHookMixin",
+		"multiple_perspectives.FramebufferOverrideMixin",
+		"multiple_perspectives.WorldRendererHookMixin",
 		"carrymodelpose.PlayerEntityModelCarryPoseMixin",
 		"carrymodelpose.PlayerEntityRendererCarryPoseMixin",
 		"carrymodelpose.CarriedEntityDirectRenderCancelMixin",
 		"carrymodelpose.CarriedPlayerCameraMixin",
 		"carrymodelpose.FirstPersonCarrierAttachedEntityRenderMixin",
 		"PlayerSkinGuiElementRendererMixin",
-		"SoundManagerMixin",
-		"ChatHudMixin"
+		"SoundManagerMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

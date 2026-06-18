@@ -19,7 +19,9 @@ import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateOpenUIPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.RequestImitateConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.imitate.RequestSilenceTargetsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SilencePacket;
+import com.kuilunfuzhe.monvhua.network.imitate.SilenceTargetsS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SoundWavePacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SoundWaveStartS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.UpdateImitateConfigC2SPacket;
@@ -65,6 +67,7 @@ public class ModNetworking {
         SoundWaveStartS2CPacket.register();
         ImitateConfigS2CPacket.register();
         ImitateSyncS2CPacket.register();
+        SilenceTargetsS2CPacket.register();
         SecretPackets.registerS2C();
     }
 
@@ -97,6 +100,7 @@ public class ModNetworking {
         RequestImitateConfigC2SPacket.register();
         UpdateImitateConfigC2SPacket.register();
         SilencePacket.register();
+        RequestSilenceTargetsC2SPacket.register();
         SecretPackets.registerC2S();
     }
 }

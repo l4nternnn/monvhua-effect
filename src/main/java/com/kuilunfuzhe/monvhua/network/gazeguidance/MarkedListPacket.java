@@ -8,29 +8,33 @@ import net.minecraft.util.Identifier;
 import java.util.ArrayList;
 import java.util.List;
 
-public record MarkedListPacket(List<String> names) implements CustomPayload {
+public record MarkedListPacket(List<Entry> entries) implements CustomPayload {
     public static final Id<MarkedListPacket> ID = new Id<>(Identifier.of("monvhua", "guidance_marked_list"));
     public static final PacketCodec<RegistryByteBuf, MarkedListPacket> CODEC = PacketCodec.of(MarkedListPacket::write, MarkedListPacket::new);
     private static boolean registered = false;
 
+    public record Entry(String name, String tag) {
+    }
+
     private MarkedListPacket(RegistryByteBuf buf) {
-        this(readNames(buf));
+        this(readEntries(buf));
     }
 
     private void write(RegistryByteBuf buf) {
-        buf.writeVarInt(names.size());
-        for (String name : names) {
-            buf.writeString(name);
+        buf.writeVarInt(entries.size());
+        for (Entry entry : entries) {
+            buf.writeString(entry.name() == null ? "" : entry.name());
+            buf.writeString(entry.tag() == null ? "" : entry.tag());
         }
     }
 
-    private static List<String> readNames(RegistryByteBuf buf) {
+    private static List<Entry> readEntries(RegistryByteBuf buf) {
         int size = buf.readVarInt();
-        List<String> names = new ArrayList<>(size);
+        List<Entry> entries = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
-            names.add(buf.readString());
+            entries.add(new Entry(buf.readString(), buf.readString()));
         }
-        return names;
+        return entries;
     }
 
     @Override

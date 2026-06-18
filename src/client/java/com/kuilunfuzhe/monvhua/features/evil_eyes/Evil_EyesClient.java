@@ -47,8 +47,11 @@ public class Evil_EyesClient {
 
     // 公开的标记实体映射（供其他类使用）
     public static final Map<UUID, Long> localMarkedEntities = new ConcurrentHashMap<>();
-    public static final Map<UUID, String> localMarkedEntityNames = new ConcurrentHashMap<>();
+    public static final Map<UUID, MarkedEntityName> localMarkedEntityNames = new ConcurrentHashMap<>();
     private static volatile String viewMode = "viewport";
+
+    public record MarkedEntityName(String name, String tag) {
+    }
 
     public static void setViewMode(String mode) {
         viewMode = mode == null || mode.isBlank() ? "viewport" : mode;
