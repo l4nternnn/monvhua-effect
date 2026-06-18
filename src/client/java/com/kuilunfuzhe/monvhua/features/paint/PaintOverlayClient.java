@@ -134,7 +134,7 @@ public final class PaintOverlayClient {
     }
 
     public static boolean tryOpenColorScreen(MinecraftClient client) {
-        if (client.player == null) {
+        if (client.player == null || (!client.player.isCreative() && !client.player.isSpectator())) {
             return false;
         }
         if (isHoldingPaintBrush(client)) {

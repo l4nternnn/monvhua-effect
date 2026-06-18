@@ -82,6 +82,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final float MODEL_OFFSET_MIN = -10.0F;
     private static final float MODEL_OFFSET_MAX = 10.0F;
     private static final float TRANSFORM_OFFSET_STEP = 0.25F;
+    private static final float TRUE_SKELETAL_OFFSET_STEP = 0.05F;
     private static final float MODEL_SCALE_MIN = 0.02F;
     private static final float MODEL_SCALE_MAX = 12.0F;
     private static final float MODEL_SCALE_STEP = 0.05F;
@@ -477,6 +478,9 @@ public class BodyPoseEditorFragment extends Fragment {
             pose.pitch = clampPreview(bone.getFloat("pitch", 0.0F), -180.0F, 180.0F);
             pose.yaw = normalizeDegrees(bone.getFloat("yaw", 0.0F));
             pose.roll = normalizeDegrees(bone.getFloat("roll", 0.0F));
+            pose.offsetX = clampPreview(bone.getFloat("offset_x", 0.0F), MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+            pose.offsetY = clampPreview(bone.getFloat("offset_y", 0.0F), MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+            pose.offsetZ = clampPreview(bone.getFloat("offset_z", 0.0F), MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
             pose.scale = clampPreview(bone.getFloat("scale", 1.0F), MODEL_SCALE_MIN, MODEL_SCALE_MAX);
         }
     }
@@ -1151,6 +1155,8 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private void rebuildTrueSkeletalPartButtons(Context ctx) {
         addPartButton(partButtonsContainer, ctx, "all", "all", -1.0F);
+        addTrueSkeletalPartGroup(ctx, "eye", "Eye", "eye_left", "eye_right");
+        addTrueSkeletalPartGroup(ctx, "eyelid", "Lid", "eyelid_left", "eyelid_right");
         addTrueSkeletalPartGroup(ctx, "head", "头");
         addTrueSkeletalPartGroup(ctx, "torso", "躯干", "torso_low", "torso_midium", "torso_on");
         addTrueSkeletalPartGroup(ctx, "left_arm", "左臂", "left_arm_on", "left_arm_low");
@@ -1213,6 +1219,8 @@ public class BodyPoseEditorFragment extends Fragment {
             case "torso_on" -> "上";
             case "left_arm_on", "right_arm_on", "left_leg_on", "right_leg_on" -> "上";
             case "left_arm_low", "right_arm_low", "left_leg_low", "right_leg_low" -> "下";
+            case "eye_left", "eyelid_left" -> "R";
+            case "eye_right", "eyelid_right" -> "L";
             default -> part;
         };
     }
@@ -1232,6 +1240,12 @@ public class BodyPoseEditorFragment extends Fragment {
                 BodyPoseEditorFragment::setWholeBodyScale,
                 MODEL_SCALE_STEP, MODEL_SCALE_MIN, MODEL_SCALE_MAX, false,
                 poseValueBindings));
+
+        if (!editingAll && poseEditMode == PoseEditMode.TRUE_SKELETAL) {
+            poseControlsContainer.addView(createPositionRow(ctx, "X", MoveAxis.X));
+            poseControlsContainer.addView(createPositionRow(ctx, "Y", MoveAxis.Y));
+            poseControlsContainer.addView(createPositionRow(ctx, "Z", MoveAxis.Z));
+        }
 
         if (editingAll) {
             addAllBendControls(ctx);
@@ -1302,6 +1316,14 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private LinearLayout createBendRow(Context ctx, String label, Axis axis) {
         return createPartBendRow(ctx, label, selectedPart, axis, true);
+    }
+
+    private LinearLayout createPositionRow(Context ctx, String label, MoveAxis axis) {
+        return createNumericRow(ctx, label,
+                () -> getSelectedPoseOffset(axis),
+                value -> setSelectedPoseOffset(axis, value),
+                TRUE_SKELETAL_OFFSET_STEP, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX, false,
+                poseValueBindings);
     }
 
     private void addAllBendControls(Context ctx) {
@@ -2831,6 +2853,18 @@ public class BodyPoseEditorFragment extends Fragment {
         return scales;
     }
 
+    public static Map<String, float[]> getWorldSkeletalBoneOffsets() {
+        if (poseEditMode != PoseEditMode.TRUE_SKELETAL) {
+            return Map.of();
+        }
+        ensureTrueSkeletalPoses();
+        Map<String, float[]> offsets = new HashMap<>();
+        for (Map.Entry<String, PartPose> entry : TRUE_SKELETAL_POSES.entrySet()) {
+            putTrueSkeletalPoseOffset(offsets, entry.getKey(), entry.getValue());
+        }
+        return offsets;
+    }
+
     public static Set<String> getWorldVisibleSkeletalParts() {
         boolean showAll = showWholePreview || selectedPart.equals("all");
         if (showAll) {
@@ -2886,6 +2920,22 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
+    private static void putTrueSkeletalPoseOffset(Map<String, float[]> offsets, String part, PartPose pose) {
+        if (pose == null || (pose.offsetX == 0.0F && pose.offsetY == 0.0F && pose.offsetZ == 0.0F)) {
+            return;
+        }
+        for (String bone : getTrueSkeletalOffsetTargets(part)) {
+            addOffset(offsets, bone, pose.offsetX, pose.offsetY, pose.offsetZ);
+        }
+    }
+
+    private static void addOffset(Map<String, float[]> offsets, String bone, float x, float y, float z) {
+        float[] existing = offsets.computeIfAbsent(bone, ignored -> new float[] { 0.0F, 0.0F, 0.0F });
+        existing[0] += x;
+        existing[1] += y;
+        existing[2] += z;
+    }
+
     private static List<String> getTrueSkeletalRotationTargets(String part) {
         return switch (part) {
             case "torso" -> List.of("torso_low");
@@ -2904,6 +2954,18 @@ public class BodyPoseEditorFragment extends Fragment {
             case "right_arm" -> List.of("right_arm_on", "right_arm_low");
             case "left_leg" -> List.of("left_leg_on", "left_leg_low");
             case "right_leg" -> List.of("right_leg_on", "right_leg_low");
+            default -> List.of(part);
+        };
+    }
+
+    private static List<String> getTrueSkeletalOffsetTargets(String part) {
+        return switch (part) {
+            case "head" -> List.of("head");
+            case "torso" -> List.of("torso_low");
+            case "left_arm" -> List.of("left_arm_on");
+            case "right_arm" -> List.of("right_arm_on");
+            case "left_leg" -> List.of("left_leg_on");
+            case "right_leg" -> List.of("right_leg_on");
             default -> List.of(part);
         };
     }
@@ -3172,6 +3234,30 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
+    private static float getSelectedPoseOffset(MoveAxis axis) {
+        if (selectedPart.equals("all")) return 0.0F;
+        PartPose pose = getSelectedPose();
+        return switch (axis) {
+            case X -> pose.offsetX;
+            case Y -> pose.offsetY;
+            case Z -> pose.offsetZ;
+            default -> 0.0F;
+        };
+    }
+
+    private static void setSelectedPoseOffset(MoveAxis axis, float value) {
+        if (selectedPart.equals("all")) return;
+        PartPose pose = getSelectedPose();
+        float next = clampPreview(value, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+        switch (axis) {
+            case X -> pose.offsetX = next;
+            case Y -> pose.offsetY = next;
+            case Z -> pose.offsetZ = next;
+            default -> {
+            }
+        }
+    }
+
     private static boolean hasSelectedBendControls() {
         return poseEditMode == PoseEditMode.SKELETAL && hasBendControlsForPart(selectedPart);
     }
@@ -3257,6 +3343,9 @@ public class BodyPoseEditorFragment extends Fragment {
         pose.bendPitch = 0.0F;
         pose.bendYaw = 0.0F;
         pose.bendRoll = 0.0F;
+        pose.offsetX = 0.0F;
+        pose.offsetY = 0.0F;
+        pose.offsetZ = 0.0F;
         pose.scale = 1.0F;
     }
 
@@ -3281,18 +3370,24 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private static List<PlaceTrueSkeletalBodyC2SPacket.BonePose> createTrueSkeletalBonePoseList() {
         Map<String, float[]> rotations = getWorldSkeletalBoneRotations();
+        Map<String, float[]> offsets = getWorldSkeletalBoneOffsets();
         Map<String, Float> scales = getWorldSkeletalBoneScales();
         Set<String> names = new LinkedHashSet<>();
         names.addAll(rotations.keySet());
+        names.addAll(offsets.keySet());
         names.addAll(scales.keySet());
         List<PlaceTrueSkeletalBodyC2SPacket.BonePose> poses = new ArrayList<>();
         for (String name : names) {
             float[] rotation = rotations.get(name);
+            float[] offset = offsets.get(name);
             float scale = scales.getOrDefault(name, 1.0F);
             poses.add(new PlaceTrueSkeletalBodyC2SPacket.BonePose(name,
                     rotation != null && rotation.length > 0 ? rotation[0] : 0.0F,
                     rotation != null && rotation.length > 1 ? rotation[1] : 0.0F,
                     rotation != null && rotation.length > 2 ? rotation[2] : 0.0F,
+                    offset != null && offset.length > 0 ? offset[0] : 0.0F,
+                    offset != null && offset.length > 1 ? offset[1] : 0.0F,
+                    offset != null && offset.length > 2 ? offset[2] : 0.0F,
                     scale));
         }
         return poses;
@@ -3589,6 +3684,9 @@ public class BodyPoseEditorFragment extends Fragment {
         private float bendPitch;
         private float bendYaw;
         private float bendRoll;
+        private float offsetX;
+        private float offsetY;
+        private float offsetZ;
         private float scale = 1.0F;
     }
 

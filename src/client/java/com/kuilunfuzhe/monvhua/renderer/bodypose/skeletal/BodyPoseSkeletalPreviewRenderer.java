@@ -31,8 +31,22 @@ import java.util.Optional;
 import java.util.Set;
 
 public final class BodyPoseSkeletalPreviewRenderer {
-    private static final Identifier MODEL_ID = Identifier.of("monvhua", "models/entity/skeletal_model.bbmodel");
+    private static final Identifier MODEL_ID = Identifier.of("monvhua", "models/entity/skeletal_model2.bbmodel");
     private static final Identifier ANIMATION_ID = Identifier.of("monvhua", "models/entity/animation.json");
+    private static final Identifier EYE_ANIMATION_ID = Identifier.of("monvhua", "models/entity/eye_on_off.json");
+    private static final Identifier SOLID_COLOR_TEXTURE = Identifier.ofVanilla("textures/misc/white.png");
+    private static final int DEFAULT_VERTEX_COLOR = 0xFFFFFFFF;
+    private static final int SKIN_TONE_OVERLAY_COLOR = 0xFFFFF3EC;
+    private static final int NOSE_VERTEX_COLOR = 0xFFFFEFEA;
+    private static final float NOSE_U0 = 11.0F / 64.0F;
+    private static final float NOSE_V0 = 13.0F / 64.0F;
+    private static final float NOSE_U1 = 12.0F / 64.0F;
+    private static final float NOSE_V1 = 14.0F / 64.0F;
+    private static final Vector3f NOSE_ORIGIN = new Vector3f(0.0F, 37.9F, -3.001F);
+    private static final Vector3f NOSE_LOCAL_A = new Vector3f(-1.075F, 0.125F, 0.991F);
+    private static final Vector3f NOSE_LOCAL_B = new Vector3f(1.075F, 0.125F, 0.991F);
+    private static final Vector3f NOSE_LOCAL_C = new Vector3f(1.075F, 1.875F, 0.991F);
+    private static final Vector3f NOSE_LOCAL_D = new Vector3f(-1.075F, 1.875F, 0.991F);
     private static final float MODEL_UNIT = 16.0F;
     private static final float MODEL_Y_ORIGIN = 24.9207F;
     private static final float OUTER_LAYER_NORMAL_OFFSET = 0.002F;
@@ -46,7 +60,8 @@ public final class BodyPoseSkeletalPreviewRenderer {
     public static boolean render(MatrixStack matrices, VertexConsumerProvider vertexConsumers,
                                  Identifier texture, int light) {
         return render(matrices, vertexConsumers, texture, light, BodyPoseEditorFragment.getWorldSkeletalBoneRotations(),
-                BodyPoseEditorFragment.getWorldSkeletalBoneScales(), BodyPoseEditorFragment.getWorldVisibleSkeletalParts());
+                BodyPoseEditorFragment.getWorldSkeletalBoneOffsets(), BodyPoseEditorFragment.getWorldSkeletalBoneScales(),
+                BodyPoseEditorFragment.getWorldVisibleSkeletalParts());
     }
 
     public static boolean renderEditorPreview(MatrixStack matrices, VertexConsumerProvider vertexConsumers,
@@ -58,7 +73,9 @@ public final class BodyPoseSkeletalPreviewRenderer {
             matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(BodyPoseEditorFragment.getWorldModelRoll()));
             float scale = BodyPoseEditorFragment.getWorldBodyScale();
             matrices.scale(scale, -scale, scale);
-            return render(matrices, vertexConsumers, texture, light);
+            return render(matrices, vertexConsumers, texture, light, BodyPoseEditorFragment.getWorldSkeletalBoneRotations(),
+                    BodyPoseEditorFragment.getWorldSkeletalBoneOffsets(), BodyPoseEditorFragment.getWorldSkeletalBoneScales(),
+                    BodyPoseEditorFragment.getWorldVisibleSkeletalParts(), true);
         } finally {
             matrices.pop();
         }
@@ -67,22 +84,39 @@ public final class BodyPoseSkeletalPreviewRenderer {
     public static boolean render(MatrixStack matrices, VertexConsumerProvider vertexConsumers, Identifier texture,
                                  int light, Map<String, float[]> rotations, Map<String, Float> scales,
                                  Set<String> visibleParts) {
+        return render(matrices, vertexConsumers, texture, light, rotations, Map.of(), scales, visibleParts);
+    }
+
+    public static boolean render(MatrixStack matrices, VertexConsumerProvider vertexConsumers, Identifier texture,
+                                 int light, Map<String, float[]> rotations, Map<String, float[]> offsets,
+                                 Map<String, Float> scales, Set<String> visibleParts) {
+        return render(matrices, vertexConsumers, texture, light, rotations, offsets, scales, visibleParts, false);
+    }
+
+    private static boolean render(MatrixStack matrices, VertexConsumerProvider vertexConsumers, Identifier texture,
+                                  int light, Map<String, float[]> rotations, Map<String, float[]> offsets,
+                                  Map<String, Float> scales, Set<String> visibleParts, boolean singleLayer) {
         SkeletalModel model = getModel();
         if (model == null || model.meshes.isEmpty()) {
             return false;
         }
 
-        model.updatePose(rotations, scales);
+        model.updatePose(rotations, offsets, scales);
 
-        VertexConsumer vertexConsumer = vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture));
+        VertexConsumer skinConsumer = vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(texture));
+        VertexConsumer solidColorConsumer = singleLayer
+                ? skinConsumer
+                : vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(SOLID_COLOR_TEXTURE));
         Matrix4f matrix = matrices.peek().getPositionMatrix();
-        renderMeshes(model, matrix, vertexConsumer, light, visibleParts, false);
-        renderMeshes(model, matrix, vertexConsumer, light, visibleParts, true);
+        renderMeshes(model, matrix, skinConsumer, solidColorConsumer, light, visibleParts, false);
+        renderMeshes(model, matrix, skinConsumer, solidColorConsumer, light, visibleParts, true);
         return true;
     }
 
-    private static void renderMeshes(SkeletalModel model, Matrix4f matrix, VertexConsumer vertexConsumer,
+    private static void renderMeshes(SkeletalModel model, Matrix4f matrix, VertexConsumer skinConsumer,
+                                     VertexConsumer solidColorConsumer,
                                      int light, Set<String> visibleParts, boolean outerLayer) {
+        boolean renderedNose = false;
         for (Mesh mesh : model.meshes) {
             if (mesh.outerLayer != outerLayer) {
                 continue;
@@ -90,7 +124,17 @@ public final class BodyPoseSkeletalPreviewRenderer {
             if (!visibleParts.isEmpty() && !visibleParts.contains(mesh.partName)) {
                 continue;
             }
-            renderMesh(mesh, model, matrix, vertexConsumer, light);
+            if ("nose".equals(mesh.name)) {
+                if (!outerLayer) {
+                    renderNoseOverlay(model, matrix, skinConsumer, light, visibleParts);
+                    renderedNose = true;
+                }
+                continue;
+            }
+            renderMesh(mesh, model, matrix, mesh.usesSolidColorTexture ? solidColorConsumer : skinConsumer, light);
+        }
+        if (!outerLayer && !renderedNose) {
+            renderNoseOverlay(model, matrix, skinConsumer, light, visibleParts);
         }
     }
 
@@ -103,6 +147,10 @@ public final class BodyPoseSkeletalPreviewRenderer {
         SkeletalModel model = getModel();
         if (model == null) {
             return boneName;
+        }
+        String lower = boneName.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("eye") || lower.contains("eyelid") || lower.contains("forehead")) {
+            return "head";
         }
         return model.partNameByBone.getOrDefault(boneName, boneName);
     }
@@ -131,7 +179,7 @@ public final class BodyPoseSkeletalPreviewRenderer {
                 modelJson = JsonParser.parseReader(reader).getAsJsonObject();
             }
 
-            Map<String, float[]> animation = loadAnimation(client);
+            AnimationPose animation = loadAnimation(client);
             cachedModel = SkeletalModel.load(modelJson, animation);
             return cachedModel;
         } catch (Exception e) {
@@ -141,12 +189,18 @@ public final class BodyPoseSkeletalPreviewRenderer {
         }
     }
 
-    private static Map<String, float[]> loadAnimation(MinecraftClient client) {
-        Map<String, float[]> rotations = new HashMap<>();
+    private static AnimationPose loadAnimation(MinecraftClient client) {
+        AnimationPose pose = new AnimationPose();
+        loadAnimationResource(client, ANIMATION_ID, pose);
+        loadAnimationResource(client, EYE_ANIMATION_ID, pose);
+        return pose;
+    }
+
+    private static void loadAnimationResource(MinecraftClient client, Identifier id, AnimationPose pose) {
         try {
-            Optional<Resource> resource = client.getResourceManager().getResource(ANIMATION_ID);
+            Optional<Resource> resource = client.getResourceManager().getResource(id);
             if (resource.isEmpty()) {
-                return rotations;
+                return;
             }
             JsonObject root;
             try (InputStreamReader reader = new InputStreamReader(resource.get().getInputStream(), StandardCharsets.UTF_8)) {
@@ -161,23 +215,32 @@ public final class BodyPoseSkeletalPreviewRenderer {
                 String bone = getString(animation, "bone", "");
                 String target = getString(animation, "target", "");
                 JsonArray keyframes = getArray(animation, "keyframes");
-                if (bone.isBlank() || !"rotation".equals(target) || keyframes.isEmpty()) {
+                if (bone.isBlank() || keyframes.isEmpty()) {
                     continue;
                 }
                 JsonObject keyframe = keyframes.get(0).getAsJsonObject();
                 JsonArray targetArray = getArray(keyframe, "target");
                 if (targetArray.size() >= 3) {
-                    rotations.put(bone, new float[] {
+                    float[] values = new float[] {
                             getFloat(targetArray, 0),
                             getFloat(targetArray, 1),
                             getFloat(targetArray, 2)
-                    });
+                    };
+                    if ("rotation".equals(target)) {
+                        pose.rotations.put(bone, values);
+                    } else if ("position".equals(target)) {
+                        pose.offsets.put(bone, values);
+                    }
                 }
             }
         } catch (Exception e) {
-            System.err.println("[Monvhua] Failed to load skeletal body pose animation: " + e.getMessage());
+            System.err.println("[Monvhua] Failed to load skeletal body pose animation " + id + ": " + e.getMessage());
         }
-        return rotations;
+    }
+
+    private static final class AnimationPose {
+        private final Map<String, float[]> rotations = new HashMap<>();
+        private final Map<String, float[]> offsets = new HashMap<>();
     }
 
     private static void renderMesh(Mesh mesh, SkeletalModel model, Matrix4f matrix,
@@ -208,18 +271,50 @@ public final class BodyPoseSkeletalPreviewRenderer {
             Vector3f rp0 = offsetOuterLayerVertex(mesh, p0, normal);
             Vector3f rp1 = offsetOuterLayerVertex(mesh, p1, normal);
             Vector3f rp2 = offsetOuterLayerVertex(mesh, p2, normal);
-            emitFaceVertex(vertexConsumer, matrix, rp0, face.uvs.get(face.vertices.get(0)), normal, light);
-            emitFaceVertex(vertexConsumer, matrix, rp1, face.uvs.get(face.vertices.get(1)), normal, light);
-            emitFaceVertex(vertexConsumer, matrix, rp2, face.uvs.get(face.vertices.get(2)), normal, light);
+            Vector2f uv0 = face.uvs.get(face.vertices.get(0));
+            Vector2f uv1 = face.uvs.get(face.vertices.get(1));
+            Vector2f uv2 = face.uvs.get(face.vertices.get(2));
+            emitFaceVertex(vertexConsumer, matrix, rp0, face.uvs.get(face.vertices.get(0)), normal, light, mesh.vertexColor);
+            emitFaceVertex(vertexConsumer, matrix, rp1, face.uvs.get(face.vertices.get(1)), normal, light, mesh.vertexColor);
+            emitFaceVertex(vertexConsumer, matrix, rp2, face.uvs.get(face.vertices.get(2)), normal, light, mesh.vertexColor);
 
             if (face.vertices.size() >= 4) {
                 Vector3f p3 = transformedVertices.get(face.vertices.get(3));
-                emitFaceVertex(vertexConsumer, matrix, offsetOuterLayerVertex(mesh, p3 != null ? p3 : p2, normal),
-                        face.uvs.get(face.vertices.get(3)), normal, light);
+                Vector3f rp3 = offsetOuterLayerVertex(mesh, p3 != null ? p3 : p2, normal);
+                Vector2f uv3 = face.uvs.get(face.vertices.get(3));
+                emitFaceVertex(vertexConsumer, matrix, rp3, uv3, normal, light, mesh.vertexColor);
             } else {
-                emitFaceVertex(vertexConsumer, matrix, rp2, face.uvs.get(face.vertices.get(2)), normal, light);
+                emitFaceVertex(vertexConsumer, matrix, rp2, face.uvs.get(face.vertices.get(2)), normal, light, mesh.vertexColor);
             }
         }
+    }
+
+    private static void renderNoseOverlay(SkeletalModel model, Matrix4f matrix, VertexConsumer vertexConsumer,
+                                          int light, Set<String> visibleParts) {
+        if (!visibleParts.isEmpty() && !visibleParts.contains("head")) {
+            return;
+        }
+        Bone head = model.bonesByName.get("head");
+        if (head == null) {
+            return;
+        }
+
+        Vector3f a = toRenderPosition(transformFixedPoint(head, NOSE_LOCAL_A));
+        Vector3f b = toRenderPosition(transformFixedPoint(head, NOSE_LOCAL_B));
+        Vector3f c = toRenderPosition(transformFixedPoint(head, NOSE_LOCAL_C));
+        Vector3f d = toRenderPosition(transformFixedPoint(head, NOSE_LOCAL_D));
+        Vector3f normal = new Vector3f(0.0F, 0.0F, -1.0F);
+
+        emitFaceVertex(vertexConsumer, matrix, a, new Vector2f(NOSE_U0, NOSE_V1), normal, light, NOSE_VERTEX_COLOR);
+        emitFaceVertex(vertexConsumer, matrix, b, new Vector2f(NOSE_U1, NOSE_V1), normal, light, NOSE_VERTEX_COLOR);
+        emitFaceVertex(vertexConsumer, matrix, c, new Vector2f(NOSE_U1, NOSE_V0), normal, light, NOSE_VERTEX_COLOR);
+        emitFaceVertex(vertexConsumer, matrix, d, new Vector2f(NOSE_U0, NOSE_V0), normal, light, NOSE_VERTEX_COLOR);
+    }
+
+    private static Vector3f transformFixedPoint(Bone head, Vector3f localPosition) {
+        Vector3f transformed = new Vector3f(localPosition).add(NOSE_ORIGIN);
+        head.skinMatrix.transformPosition(transformed);
+        return transformed;
     }
 
     private static Vector3f offsetOuterLayerVertex(Mesh mesh, Vector3f position, Vector3f normal) {
@@ -245,6 +340,7 @@ public final class BodyPoseSkeletalPreviewRenderer {
             }
             Vector3f transformed = new Vector3f(modelPosition);
             bone.skinMatrix.transformPosition(transformed);
+            transformed.add(model.getAccumulatedModelSpaceOffset(bone));
             result.add(transformed.mul(weight.weight));
             total += weight.weight;
         }
@@ -266,10 +362,10 @@ public final class BodyPoseSkeletalPreviewRenderer {
     }
 
     private static void emitFaceVertex(VertexConsumer vertexConsumer, Matrix4f matrix, Vector3f position,
-                                       Vector2f uv, Vector3f normal, int light) {
+                                       Vector2f uv, Vector3f normal, int light, int color) {
         Vector2f resolvedUv = uv != null ? uv : new Vector2f();
         vertexConsumer.vertex(matrix, position.x, position.y, position.z)
-                .color(255, 255, 255, 255)
+                .color((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF, (color >> 24) & 0xFF)
                 .texture(resolvedUv.x, resolvedUv.y)
                 .overlay(OverlayTexture.DEFAULT_UV)
                 .light(light)
@@ -315,14 +411,14 @@ public final class BodyPoseSkeletalPreviewRenderer {
         private final Map<String, Bone> bonesByName = new LinkedHashMap<>();
         private final List<String> editableBoneNames = new ArrayList<>();
         private final Map<String, String> partNameByBone = new HashMap<>();
-        private final Map<String, float[]> animationRotations;
+        private final AnimationPose animationPose;
 
-        private SkeletalModel(Map<String, float[]> animationRotations) {
-            this.animationRotations = animationRotations;
+        private SkeletalModel(AnimationPose animationPose) {
+            this.animationPose = animationPose;
         }
 
-        static SkeletalModel load(JsonObject root, Map<String, float[]> animationRotations) {
-            SkeletalModel model = new SkeletalModel(animationRotations);
+        static SkeletalModel load(JsonObject root, AnimationPose animationPose) {
+            SkeletalModel model = new SkeletalModel(animationPose);
             Map<String, Mesh> meshesByPrefix = new HashMap<>();
             JsonArray elements = getArray(root, "elements");
             float uvWidth = 16.0F;
@@ -384,6 +480,7 @@ public final class BodyPoseSkeletalPreviewRenderer {
             }
 
             for (Mesh mesh : model.meshes) {
+                mesh.applyForcedWeights();
                 mesh.normalizeWeights();
                 for (List<VertexWeight> weights : mesh.weights.values()) {
                     for (VertexWeight weight : weights) {
@@ -391,8 +488,10 @@ public final class BodyPoseSkeletalPreviewRenderer {
                     }
                 }
             }
+            model.meshes.sort(java.util.Comparator.comparingInt(mesh -> mesh.renderPriority));
             for (String boneName : List.of(
                     "torso_low", "torso_midium", "torso_on", "head",
+                    "eye", "eye_left", "eye_right", "eyelid", "eyelid_left", "eyelid_right",
                     "left_arm_on", "left_arm_low", "right_arm_on", "right_arm_low",
                     "left_leg_on", "left_leg_low", "right_leg_on", "right_leg_low")) {
                 if (model.bonesByName.containsKey(boneName)) {
@@ -404,19 +503,33 @@ public final class BodyPoseSkeletalPreviewRenderer {
                     model.editableBoneNames.add(boneName);
                 }
             }
-            model.updatePose(Map.of(), Map.of());
+            model.updatePose(Map.of(), Map.of(), Map.of());
             return model;
         }
 
-        void updatePose(Map<String, float[]> editorRotations, Map<String, Float> editorScales) {
+        void updatePose(Map<String, float[]> editorRotations, Map<String, float[]> editorOffsets, Map<String, Float> editorScales) {
             for (Bone bone : bonesByName.values()) {
-                float[] base = animationRotations.get(bone.name);
-                float[] editor = editorRotations.get(bone.name);
+                float[] baseRotation = animationPose.rotations.get(bone.name);
+                float[] editorRotation = editorRotations.get(bone.name);
                 bone.currentRotation.set(
-                        bone.restRotation.x + value(base, 0) + value(editor, 0),
-                        bone.restRotation.y + value(base, 1) + value(editor, 1),
-                        bone.restRotation.z + value(base, 2) + value(editor, 2)
+                        bone.restRotation.x + value(baseRotation, 0) + value(editorRotation, 0),
+                        bone.restRotation.y + value(baseRotation, 1) + value(editorRotation, 1),
+                        bone.restRotation.z + value(baseRotation, 2) + value(editorRotation, 2)
                 );
+                float[] baseOffset = animationPose.offsets.get(bone.name);
+                float[] editorOffset = editorOffsets.get(bone.name);
+                Vector3f resolvedOffset = new Vector3f(
+                        value(baseOffset, 0) + value(editorOffset, 0),
+                        value(baseOffset, 1) + value(editorOffset, 1),
+                        value(baseOffset, 2) + value(editorOffset, 2)
+                );
+                if (isModelSpaceOffsetBone(bone.name)) {
+                    bone.currentOffset.zero();
+                    bone.currentModelSpaceOffset.set(resolvedOffset);
+                } else {
+                    bone.currentOffset.set(resolvedOffset);
+                    bone.currentModelSpaceOffset.zero();
+                }
                 bone.currentScale = Math.max(0.02F, editorScales.getOrDefault(bone.name, 1.0F));
             }
 
@@ -438,6 +551,14 @@ public final class BodyPoseSkeletalPreviewRenderer {
         private static float value(float[] values, int index) {
             return values != null && index >= 0 && index < values.length ? values[index] : 0.0F;
         }
+
+        Vector3f getAccumulatedModelSpaceOffset(Bone bone) {
+            Vector3f offset = new Vector3f();
+            for (Bone cursor = bone; cursor != null; cursor = cursor.parent) {
+                offset.add(cursor.currentModelSpaceOffset);
+            }
+            return offset;
+        }
     }
 
     private static final class Bone {
@@ -446,6 +567,8 @@ public final class BodyPoseSkeletalPreviewRenderer {
         private final Vector3f origin;
         private final Vector3f restRotation;
         private final Vector3f currentRotation = new Vector3f();
+        private final Vector3f currentOffset = new Vector3f();
+        private final Vector3f currentModelSpaceOffset = new Vector3f();
         private final List<Bone> children = new ArrayList<>();
         private final Matrix4f bindWorldMatrix = new Matrix4f();
         private final Matrix4f inverseBindMatrix = new Matrix4f();
@@ -488,6 +611,7 @@ public final class BodyPoseSkeletalPreviewRenderer {
         void updateCurrentMatrix(Matrix4f parentMatrix) {
             Matrix4f localMatrix = new Matrix4f()
                     .translate(origin)
+                    .translate(currentOffset)
                     .rotate(createRotation(currentRotation.x, currentRotation.y, currentRotation.z))
                     .scale(currentScale);
             if (parentMatrix != null) {
@@ -506,6 +630,9 @@ public final class BodyPoseSkeletalPreviewRenderer {
         private final String name;
         private final String partName;
         private final boolean outerLayer;
+        private final boolean usesSolidColorTexture;
+        private final int vertexColor;
+        private final int renderPriority;
         private final Vector3f origin;
         private final Map<String, Vector3f> vertices = new HashMap<>();
         private final List<Face> faces = new ArrayList<>();
@@ -518,6 +645,9 @@ public final class BodyPoseSkeletalPreviewRenderer {
             this.origin = origin;
             this.partName = toPartName(name);
             this.outerLayer = isOuterLayer(name);
+            this.usesSolidColorTexture = isSolidColorTextureOverlay(name);
+            this.vertexColor = isSkinToneOverlay(name) ? SKIN_TONE_OVERLAY_COLOR : DEFAULT_VERTEX_COLOR;
+            this.renderPriority = getRenderPriority(name);
             this.acceptedBones = acceptedBonesFor(partName);
         }
 
@@ -580,9 +710,22 @@ public final class BodyPoseSkeletalPreviewRenderer {
             }
         }
 
+        void applyForcedWeights() {
+            String boneName = forcedWeightBone(name);
+            if (boneName == null) {
+                return;
+            }
+            weights.clear();
+            for (String vertexId : vertices.keySet()) {
+                List<VertexWeight> vertexWeights = new ArrayList<>(1);
+                vertexWeights.add(new VertexWeight(boneName, 1.0F));
+                weights.put(vertexId, vertexWeights);
+            }
+        }
+
         private static String toPartName(String meshName) {
             String lower = meshName.toLowerCase(java.util.Locale.ROOT);
-            if (lower.contains("head") || lower.contains("hat")) return "head";
+            if (lower.contains("head") || lower.contains("hat") || lower.contains("eye") || lower.contains("forehead") || lower.contains("nose")) return "head";
             if (lower.contains("left arm")) return "left_arm";
             if (lower.contains("right arm")) return "right_arm";
             if (lower.contains("left leg")) return "left_leg";
@@ -599,10 +742,59 @@ public final class BodyPoseSkeletalPreviewRenderer {
                     || lower.contains("pants");
         }
 
+        private static boolean isSkinToneOverlay(String meshName) {
+            String lower = meshName.toLowerCase(java.util.Locale.ROOT);
+            return lower.equals("eyelid_left")
+                    || lower.equals("eyelid_right")
+                    || lower.equals("eyelid_cover_left")
+                    || lower.equals("eyelid_cover_right")
+                    || lower.equals("forehead")
+                    || lower.equals("nose");
+        }
+
+        private static boolean isSolidColorTextureOverlay(String meshName) {
+            String lower = meshName.toLowerCase(java.util.Locale.ROOT);
+            return lower.equals("forehead");
+        }
+
+        private static String forcedWeightBone(String meshName) {
+            return switch (meshName.toLowerCase(java.util.Locale.ROOT)) {
+                case "eyelid_cover_left" -> "eyelid_left";
+                case "eyelid_cover_right" -> "eyelid_right";
+                default -> null;
+            };
+        }
+
+        private static int getRenderPriority(String meshName) {
+            String lower = meshName.toLowerCase(java.util.Locale.ROOT);
+            if (lower.contains("eyelid")) {
+                return 40;
+            }
+            if (lower.equals("nose")) {
+                return 30;
+            }
+            if (lower.equals("forehead")) {
+                return 30;
+            }
+            if (lower.contains("eye")) {
+                return 20;
+            }
+            return 0;
+        }
+
         private static Set<String> acceptedBonesFor(String partName) {
             Set<String> bones = new HashSet<>();
             switch (partName) {
-                case "head" -> bones.add("head");
+                case "head" -> {
+                    bones.add("head");
+                    bones.add("eye");
+                    bones.add("eye_left");
+                    bones.add("eye_right");
+                    bones.add("eyelid");
+                    bones.add("eyelid_left");
+                    bones.add("eyelid_right");
+                    bones.add("nose");
+                }
                 case "torso" -> {
                     bones.add("torso_low");
                     bones.add("torso_midium");
@@ -629,6 +821,13 @@ public final class BodyPoseSkeletalPreviewRenderer {
             }
             return bones;
         }
+    }
+
+    private static boolean isModelSpaceOffsetBone(String boneName) {
+        return switch (boneName) {
+            case "eye", "eye_left", "eye_right", "eyelid", "eyelid_left", "eyelid_right" -> true;
+            default -> false;
+        };
     }
 
     private static final class Face {

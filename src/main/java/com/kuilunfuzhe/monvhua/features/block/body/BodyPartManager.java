@@ -937,6 +937,9 @@ public class BodyPartManager {
 			entry.putFloat("pitch", pose.pitch());
 			entry.putFloat("yaw", pose.yaw());
 			entry.putFloat("roll", pose.roll());
+			entry.putFloat("offset_x", pose.offsetX());
+			entry.putFloat("offset_y", pose.offsetY());
+			entry.putFloat("offset_z", pose.offsetZ());
 			entry.putFloat("scale", Math.max(0.1F, pose.scale()));
 			list.add(entry);
 		}

@@ -146,6 +146,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         }
 
         Map<String, float[]> rotations = new HashMap<>();
+        Map<String, float[]> offsets = new HashMap<>();
         Map<String, Float> scales = new HashMap<>();
         NbtList bones = customData.getListOrEmpty("true_skeletal_bones");
         for (int i = 0; i < bones.size(); i++) {
@@ -160,9 +161,15 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
             float pitch = bone.getFloat("pitch", 0.0F);
             float yaw = bone.getFloat("yaw", 0.0F);
             float roll = bone.getFloat("roll", 0.0F);
+            float offsetX = bone.getFloat("offset_x", 0.0F);
+            float offsetY = bone.getFloat("offset_y", 0.0F);
+            float offsetZ = bone.getFloat("offset_z", 0.0F);
             float scale = Math.max(0.1F, bone.getFloat("scale", 1.0F));
             if (pitch != 0.0F || yaw != 0.0F || roll != 0.0F) {
                 rotations.put(name, new float[] { pitch, yaw, roll });
+            }
+            if (offsetX != 0.0F || offsetY != 0.0F || offsetZ != 0.0F) {
+                offsets.put(name, new float[] { offsetX, offsetY, offsetZ });
             }
             if (scale != 1.0F) {
                 scales.put(name, scale);
@@ -173,7 +180,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         matrices.scale(1.0F, -1.0F, 1.0F);
         applyTrueSkeletalPlacementTransform(matrices, customData);
         boolean rendered = BodyPoseSkeletalPreviewRenderer.render(matrices, vertexConsumers, data.texture(), light,
-                rotations, scales, Set.of());
+                rotations, offsets, scales, Set.of());
         matrices.pop();
         return rendered;
     }

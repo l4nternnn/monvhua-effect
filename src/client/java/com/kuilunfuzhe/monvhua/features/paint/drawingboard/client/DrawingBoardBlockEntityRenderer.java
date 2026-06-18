@@ -80,9 +80,9 @@ public class DrawingBoardBlockEntityRenderer implements BlockEntityRenderer<Draw
 
     private static float yawFor(Direction facing) {
         return switch (facing) {
-            case EAST -> 90.0F;
+            case EAST -> 270.0F;
             case SOUTH -> 180.0F;
-            case WEST -> 270.0F;
+            case WEST -> 90.0F;
             default -> 0.0F;
         };
     }
