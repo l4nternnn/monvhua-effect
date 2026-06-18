@@ -737,6 +737,7 @@ public class MonvhuaMod implements ModInitializer {
                             Text.literal("【阶段变化】").formatted(Formatting.GRAY)
                                     .append(Text.literal(fullName).formatted(stage.chatColor))
                     );
+                    ImitateManager.resetCooldowns(uuid);
                 }
                 player.sendMessage(
                         Text.literal("◆ " + fullName).formatted(stage.chatColor, Formatting.BOLD)

@@ -266,6 +266,13 @@ public class ImitateManager {
         return null;
     }
 
+    public static void resetCooldowns(UUID uuid) {
+        switchCooldownEnd.remove(uuid);
+        soundWaveCooldownEnd.remove(uuid);
+        silenceCooldownEnd.remove(uuid);
+        LOGGER.info("重置玩家冷却: {}", uuid);
+    }
+
     public static void initialize() {
         LOGGER.info("ImitateManager initialized");
     }
