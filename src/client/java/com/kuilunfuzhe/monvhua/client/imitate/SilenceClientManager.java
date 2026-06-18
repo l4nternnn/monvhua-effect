@@ -1,9 +1,5 @@
 package com.kuilunfuzhe.monvhua.client.imitate;
 
-import com.kuilunfuzhe.monvhua.role.RoleInfo;
-import com.kuilunfuzhe.monvhua.role.RoleRegistry;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,17 +72,5 @@ public class SilenceClientManager {
             }
         }
         return garbled.toString();
-    }
-
-    public static Text getGarbledText(Text originalText) {
-        if (!isSilenced()) return originalText;
-
-        String plainText = originalText.getString();
-        String garbled = garbleText(plainText);
-        return Text.literal(garbled).formatted(Formatting.RED);
-    }
-
-    public static RoleInfo getRoleInfoByTag(String tag) {
-        return RoleRegistry.getRoleInfoByTag(tag);
     }
 }
