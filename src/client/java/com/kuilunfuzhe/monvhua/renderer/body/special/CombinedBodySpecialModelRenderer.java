@@ -61,7 +61,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
     @Override
     protected void renderModel(MatrixStack matrices, VertexConsumerProvider vertexConsumers,
                                RenderLayer renderLayer, int light, int overlay, Data data) {
-        if (renderTrueSkeletalModel(matrices, vertexConsumers, light, data)) {
+        if (renderTrueSkeletalModel(matrices, vertexConsumers, renderLayer, light, data)) {
             return;
         }
 
@@ -139,7 +139,8 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         matrices.pop();
     }
 
-    private boolean renderTrueSkeletalModel(MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, Data data) {
+    private boolean renderTrueSkeletalModel(MatrixStack matrices, VertexConsumerProvider vertexConsumers,
+                                            RenderLayer renderLayer, int light, Data data) {
         NbtCompound customData = data.customData();
         if (customData == null || !"true_skeletal".equals(customData.getString("body_pose_mode", ""))) {
             return false;
@@ -180,7 +181,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         matrices.scale(1.0F, -1.0F, 1.0F);
         applyTrueSkeletalPlacementTransform(matrices, customData);
         boolean rendered = BodyPoseSkeletalPreviewRenderer.render(matrices, vertexConsumers, data.texture(), light,
-                rotations, offsets, scales, Set.of());
+                rotations, offsets, scales, Set.of(), "slim".equals(data.armModel()), renderLayer);
         matrices.pop();
         return rendered;
     }
