@@ -5,6 +5,7 @@ import net.minecraft.network.message.SignedMessage;
 import net.minecraft.server.network.ServerPlayNetworkHandler;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -26,7 +27,9 @@ public abstract class ServerPlayNetworkHandlerMixin {
                 String plainMessage = message.getContent().getString();
                 Text customMessage = Text.empty()
                         .append(coloredName)
-                        .append(Text.literal(": " + plainMessage));
+                        .append(Text.literal("\n"))
+                        .append(Text.literal(" └─ ").formatted(Formatting.GRAY))
+                        .append(Text.literal(plainMessage));
                 player.getServer().getPlayerManager().getPlayerList().forEach(p -> p.sendMessage(customMessage, false));
                 ci.cancel();
             }

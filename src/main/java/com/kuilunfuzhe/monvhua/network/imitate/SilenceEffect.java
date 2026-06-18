@@ -26,7 +26,7 @@ public class SilenceEffect {
             return;
         }
 
-        int stage = ImitateManager.getStage(caster);
+        int stage = ImitateManager.getPlayerStage(caster);
         ImitateConfig config = ImitateConfig.getInstance();
         double radius = config.getSilenceRadius(stage);
         int duration = config.getSilenceDuration(stage);

@@ -28,7 +28,7 @@ public class SoundWaveEffect {
             return;
         }
 
-        int stage = ImitateManager.getStage(caster);
+        int stage = ImitateManager.getPlayerStage(caster);
         ImitateConfig config = ImitateConfig.getInstance();
         double radius = config.getSoundWaveRadius(stage);
         int effectDurationSeconds = config.getSoundWaveEffectDuration(stage);

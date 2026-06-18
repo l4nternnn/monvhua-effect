@@ -299,7 +299,7 @@ public class ThroughItem extends Item {
     }
 
     /**
-     * 获取玩家的天眼阶段值（1-8），用于查询对应阶段的隐秘配置参数。
+     * 获取玩家的阶段值（1-8），用于查询对应阶段的隐秘配置参数。
      * @return 阶段值，若配置管理器未初始化则默认返回1
      */
     public static int getPlayerStage(ServerPlayerEntity player) {

@@ -13,6 +13,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes.configManager;
+
 public class ImitateManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("monvhua-imitate");
@@ -87,15 +89,13 @@ public class ImitateManager {
         return info == null ? 0 : info.getScore();
     }
 
-    public static int getStage(ServerPlayerEntity player) {
-        int score = getWitchScore(player);
-        if (score >= 81) return 7;
-        if (score >= 71) return 6;
-        if (score >= 61) return 5;
-        if (score >= 41) return 4;
-        if (score >= 21) return 3;
-        if (score >= 6) return 2;
-        return 1;
+    /**
+     * 获取玩家的阶段值（1-8），用于查询对应阶段的配置参数。
+     * @return 阶段值，若配置管理器未初始化则默认返回1
+     */
+    public static int getPlayerStage(ServerPlayerEntity player) {
+        if (configManager == null) return 1;
+        return com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes.getPlayerStage(player, configManager);
     }
 
     public static void setImitate(ServerPlayerEntity player, String roleName) {
@@ -106,7 +106,7 @@ public class ImitateManager {
 
         imitateMap.put(player.getUuid(), roleName);
 
-        int stage = getStage(player);
+        int stage = getPlayerStage(player);
         ImitateConfig config = ImitateConfig.getInstance();
         int duration = config.getDuration(stage);
         int cooldown = config.getSwitchCooldown(stage);
@@ -133,7 +133,7 @@ public class ImitateManager {
         imitateMap.remove(player.getUuid());
         imitateEndTime.remove(player.getUuid());
 
-        int stage = getStage(player);
+        int stage = getPlayerStage(player);
         ImitateConfig config = ImitateConfig.getInstance();
         int cooldown = config.getSwitchCooldown(stage);
 
@@ -175,7 +175,7 @@ public class ImitateManager {
     }
 
     public static void startSoundWaveCooldown(ServerPlayerEntity player) {
-        int stage = getStage(player);
+        int stage = getPlayerStage(player);
         ImitateConfig config = ImitateConfig.getInstance();
         int cooldown = config.getSoundWaveCooldown(stage);
 
@@ -241,7 +241,7 @@ public class ImitateManager {
     }
 
     public static void startSilenceCooldown(ServerPlayerEntity player) {
-        int stage = getStage(player);
+        int stage = getPlayerStage(player);
         ImitateConfig config = ImitateConfig.getInstance();
         int cooldown = config.getSilenceCooldown(stage);
 
