@@ -9,12 +9,14 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextWidget;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -74,7 +76,7 @@ public class SilenceTargetScreen extends Screen {
                     double distance = client.player.distanceTo(player);
                     LOGGER.info("发现玩家: {}, 距离: {}", player.getName().getString(), distance);
                     if (distance <= radius) {
-                        nearbyPlayers.add(new PlayerInfo(player.getUuid(), player.getName().getString(), distance));
+                        nearbyPlayers.add(new PlayerInfo(player.getUuid(), player.getName(), player.getName().getString(), distance));
                         LOGGER.info("玩家 {} 在范围内，添加到列表", player.getName().getString());
                     }
                 }
