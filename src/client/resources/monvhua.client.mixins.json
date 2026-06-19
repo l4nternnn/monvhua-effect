@@ -37,8 +37,6 @@
 		"multiple_perspectives.WorldRendererHookMixin",
 		"carrymodelpose.ModelPartCarryPoseMixin",
 		"carrymodelpose.CarriedPlayerLookClampMixin",
-		"carrymodelpose.FirstPersonCarriedPlayerHeadHideMixin",
-		"carrymodelpose.CarrierAttachedEntityRenderMixin",
 		"PaintInputMixin",
 		"PaintHudMixin",
 		"PaintMouseMixin",
