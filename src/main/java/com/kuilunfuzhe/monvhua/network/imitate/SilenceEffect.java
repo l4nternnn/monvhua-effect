@@ -62,7 +62,10 @@ public class SilenceEffect {
 
         caster.sendMessage(Text.literal("§a魔法正在进行静音").formatted(Formatting.GREEN), true);
 
-        target.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, 100, 0, false, false, true));
+        target.sendMessage(Text.literal("§c似乎突然什么也听不见了..."), false);
+
+        target.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, 400, 0, false, false, true));
+        target.addStatusEffect(new StatusEffectInstance(StatusEffects.NAUSEA, 140, 0, false, false, true));
 
         SilenceServerManager.startSilence(target.getUuid(), caster.getUuid(), duration);
 

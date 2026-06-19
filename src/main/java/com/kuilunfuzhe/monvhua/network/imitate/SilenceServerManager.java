@@ -72,4 +72,8 @@ public class SilenceServerManager {
         notifiedEnd.remove(playerUUID);
         LOGGER.info("玩家 {} 静音效果已清除", playerUUID);
     }
+
+    public static UUID getCasterUUID(UUID targetUUID) {
+        return casterMap.get(targetUUID);
+    }
 }

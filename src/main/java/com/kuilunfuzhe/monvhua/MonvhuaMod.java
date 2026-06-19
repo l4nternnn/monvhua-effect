@@ -56,6 +56,7 @@ import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateSelectPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.RequestImitateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.RequestSilenceTargetsC2SPacket;
+import com.kuilunfuzhe.monvhua.network.imitate.ResetCooldownsS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SilenceEffect;
 import com.kuilunfuzhe.monvhua.network.imitate.SilenceEffectS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SilenceServerManager;
@@ -226,6 +227,7 @@ public class MonvhuaMod implements ModInitializer {
         RequestSilenceTargetsC2SPacket.register();
         SilenceEffectS2CPacket.register();
         SilenceTargetsS2CPacket.register();
+        ResetCooldownsS2CPacket.register();
         DrawingBoardPackets.registerReceivers();
 
         ServerPlayNetworking.registerGlobalReceiver(ToggleC2S.ID, (packet, context) -> {
@@ -768,6 +770,8 @@ public class MonvhuaMod implements ModInitializer {
                             Text.literal("【阶段变化】").formatted(Formatting.GRAY)
                                     .append(Text.literal(fullName).formatted(stage.chatColor))
                     );
+                    ImitateManager.resetCooldowns(uuid);
+                    ServerPlayNetworking.send(player, new ResetCooldownsS2CPacket());
                 }
                 player.sendMessage(
                         Text.literal("◆ " + fullName).formatted(stage.chatColor, Formatting.BOLD)

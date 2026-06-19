@@ -20,6 +20,8 @@ public class ImitateConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static ImitateConfig instance;
 
+    public int soundWaveUnlockThreshold = 60;
+    public int silenceUnlockThreshold = 70;
     public StageConfig[] stages = new StageConfig[STAGES];
 
     public static class StageConfig {
@@ -153,4 +155,9 @@ public class ImitateConfig {
     public void setSilenceRadius(int stage, double val) { stages[stage - 1].silenceRadius = Math.max(1.0, val); save(); }
     public void setSilenceDuration(int stage, int val) { stages[stage - 1].silenceDuration = Math.max(1, val); save(); }
     public void setSilenceCooldown(int stage, int val) { stages[stage - 1].silenceCooldown = Math.max(0, val); save(); }
+
+    public int getSoundWaveUnlockThreshold() { return soundWaveUnlockThreshold; }
+    public int getSilenceUnlockThreshold() { return silenceUnlockThreshold; }
+    public void setSoundWaveUnlockThreshold(int val) { soundWaveUnlockThreshold = Math.max(0, Math.min(100, val)); save(); }
+    public void setSilenceUnlockThreshold(int val) { silenceUnlockThreshold = Math.max(0, Math.min(100, val)); save(); }
 }

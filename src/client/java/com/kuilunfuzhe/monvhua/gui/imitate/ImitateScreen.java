@@ -22,17 +22,23 @@ public class ImitateScreen extends Screen {
     private static final int HEADER_HEIGHT = 30;
     private static final int FOOTER_HEIGHT = 50;
     private static final int PADDING = 10;
-    private static final int ADVANCED_STAGE_THRESHOLD = 7;
+    private static final int DEFAULT_SOUND_WAVE_THRESHOLD = 60;
+    private static final int DEFAULT_SILENCE_THRESHOLD = 70;
 
     private int panelWidth;
     private int panelHeight;
     private int panelX;
     private int panelY;
     private final int witchStage;
+    private final int soundWaveThreshold;
+    private final int silenceThreshold;
 
     public ImitateScreen(int witchStage) {
         super(Text.literal("模仿"));
         this.witchStage = witchStage;
+        ImitateConfig config = ImitateConfig.getInstance();
+        this.soundWaveThreshold = config != null ? config.getSoundWaveUnlockThreshold() : DEFAULT_SOUND_WAVE_THRESHOLD;
+        this.silenceThreshold = config != null ? config.getSilenceUnlockThreshold() : DEFAULT_SILENCE_THRESHOLD;
     }
 
     @Override
@@ -42,9 +48,7 @@ public class ImitateScreen extends Screen {
         int totalButtons = ImitateManager.ROLES.length;
         int rows = (int) Math.ceil((double) totalButtons / COLUMNS);
 
-        boolean showSoundWave = witchStage >= ADVANCED_STAGE_THRESHOLD;
-        boolean showSilence = witchStage >= ADVANCED_STAGE_THRESHOLD;
-        int extraFooterHeight = showSoundWave ? (showSilence ? 60 : 30) : 0;
+        int extraFooterHeight = 60;
 
         panelWidth = COLUMNS * (BUTTON_WIDTH + BUTTON_SPACING) - BUTTON_SPACING + PADDING * 2;
         panelHeight = HEADER_HEIGHT + rows * (BUTTON_HEIGHT + BUTTON_SPACING) - BUTTON_SPACING + FOOTER_HEIGHT + PADDING * 2 + extraFooterHeight;
@@ -121,43 +125,59 @@ public class ImitateScreen extends Screen {
                 .build();
         addDrawableChild(cancelBtn);
 
-        if (showSoundWave) {
-            int soundWaveY = footerY + BUTTON_HEIGHT + 10;
-            int soundWaveWidth = 220;
-            int soundWaveX = panelX + (panelWidth - soundWaveWidth) / 2;
+        int soundWaveY = footerY + BUTTON_HEIGHT + 10;
+        int soundWaveWidth = 220;
+        int soundWaveX = panelX + (panelWidth - soundWaveWidth) / 2;
 
-            ButtonWidget soundWaveBtn = ButtonWidget.builder(Text.literal("§b♪ 声音震荡 §r♪"), button -> {
-                        ClientPlayNetworking.send(new SoundWavePacket());
-                        if (client != null) {
-                            client.setScreen(null);
-                        }
-                    })
-                    .dimensions(soundWaveX, soundWaveY, soundWaveWidth, BUTTON_HEIGHT)
-                    .build();
-            addDrawableChild(soundWaveBtn);
-        }
-
-        if (showSilence) {
-            int silenceY = footerY + BUTTON_HEIGHT + 10 + (showSoundWave ? BUTTON_HEIGHT + 10 : 0);
-            int silenceWidth = 220;
-            int silenceX = panelX + (panelWidth - silenceWidth) / 2;
-
-            ButtonWidget silenceBtn = ButtonWidget.builder(Text.literal("§c🔇 屏蔽声音 §r🔇"), button -> {
+        boolean canUseSoundWave = witchStage >= soundWaveThreshold;
+        Text soundWaveText = canUseSoundWave 
+                ? Text.literal("§b♪ 声音震荡 §r♪") 
+                : Text.literal("§7♪ 声音震荡 (需魔女化" + soundWaveThreshold + ") §r♪");
+        ButtonWidget soundWaveBtn = ButtonWidget.builder(soundWaveText, button -> {
+                    if (!canUseSoundWave) {
                         if (client != null && client.player != null) {
-                            try {
-                                int stage = witchStage;
-                                ImitateConfig config = ImitateConfig.getInstance();
-                                double radius = config != null ? config.getSilenceRadius(stage) : 10.0;
-                                client.setScreen(new SilenceTargetScreen(radius));
-                            } catch (Exception e) {
-                                client.setScreen(new SilenceTargetScreen(10.0));
-                            }
+                            client.player.sendMessage(Text.literal("§c魔女化不足，需要达到 " + soundWaveThreshold + " 才能使用声音震荡"), true);
                         }
-                    })
-                    .dimensions(silenceX, silenceY, silenceWidth, BUTTON_HEIGHT)
-                    .build();
-            addDrawableChild(silenceBtn);
-        }
+                        return;
+                    }
+                    ClientPlayNetworking.send(new SoundWavePacket());
+                    if (client != null) {
+                        client.setScreen(null);
+                    }
+                })
+                .dimensions(soundWaveX, soundWaveY, soundWaveWidth, BUTTON_HEIGHT)
+                .build();
+        addDrawableChild(soundWaveBtn);
+
+        int silenceY = footerY + BUTTON_HEIGHT + 10 + BUTTON_HEIGHT + 10;
+        int silenceWidth = 220;
+        int silenceX = panelX + (panelWidth - silenceWidth) / 2;
+
+        boolean canUseSilence = witchStage >= silenceThreshold;
+        Text silenceText = canUseSilence 
+                ? Text.literal("§c🔇 屏蔽声音 §r🔇") 
+                : Text.literal("§7🔇 屏蔽声音 (需魔女化" + silenceThreshold + ") §r🔇");
+        ButtonWidget silenceBtn = ButtonWidget.builder(silenceText, button -> {
+                    if (!canUseSilence) {
+                        if (client != null && client.player != null) {
+                            client.player.sendMessage(Text.literal("§c魔女化不足，需要达到 " + silenceThreshold + " 才能使用屏蔽声音"), true);
+                        }
+                        return;
+                    }
+                    if (client != null && client.player != null) {
+                        try {
+                            int stage = witchStage;
+                            ImitateConfig config = ImitateConfig.getInstance();
+                            double radius = config != null ? config.getSilenceRadius(stage) : 10.0;
+                            client.setScreen(new SilenceTargetScreen(radius));
+                        } catch (Exception e) {
+                            client.setScreen(new SilenceTargetScreen(10.0));
+                        }
+                    }
+                })
+                .dimensions(silenceX, silenceY, silenceWidth, BUTTON_HEIGHT)
+                .build();
+        addDrawableChild(silenceBtn);
     }
 
     @Override
@@ -172,10 +192,6 @@ public class ImitateScreen extends Screen {
 
         context.fill(panelX, panelY, panelX + panelWidth, panelY + HEADER_HEIGHT - 5, 0xFF333366);
         context.drawCenteredTextWithShadow(textRenderer, "§d✦ 模仿魔法 §r✦", panelX + panelWidth / 2, panelY + 8, 0xFFFFFF);
-
-        if (witchStage >= ADVANCED_STAGE_THRESHOLD) {
-            context.drawCenteredTextWithShadow(textRenderer, "§b[魔女化阶段] 声音震荡已解锁", panelX + panelWidth / 2, panelY + panelHeight - 15, 0xAAAAFF);
-        }
 
         super.render(context, mouseX, mouseY, delta);
     }

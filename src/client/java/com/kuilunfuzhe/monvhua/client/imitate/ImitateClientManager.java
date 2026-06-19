@@ -65,4 +65,9 @@ public class ImitateClientManager {
 
     public static void initialize() {
     }
+
+    public static void resetCooldowns(UUID uuid) {
+        switchCooldownEnd.remove(uuid);
+        soundWaveCooldownEnd.remove(uuid);
+    }
 }

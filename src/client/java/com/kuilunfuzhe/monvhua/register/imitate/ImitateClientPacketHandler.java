@@ -9,6 +9,7 @@ import com.kuilunfuzhe.monvhua.gui.imitate.SilenceTargetScreen;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateOpenUIPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateSyncS2CPacket;
+import com.kuilunfuzhe.monvhua.network.imitate.ResetCooldownsS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SilencePacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SilenceTargetsS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SoundWaveStartS2CPacket;
@@ -70,6 +71,15 @@ public class ImitateClientPacketHandler {
                 MinecraftClient client = MinecraftClient.getInstance();
                 if (client.currentScreen instanceof CombinedConfigScreen screen) {
                     screen.receiveImitateConfig(packet.getConfig());
+                }
+            });
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(ResetCooldownsS2CPacket.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                MinecraftClient client = MinecraftClient.getInstance();
+                if (client.player != null) {
+                    ImitateClientManager.resetCooldowns(client.player.getUuid());
                 }
             });
         });

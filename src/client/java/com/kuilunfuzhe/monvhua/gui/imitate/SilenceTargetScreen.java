@@ -11,6 +11,8 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,7 +20,9 @@ import java.util.UUID;
 
 public class SilenceTargetScreen extends Screen {
 
-    private static final int BUTTON_WIDTH = 180;
+    private static final Logger LOGGER = LoggerFactory.getLogger("Monvhua/SilenceTarget");
+
+    private static final int BUTTON_WIDTH = 150;
     private static final int BUTTON_HEIGHT = 22;
     private static final int BUTTON_SPACING = 4;
     private static final int HEADER_HEIGHT = 30;
@@ -62,12 +66,23 @@ public class SilenceTargetScreen extends Screen {
 
     public void receiveTargets(SilenceTargetsS2CPacket packet) {
         nearbyPlayers.clear();
-        for (SilenceTargetsS2CPacket.Entry entry : packet.entries()) {
-            nearbyPlayers.add(new PlayerInfo(
-                    entry.uuid(),
-                    tag_pitch.coloredNameForTagOrName(entry.tag(), entry.name()),
-                    tag_pitch.replaceTags(entry.name()),
-                    entry.distance()));
+        if (client != null && client.player != null && client.world != null) {
+            UUID myUuid = client.player.getUuid();
+            LOGGER.info("检测周围玩家，半径: {}", radius);
+            for (PlayerEntity player : client.world.getPlayers()) {
+                if (!player.getUuid().equals(myUuid)) {
+                    double distance = client.player.distanceTo(player);
+                    LOGGER.info("发现玩家: {}, 距离: {}", player.getName().getString(), distance);
+                    if (distance <= radius) {
+                        nearbyPlayers.add(new PlayerInfo(player.getUuid(), player.getName().getString(), distance));
+                        LOGGER.info("玩家 {} 在范围内，添加到列表", player.getName().getString());
+                    }
+                }
+            }
+            nearbyPlayers.sort(Comparator.comparingDouble(p -> p.distance));
+            LOGGER.info("共发现 {} 个可静音的玩家", nearbyPlayers.size());
+        } else {
+            LOGGER.warn("无法获取客户端世界或玩家");
         }
         loadedTargets = true;
         rebuildWidgets();

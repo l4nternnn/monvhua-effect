@@ -89,6 +89,7 @@ public class CombinedConfigScreen extends Screen {
     private TextFieldWidget imitateDurationField, imitateSwitchCooldownField, imitateSoundWaveCooldownField;
     private TextFieldWidget imitateSoundWaveRadiusField, imitateSoundWaveEffectDurationField;
     private TextFieldWidget imitateSilenceRadiusField, imitateSilenceDurationField, imitateSilenceCooldownField;
+    private TextFieldWidget imitateSoundWaveUnlockField, imitateSilenceUnlockField;
     private ButtonWidget saveImitateButton;
     private final List<TextWidget> imitateLabels = new ArrayList<>();
     private static ImitateConfig cachedImitateConfig = null;
@@ -464,7 +465,9 @@ public class CombinedConfigScreen extends Screen {
             "声波效果持续时间(秒):",
             "静音检测半径:",
             "静音持续时间(秒):",
-            "静音冷却时间(秒):"
+            "静音冷却时间(秒):",
+            "声波解锁阈值(魔女化):",
+            "静音解锁阈值(魔女化):"
         };
 
         for (int i = 0; i < labels.length; i++) {
@@ -481,9 +484,11 @@ public class CombinedConfigScreen extends Screen {
         imitateSilenceRadiusField = createField(rightX + labelWidth, rowY + 5*rowHeight, inputWidth);
         imitateSilenceDurationField = createField(rightX + labelWidth, rowY + 6*rowHeight, inputWidth);
         imitateSilenceCooldownField = createField(rightX + labelWidth, rowY + 7*rowHeight, inputWidth);
+        imitateSoundWaveUnlockField = createField(rightX + labelWidth, rowY + 8*rowHeight, inputWidth);
+        imitateSilenceUnlockField = createField(rightX + labelWidth, rowY + 9*rowHeight, inputWidth);
 
         saveImitateButton = ButtonWidget.builder(Text.literal("保存"), btn -> saveImitateConfig())
-                .dimensions(rightX, rowY + 8*rowHeight + 10, 80, 20).build();
+                .dimensions(rightX, rowY + 10*rowHeight + 10, 80, 20).build();
         addDrawableChild(saveImitateButton);
     }
 
@@ -704,6 +709,8 @@ public class CombinedConfigScreen extends Screen {
         if (imitateSilenceRadiusField != null) imitateSilenceRadiusField.visible = visible;
         if (imitateSilenceDurationField != null) imitateSilenceDurationField.visible = visible;
         if (imitateSilenceCooldownField != null) imitateSilenceCooldownField.visible = visible;
+        if (imitateSoundWaveUnlockField != null) imitateSoundWaveUnlockField.visible = visible;
+        if (imitateSilenceUnlockField != null) imitateSilenceUnlockField.visible = visible;
         if (saveImitateButton != null) saveImitateButton.visible = visible;
     }
 
@@ -953,6 +960,8 @@ public class CombinedConfigScreen extends Screen {
             imitateSilenceRadiusField.setText("10");
             imitateSilenceDurationField.setText("10");
             imitateSilenceCooldownField.setText("0");
+            imitateSoundWaveUnlockField.setText("60");
+            imitateSilenceUnlockField.setText("70");
             return;
         }
         imitateDurationField.setText(String.valueOf(cachedImitateConfig.getDuration(imitateCurrentStage)));
@@ -963,6 +972,8 @@ public class CombinedConfigScreen extends Screen {
         imitateSilenceRadiusField.setText(String.valueOf(cachedImitateConfig.getSilenceRadius(imitateCurrentStage)));
         imitateSilenceDurationField.setText(String.valueOf(cachedImitateConfig.getSilenceDuration(imitateCurrentStage)));
         imitateSilenceCooldownField.setText(String.valueOf(cachedImitateConfig.getSilenceCooldown(imitateCurrentStage)));
+        imitateSoundWaveUnlockField.setText(String.valueOf(cachedImitateConfig.getSoundWaveUnlockThreshold()));
+        imitateSilenceUnlockField.setText(String.valueOf(cachedImitateConfig.getSilenceUnlockThreshold()));
     }
 
     private void saveImitateConfig() {
@@ -975,6 +986,8 @@ public class CombinedConfigScreen extends Screen {
             double silenceRadius = Double.parseDouble(imitateSilenceRadiusField.getText().trim());
             int silenceDuration = Integer.parseInt(imitateSilenceDurationField.getText().trim());
             int silenceCooldown = Integer.parseInt(imitateSilenceCooldownField.getText().trim());
+            int soundWaveUnlock = Integer.parseInt(imitateSoundWaveUnlockField.getText().trim());
+            int silenceUnlock = Integer.parseInt(imitateSilenceUnlockField.getText().trim());
 
             if (cachedImitateConfig == null) cachedImitateConfig = new ImitateConfig();
             cachedImitateConfig.setDuration(imitateCurrentStage, duration);
@@ -985,6 +998,8 @@ public class CombinedConfigScreen extends Screen {
             cachedImitateConfig.setSilenceRadius(imitateCurrentStage, silenceRadius);
             cachedImitateConfig.setSilenceDuration(imitateCurrentStage, silenceDuration);
             cachedImitateConfig.setSilenceCooldown(imitateCurrentStage, silenceCooldown);
+            cachedImitateConfig.setSoundWaveUnlockThreshold(soundWaveUnlock);
+            cachedImitateConfig.setSilenceUnlockThreshold(silenceUnlock);
 
             ClientPlayNetworking.send(new UpdateImitateConfigC2SPacket(cachedImitateConfig.toJson()));
             if (client != null && client.player != null)

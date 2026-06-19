@@ -81,8 +81,7 @@ dependencies {
 	runtimeOnly "org.antlr:antlr4-runtime:${project.iris_antlr_runtime_version}"
 	implementation "org.commonmark:commonmark:${project.commonmark_version}"
 
-	modImplementation "software.bernie.geckolib:geckolib-fabric-${minecraft_version}:${geckolib_version}"
-	include "software.bernie.geckolib:geckolib-fabric-${minecraft_version}:${geckolib_version}"
+	modImplementation files("libs/geckolib-fabric-1.21.8-5.2.2.jar")
 
 	include "com.electronwill.night-config:core:3.8.2"
 	include "com.electronwill.night-config:toml:3.8.2"

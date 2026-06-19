@@ -1,5 +1,7 @@
 package com.kuilunfuzhe.monvhua.client.imitate;
 
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,8 +56,10 @@ public class SilenceClientManager {
         LOGGER.info("玩家 {} 静音效果已清除", playerUUID);
     }
 
-    public static String garbleText(String originalText) {
-        if (!isSilenced()) return originalText;
+    public static Text getGarbledText(String originalText) {
+        if (!isSilenced()) {
+            return Text.literal(originalText);
+        }
 
         StringBuilder garbled = new StringBuilder();
         for (char c : originalText.toCharArray()) {
@@ -71,6 +75,9 @@ public class SilenceClientManager {
                 garbled.append(c);
             }
         }
-        return garbled.toString();
+
+        return Text.literal(garbled.toString())
+                .formatted(Formatting.OBFUSCATED)
+                .formatted(Formatting.RED);
     }
 }
