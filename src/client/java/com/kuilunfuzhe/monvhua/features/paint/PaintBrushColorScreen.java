@@ -146,7 +146,15 @@ public class PaintBrushColorScreen extends Screen {
     }
 
     private boolean handleFillButtonClick(double mouseX, double mouseY) {
-        if (paintBucketPos == null || !isInside(fillButtonX(), fillButtonY(), 64, 18, mouseX, mouseY)) {
+        if (paintBucketPos == null) {
+            return false;
+        }
+        if (isInside(refillButtonX(), refillButtonY(), 64, 18, mouseX, mouseY)) {
+            SafeClientNetworking.send(new PaintOverlayPackets.RefillPaintBucketC2S(paintBucketPos));
+            close();
+            return true;
+        }
+        if (!isInside(fillButtonX(), fillButtonY(), 64, 18, mouseX, mouseY)) {
             return false;
         }
         int color = PaintOverlayClient.selectedColor() & 0xFFFFFF;
@@ -246,6 +254,7 @@ public class PaintBrushColorScreen extends Screen {
 
         if (paintBucketPos != null) {
             drawFillButton(context);
+            drawRefillButton(context);
         }
     }
 
@@ -304,6 +313,17 @@ public class PaintBrushColorScreen extends Screen {
         context.fill(x, y, x + 1, y + 18, 0xFF8FD99C);
         context.fill(x + 63, y, x + 64, y + 18, 0xFF102414);
         context.drawText(textRenderer, Text.literal("Fill"), x + 20, y + 5, 0xFFFFFFFF, false);
+    }
+
+    private void drawRefillButton(DrawContext context) {
+        int x = refillButtonX();
+        int y = refillButtonY();
+        context.fill(x, y, x + 64, y + 18, 0xFF355A78);
+        context.fill(x, y, x + 64, y + 1, 0xFF93C5FD);
+        context.fill(x, y + 17, x + 64, y + 18, 0xFF122033);
+        context.fill(x, y, x + 1, y + 18, 0xFF93C5FD);
+        context.fill(x + 63, y, x + 64, y + 18, 0xFF122033);
+        context.drawText(textRenderer, Text.literal("Refill"), x + 15, y + 5, 0xFFFFFFFF, false);
     }
 
     private void selectColor(int color, boolean record) {
@@ -412,6 +432,14 @@ public class PaintBrushColorScreen extends Screen {
 
     private int fillButtonY() {
         return mapY + 124;
+    }
+
+    private int refillButtonX() {
+        return controlX + 68;
+    }
+
+    private int refillButtonY() {
+        return fillButtonY();
     }
 
     private static boolean isInsideStar(int x, int y, int size, double mouseX, double mouseY) {

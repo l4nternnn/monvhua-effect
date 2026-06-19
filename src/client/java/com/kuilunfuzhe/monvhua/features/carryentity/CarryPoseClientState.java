@@ -30,6 +30,16 @@ public final class CarryPoseClientState {
 		return data != null && data.pose == CarryPoseSyncS2CPacket.POSE_CARRIER;
 	}
 
+	public static boolean isAnyCarrier(int entityId) {
+		PoseData data = POSES.get(entityId);
+		return data != null && (data.pose == CarryPoseSyncS2CPacket.POSE_CARRIER || data.pose == CarryPoseSyncS2CPacket.POSE_BUCKET_CARRIER);
+	}
+
+	public static boolean isBucketCarrier(int entityId) {
+		PoseData data = POSES.get(entityId);
+		return data != null && data.pose == CarryPoseSyncS2CPacket.POSE_BUCKET_CARRIER;
+	}
+
 	public static boolean isCarried(int entityId) {
 		PoseData data = POSES.get(entityId);
 		return data != null && data.pose == CarryPoseSyncS2CPacket.POSE_CARRIED;

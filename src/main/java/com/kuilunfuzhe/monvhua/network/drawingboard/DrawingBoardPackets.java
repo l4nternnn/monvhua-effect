@@ -4,6 +4,8 @@ import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayStore;
 import com.kuilunfuzhe.monvhua.features.paint.PaintPaperStore;
 import com.kuilunfuzhe.monvhua.features.paint.drawingboard.DrawingBoardBlockEntity;
+import com.kuilunfuzhe.monvhua.item.config.PaintConfig;
+import com.kuilunfuzhe.monvhua.item.paint.PaintBrushItem;
 import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
 import com.kuilunfuzhe.monvhua.item.paint.PaintPaperItem;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
@@ -63,6 +65,24 @@ public final class DrawingBoardPackets {
             board.clear();
             changed = true;
         } else {
+            if (!player.isCreative()) {
+                ItemStack brush = findPaintBrush(player);
+                int slot = brush == ItemStack.EMPTY ? 0 : PaintBrushItem.getSelectedSlot(brush);
+                int expectedColor = brush == ItemStack.EMPTY ? 0 : (0xFF000000 | PaintBrushItem.getPaintColor(brush, slot));
+                if (brush == ItemStack.EMPTY || PaintBrushItem.getRemainingPaintPercent(brush, slot) <= 0.0D || expectedColor != packet.color()) {
+                    player.sendMessage(Text.literal("Drawing board: brush has no paint"), true);
+                    return;
+                }
+                int budget = paintPixelBudget(PaintBrushItem.getRemainingPaintPercent(brush, slot));
+                int changedPixels = board.paintLimited(packet.x(), packet.y(), packet.radius(), packet.color(), budget);
+                if (changedPixels <= 0) {
+                    return;
+                }
+                PaintBrushItem.consumePaint(brush, slot, PaintConfig.getInstance().scaledConsumption(changedPixels));
+                player.getInventory().markDirty();
+                broadcast(world, packet.pos(), board.copyPixels());
+                return;
+            }
             changed = board.paint(packet.x(), packet.y(), packet.radius(), packet.color());
         }
         if (changed) {
@@ -144,6 +164,37 @@ public final class DrawingBoardPackets {
             }
         }
         return false;
+    }
+
+    private static ItemStack findPaintBrush(ServerPlayerEntity player) {
+        if (isPaintBrush(player.getMainHandStack())) {
+            return player.getMainHandStack();
+        }
+        if (isPaintBrush(player.getOffHandStack())) {
+            return player.getOffHandStack();
+        }
+        for (int slot = 0; slot < player.getInventory().size(); slot++) {
+            ItemStack stack = player.getInventory().getStack(slot);
+            if (isPaintBrush(stack)) {
+                return stack;
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    private static boolean isPaintBrush(ItemStack stack) {
+        return !stack.isEmpty() && stack.getItem() == PaintItems.PAINT_BRUSH;
+    }
+
+    private static int paintPixelBudget(double remainingPaint) {
+        double multiplier = PaintConfig.getInstance().brushConsumptionMultiplier;
+        if (remainingPaint <= 0.0D) {
+            return 0;
+        }
+        if (multiplier <= 0.0) {
+            return Integer.MAX_VALUE;
+        }
+        return Math.max(1, (int) Math.floor(remainingPaint / multiplier));
     }
 
     private static boolean replacePaintPaper(ServerPlayerEntity player, ItemStack saved) {

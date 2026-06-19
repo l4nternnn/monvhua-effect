@@ -46,12 +46,22 @@ public class DrawingBoardBlockEntity extends BlockEntity {
     }
 
     public boolean paint(int x, int y, int radius, int color) {
+        return paintLimited(x, y, radius, color, Integer.MAX_VALUE) > 0;
+    }
+
+    public int paintLimited(int x, int y, int radius, int color, int budget) {
+        if (budget <= 0) {
+            return 0;
+        }
         radius = Math.max(1, Math.min(12, radius));
         color = normalizeColor(color);
-        boolean changed = false;
+        int changedPixels = 0;
         int r2 = radius * radius;
         for (int dy = -radius + 1; dy <= radius - 1; dy++) {
             for (int dx = -radius + 1; dx <= radius - 1; dx++) {
+                if (changedPixels >= budget) {
+                    break;
+                }
                 if (dx * dx + dy * dy > r2) {
                     continue;
                 }
@@ -63,15 +73,15 @@ public class DrawingBoardBlockEntity extends BlockEntity {
                 int index = py * WIDTH + px;
                 if (pixels[index] != color) {
                     pixels[index] = color;
-                    changed = true;
+                    changedPixels++;
                 }
             }
         }
-        if (changed) {
+        if (changedPixels > 0) {
             version++;
             sync();
         }
-        return changed;
+        return changedPixels;
     }
 
     public void clear() {

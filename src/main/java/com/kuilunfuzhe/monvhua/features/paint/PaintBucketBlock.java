@@ -1,7 +1,11 @@
 package com.kuilunfuzhe.monvhua.features.paint;
 
 import com.kuilunfuzhe.monvhua.item.paint.PaintBucketItem;
+import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
+import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
+import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
 import com.mojang.serialization.MapCodec;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.block.AbstractBlock;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockRenderType;
@@ -12,7 +16,11 @@ import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityCollisionHandler;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.particle.DustParticleEffect;
 import net.minecraft.server.world.ServerWorld;
@@ -38,6 +46,7 @@ public class PaintBucketBlock extends BlockWithEntity {
     private static final double KICK_RADIUS_SQUARED = 0.68D * 0.68D;
     private static final VoxelShape SHAPE = Block.createCuboidShape(2.0D, 0.0D, 2.0D, 14.0D, 14.0D, 14.0D);
     private static final Map<UUID, Vec3d> LAST_PLAYER_POSITIONS = new ConcurrentHashMap<>();
+    private static final Map<UUID, CarriedBucket> CARRIED_BUCKETS = new ConcurrentHashMap<>();
 
     public PaintBucketBlock(AbstractBlock.Settings settings) {
         super(settings);
@@ -65,6 +74,16 @@ public class PaintBucketBlock extends BlockWithEntity {
 
     @Override
     protected ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, BlockHitResult hit) {
+        if (!world.isClient() && player instanceof ServerPlayerEntity serverPlayer && player.isSneaking()) {
+            toggleCarry(serverPlayer, pos);
+            return ActionResult.SUCCESS;
+        }
+        if (player.getMainHandStack().getItem() == PaintItems.PAINT_BRUSH) {
+            return ActionResult.SUCCESS;
+        }
+        if (world.isClient() && player.isCreative() && PaintBucketClientBridge.open(pos)) {
+            return ActionResult.SUCCESS;
+        }
         return ActionResult.SUCCESS;
     }
 
@@ -102,6 +121,12 @@ public class PaintBucketBlock extends BlockWithEntity {
 
     public static void tickKicks(ServerWorld world) {
         for (PlayerEntity player : world.getPlayers()) {
+            CarriedBucket carried = CARRIED_BUCKETS.get(player.getUuid());
+            if (carried != null) {
+                player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 40, 0, false, false, true));
+            }
+        }
+        for (PlayerEntity player : world.getPlayers()) {
             if (!player.isSprinting()) {
                 recordPosition(player);
                 continue;
@@ -137,6 +162,106 @@ public class PaintBucketBlock extends BlockWithEntity {
                 }
             }
         }
+    }
+
+    public static boolean handleDamage(ServerPlayerEntity player) {
+        CarriedBucket carried = CARRIED_BUCKETS.remove(player.getUuid());
+        if (carried == null || !(player.getWorld() instanceof ServerWorld world)) {
+            return false;
+        }
+        BlockPos placedPos = placeCarriedBucket(world, player.getBlockPos(), carried);
+        syncCarriedBucket(player, null);
+        Vec3d look = player.getRotationVec(1.0F);
+        double len = Math.sqrt(look.x * look.x + look.z * look.z);
+        if (carried.filled() && len > 0.001D) {
+            spill(world, placedPos, look.x / len, look.z / len, 0xFF000000 | carried.color());
+            spawnSpillParticles(world, placedPos, look.x / len, look.z / len, carried.color());
+            if (world.getBlockEntity(placedPos) instanceof PaintBucketBlockEntity bucket) {
+                bucket.empty();
+            }
+        }
+        return true;
+    }
+
+    public static boolean tryPlaceCarried(ServerPlayerEntity player, BlockPos pos) {
+        CarriedBucket carried = CARRIED_BUCKETS.remove(player.getUuid());
+        if (carried == null || !(player.getWorld() instanceof ServerWorld world)) {
+            return false;
+        }
+        placeCarriedBucket(world, pos, carried);
+        syncCarriedBucket(player, null);
+        return true;
+    }
+
+    public static void dropCarried(ServerPlayerEntity player) {
+        CarriedBucket carried = CARRIED_BUCKETS.remove(player.getUuid());
+        if (carried == null || !(player.getWorld() instanceof ServerWorld world)) {
+            return;
+        }
+        placeCarriedBucket(world, player.getBlockPos(), carried);
+        syncCarriedBucket(player, null);
+    }
+
+    public static void syncAllCarriedBucketsTo(ServerPlayerEntity receiver) {
+        MinecraftServer server = receiver.getServer();
+        if (server == null) {
+            return;
+        }
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            CarriedBucket carried = CARRIED_BUCKETS.get(player.getUuid());
+            if (carried != null) {
+                sendCarriedBucket(receiver, player, carried);
+            }
+        }
+    }
+
+    private static void toggleCarry(ServerPlayerEntity player, BlockPos pos) {
+        ServerWorld world = player.getWorld();
+        CarriedBucket carried = CARRIED_BUCKETS.remove(player.getUuid());
+        if (carried != null) {
+            placeCarriedBucket(world, pos.offset(player.getHorizontalFacing()), carried);
+            syncCarriedBucket(player, null);
+            return;
+        }
+        if (!(world.getBlockEntity(pos) instanceof PaintBucketBlockEntity bucket)) {
+            return;
+        }
+        CARRIED_BUCKETS.put(player.getUuid(), new CarriedBucket(bucket.isFilled(), bucket.getColor()));
+        world.removeBlock(pos, false);
+        player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 40, 0, false, false, true));
+        syncCarriedBucket(player, CARRIED_BUCKETS.get(player.getUuid()));
+    }
+
+    private static BlockPos placeCarriedBucket(ServerWorld world, BlockPos pos, CarriedBucket carried) {
+        BlockPos target = world.isAir(pos) ? pos : pos.up();
+        world.setBlockState(target, com.kuilunfuzhe.monvhua.item.paint.PaintItems.PAINT_BUCKET_BLOCK.getDefaultState());
+        if (world.getBlockEntity(target) instanceof PaintBucketBlockEntity bucket && carried.filled()) {
+            bucket.fill(carried.color());
+        }
+        return target;
+    }
+
+    private static void syncCarriedBucket(ServerPlayerEntity carrier, @Nullable CarriedBucket carried) {
+        MinecraftServer server = carrier.getServer();
+        if (server == null) {
+            return;
+        }
+        for (ServerPlayerEntity receiver : server.getPlayerManager().getPlayerList()) {
+            if (carried == null) {
+                ServerPlayNetworking.send(receiver, new CarryPoseSyncS2CPacket(carrier.getId(), CarryPoseSyncS2CPacket.POSE_NONE, -1));
+                ServerPlayNetworking.send(receiver, new PaintOverlayPackets.PaintBucketCarryS2C(carrier.getId(), false, false, 0));
+            } else {
+                sendCarriedBucket(receiver, carrier, carried);
+            }
+        }
+    }
+
+    private static void sendCarriedBucket(ServerPlayerEntity receiver, ServerPlayerEntity carrier, CarriedBucket carried) {
+        ServerPlayNetworking.send(receiver, new CarryPoseSyncS2CPacket(carrier.getId(), CarryPoseSyncS2CPacket.POSE_BUCKET_CARRIER, -1));
+        ServerPlayNetworking.send(receiver, new PaintOverlayPackets.PaintBucketCarryS2C(carrier.getId(), true, carried.filled(), carried.color()));
+    }
+
+    private record CarriedBucket(boolean filled, int color) {
     }
 
     private static void recordPosition(PlayerEntity player) {

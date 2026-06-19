@@ -2,6 +2,8 @@ package com.kuilunfuzhe.monvhua.features.paint;
 
 import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
 import com.kuilunfuzhe.monvhua.command.PaintGraffitiCommand;
+import com.kuilunfuzhe.monvhua.item.config.PaintConfig;
+import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import com.kuilunfuzhe.monvhua.item.paint.PaintBrushItem;
 import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
 import com.kuilunfuzhe.monvhua.item.paint.PaintPaperItem;
@@ -80,8 +82,16 @@ public final class PaintOverlayFeature {
                 context.server().execute(() -> handleModelPaintStroke(context.player(), packet)));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.FillPaintBucketC2S.ID, (packet, context) ->
                 context.server().execute(() -> handleFillPaintBucket(context.player(), packet)));
+        ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.RefillPaintBucketC2S.ID, (packet, context) ->
+                context.server().execute(() -> handleRefillPaintBucket(context.player(), packet)));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.LoadBrushFromBucketC2S.ID, (packet, context) ->
                 context.server().execute(() -> handleLoadBrushFromBucket(context.player(), packet)));
+        ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.SelectBrushSlotC2S.ID, (packet, context) ->
+                context.server().execute(() -> handleSelectBrushSlot(context.player(), packet)));
+        ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.RequestPaintConfigC2S.ID, (packet, context) ->
+                context.server().execute(() -> ServerPlayNetworking.send(context.player(), new PaintOverlayPackets.PaintConfigS2C(PaintConfig.getInstance().toJson()))));
+        ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.UpdatePaintConfigC2S.ID, (packet, context) ->
+                context.server().execute(() -> handleUpdatePaintConfig(context.player(), packet)));
         ServerTickEvents.END_WORLD_TICK.register(PaintBucketBlock::tickKicks);
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
@@ -117,6 +127,10 @@ public final class PaintOverlayFeature {
         if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
             return;
         }
+        if (world.getBlockState(packet.pos()).getBlock() == ModBlocks.DRAWING_BOARD
+                || world.getBlockState(packet.pos()).getBlock() == PaintItems.PAINT_BUCKET_BLOCK) {
+            return;
+        }
         if (isHoldingPaintBrush(player)) {
             paintAtByPlayer(player, world, packet.pos(), packet.face(), packet.x(), packet.y());
             return;
@@ -136,6 +150,10 @@ public final class PaintOverlayFeature {
             return;
         }
         if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
+            return;
+        }
+        if (world.getBlockState(packet.pos()).getBlock() == ModBlocks.DRAWING_BOARD
+                || world.getBlockState(packet.pos()).getBlock() == PaintItems.PAINT_BUCKET_BLOCK) {
             return;
         }
         if (packet.tool() == 1) {
@@ -238,6 +256,40 @@ public final class PaintOverlayFeature {
         }
     }
 
+    private static void handleSelectBrushSlot(ServerPlayerEntity player, PaintOverlayPackets.SelectBrushSlotC2S packet) {
+        ItemStack brush = findPaintEditorItem(player, PaintItems.PAINT_BRUSH);
+        if (brush != ItemStack.EMPTY) {
+            PaintBrushItem.setSelectedSlot(brush, packet.slot());
+            player.getInventory().markDirty();
+        }
+    }
+
+    private static void handleUpdatePaintConfig(ServerPlayerEntity player, PaintOverlayPackets.UpdatePaintConfigC2S packet) {
+        if (player == null || (!player.hasPermissionLevel(2) && !player.isCreative())) {
+            return;
+        }
+        PaintConfig config = PaintConfig.fromJson(packet.json());
+        PaintConfig.setInstance(config);
+        if (player.getServer() != null) {
+            PaintOverlayPackets.PaintConfigS2C sync = new PaintOverlayPackets.PaintConfigS2C(config.toJson());
+            for (ServerPlayerEntity target : player.getServer().getPlayerManager().getPlayerList()) {
+                ServerPlayNetworking.send(target, sync);
+            }
+        }
+    }
+
+    private static void handleRefillPaintBucket(ServerPlayerEntity player, PaintOverlayPackets.RefillPaintBucketC2S packet) {
+        if (!(player.getWorld() instanceof ServerWorld world) || !player.isCreative()) {
+            return;
+        }
+        if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
+            return;
+        }
+        if (world.getBlockEntity(packet.pos()) instanceof PaintBucketBlockEntity bucket) {
+            bucket.refillBrushLoads();
+        }
+    }
+
     private static void handleLoadBrushFromBucket(ServerPlayerEntity player, PaintOverlayPackets.LoadBrushFromBucketC2S packet) {
         if (!(player.getWorld() instanceof ServerWorld world) || player.isCreative()) {
             return;
@@ -254,14 +306,20 @@ public final class PaintOverlayFeature {
             player.sendMessage(net.minecraft.text.Text.literal("No paint bucket color"), true);
             return;
         }
+        int slot = PaintBrushItem.chooseLoadSlot(brush, bucket.getColor());
+        if (slot < 0) {
+            player.sendMessage(net.minecraft.text.Text.literal("No empty brush slot, and matching color slots are still above 10"), true);
+            return;
+        }
         if (!bucket.takeBrushLoad()) {
             player.sendMessage(net.minecraft.text.Text.literal("This paint bucket is dry for today"), true);
             return;
         }
-        PaintBrushItem.loadPaint(brush, bucket.getColor());
+        PaintBrushItem.loadPaint(brush, slot, bucket.getColor());
         player.getInventory().markDirty();
-        player.sendMessage(net.minecraft.text.Text.literal("Brush paint " + PaintBrushItem.MAX_PAINT_PIXELS
-                + " px, bucket " + bucket.remainingBrushLoadsToday() + "/2"), true);
+        player.sendMessage(net.minecraft.text.Text.literal("Brush paint 100% slot " + (slot + 1)
+                + ", bucket " + bucket.remainingBrushLoadsToday()
+                + "/" + PaintConfig.getInstance().bucketBrushLoads), true);
     }
 
     private static void handleModelPaintStroke(ServerPlayerEntity player, PaintOverlayPackets.ModelPaintStrokeC2S packet) {
@@ -309,7 +367,7 @@ public final class PaintOverlayFeature {
         }
         if (isHoldingPaintBrush(player) && !player.isCreative()) {
             ItemStack brush = findHeldPaintBrush(player);
-            PaintBrushItem.consumePaint(brush, result.changedPixels());
+            PaintBrushItem.consumePaint(brush, PaintBrushItem.getSelectedSlot(brush), PaintConfig.getInstance().scaledConsumption(result.changedPixels()));
             player.getInventory().markDirty();
         }
         stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
@@ -360,7 +418,7 @@ public final class PaintOverlayFeature {
             return;
         }
         if (brushUse != null && !player.isCreative()) {
-            PaintBrushItem.consumePaint(brushUse.stack(), result.changedPixels());
+            PaintBrushItem.consumePaint(brushUse.stack(), PaintBrushItem.getSelectedSlot(brushUse.stack()), PaintConfig.getInstance().scaledConsumption(result.changedPixels()));
             player.getInventory().markDirty();
         }
         stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
@@ -381,7 +439,8 @@ public final class PaintOverlayFeature {
             player.sendMessage(net.minecraft.text.Text.literal("Brush has no paint"), true);
             return null;
         }
-        return new BrushUse(brush, new BrushSettings(0xFF000000 | PaintBrushItem.getPaintColor(brush), getBrushSettings(player).radius()));
+        int slot = PaintBrushItem.getSelectedSlot(brush);
+        return new BrushUse(brush, new BrushSettings(0xFF000000 | PaintBrushItem.getPaintColor(brush, slot), getBrushSettings(player).radius()));
     }
 
     private static int paintBudget(ServerPlayerEntity player) {
@@ -389,7 +448,18 @@ public final class PaintOverlayFeature {
             return Integer.MAX_VALUE;
         }
         ItemStack brush = findPaintEditorItem(player, PaintItems.PAINT_BRUSH);
-        return brush == ItemStack.EMPTY ? 0 : PaintBrushItem.getRemainingPaint(brush);
+        return brush == ItemStack.EMPTY ? 0 : paintPixelBudget(PaintBrushItem.getRemainingPaintPercent(brush, PaintBrushItem.getSelectedSlot(brush)));
+    }
+
+    private static int paintPixelBudget(double remainingPaint) {
+        double multiplier = PaintConfig.getInstance().brushConsumptionMultiplier;
+        if (remainingPaint <= 0.0D) {
+            return 0;
+        }
+        if (multiplier <= 0.0) {
+            return Integer.MAX_VALUE;
+        }
+        return Math.max(1, (int) Math.floor(remainingPaint / multiplier));
     }
 
     public static void paintAt(ServerWorld world, BlockPos pos, Direction face, int x, int y, BrushSettings settings) {
@@ -403,7 +473,7 @@ public final class PaintOverlayFeature {
         }
         int changedPixels = paintAtLimited(world, pos, face, x, y, brushUse.settings(), paintBudget(player));
         if (changedPixels > 0 && !player.isCreative()) {
-            PaintBrushItem.consumePaint(brushUse.stack(), changedPixels);
+            PaintBrushItem.consumePaint(brushUse.stack(), PaintBrushItem.getSelectedSlot(brushUse.stack()), PaintConfig.getInstance().scaledConsumption(changedPixels));
             player.getInventory().markDirty();
         }
     }

@@ -44,7 +44,7 @@ public final class CarryPoseModelApplier {
 		if (model == null || state == null) {
 			return;
 		}
-		if (CarryPoseClientState.isCarrier(state.id)) {
+		if (CarryPoseClientState.isAnyCarrier(state.id)) {
 			applyCarrierPartPose(model, part);
 			return;
 		}
@@ -54,7 +54,7 @@ public final class CarryPoseModelApplier {
 	}
 
 	public static void apply(PlayerEntityModel model, PlayerEntityRenderState state) {
-		if (CarryPoseClientState.isCarrier(state.id)) {
+		if (CarryPoseClientState.isAnyCarrier(state.id)) {
 			applyCarrierPose(model);
 			return;
 		}

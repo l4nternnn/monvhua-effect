@@ -113,7 +113,7 @@ public abstract class PlayerEntityRendererCarryPoseMixin {
 			return;
 		}
 
-		if (CarryPoseClientState.isCarrier(playerState.id)) {
+		if (CarryPoseClientState.isAnyCarrier(playerState.id)) {
 			EmfCompat.pauseCarrierUpperBodyAnimations(new EmfCompat.PlayerEntityModelParts(player, playerModel.body, playerModel.rightArm, playerModel.leftArm), playerState.id);
 			return;
 		}

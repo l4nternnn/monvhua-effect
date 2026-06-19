@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.paint;
 
 import com.mojang.serialization.Codec;
+import com.kuilunfuzhe.monvhua.item.config.PaintConfig;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.nbt.NbtCompound;
@@ -14,7 +15,6 @@ import net.minecraft.storage.WriteView;
 import net.minecraft.util.math.BlockPos;
 
 public class PaintBucketBlockEntity extends BlockEntity {
-    private static final int MAX_DAILY_BRUSH_LOADS = 2;
     private int color = 0xFFFFFF;
     private boolean filled;
     private long brushLoadDay = Long.MIN_VALUE;
@@ -46,12 +46,18 @@ public class PaintBucketBlockEntity extends BlockEntity {
         sync();
     }
 
+    public void refillBrushLoads() {
+        refreshBrushLoadDay();
+        brushLoadsToday = 0;
+        sync();
+    }
+
     public boolean canLoadBrush() {
         if (!filled) {
             return false;
         }
         refreshBrushLoadDay();
-        return brushLoadsToday < MAX_DAILY_BRUSH_LOADS;
+        return brushLoadsToday < PaintConfig.getInstance().bucketBrushLoads;
     }
 
     public boolean takeBrushLoad() {
@@ -65,7 +71,7 @@ public class PaintBucketBlockEntity extends BlockEntity {
 
     public int remainingBrushLoadsToday() {
         refreshBrushLoadDay();
-        return Math.max(0, MAX_DAILY_BRUSH_LOADS - brushLoadsToday);
+        return Math.max(0, PaintConfig.getInstance().bucketBrushLoads - brushLoadsToday);
     }
 
     private void refreshBrushLoadDay() {

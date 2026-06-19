@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.event;
 import com.kuilunfuzhe.monvhua.MonvhuaModClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityAreaBoundaryRenderer;
+import com.kuilunfuzhe.monvhua.features.paint.PaintBucketCarryClientState;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.through.ThroughItem;
@@ -37,6 +38,7 @@ public class WorldRenderHandler {
             BodyPoseWorldPreviewRenderer.render(context.matrixStack(), context.consumers());
             GravityAreaBoundaryRenderer.render(context);
             PaintOverlayClient.render(context);
+            PaintBucketCarryClientState.render(context);
         });
     }
 }

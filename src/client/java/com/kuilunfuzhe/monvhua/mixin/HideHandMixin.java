@@ -30,7 +30,7 @@ public class HideHandMixin {
      */
     @Inject(method = "renderItem(FLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider$Immediate;Lnet/minecraft/client/network/ClientPlayerEntity;I)V", at = @At("HEAD"), cancellable = true)
     private void onRenderItem(float tickDelta, MatrixStack matrices, VertexConsumerProvider.Immediate vertexConsumers, ClientPlayerEntity player, int light, CallbackInfo ci) {
-        if (CameraWatchClientHandler.isActive() || CarryPoseClientState.isCarrier(player.getId()) || CarryPoseClientState.isCarried(player.getId())) {
+        if (CameraWatchClientHandler.isActive() || CarryPoseClientState.isAnyCarrier(player.getId()) || CarryPoseClientState.isCarried(player.getId())) {
             ci.cancel();
         }
     }

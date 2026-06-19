@@ -2,8 +2,11 @@ package com.kuilunfuzhe.monvhua.features.paint;
 
 import com.kuilunfuzhe.monvhua.mixin.SpriteContentsAccessor;
 import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
+import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
+import com.kuilunfuzhe.monvhua.item.config.PaintConfig;
 import com.kuilunfuzhe.monvhua.item.paint.PaintBrushItem;
 import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
+import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -78,6 +81,7 @@ public final class PaintOverlayClient {
     private static int selectedRadius = 1;
     private static int selectedPaperSize = PaintOverlayFeature.DEFAULT_PAPER_SIZE;
     private static int selectedColor = 0xFFFF2A4F;
+    private static int selectedBrushSlot = 0;
     private static boolean eraserFaceMode = false;
     private static boolean wasUsePressed = false;
     private static Object lastStrokeKey;
@@ -92,10 +96,19 @@ public final class PaintOverlayClient {
     }
 
     public static void initialize() {
+        PaintBucketClientBridge.setOpener(pos -> {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client.currentScreen != null) {
+                return true;
+            }
+            openPaintBucketColorScreen(client, pos);
+            return true;
+        });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (!scrollCallbackRegistered && client.getWindow() != null) {
                 registerScrollCallback(client);
             }
+            tickBrushSlotKeys(client);
             tickContinuousPainting(client);
         });
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
@@ -106,6 +119,9 @@ public final class PaintOverlayClient {
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.currentScreen != null) {
                 return ActionResult.SUCCESS;
+            }
+            if (player.isSneaking()) {
+                return ActionResult.PASS;
             }
             if (player.isCreative()) {
                 openPaintBucketColorScreen(client, hitResult.getBlockPos());
@@ -131,6 +147,15 @@ public final class PaintOverlayClient {
                 context.client().execute(() -> applyFullSync(packet.faces())));
         ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.FaceUpdateS2C.ID, (packet, context) ->
                 context.client().execute(() -> applyFace(packet.faceData())));
+        ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PaintConfigS2C.ID, (packet, context) ->
+                context.client().execute(() -> {
+                    PaintConfig config = PaintConfig.fromJson(packet.json());
+                    PaintConfig.syncInstance(config);
+                    if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
+                        screen.receivePaintConfig(config);
+                    }
+                }));
+        PaintBucketCarryClientState.initialize();
     }
 
     public static boolean tryOpenColorScreen(MinecraftClient client) {
@@ -288,6 +313,7 @@ public final class PaintOverlayClient {
     }
 
     public static int selectedColor() {
+        syncSelectedColorFromBrush();
         return selectedColor;
     }
 
@@ -298,6 +324,26 @@ public final class PaintOverlayClient {
         }
         selectedColor = nextColor;
         syncSettings();
+    }
+
+    public static int selectedBrushSlot() {
+        syncSelectedColorFromBrush();
+        return selectedBrushSlot;
+    }
+
+    public static void selectBrushSlot(int slot) {
+        slot = MathHelper.clamp(slot, 0, PaintBrushItem.COLOR_SLOTS - 1);
+        selectedBrushSlot = slot;
+        MinecraftClient client = MinecraftClient.getInstance();
+        ItemStack brush = paintBrushStack(client);
+        if (!brush.isEmpty()) {
+            PaintBrushItem.setSelectedSlot(brush, slot);
+            if (PaintBrushItem.getRemainingPaintPercent(brush, slot) > 0.0D) {
+                selectedColor = 0xFF000000 | PaintBrushItem.getPaintColor(brush, slot);
+                syncSettings();
+            }
+        }
+        SafeClientNetworking.send(new PaintOverlayPackets.SelectBrushSlotC2S(slot));
     }
 
     public static void recordPickedColor(int color) {
@@ -384,10 +430,17 @@ public final class PaintOverlayClient {
 
     private static boolean handlePaintBrushScroll(double yOffset) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.currentScreen != null || !isCtrlDown(client)) {
+        if (client.player == null || client.currentScreen != null) {
             return false;
         }
         int delta = yOffset > 0 ? 1 : -1;
+        if (isHoldingPaintBrush(client) && !isCtrlDown(client)) {
+            selectBrushSlot(selectedBrushSlot + delta);
+            return true;
+        }
+        if (!isCtrlDown(client)) {
+            return false;
+        }
         if (isHoldingPaintPaper(client)) {
             int nextSize = MathHelper.clamp(selectedPaperSize + delta, PaintOverlayFeature.MIN_PAPER_SIZE, PaintOverlayFeature.MAX_PAPER_SIZE);
             if (nextSize == selectedPaperSize) {
@@ -407,6 +460,20 @@ public final class PaintOverlayClient {
         selectedRadius = nextRadius;
         syncSettings();
         return true;
+    }
+
+    private static void tickBrushSlotKeys(MinecraftClient client) {
+        if (client.player == null || client.currentScreen != null || !isHoldingPaintBrush(client)) {
+            return;
+        }
+        long handle = client.getWindow().getHandle();
+        for (int i = 0; i < PaintBrushItem.COLOR_SLOTS; i++) {
+            int key = i == 0 ? GLFW.GLFW_KEY_1 : GLFW.GLFW_KEY_1 + i;
+            if (GLFW.glfwGetKey(handle, key) == GLFW.GLFW_PRESS && selectedBrushSlot != i) {
+                selectBrushSlot(i);
+                return;
+            }
+        }
     }
 
     private static void tickContinuousPainting(MinecraftClient client) {
@@ -449,6 +516,12 @@ public final class PaintOverlayClient {
         }
 
         BlockPos pos = hit.getBlockPos();
+        if (client.world != null && (client.world.getBlockState(pos).getBlock() == ModBlocks.DRAWING_BOARD
+                || client.world.getBlockState(pos).getBlock() == PaintItems.PAINT_BUCKET_BLOCK)) {
+            lastStrokeKey = null;
+            repeatedStrokeTicks = 0;
+            return;
+        }
         Direction face = hit.getSide();
         int[] pixel = PaintBrushItem.getPixel(hit.getPos(), pos, face);
         boolean clear = eraser && eraserFaceMode;
@@ -567,6 +640,12 @@ public final class PaintOverlayClient {
         }
 
         BlockPos pos = hit.getBlockPos();
+        if (client.world != null && (client.world.getBlockState(pos).getBlock() == ModBlocks.DRAWING_BOARD
+                || client.world.getBlockState(pos).getBlock() == PaintItems.PAINT_BUCKET_BLOCK)) {
+            lastStrokeKey = null;
+            repeatedStrokeTicks = 0;
+            return;
+        }
         Direction face = hit.getSide();
         if (tool == EditorTool.PAPER) {
             SafeClientNetworking.send(new PaintOverlayPackets.EditorPaperUseC2S(pos, face, client.player.isSneaking()));
@@ -1031,24 +1110,33 @@ public final class PaintOverlayClient {
         if (brush.isEmpty()) {
             return;
         }
-        int remaining = PaintBrushItem.getRemainingPaint(brush);
         int hotbarLeft = context.getScaledWindowWidth() / 2 - 91;
-        int slot;
         int x;
         if (isPaintBrush(client.player.getMainHandStack())) {
-            slot = client.player.getInventory().getSelectedSlot();
-            x = hotbarLeft + slot * 20 + 1;
+            int hotbarSlot = client.player.getInventory().getSelectedSlot();
+            x = hotbarLeft + hotbarSlot * 20 - 36;
         } else {
-            x = hotbarLeft - 28;
+            x = hotbarLeft - 92;
         }
-        int y = context.getScaledWindowHeight() - 34;
-        int width = 18;
-        int filled = MathHelper.clamp((int) Math.round(width * (remaining / (double) PaintBrushItem.MAX_PAINT_PIXELS)), 0, width);
-        int color = remaining > 0 ? 0xFF58D66D : 0xFF7A3030;
-        context.fill(x - 1, y - 1, x + width + 1, y + 5, 0xAA101015);
-        context.fill(x, y, x + width, y + 4, 0xFF2A2A30);
-        context.fill(x, y, x + filled, y + 4, color);
-        context.drawText(client.textRenderer, Text.literal(String.valueOf(remaining)), x + 2, y - 10, 0xFFE6E6E6, false);
+        int y = context.getScaledWindowHeight() - 42;
+        int slotW = 12;
+        int gap = 2;
+        for (int i = 0; i < PaintBrushItem.COLOR_SLOTS; i++) {
+            double remaining = PaintBrushItem.getRemainingPaintPercent(brush, i);
+            int color = 0xFF000000 | PaintBrushItem.getPaintColor(brush, i);
+            int slotX = x + i * (slotW + gap);
+            boolean selected = i == PaintBrushItem.getSelectedSlot(brush);
+            context.fill(slotX - 1, y - 1, slotX + slotW + 1, y + 15, selected ? 0xFFFFFFFF : 0xAA101015);
+            context.fill(slotX, y, slotX + slotW, y + 14, 0xFF202026);
+            if (remaining > 0.0D) {
+                context.fill(slotX + 1, y + 1, slotX + slotW - 1, y + 7, color);
+            }
+            int filled = MathHelper.clamp((int) Math.round((slotW - 2) * (remaining / (double) PaintBrushItem.MAX_PAINT_PIXELS)), 0, slotW - 2);
+            context.fill(slotX + 1, y + 10, slotX + 1 + filled, y + 13, remaining > 0.0D ? 0xFF58D66D : 0xFF7A3030);
+        }
+        int selected = PaintBrushItem.getSelectedSlot(brush);
+        double remaining = PaintBrushItem.getRemainingPaintPercent(brush, selected);
+        context.drawText(client.textRenderer, Text.literal((selected + 1) + ":" + formatPaintPercent(remaining)), x, y - 10, 0xFFE6E6E6, false);
     }
 
     private static boolean isHoldingPaintBrush(MinecraftClient client) {
@@ -1056,6 +1144,14 @@ public final class PaintOverlayClient {
             return false;
         }
         return isPaintBrush(client.player.getMainHandStack()) || isPaintBrush(client.player.getOffHandStack());
+    }
+
+    private static String formatPaintPercent(double remaining) {
+        double percent = Math.clamp(remaining * 100.0D / PaintBrushItem.MAX_PAINT_PIXELS, 0.0D, 100.0D);
+        if (Math.abs(percent - Math.rint(percent)) < 0.05D) {
+            return String.format(java.util.Locale.ROOT, "%.0f%%", percent);
+        }
+        return String.format(java.util.Locale.ROOT, "%.1f%%", percent);
     }
 
     private static ItemStack paintBrushStack(MinecraftClient client) {
@@ -1099,6 +1195,18 @@ public final class PaintOverlayClient {
 
     private static boolean isPaintPaper(ItemStack stack) {
         return stack.getItem() == PaintItems.PAINT_PAPER;
+    }
+
+    private static void syncSelectedColorFromBrush() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        ItemStack brush = paintBrushStack(client);
+        if (brush.isEmpty()) {
+            return;
+        }
+        selectedBrushSlot = PaintBrushItem.getSelectedSlot(brush);
+        if (PaintBrushItem.getRemainingPaintPercent(brush, selectedBrushSlot) > 0.0D) {
+            selectedColor = 0xFF000000 | PaintBrushItem.getPaintColor(brush, selectedBrushSlot);
+        }
     }
 
     private static boolean isCtrlDown(MinecraftClient client) {

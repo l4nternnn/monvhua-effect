@@ -9,6 +9,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,6 +23,8 @@ public final class PaintOverlayPackets {
     public static void registerS2C() {
         FullSyncS2C.register();
         FaceUpdateS2C.register();
+        PaintBucketCarryS2C.register();
+        PaintConfigS2C.register();
     }
 
     public static void registerC2S() {
@@ -35,7 +38,11 @@ public final class PaintOverlayPackets {
         RestoreFaceC2S.register();
         ModelPaintStrokeC2S.register();
         FillPaintBucketC2S.register();
+        RefillPaintBucketC2S.register();
         LoadBrushFromBucketC2S.register();
+        SelectBrushSlotC2S.register();
+        RequestPaintConfigC2S.register();
+        UpdatePaintConfigC2S.register();
     }
 
     public record FaceData(BlockPos pos, Direction face, int[] pixels) {
@@ -136,6 +143,105 @@ public final class PaintOverlayPackets {
         }
     }
 
+    public record PaintBucketCarryS2C(int entityId, boolean active, boolean filled, int color) implements CustomPayload {
+        public static final Id<PaintBucketCarryS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "paint_bucket_carry"));
+        public static final PacketCodec<RegistryByteBuf, PaintBucketCarryS2C> CODEC = PacketCodec.of(PaintBucketCarryS2C::write, PaintBucketCarryS2C::new);
+        private static boolean registered = false;
+
+        private PaintBucketCarryS2C(RegistryByteBuf buf) {
+            this(buf.readVarInt(), buf.readBoolean(), buf.readBoolean(), buf.readInt());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeVarInt(entityId);
+            buf.writeBoolean(active);
+            buf.writeBoolean(filled);
+            buf.writeInt(color);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record PaintConfigS2C(String json) implements CustomPayload {
+        public static final Id<PaintConfigS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "paint_config"));
+        public static final PacketCodec<RegistryByteBuf, PaintConfigS2C> CODEC = PacketCodec.of(PaintConfigS2C::write, PaintConfigS2C::new);
+        private static boolean registered = false;
+
+        private PaintConfigS2C(RegistryByteBuf buf) {
+            this(buf.readString());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(json);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record RequestPaintConfigC2S() implements CustomPayload {
+        public static final Id<RequestPaintConfigC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "request_paint_config"));
+        public static final PacketCodec<RegistryByteBuf, RequestPaintConfigC2S> CODEC = PacketCodec.unit(new RequestPaintConfigC2S());
+        private static boolean registered = false;
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record UpdatePaintConfigC2S(String json) implements CustomPayload {
+        public static final Id<UpdatePaintConfigC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "update_paint_config"));
+        public static final PacketCodec<RegistryByteBuf, UpdatePaintConfigC2S> CODEC = PacketCodec.of(UpdatePaintConfigC2S::write, UpdatePaintConfigC2S::new);
+        private static boolean registered = false;
+
+        private UpdatePaintConfigC2S(RegistryByteBuf buf) {
+            this(buf.readString());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(json);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
     public record BrushSettingsC2S(int color, int radius) implements CustomPayload {
         public static final Id<BrushSettingsC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "paint_brush_settings"));
         public static final PacketCodec<RegistryByteBuf, BrushSettingsC2S> CODEC = PacketCodec.of(BrushSettingsC2S::write, BrushSettingsC2S::new);
@@ -148,6 +254,66 @@ public final class PaintOverlayPackets {
         private void write(RegistryByteBuf buf) {
             buf.writeInt(color);
             buf.writeVarInt(radius);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record SelectBrushSlotC2S(int slot) implements CustomPayload {
+        public static final Id<SelectBrushSlotC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "paint_brush_slot"));
+        public static final PacketCodec<RegistryByteBuf, SelectBrushSlotC2S> CODEC = PacketCodec.of(SelectBrushSlotC2S::write, SelectBrushSlotC2S::new);
+        private static boolean registered = false;
+
+        public SelectBrushSlotC2S {
+            slot = MathHelper.clamp(slot, 0, 8);
+        }
+
+        private SelectBrushSlotC2S(RegistryByteBuf buf) {
+            this(buf.readVarInt());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeVarInt(slot);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record RefillPaintBucketC2S(BlockPos pos) implements CustomPayload {
+        public static final Id<RefillPaintBucketC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "refill_paint_bucket"));
+        public static final PacketCodec<RegistryByteBuf, RefillPaintBucketC2S> CODEC = PacketCodec.of(RefillPaintBucketC2S::write, RefillPaintBucketC2S::new);
+        private static boolean registered = false;
+
+        public RefillPaintBucketC2S {
+            pos = pos.toImmutable();
+        }
+
+        private RefillPaintBucketC2S(RegistryByteBuf buf) {
+            this(buf.readBlockPos());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeBlockPos(pos);
         }
 
         public static void register() {

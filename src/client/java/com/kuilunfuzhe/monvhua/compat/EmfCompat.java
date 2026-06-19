@@ -55,7 +55,7 @@ public final class EmfCompat {
 	}
 
 	public static void pauseCarrierUpperBodyAnimations(PlayerEntityModelParts parts, int entityId) {
-		if (!loaded || !CarryPoseClientState.isCarrier(entityId)) {
+		if (!loaded || !CarryPoseClientState.isAnyCarrier(entityId)) {
 			return;
 		}
 

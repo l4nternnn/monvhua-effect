@@ -5,6 +5,7 @@ import com.kuilunfuzhe.monvhua.item.config.FloatingConfig;
 import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.item.config.PlantMagicConfig;
+import com.kuilunfuzhe.monvhua.item.config.PaintConfig;
 import com.kuilunfuzhe.monvhua.item.config.ThroughConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecretConfig;
 import com.kuilunfuzhe.monvhua.gui.stage.general_stage;
@@ -18,6 +19,7 @@ import com.kuilunfuzhe.monvhua.network.imitate.RequestImitateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.UpdateImitateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ConfigUpdateC2S;
 import com.kuilunfuzhe.monvhua.network.plant.PlantMagicPackets;
+import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
 import com.kuilunfuzhe.monvhua.network.secret.SecretPackets;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.RequestConfigC2S;
@@ -40,10 +42,10 @@ import java.util.List;
  */
 public class CombinedConfigScreen extends Screen {
     /** 配置类型枚举，对应顶部五个标签页 */
-    private enum ConfigType { EVIL_EYES, GAZE_GUIDANCE, MIRROR, THROUGH, STAGE_RANGE, IMITATE, FLOATING, SECRET, PLANT }
+    private enum ConfigType { EVIL_EYES, GAZE_GUIDANCE, MIRROR, THROUGH, STAGE_RANGE, IMITATE, FLOATING, SECRET, PLANT, PAINT }
     private ConfigType currentType = ConfigType.EVIL_EYES;
 
-    private ButtonWidget btnEvilEyes, btnGaze, btnMirror, btnThrough, btnStageRange, btnImitate, btnFloating, btnSecret, btnPlant;
+    private ButtonWidget btnEvilEyes, btnGaze, btnMirror, btnThrough, btnStageRange, btnImitate, btnFloating, btnSecret, btnPlant, btnPaint;
     private int panelX, panelY, panelWidth, panelHeight;
     private int leftWidth, rightWidth;
 
@@ -108,6 +110,11 @@ public class CombinedConfigScreen extends Screen {
     private final List<TextWidget> plantLabels = new ArrayList<>();
     private static PlantMagicConfig cachedPlantMagicConfig = null;
 
+    private TextFieldWidget paintConsumptionField, paintBucketLoadsField;
+    private ButtonWidget savePaintButton;
+    private final List<TextWidget> paintLabels = new ArrayList<>();
+    private static PaintConfig cachedPaintConfig = null;
+
     // ===== 窃密配置组件 =====
     private final List<ButtonWidget> secretStageButtons = new ArrayList<>();
     private int secretCurrentStage = 1;
@@ -130,6 +137,7 @@ public class CombinedConfigScreen extends Screen {
         ClientPlayNetworking.send(new SecretPackets.RequestConfigC2S());
         ClientPlayNetworking.send(new FloatingPackets.RequestConfigC2S());
         ClientPlayNetworking.send(new PlantMagicPackets.RequestConfigC2S());
+        ClientPlayNetworking.send(new PaintOverlayPackets.RequestPaintConfigC2S());
         if (cachedGazeConfig == null) {
             cachedGazeConfig = createDefaultGazeConfig();
         }
@@ -150,6 +158,9 @@ public class CombinedConfigScreen extends Screen {
         }
         if (cachedSecretConfig == null) {
             cachedSecretConfig = new SecretConfig();
+        }
+        if (cachedPaintConfig == null) {
+            cachedPaintConfig = new PaintConfig();
         }
     }
 
@@ -232,12 +243,12 @@ public class CombinedConfigScreen extends Screen {
         rightWidth = panelWidth - leftWidth - 15;  // 15px 分隔线间距
 
         // 顶部标签按钮尺寸
-        int btnWidth = 60, btnHeight = 20;
+        int btnWidth = 56, btnHeight = 20;
         // 按钮放在面板上方5px处
         int btnY = panelY - btnHeight - 5;
         int centerX = panelX + panelWidth / 2;
         int tabGap = 4;
-        int tabCount = 9;
+        int tabCount = 10;
         int tabStartX = centerX - (btnWidth * tabCount + tabGap * (tabCount - 1)) / 2;
 
         btnEvilEyes = ButtonWidget.builder(Text.literal("千里眼"), btn -> switchTo(ConfigType.EVIL_EYES))
@@ -259,6 +270,8 @@ public class CombinedConfigScreen extends Screen {
         btnPlant = ButtonWidget.builder(Text.literal("\u690d\u7269"), btn -> switchTo(ConfigType.PLANT))
                 .dimensions(tabStartX + (btnWidth + tabGap) * 7, btnY, btnWidth, btnHeight).build();
         btnStageRange.setX(tabStartX + (btnWidth + tabGap) * 8);
+        btnPaint = ButtonWidget.builder(Text.literal("绘制"), btn -> switchTo(ConfigType.PAINT))
+                .dimensions(tabStartX + (btnWidth + tabGap) * 9, btnY, btnWidth, btnHeight).build();
         addDrawableChild(btnEvilEyes);
         addDrawableChild(btnGaze);
         addDrawableChild(btnMirror);
@@ -268,6 +281,7 @@ public class CombinedConfigScreen extends Screen {
         addDrawableChild(btnSecret);
         addDrawableChild(btnFloating);
         addDrawableChild(btnPlant);
+        addDrawableChild(btnPaint);
 
         buildEvilEyesUI();
         buildGazeGuidanceUI();
@@ -278,6 +292,7 @@ public class CombinedConfigScreen extends Screen {
         buildFloatingUI();
         buildPlantMagicUI();
         buildSecretUI();
+        buildPaintUI();
         switchTo(ConfigType.EVIL_EYES);
     }
 
@@ -602,6 +617,27 @@ public class CombinedConfigScreen extends Screen {
                 .dimensions(rightX, rowY + 3 * rowHeight + 10, 80, 20).build();
         addDrawableChild(savePlantButton);
     }
+
+    private void buildPaintUI() {
+        int rightX = panelX + leftWidth + 5;
+        int rowY = panelY + 28;
+        int rowHeight = 24;
+        int labelWidth = 130;
+        int inputWidth = 80;
+
+        String[] labels = {"每像素消耗(%):", "油漆桶取色次数:"};
+        for (int i = 0; i < labels.length; i++) {
+            TextWidget label = new TextWidget(rightX, rowY + i * rowHeight + 4, labelWidth, 9, Text.literal(labels[i]), textRenderer);
+            addDrawableChild(label);
+            paintLabels.add(label);
+        }
+
+        paintConsumptionField = createField(rightX + labelWidth, rowY, inputWidth);
+        paintBucketLoadsField = createField(rightX + labelWidth, rowY + rowHeight, inputWidth);
+        savePaintButton = ButtonWidget.builder(Text.literal("保存"), btn -> savePaintConfig())
+                .dimensions(rightX, rowY + 2 * rowHeight + 12, 80, 20).build();
+        addDrawableChild(savePaintButton);
+    }
     /**
      * 创建一个限制最大输入长度为6的文本输入框。
      */
@@ -628,6 +664,7 @@ public class CombinedConfigScreen extends Screen {
         btnFloating.setMessage(currentType == ConfigType.FLOATING ? Text.literal("§l§a漂浮") : Text.literal("漂浮"));
 
         btnPlant.setMessage(currentType == ConfigType.PLANT ? Text.literal("\u00a7l\u00a7a\u690d\u7269") : Text.literal("\u690d\u7269"));
+        btnPaint.setMessage(currentType == ConfigType.PAINT ? Text.literal("\u00a7l\u00a7a绘制") : Text.literal("绘制"));
 
         setEvilComponentsVisible(currentType == ConfigType.EVIL_EYES);
         setGazeComponentsVisible(currentType == ConfigType.GAZE_GUIDANCE);
@@ -638,6 +675,7 @@ public class CombinedConfigScreen extends Screen {
         setFloatingComponentsVisible(currentType == ConfigType.FLOATING);
         setPlantMagicComponentsVisible(currentType == ConfigType.PLANT);
         setSecretComponentsVisible(currentType == ConfigType.SECRET);
+        setPaintComponentsVisible(currentType == ConfigType.PAINT);
 
         switch (currentType) {
             case EVIL_EYES -> loadEvilStageUI();
@@ -649,6 +687,7 @@ public class CombinedConfigScreen extends Screen {
             case FLOATING -> loadFloatingStageUI();
             case SECRET -> loadSecretStageUI();
             case PLANT -> loadPlantMagicStageUI();
+            case PAINT -> loadPaintUI();
         }
     }
 
@@ -739,6 +778,13 @@ public class CombinedConfigScreen extends Screen {
         if (plantCoverageField != null) plantCoverageField.visible = visible;
         if (plantCooldownField != null) plantCooldownField.visible = visible;
         if (savePlantButton != null) savePlantButton.visible = visible;
+    }
+
+    private void setPaintComponentsVisible(boolean visible) {
+        for (TextWidget label : paintLabels) label.visible = visible;
+        if (paintConsumptionField != null) paintConsumptionField.visible = visible;
+        if (paintBucketLoadsField != null) paintBucketLoadsField.visible = visible;
+        if (savePaintButton != null) savePaintButton.visible = visible;
     }
 
     private void loadEvilStageUI() {
@@ -1053,6 +1099,14 @@ public class CombinedConfigScreen extends Screen {
         plantCooldownField.setText(String.valueOf(cachedPlantMagicConfig.getCooldownSeconds(plantCurrentStage)));
     }
 
+    private void loadPaintUI() {
+        if (cachedPaintConfig == null) {
+            cachedPaintConfig = new PaintConfig();
+        }
+        paintConsumptionField.setText(String.valueOf(cachedPaintConfig.brushConsumptionMultiplier));
+        paintBucketLoadsField.setText(String.valueOf(cachedPaintConfig.bucketBrushLoads));
+    }
+
     private void saveSecretConfig() {
         try {
             int range = Integer.parseInt(secretRangeField.getText().trim());
@@ -1115,6 +1169,27 @@ public class CombinedConfigScreen extends Screen {
         }
     }
 
+    private void savePaintConfig() {
+        try {
+            double consumption = Double.parseDouble(paintConsumptionField.getText().trim());
+            int bucketLoads = Integer.parseInt(paintBucketLoadsField.getText().trim());
+
+            PaintConfig config = new PaintConfig();
+            config.brushConsumptionMultiplier = consumption;
+            config.bucketBrushLoads = bucketLoads;
+            cachedPaintConfig = PaintConfig.fromJson(config.toJson());
+
+            ClientPlayNetworking.send(new PaintOverlayPackets.UpdatePaintConfigC2S(cachedPaintConfig.toJson()));
+            if (client != null && client.player != null) {
+                client.player.sendMessage(Text.literal("\u00a7aPaint config submitted"), true);
+            }
+        } catch (NumberFormatException e) {
+            if (client != null && client.player != null) {
+                client.player.sendMessage(Text.literal("\u00a7cInvalid number"), true);
+            }
+        }
+    }
+
     public void receiveSecretConfig(SecretConfig config) {
         if (config == null) return;
         cachedSecretConfig = config;
@@ -1136,6 +1211,14 @@ public class CombinedConfigScreen extends Screen {
         cachedPlantMagicConfig = config;
         if (currentType == ConfigType.PLANT) {
             loadPlantMagicStageUI();
+        }
+    }
+
+    public void receivePaintConfig(PaintConfig config) {
+        if (config == null) return;
+        cachedPaintConfig = config;
+        if (currentType == ConfigType.PAINT) {
+            loadPaintUI();
         }
     }
 
@@ -1189,6 +1272,10 @@ public class CombinedConfigScreen extends Screen {
         if (currentType == ConfigType.PLANT) {
             context.drawText(textRenderer, "\u690d\u7269\u9b54\u6cd5\u9636\u6bb5\u914d\u7f6e", panelX + 5, panelY + 5, 0x66FF88, false);
             context.drawText(textRenderer, "\u5f53\u524d\u7f16\u8f91: \u9636\u6bb5 " + plantCurrentStage, panelX + leftWidth + 5, panelY + 5, 0x66FF88, false);
+        }
+        if (currentType == ConfigType.PAINT) {
+            context.drawText(textRenderer, "绘制配置", panelX + 5, panelY + 5, 0xFFD66D, false);
+            context.drawText(textRenderer, "画笔与油漆桶", panelX + leftWidth + 5, panelY + 5, 0xFFD66D, false);
         }
 
         super.render(context, mouseX, mouseY, delta);

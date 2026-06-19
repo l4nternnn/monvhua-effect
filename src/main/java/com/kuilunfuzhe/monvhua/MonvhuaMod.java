@@ -27,6 +27,7 @@ import com.kuilunfuzhe.monvhua.features.guidance.Gazeguidance;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import com.kuilunfuzhe.monvhua.features.imitate.ImitateManager;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayFeature;
+import com.kuilunfuzhe.monvhua.features.paint.PaintBucketBlock;
 import com.kuilunfuzhe.monvhua.features.plant.PlantMagic;
 import com.kuilunfuzhe.monvhua.item.ModItemGroups;
 import com.kuilunfuzhe.monvhua.item.block_hole.BlockHoleItems;
@@ -74,6 +75,7 @@ import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.RequestConfigC2S;
 import com.kuilunfuzhe.monvhua.network.openback.CarryEntityPayload;
 import com.kuilunfuzhe.monvhua.network.openback.OpenOtherInventoryPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
+import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
 import com.kuilunfuzhe.monvhua.network.plant.PlantMagicPackets;
 import com.kuilunfuzhe.monvhua.network.through.RequestThroughConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughConfigS2CPacket;
@@ -87,6 +89,7 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
@@ -108,6 +111,7 @@ import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
+import net.minecraft.util.ActionResult;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
@@ -229,6 +233,13 @@ public class MonvhuaMod implements ModInitializer {
         SilenceTargetsS2CPacket.register();
         ResetCooldownsS2CPacket.register();
         DrawingBoardPackets.registerReceivers();
+        UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
+            if (!world.isClient() && player instanceof ServerPlayerEntity serverPlayer && player.isSneaking()
+                    && PaintBucketBlock.tryPlaceCarried(serverPlayer, hitResult.getBlockPos().offset(hitResult.getSide()))) {
+                return ActionResult.SUCCESS;
+            }
+            return ActionResult.PASS;
+        });
 
         ServerPlayNetworking.registerGlobalReceiver(ToggleC2S.ID, (packet, context) -> {
             MirrorCommand.toggleViewport(context.player());
@@ -569,7 +580,9 @@ public class MonvhuaMod implements ModInitializer {
             ServerPlayNetworking.send(player, new ThroughConfigS2CPacket(ThroughConfig.getInstance().toJson()));
             ServerPlayNetworking.send(player, new FloatingPackets.ConfigS2C(FloatingConfig.getInstance().toJson()));
             ServerPlayNetworking.send(player, new PlantMagicPackets.ConfigS2C(PlantMagicConfig.getInstance().toJson()));
+            ServerPlayNetworking.send(player, new PaintOverlayPackets.PaintConfigS2C(PaintConfig.getInstance().toJson()));
             GravityMagic.syncAreaGravityTo(player);
+            PaintBucketBlock.syncAllCarriedBucketsTo(player);
 
             // 同步漂浮魔法标签（完全魔女化 + Floating）
             ServerPlayNetworking.send(player, new FullWitchTagSyncS2CPacket(
@@ -816,6 +829,7 @@ public class MonvhuaMod implements ModInitializer {
             MirrorCommand.cleanup(uuid);
             TimelineScheduler.cleanupPlayer(uuid);
             ThroughItem.exitSecrecy(player);
+            PaintBucketBlock.dropCarried(player);
         });
 
         // ===== 14. 死亡清理 =====
@@ -828,11 +842,15 @@ public class MonvhuaMod implements ModInitializer {
                 floatingPlayersServer.remove(uuid);
                 MirrorCommand.cleanup(uuid);
                 ThroughItem.exitSecrecy(player);
+                PaintBucketBlock.dropCarried(player);
             }
         });
 
         // ===== 15. 漂浮/缓降玩家免疫摔落伤害 =====
         ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> {
+            if (entity instanceof ServerPlayerEntity player) {
+                PaintBucketBlock.handleDamage(player);
+            }
             if (entity instanceof ServerPlayerEntity player
                     && source.isOf(DamageTypes.IN_WALL)
                     && ThroughItem.isPhaseNoClip(player)) {

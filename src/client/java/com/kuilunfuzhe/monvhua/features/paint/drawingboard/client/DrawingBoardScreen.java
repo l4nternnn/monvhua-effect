@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.features.paint.drawingboard.client;
 import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
 import com.kuilunfuzhe.monvhua.features.paint.drawingboard.DrawingBoardBlockEntity;
+import com.kuilunfuzhe.monvhua.item.paint.PaintBrushItem;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.network.drawingboard.DrawingBoardPackets;
 import net.minecraft.client.MinecraftClient;
@@ -158,6 +159,10 @@ public class DrawingBoardScreen extends Screen {
             close();
             return true;
         }
+        if (keyCode >= GLFW.GLFW_KEY_1 && keyCode <= GLFW.GLFW_KEY_9) {
+            PaintOverlayClient.selectBrushSlot(keyCode - GLFW.GLFW_KEY_1);
+            return true;
+        }
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
@@ -174,6 +179,7 @@ public class DrawingBoardScreen extends Screen {
     private void drawControls(DrawContext context, int mouseX, int mouseY) {
         int x = panelX + panelW - PANEL_PAD - CONTROL_W;
         int y = canvasY;
+        drawPalette(context, panelX + PANEL_PAD, canvasY, mouseX, mouseY);
         drawButton(context, x, y, CONTROL_W, 18, "Clear", isInside(x, y, CONTROL_W, 18, mouseX, mouseY));
         drawButton(context, x, y + 24, CONTROL_W, 18, "Paper", isInside(x, y + 24, CONTROL_W, 18, mouseX, mouseY));
         context.drawText(textRenderer, Text.literal("Brush"), x, y + 52, 0xFFFFFFFF, false);
@@ -194,6 +200,9 @@ public class DrawingBoardScreen extends Screen {
     }
 
     private boolean handleControlClick(double mouseX, double mouseY) {
+        if (handlePaletteClick(mouseX, mouseY)) {
+            return true;
+        }
         int x = panelX + panelW - PANEL_PAD - CONTROL_W;
         int y = canvasY;
         if (isInside(x, y, CONTROL_W, 18, mouseX, mouseY)) {
@@ -217,6 +226,64 @@ public class DrawingBoardScreen extends Screen {
         return false;
     }
 
+    private void drawPalette(DrawContext context, int x, int y, int mouseX, int mouseY) {
+        var brush = brushStack();
+        context.drawText(textRenderer, Text.literal("Colors"), x, y - 12, 0xFFFFFFFF, false);
+        int selected = brush.isEmpty() ? PaintOverlayClient.selectedBrushSlot() : PaintBrushItem.getSelectedSlot(brush);
+        for (int i = 0; i < PaintBrushItem.COLOR_SLOTS; i++) {
+            int slotY = y + i * 19;
+            int color = brush.isEmpty() ? 0xFF202026 : 0xFF000000 | PaintBrushItem.getPaintColor(brush, i);
+            double remaining = brush.isEmpty() ? 0.0D : PaintBrushItem.getRemainingPaintPercent(brush, i);
+            boolean hover = isInside(x, slotY, 72, 16, mouseX, mouseY);
+            context.fill(x, slotY, x + 72, slotY + 16, hover ? 0xFF344454 : 0xFF202832);
+            context.fill(x + 2, slotY + 2, x + 14, slotY + 14, remaining > 0.0D ? color : 0xFF111111);
+            if (i == selected) {
+                context.drawBorder(x, slotY, 72, 16, 0xFFFFFFFF);
+            }
+            context.drawText(textRenderer, Text.literal((i + 1) + " " + formatPaintPercent(remaining)), x + 18, slotY + 4, 0xFFE6E6E6, false);
+        }
+    }
+
+    private static String formatPaintPercent(double remaining) {
+        double percent = Math.clamp(remaining * 100.0D / PaintBrushItem.MAX_PAINT_PIXELS, 0.0D, 100.0D);
+        if (Math.abs(percent - Math.rint(percent)) < 0.05D) {
+            return String.format(java.util.Locale.ROOT, "%.0f%%", percent);
+        }
+        return String.format(java.util.Locale.ROOT, "%.1f%%", percent);
+    }
+
+    private boolean handlePaletteClick(double mouseX, double mouseY) {
+        int x = panelX + PANEL_PAD;
+        int y = canvasY;
+        for (int i = 0; i < PaintBrushItem.COLOR_SLOTS; i++) {
+            if (isInside(x, y + i * 19, 72, 16, mouseX, mouseY)) {
+                PaintOverlayClient.selectBrushSlot(i);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private net.minecraft.item.ItemStack brushStack() {
+        var client = MinecraftClient.getInstance();
+        if (client.player == null) {
+            return net.minecraft.item.ItemStack.EMPTY;
+        }
+        if (client.player.getMainHandStack().getItem() instanceof PaintBrushItem) {
+            return client.player.getMainHandStack();
+        }
+        if (client.player.getOffHandStack().getItem() instanceof PaintBrushItem) {
+            return client.player.getOffHandStack();
+        }
+        for (int slot = 0; slot < client.player.getInventory().size(); slot++) {
+            var stack = client.player.getInventory().getStack(slot);
+            if (stack.getItem() instanceof PaintBrushItem) {
+                return stack;
+            }
+        }
+        return net.minecraft.item.ItemStack.EMPTY;
+    }
+
     private void interpolatePaint(int fromX, int fromY, int toX, int toY, boolean erase) {
         int steps = Math.max(1, Math.max(Math.abs(toX - fromX), Math.abs(toY - fromY)));
         for (int i = 1; i <= steps; i++) {
@@ -226,7 +293,10 @@ public class DrawingBoardScreen extends Screen {
     }
 
     private void paintAt(int x, int y, boolean erase, boolean send) {
-        int color = erase ? 0xFFFFFFFF : (PaintOverlayClient.selectedColor() | 0xFF000000);
+        int color = erase ? 0xFFFFFFFF : selectedBrushColorOrZero();
+        if (!erase && color == 0) {
+            return;
+        }
         int r2 = brushRadius * brushRadius;
         boolean changed = false;
         for (int dy = -brushRadius + 1; dy <= brushRadius - 1; dy++) {
@@ -251,6 +321,18 @@ public class DrawingBoardScreen extends Screen {
         if (send) {
             SafeClientNetworking.send(new DrawingBoardPackets.StrokeC2S(pos, x, y, brushRadius, color, false));
         }
+    }
+
+    private int selectedBrushColorOrZero() {
+        var brush = brushStack();
+        if (brush.isEmpty()) {
+            return 0;
+        }
+        int slot = PaintBrushItem.getSelectedSlot(brush);
+        if (!PaintBrushItem.hasPaint(brush, slot)) {
+            return 0;
+        }
+        return 0xFF000000 | PaintBrushItem.getPaintColor(brush, slot);
     }
 
     private boolean insideCanvas(double mouseX, double mouseY) {

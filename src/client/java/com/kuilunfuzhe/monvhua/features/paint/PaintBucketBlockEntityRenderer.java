@@ -33,7 +33,7 @@ public class PaintBucketBlockEntityRenderer implements BlockEntityRenderer<Paint
         vertex(vertices, matrix, min, y, max, r, g, b, a);
     }
 
-    private static void vertex(VertexConsumer vertices, Matrix4f matrix, float x, float y, float z, int r, int g, int b, int a) {
+    public static void vertex(VertexConsumer vertices, Matrix4f matrix, float x, float y, float z, int r, int g, int b, int a) {
         vertices.vertex(matrix, x, y, z)
                 .color(r, g, b, a)
                 .texture(0.0F, 0.0F)
