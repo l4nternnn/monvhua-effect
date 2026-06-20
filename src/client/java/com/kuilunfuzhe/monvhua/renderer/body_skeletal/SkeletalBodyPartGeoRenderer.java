@@ -9,6 +9,7 @@ import software.bernie.geckolib.renderer.base.GeoRenderState;
 public class SkeletalBodyPartGeoRenderer<T extends SkeletalBodyPartBlockEntity> extends GeoBlockRenderer<T> {
     public SkeletalBodyPartGeoRenderer() {
         super(new SkeletalBodyPartGeoModel<>());
+        this.addRenderLayer(new SkeletalOuterLayerVoxelRenderLayer<>(this));
     }
 
     @Override

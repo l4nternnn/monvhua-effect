@@ -4,6 +4,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.kuilunfuzhe.monvhua.MonvhuaMod;
+import com.kuilunfuzhe.monvhua.features.paint.SkinTexturePixels;
 import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorFragment;
 import dev.tr7zw.skinlayers.SkinUtil;
 import dev.tr7zw.skinlayers.api.SkinLayersAPI;
@@ -37,7 +39,6 @@ public final class BodyPoseSkeletalPreviewRenderer {
     private static final Identifier MODEL_ID = Identifier.of("monvhua", "models/entity/skeletal_model2.bbmodel");
     private static final Identifier ANIMATION_ID = Identifier.of("monvhua", "models/entity/animation.json");
     private static final Identifier EYE_ANIMATION_ID = Identifier.of("monvhua", "models/entity/eye_on_off.json");
-    private static final Identifier SOLID_COLOR_TEXTURE = Identifier.ofVanilla("textures/misc/white.png");
     private static final int DEFAULT_VERTEX_COLOR = 0xFFFFFFFF;
     private static final int SKIN_TONE_OVERLAY_COLOR = 0xFFFFF3EC;
     private static final int NOSE_VERTEX_COLOR = 0xFFFFEFEA;
@@ -52,11 +53,13 @@ public final class BodyPoseSkeletalPreviewRenderer {
     private static final Vector3f NOSE_LOCAL_D = new Vector3f(-1.075F, 1.875F, 0.991F);
     private static final float MODEL_UNIT = 16.0F;
     private static final float MODEL_Y_ORIGIN = 24.9207F;
+    private static final float VOXEL_OUTER_THICKNESS = 0.5F;
     private static final float OUTER_LAYER_NORMAL_OFFSET = 0.002F;
     private static final Map<SkinLayerCacheKey, SkinLayerMeshes> SKIN_LAYER_MESHES = new HashMap<>();
 
     private static SkeletalModel cachedModel;
     private static boolean loadFailed;
+    private static boolean loggedColoredVoxelStats;
 
     private BodyPoseSkeletalPreviewRenderer() {
     }
@@ -79,7 +82,7 @@ public final class BodyPoseSkeletalPreviewRenderer {
             matrices.scale(scale, -scale, scale);
             return render(matrices, vertexConsumers, texture, light, BodyPoseEditorFragment.getWorldSkeletalBoneRotations(),
                     BodyPoseEditorFragment.getWorldSkeletalBoneOffsets(), BodyPoseEditorFragment.getWorldSkeletalBoneScales(),
-                    BodyPoseEditorFragment.getWorldVisibleSkeletalParts(), BodyPoseEditorFragment.isWorldSlimModel(), true, null);
+                    BodyPoseEditorFragment.getWorldVisibleSkeletalParts(), BodyPoseEditorFragment.isWorldSlimModel(), true, null, false);
         } finally {
             matrices.pop();
         }
@@ -100,19 +103,19 @@ public final class BodyPoseSkeletalPreviewRenderer {
     public static boolean render(MatrixStack matrices, VertexConsumerProvider vertexConsumers, Identifier texture,
                                  int light, Map<String, float[]> rotations, Map<String, float[]> offsets,
                                  Map<String, Float> scales, Set<String> visibleParts, boolean slim) {
-        return render(matrices, vertexConsumers, texture, light, rotations, offsets, scales, visibleParts, slim, false, null);
+        return render(matrices, vertexConsumers, texture, light, rotations, offsets, scales, visibleParts, slim, false, null, true);
     }
 
     public static boolean render(MatrixStack matrices, VertexConsumerProvider vertexConsumers, Identifier texture,
                                  int light, Map<String, float[]> rotations, Map<String, float[]> offsets,
                                  Map<String, Float> scales, Set<String> visibleParts, boolean slim, RenderLayer renderLayer) {
-        return render(matrices, vertexConsumers, texture, light, rotations, offsets, scales, visibleParts, slim, true, renderLayer);
+        return render(matrices, vertexConsumers, texture, light, rotations, offsets, scales, visibleParts, slim, true, renderLayer, true);
     }
 
     private static boolean render(MatrixStack matrices, VertexConsumerProvider vertexConsumers, Identifier texture,
                                   int light, Map<String, float[]> rotations, Map<String, float[]> offsets,
                                   Map<String, Float> scales, Set<String> visibleParts, boolean slim, boolean singleLayer,
-                                  RenderLayer renderLayer) {
+                                  RenderLayer renderLayer, boolean coloredVoxelOuterLayers) {
         SkeletalModel model = getModel();
         if (model == null || model.meshes.isEmpty()) {
             return false;
@@ -120,19 +123,270 @@ public final class BodyPoseSkeletalPreviewRenderer {
 
         model.updatePose(rotations, offsets, scales);
 
-        VertexConsumer skinConsumer = vertexConsumers.getBuffer(renderLayer != null ? renderLayer : RenderLayer.getEntityTranslucent(texture));
-        VertexConsumer solidColorConsumer = singleLayer
-                ? skinConsumer
-                : vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(SOLID_COLOR_TEXTURE));
+        RenderLayer skinLayer = renderLayer != null ? renderLayer : RenderLayer.getEntityTranslucent(texture);
+        RenderLayer solidColorLayer = singleLayer ? skinLayer : RenderLayer.getEntityTranslucent(texture);
         Matrix4f matrix = matrices.peek().getPositionMatrix();
-        renderMeshes(model, matrix, skinConsumer, solidColorConsumer, light, visibleParts, false);
-        renderSkinLayers3dOuterMeshes(model, matrices, skinConsumer, texture, light, visibleParts, slim);
-        renderMeshes(model, matrix, skinConsumer, solidColorConsumer, light, visibleParts, true);
+        renderMeshes(model, matrix, vertexConsumers, skinLayer, solidColorLayer, light, visibleParts, false);
+        if (coloredVoxelOuterLayers) {
+            VoxelLayerRenderResult outerLayerResult = renderColoredVoxelSkinLayers(model, matrices, vertexConsumers.getBuffer(skinLayer), texture, light, visibleParts, slim);
+            logColoredVoxelStats(texture, outerLayerResult);
+            if (outerLayerResult.quadCount() <= 0) {
+                renderSkinLayers3dOuterMeshes(model, matrices, vertexConsumers.getBuffer(skinLayer), texture, light, visibleParts, slim);
+                renderMeshes(model, matrix, vertexConsumers, skinLayer, solidColorLayer, light, visibleParts, true);
+            }
+        } else {
+            renderSkinLayers3dOuterMeshes(model, matrices, vertexConsumers.getBuffer(skinLayer), texture, light, visibleParts, slim);
+            renderMeshes(model, matrix, vertexConsumers, skinLayer, solidColorLayer, light, visibleParts, true);
+        }
         return true;
     }
 
-    private static void renderMeshes(SkeletalModel model, Matrix4f matrix, VertexConsumer skinConsumer,
-                                     VertexConsumer solidColorConsumer,
+    private static VoxelLayerRenderResult renderColoredVoxelSkinLayers(SkeletalModel model, MatrixStack matrices,
+                                                                       VertexConsumer vertexConsumer, Identifier texture,
+                                                                       int light, Set<String> visibleParts, boolean slim) {
+        SkinTexturePixels pixels = SkinTexturePixels.get(texture);
+        if (pixels == null) {
+            return new VoxelLayerRenderResult(false, 0);
+        }
+
+        int quadCount = 0;
+        Matrix4f matrix = matrices.peek().getPositionMatrix();
+        for (Mesh mesh : model.meshes) {
+            if (!mesh.outerLayer || (!visibleParts.isEmpty() && !visibleParts.contains(mesh.partName))) {
+                continue;
+            }
+            quadCount += renderMeshVoxelOuterLayer(mesh, model, matrix, vertexConsumer, pixels, light);
+        }
+        return new VoxelLayerRenderResult(true, quadCount);
+    }
+
+    private static int renderMeshVoxelOuterLayer(Mesh mesh, SkeletalModel model, Matrix4f matrix,
+                                                 VertexConsumer vertices, SkinTexturePixels pixels, int light) {
+        int quadCount = 0;
+        Map<String, Vector3f> transformedVertices = new HashMap<>(mesh.vertices.size());
+        for (Map.Entry<String, Vector3f> entry : mesh.vertices.entrySet()) {
+            transformedVertices.put(entry.getKey(), toRenderPosition(transformVertex(mesh, entry.getKey(), entry.getValue(), model)));
+        }
+
+        for (Face face : mesh.faces) {
+            if (face.vertices.size() < 3) {
+                continue;
+            }
+            Vector3f p0 = transformedVertices.get(face.vertices.get(0));
+            Vector3f p1 = transformedVertices.get(face.vertices.get(1));
+            Vector3f p2 = transformedVertices.get(face.vertices.get(2));
+            if (p0 == null || p1 == null || p2 == null) {
+                continue;
+            }
+
+            Vector3f normal = new Vector3f(p1).sub(p0).cross(new Vector3f(p2).sub(p0));
+            if (normal.lengthSquared() < 0.000001F) {
+                normal.set(0.0F, 1.0F, 0.0F);
+            } else {
+                normal.normalize();
+            }
+
+            quadCount += renderFaceVoxelPixels(matrix, vertices, pixels, light,
+                    p0, p1, p2,
+                    face.uvs.get(face.vertices.get(0)),
+                    face.uvs.get(face.vertices.get(1)),
+                    face.uvs.get(face.vertices.get(2)),
+                    normal);
+            if (face.vertices.size() >= 4) {
+                Vector3f p3 = transformedVertices.get(face.vertices.get(3));
+                if (p3 != null) {
+                    quadCount += renderFaceVoxelPixels(matrix, vertices, pixels, light,
+                            p0, p2, p3,
+                            face.uvs.get(face.vertices.get(0)),
+                            face.uvs.get(face.vertices.get(2)),
+                            face.uvs.get(face.vertices.get(3)),
+                            normal);
+                }
+            }
+        }
+        return quadCount;
+    }
+
+    private static int renderFaceVoxelPixels(Matrix4f matrix, VertexConsumer vertices, SkinTexturePixels pixels, int light,
+                                             Vector3f p0, Vector3f p1, Vector3f p2,
+                                             Vector2f uv0, Vector2f uv1, Vector2f uv2, Vector3f normal) {
+        if (uv0 == null || uv1 == null || uv2 == null) {
+            return 0;
+        }
+
+        float minU = Math.min(uv0.x, Math.min(uv1.x, uv2.x));
+        float maxU = Math.max(uv0.x, Math.max(uv1.x, uv2.x));
+        float minV = Math.min(uv0.y, Math.min(uv1.y, uv2.y));
+        float maxV = Math.max(uv0.y, Math.max(uv1.y, uv2.y));
+        int x0 = Math.max(0, (int) Math.floor(minU * pixels.width()));
+        int x1 = Math.min(pixels.width() - 1, (int) Math.ceil(maxU * pixels.width()) - 1);
+        int y0 = Math.max(0, (int) Math.floor(minV * pixels.height()));
+        int y1 = Math.min(pixels.height() - 1, (int) Math.ceil(maxV * pixels.height()) - 1);
+        if (x1 < x0 || y1 < y0) {
+            return 0;
+        }
+
+        Vector3f e1 = new Vector3f(p1).sub(p0);
+        Vector3f e2 = new Vector3f(p2).sub(p0);
+        Vector2f duv1 = new Vector2f(uv1).sub(uv0);
+        Vector2f duv2 = new Vector2f(uv2).sub(uv0);
+        float determinant = duv1.x * duv2.y - duv2.x * duv1.y;
+        if (Math.abs(determinant) < 0.000001F) {
+            return 0;
+        }
+        float invDet = 1.0F / determinant;
+        Vector3f dPdu = new Vector3f(e1).mul(duv2.y).sub(new Vector3f(e2).mul(duv1.y)).mul(invDet / pixels.width());
+        Vector3f dPdv = new Vector3f(e2).mul(duv1.x).sub(new Vector3f(e1).mul(duv2.x)).mul(invDet / pixels.height());
+
+        int quadCount = 0;
+        for (int y = y0; y <= y1; y++) {
+            for (int x = x0; x <= x1; x++) {
+                int argb = pixels.getArgb(x, y);
+                if (((argb >>> 24) & 0xFF) < 128) {
+                    continue;
+                }
+                float u = (x + 0.5F) / pixels.width();
+                float v = (y + 0.5F) / pixels.height();
+                if (!isUvInsideTriangle(u, v, uv0, uv1, uv2)) {
+                    continue;
+                }
+
+                Vector3f center = interpolateFacePosition(p0, e1, e2, uv0, duv1, duv2, u, v, invDet);
+                Vector3f halfU = new Vector3f(dPdu).mul(0.5F);
+                Vector3f halfV = new Vector3f(dPdv).mul(0.5F);
+                Vector3f offset = new Vector3f(normal).mul(VOXEL_OUTER_THICKNESS / MODEL_UNIT);
+                Vector3f outer00 = new Vector3f(center).sub(halfU).sub(halfV);
+                Vector3f outer10 = new Vector3f(center).add(halfU).sub(halfV);
+                Vector3f outer11 = new Vector3f(center).add(halfU).add(halfV);
+                Vector3f outer01 = new Vector3f(center).sub(halfU).add(halfV);
+                Vector3f inner00 = new Vector3f(outer00).sub(offset);
+                Vector3f inner10 = new Vector3f(outer10).sub(offset);
+                Vector3f inner11 = new Vector3f(outer11).sub(offset);
+                Vector3f inner01 = new Vector3f(outer01).sub(offset);
+                float u0 = x / (float) pixels.width();
+                float v0 = y / (float) pixels.height();
+                float u1 = (x + 1) / (float) pixels.width();
+                float v1 = (y + 1) / (float) pixels.height();
+                emitVoxelTexturedQuad(matrix, vertices, outer00, outer10, outer11, outer01, normal, u0, v0, u1, v1, light);
+                emitVoxelSolidUvQuad(matrix, vertices, outer00, outer10, inner10, inner00, new Vector3f(dPdv).negate().normalize(), u, v, light);
+                emitVoxelSolidUvQuad(matrix, vertices, outer10, outer11, inner11, inner10, new Vector3f(dPdu).normalize(), u, v, light);
+                emitVoxelSolidUvQuad(matrix, vertices, outer11, outer01, inner01, inner11, new Vector3f(dPdv).normalize(), u, v, light);
+                emitVoxelSolidUvQuad(matrix, vertices, outer01, outer00, inner00, inner01, new Vector3f(dPdu).negate().normalize(), u, v, light);
+                quadCount += 5;
+            }
+        }
+        return quadCount;
+    }
+
+    private static boolean isUvInsideTriangle(float u, float v, Vector2f a, Vector2f b, Vector2f c) {
+        float dX = u - c.x;
+        float dY = v - c.y;
+        float dX21 = c.x - b.x;
+        float dY12 = b.y - c.y;
+        float d = dY12 * (a.x - c.x) + dX21 * (a.y - c.y);
+        float s = dY12 * dX + dX21 * dY;
+        float t = (c.y - a.y) * dX + (a.x - c.x) * dY;
+        if (d < 0.0F) {
+            return s <= 0.00001F && t <= 0.00001F && s + t >= d - 0.00001F;
+        }
+        return s >= -0.00001F && t >= -0.00001F && s + t <= d + 0.00001F;
+    }
+
+    private static Vector3f interpolateFacePosition(Vector3f p0, Vector3f e1, Vector3f e2, Vector2f uv0,
+                                                    Vector2f duv1, Vector2f duv2, float u, float v, float invDet) {
+        float du = u - uv0.x;
+        float dv = v - uv0.y;
+        float a = (du * duv2.y - duv2.x * dv) * invDet;
+        float b = (duv1.x * dv - du * duv1.y) * invDet;
+        return new Vector3f(p0).add(new Vector3f(e1).mul(a)).add(new Vector3f(e2).mul(b));
+    }
+
+    private static void emitVoxelTexturedQuad(Matrix4f matrix, VertexConsumer vertices,
+                                              Vector3f p0, Vector3f p1, Vector3f p2, Vector3f p3, Vector3f normal,
+                                              float u0, float v0, float u1, float v1, int light) {
+        if (new Vector3f(p1).sub(p0).cross(new Vector3f(p2).sub(p0)).dot(normal) >= 0.0F) {
+            emitVoxelVertex(matrix, vertices, p0, normal, u0, v0, light);
+            emitVoxelVertex(matrix, vertices, p1, normal, u1, v0, light);
+            emitVoxelVertex(matrix, vertices, p2, normal, u1, v1, light);
+            emitVoxelVertex(matrix, vertices, p3, normal, u0, v1, light);
+        } else {
+            emitVoxelVertex(matrix, vertices, p0, normal, u0, v0, light);
+            emitVoxelVertex(matrix, vertices, p3, normal, u0, v1, light);
+            emitVoxelVertex(matrix, vertices, p2, normal, u1, v1, light);
+            emitVoxelVertex(matrix, vertices, p1, normal, u1, v0, light);
+        }
+    }
+
+    private static void emitVoxelSolidUvQuad(Matrix4f matrix, VertexConsumer vertices,
+                                             Vector3f p0, Vector3f p1, Vector3f p2, Vector3f p3, Vector3f normal,
+                                             float u, float v, int light) {
+        if (new Vector3f(p1).sub(p0).cross(new Vector3f(p2).sub(p0)).dot(normal) >= 0.0F) {
+            emitVoxelVertex(matrix, vertices, p0, normal, u, v, light);
+            emitVoxelVertex(matrix, vertices, p1, normal, u, v, light);
+            emitVoxelVertex(matrix, vertices, p2, normal, u, v, light);
+            emitVoxelVertex(matrix, vertices, p3, normal, u, v, light);
+        } else {
+            emitVoxelVertex(matrix, vertices, p0, normal, u, v, light);
+            emitVoxelVertex(matrix, vertices, p3, normal, u, v, light);
+            emitVoxelVertex(matrix, vertices, p2, normal, u, v, light);
+            emitVoxelVertex(matrix, vertices, p1, normal, u, v, light);
+        }
+    }
+
+    private static void emitVoxelVertex(Matrix4f matrix, VertexConsumer vertices, Vector3f point, Vector3f normal,
+                                        float u, float v, int light) {
+        vertices.vertex(matrix, point.x, point.y, point.z)
+                .color(255, 255, 255, 255)
+                .texture(u, v)
+                .overlay(OverlayTexture.DEFAULT_UV)
+                .light(light)
+                .normal(normal.x, normal.y, normal.z);
+    }
+
+    private record VoxelLayerRenderResult(boolean pixelsAvailable, int quadCount) {
+    }
+
+    private static void logColoredVoxelStats(Identifier texture, VoxelLayerRenderResult result) {
+        if (loggedColoredVoxelStats) {
+            return;
+        }
+        loggedColoredVoxelStats = true;
+        MonvhuaMod.LOGGER.info("[Monvhua] true skeletal voxel outer layer: texture={}, pixelsAvailable={}, quadCount={}",
+                texture, result.pixelsAvailable(), result.quadCount());
+    }
+
+    private record Point(float x, float y, float z) {
+        Point add(Point other) {
+            return new Point(x + other.x, y + other.y, z + other.z);
+        }
+
+        Point subtract(Point other) {
+            return new Point(x - other.x, y - other.y, z - other.z);
+        }
+
+        Point multiply(float scalar) {
+            return new Point(x * scalar, y * scalar, z * scalar);
+        }
+
+        Point negate() {
+            return new Point(-x, -y, -z);
+        }
+
+        Point cross(Point other) {
+            return new Point(
+                    y * other.z - z * other.y,
+                    z * other.x - x * other.z,
+                    x * other.y - y * other.x
+            );
+        }
+
+        float dot(Point other) {
+            return x * other.x + y * other.y + z * other.z;
+        }
+    }
+
+    private static void renderMeshes(SkeletalModel model, Matrix4f matrix, VertexConsumerProvider vertexConsumers,
+                                     RenderLayer skinLayer, RenderLayer solidColorLayer,
                                      int light, Set<String> visibleParts, boolean outerLayer) {
         boolean renderedNose = false;
         for (Mesh mesh : model.meshes) {
@@ -144,15 +398,16 @@ public final class BodyPoseSkeletalPreviewRenderer {
             }
             if ("nose".equals(mesh.name)) {
                 if (!outerLayer) {
-                    renderNoseOverlay(model, matrix, skinConsumer, light, visibleParts);
+                    renderNoseOverlay(model, matrix, vertexConsumers.getBuffer(skinLayer), light, visibleParts);
                     renderedNose = true;
                 }
                 continue;
             }
-            renderMesh(mesh, model, matrix, mesh.usesSolidColorTexture ? solidColorConsumer : skinConsumer, light);
+            VertexConsumer vertexConsumer = vertexConsumers.getBuffer(mesh.usesSolidColorTexture ? solidColorLayer : skinLayer);
+            renderMesh(mesh, model, matrix, vertexConsumer, light);
         }
         if (!outerLayer && !renderedNose) {
-            renderNoseOverlay(model, matrix, skinConsumer, light, visibleParts);
+            renderNoseOverlay(model, matrix, vertexConsumers.getBuffer(skinLayer), light, visibleParts);
         }
     }
 

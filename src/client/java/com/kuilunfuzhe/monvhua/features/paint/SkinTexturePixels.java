@@ -82,4 +82,19 @@ public final class SkinTexturePixels {
         }
         return ((argb[y * width + x] >>> 24) & 0xFF) >= 128;
     }
+
+    public int width() {
+        return width;
+    }
+
+    public int height() {
+        return height;
+    }
+
+    public int getArgb(int x, int y) {
+        if (x < 0 || y < 0 || x >= width || y >= height) {
+            return 0;
+        }
+        return argb[y * width + x];
+    }
 }
