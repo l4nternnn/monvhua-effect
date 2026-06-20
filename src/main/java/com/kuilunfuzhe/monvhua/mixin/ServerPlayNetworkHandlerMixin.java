@@ -13,6 +13,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.Objects;
 import java.util.UUID;
 
 @Mixin(ServerPlayNetworkHandler.class)
@@ -33,16 +34,22 @@ public abstract class ServerPlayNetworkHandlerMixin {
                 Text coloredName = ImitateManager.getColoredRoleName(roleName);
                 normalMessage = Text.empty()
                         .append(coloredName)
-                        .append(Text.literal("\n§7 └─ §f" + plainMessage));
+                        .append(Text.literal("\n"))
+                        .append(Text.literal(" └─ ").formatted(Formatting.GRAY))
+                        .append(Text.literal(plainMessage));
             } else {
                 normalMessage = Text.empty()
                         .append(player.getName())
-                        .append(Text.literal("\n§7 └─ §f" + plainMessage));
+                        .append(Text.literal("\n"))
+                        .append(Text.literal(" └─ ").formatted(Formatting.GRAY))
+                        .append(Text.literal(plainMessage));
             }
         } else {
             normalMessage = Text.empty()
                     .append(player.getName())
-                    .append(Text.literal("\n§7 └─ §f" + plainMessage));
+                    .append(Text.literal("\n"))
+                    .append(Text.literal(" └─ ").formatted(Formatting.GRAY))
+                    .append(Text.literal(plainMessage));
         }
 
         String garbled = garbleText(plainMessage);
@@ -50,10 +57,12 @@ public abstract class ServerPlayNetworkHandlerMixin {
                 .formatted(Formatting.OBFUSCATED)
                 .formatted(Formatting.RED);
         Text silenceMessage = Text.empty()
-                .append(Text.literal("消息:").formatted(Formatting.GRAY))
+                .append(player.getName())
+                .append(Text.literal("\n"))
+                .append(Text.literal(" └─ ").formatted(Formatting.GRAY))
                 .append(garbledText);
 
-        for (ServerPlayerEntity recipient : player.getServer().getPlayerManager().getPlayerList()) {
+        for (ServerPlayerEntity recipient : Objects.requireNonNull(player.getServer()).getPlayerManager().getPlayerList()) {
             if (SilenceServerManager.isPlayerSilenced(recipient.getUuid())) {
                 recipient.sendMessage(silenceMessage, false);
             } else {
