@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.network;
 
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.action.ActionPackets;
+import com.kuilunfuzhe.monvhua.network.area_tip.AreaTipPackets;
 import com.kuilunfuzhe.monvhua.network.bodypose.ApplySkeletalPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
@@ -63,6 +64,7 @@ public class ModNetworking {
         PaintOverlayPackets.registerS2C();
         DrawingBoardPackets.registerS2C();
         PlantMagicPackets.registerS2C();
+        AreaTipPackets.registerS2C();
         ImitateOpenUIPacket.register();
         SoundWaveStartS2CPacket.register();
         ImitateConfigS2CPacket.register();
@@ -96,6 +98,7 @@ public class ModNetworking {
         PaintOverlayPackets.registerC2S();
         DrawingBoardPackets.registerC2S();
         PlantMagicPackets.registerC2S();
+        AreaTipPackets.registerC2S();
         SoundWavePacket.register();
         RequestImitateConfigC2SPacket.register();
         UpdateImitateConfigC2SPacket.register();

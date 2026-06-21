@@ -1,0 +1,234 @@
+package com.kuilunfuzhe.monvhua.features.area_tip;
+
+import com.kuilunfuzhe.monvhua.features.gravity.GravityAreaSpec;
+import com.kuilunfuzhe.monvhua.item.area_tip.AreaTipItems;
+import com.kuilunfuzhe.monvhua.item.config.AreaTipConfig;
+import com.kuilunfuzhe.monvhua.network.area_tip.AreaTipPackets;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.text.MutableText;
+import net.minecraft.text.Style;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
+import net.minecraft.util.math.BlockPos;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+public final class AreaTipFeature {
+    private static final Map<UUID, UUID> LAST_TRIGGERED_GROUP = new HashMap<>();
+
+    private AreaTipFeature() {
+    }
+
+    public static void initialize() {
+        ServerPlayNetworking.registerGlobalReceiver(AreaTipPackets.RequestConfigC2S.ID, (packet, context) ->
+                ServerPlayNetworking.send(context.player(), new AreaTipPackets.ConfigS2C(AreaTipConfig.getInstance().toJson())));
+
+        ServerPlayNetworking.registerGlobalReceiver(AreaTipPackets.UpdateConfigC2S.ID, (packet, context) ->
+                context.server().execute(() -> updateConfig(context.player(), packet.json())));
+
+        ServerPlayNetworking.registerGlobalReceiver(AreaTipPackets.RequestAreasC2S.ID, (packet, context) ->
+                syncAreasTo(context.player()));
+
+        ServerPlayNetworking.registerGlobalReceiver(AreaTipPackets.PlaceAreaC2S.ID, (packet, context) ->
+                context.server().execute(() -> placeArea(context.player(), packet)));
+
+        ServerPlayNetworking.registerGlobalReceiver(AreaTipPackets.PlaceBoundsC2S.ID, (packet, context) ->
+                context.server().execute(() -> placeBounds(context.player(), packet)));
+
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> syncTo(handler.getPlayer()));
+
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            if (server.getTicks() % 5 != 0) {
+                return;
+            }
+            for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+                tickPlayerAreaTip(player);
+            }
+        });
+    }
+
+    public static void syncTo(ServerPlayerEntity player) {
+        if (player == null) {
+            return;
+        }
+        ServerPlayNetworking.send(player, new AreaTipPackets.ConfigS2C(AreaTipConfig.getInstance().toJson()));
+        syncAreasTo(player);
+    }
+
+    private static void updateConfig(ServerPlayerEntity player, String json) {
+        if (player == null || !canUseAreaTip(player)) {
+            return;
+        }
+        AreaTipConfig config = AreaTipConfig.fromJson(json);
+        AreaTipConfig.setInstance(config);
+        for (ServerPlayerEntity target : player.getServer().getPlayerManager().getPlayerList()) {
+            ServerPlayNetworking.send(target, new AreaTipPackets.ConfigS2C(config.toJson()));
+        }
+        player.sendMessage(Text.literal("\u00a7aArea tip config updated"), true);
+    }
+
+    private static void placeArea(ServerPlayerEntity player, AreaTipPackets.PlaceAreaC2S packet) {
+        if (player == null || !(player.getWorld() instanceof ServerWorld world) || !isHoldingAreaTipStick(player)) {
+            return;
+        }
+        GravityAreaSpec spec = new GravityAreaSpec(
+                GravityAreaSpec.Shape.byId(packet.shape()),
+                GravityAreaSpec.Half.byId(packet.half()),
+                packet.sizeX(),
+                packet.sizeY(),
+                packet.sizeZ()
+        );
+        AreaTipAreaStore.StoredArea area = AreaTipAreaStore.get(world).add(new AreaTipAreaStore.StoredArea(
+                UUID.randomUUID(),
+                packet.groupId(),
+                packet.center(),
+                spec.shape().ordinal(),
+                spec.half().ordinal(),
+                spec.sizeX(),
+                spec.sizeY(),
+                spec.sizeZ(),
+                packet.color()
+        ));
+        broadcastArea(world, area);
+        player.sendMessage(Text.literal("\u00a7aArea tip placed"), true);
+    }
+
+    private static void placeBounds(ServerPlayerEntity player, AreaTipPackets.PlaceBoundsC2S packet) {
+        if (player == null || !(player.getWorld() instanceof ServerWorld world) || !canUseAreaTip(player)) {
+            return;
+        }
+        BlockPos min = min(packet.min(), packet.max());
+        BlockPos max = max(packet.min(), packet.max());
+        BlockPos center = new BlockPos(
+                (min.getX() + max.getX()) / 2,
+                (min.getY() + max.getY()) / 2,
+                (min.getZ() + max.getZ()) / 2
+        );
+        AreaTipAreaStore.StoredArea area = AreaTipAreaStore.get(world).add(new AreaTipAreaStore.StoredArea(
+                UUID.randomUUID(),
+                packet.groupId(),
+                center,
+                GravityAreaSpec.Shape.BOX.ordinal(),
+                GravityAreaSpec.Half.FULL.ordinal(),
+                1,
+                1,
+                1,
+                packet.color(),
+                min,
+                max
+        ));
+        broadcastArea(world, area);
+        player.sendMessage(Text.literal("\u00a7aArea tip placed from Axiom selection"), true);
+    }
+
+    private static void broadcastArea(ServerWorld world, AreaTipAreaStore.StoredArea area) {
+        AreaTipPackets.AreaUpdateS2C update = new AreaTipPackets.AreaUpdateS2C(AreaTipPackets.AreaData.fromStored(area));
+        for (ServerPlayerEntity target : world.getPlayers()) {
+            ServerPlayNetworking.send(target, update);
+        }
+    }
+
+    private static BlockPos min(BlockPos first, BlockPos second) {
+        return new BlockPos(
+                Math.min(first.getX(), second.getX()),
+                Math.min(first.getY(), second.getY()),
+                Math.min(first.getZ(), second.getZ())
+        );
+    }
+
+    private static BlockPos max(BlockPos first, BlockPos second) {
+        return new BlockPos(
+                Math.max(first.getX(), second.getX()),
+                Math.max(first.getY(), second.getY()),
+                Math.max(first.getZ(), second.getZ())
+        );
+    }
+
+    private static void syncAreasTo(ServerPlayerEntity player) {
+        if (player == null || !(player.getWorld() instanceof ServerWorld world)) {
+            return;
+        }
+        List<AreaTipPackets.AreaData> areas = AreaTipAreaStore.get(world).toAreas().stream()
+                .map(AreaTipPackets.AreaData::fromStored)
+                .toList();
+        ServerPlayNetworking.send(player, new AreaTipPackets.FullSyncS2C(areas));
+    }
+
+    private static void tickPlayerAreaTip(ServerPlayerEntity player) {
+        if (!(player.getWorld() instanceof ServerWorld world)) {
+            return;
+        }
+        Optional<AreaTipAreaStore.StoredArea> area = AreaTipAreaStore.get(world).firstContaining(player.getBoundingBox());
+        if (area.isEmpty()) {
+            LAST_TRIGGERED_GROUP.remove(player.getUuid());
+            return;
+        }
+        UUID groupId = area.get().groupId();
+        UUID previous = LAST_TRIGGERED_GROUP.get(player.getUuid());
+        if (groupId.equals(previous)) {
+            return;
+        }
+        LAST_TRIGGERED_GROUP.put(player.getUuid(), groupId);
+        String message = AreaTipConfig.getInstance().findGroup(groupId)
+                .map(group -> group.message)
+                .orElse("");
+        if (!message.isBlank()) {
+            player.sendMessage(parseLegacyText(message), false);
+        }
+    }
+
+    private static Text parseLegacyText(String message) {
+        MutableText result = Text.empty();
+        Style style = Style.EMPTY;
+        StringBuilder segment = new StringBuilder();
+        for (int i = 0; i < message.length(); i++) {
+            char c = message.charAt(i);
+            if (c == '\u00a7' && i + 1 < message.length()) {
+                Formatting formatting = Formatting.byCode(message.charAt(i + 1));
+                if (formatting != null) {
+                    appendSegment(result, segment, style);
+                    if (formatting == Formatting.RESET) {
+                        style = Style.EMPTY;
+                    } else {
+                        style = style.withFormatting(formatting);
+                    }
+                    i++;
+                    continue;
+                }
+            }
+            segment.append(c);
+        }
+        appendSegment(result, segment, style);
+        return result;
+    }
+
+    private static void appendSegment(MutableText result, StringBuilder segment, Style style) {
+        if (segment.isEmpty()) {
+            return;
+        }
+        result.append(Text.literal(segment.toString()).setStyle(style));
+        segment.setLength(0);
+    }
+
+    private static boolean canUseAreaTip(ServerPlayerEntity player) {
+        return player.isCreative() || player.hasPermissionLevel(2) || isHoldingAreaTipStick(player);
+    }
+
+    private static boolean isHoldingAreaTipStick(PlayerEntity player) {
+        return isAreaTipStick(player.getMainHandStack()) || isAreaTipStick(player.getOffHandStack());
+    }
+
+    private static boolean isAreaTipStick(ItemStack stack) {
+        return stack.getItem() == AreaTipItems.AREA_TIP_STICK;
+    }
+}

@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.event;
 
 import com.kuilunfuzhe.monvhua.MonvhuaModClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
+import com.kuilunfuzhe.monvhua.features.area_tip.AreaTipAreaRenderer;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityAreaBoundaryRenderer;
 import com.kuilunfuzhe.monvhua.features.paint.PaintBucketCarryClientState;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
@@ -37,6 +38,7 @@ public class WorldRenderHandler {
             // 身体姿势编辑器世界3D预览
             BodyPoseWorldPreviewRenderer.render(context.matrixStack(), context.consumers());
             GravityAreaBoundaryRenderer.render(context);
+            AreaTipAreaRenderer.render(context);
             PaintOverlayClient.render(context);
             PaintBucketCarryClientState.render(context);
         });

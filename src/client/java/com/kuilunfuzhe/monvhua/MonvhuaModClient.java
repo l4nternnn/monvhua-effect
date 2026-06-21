@@ -8,6 +8,8 @@ import com.kuilunfuzhe.monvhua.event.WorldRenderHandler;
 import com.kuilunfuzhe.monvhua.compat.DhCompat;
 import com.kuilunfuzhe.monvhua.compat.EmfCompat;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryTransformDebugCommand;
+import com.kuilunfuzhe.monvhua.features.area_tip.AreaTipAxiomIntegration;
+import com.kuilunfuzhe.monvhua.features.area_tip.AreaTipClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceEnergyClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.SignedEvilTooltipClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
@@ -92,6 +94,8 @@ public class MonvhuaModClient implements ClientModInitializer {
         ClairvoyanceEnergyClient.initialize();
         SignedEvilTooltipClient.initialize();
         GravityClient.initialize();
+        AreaTipClient.initialize();
+        AreaTipAxiomIntegration.initialize();
         PaintOverlayClient.initialize();
         DrawingBoardClient.initialize();
         DhCompat.init(); // 远处地平线兼容初始化

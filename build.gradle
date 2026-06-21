@@ -61,6 +61,26 @@ dependencies {
 	compileOnly sodiumCompileOnly
 	clientCompileOnly sodiumCompileOnly
 
+	// Axiom custom tools compile against Loom's processed runtime jars because the
+	// public API shipped by the current Axiom runtime differs from GitHub master.
+	def axiomApiCompileOnlyJars = fileTree("run/.fabric/processedMods") {
+		include "com_moulberry_axiomclientapi-*.jar"
+	}.files.sort { it.name }
+	def axiomCompileOnlyJars = fileTree("run/.fabric/processedMods") {
+		include "axiom-*.jar"
+	}.files.sort { it.name }
+	if (axiomApiCompileOnlyJars.empty || axiomCompileOnlyJars.empty) {
+		logger.warn("No processed Axiom jars found in run/.fabric/processedMods; Axiom integration source may not compile until the client has been launched once.")
+	}
+	def axiomCompileOnly = []
+	if (!axiomApiCompileOnlyJars.empty) {
+		axiomCompileOnly.add(axiomApiCompileOnlyJars.last())
+	}
+	if (!axiomCompileOnlyJars.empty) {
+		axiomCompileOnly.add(axiomCompileOnlyJars.last())
+	}
+	clientCompileOnly files(axiomCompileOnly)
+
 	modImplementation "curse.maven:modern-ui-352491:7025818"
 	modImplementation "curse.maven:forge-config-api-port-547434:6941149"
 
