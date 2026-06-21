@@ -10,12 +10,14 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 
 public final class AreaTipPackets {
     private static final int MAX_JSON_LENGTH = 1_000_000;
     private static final int MAX_AREA_UPDATES = 4096;
+    private static final int MAX_REGION_BLOCKS = 24000;
 
     private AreaTipPackets() {
     }
@@ -32,15 +34,20 @@ public final class AreaTipPackets {
         RequestAreasC2S.register();
         PlaceAreaC2S.register();
         PlaceBoundsC2S.register();
+        DeleteBoundsC2S.register();
+        PlaceSelectionC2S.register();
+        DeleteSelectionC2S.register();
     }
 
     public record AreaData(UUID id, UUID groupId, BlockPos center, int shape, int half,
-                           int sizeX, int sizeY, int sizeZ, int color, BlockPos min, BlockPos max) {
+                           int sizeX, int sizeY, int sizeZ, int color,
+                           BlockPos min, BlockPos max, List<BlockPos> blocks) {
         public AreaData {
             id = id == null ? UUID.randomUUID() : id;
             groupId = groupId == null ? new UUID(0L, 0L) : groupId;
             center = center == null ? BlockPos.ORIGIN : center.toImmutable();
             color = 0xFF000000 | (color & 0xFFFFFF);
+            blocks = sanitizeBlocks(blocks);
             if (min != null && max != null) {
                 BlockPos fixedMin = new BlockPos(
                         Math.min(min.getX(), max.getX()),
@@ -62,16 +69,21 @@ public final class AreaTipPackets {
 
         public AreaData(UUID id, UUID groupId, BlockPos center, int shape, int half,
                         int sizeX, int sizeY, int sizeZ, int color) {
-            this(id, groupId, center, shape, half, sizeX, sizeY, sizeZ, color, null, null);
+            this(id, groupId, center, shape, half, sizeX, sizeY, sizeZ, color, null, null, List.of());
+        }
+
+        public AreaData(UUID id, UUID groupId, BlockPos center, int shape, int half,
+                        int sizeX, int sizeY, int sizeZ, int color, BlockPos min, BlockPos max) {
+            this(id, groupId, center, shape, half, sizeX, sizeY, sizeZ, color, min, max, List.of());
         }
 
         public static AreaData fromStored(AreaTipAreaStore.StoredArea area) {
             return new AreaData(area.id(), area.groupId(), area.center(), area.shape(), area.half(),
-                    area.sizeX(), area.sizeY(), area.sizeZ(), area.color(), area.min(), area.max());
+                    area.sizeX(), area.sizeY(), area.sizeZ(), area.color(), area.min(), area.max(), area.blocks());
         }
 
         public AreaTipAreaStore.StoredArea toStored() {
-            return new AreaTipAreaStore.StoredArea(id, groupId, center, shape, half, sizeX, sizeY, sizeZ, color, min, max);
+            return new AreaTipAreaStore.StoredArea(id, groupId, center, shape, half, sizeX, sizeY, sizeZ, color, min, max, blocks);
         }
 
         private static AreaData read(RegistryByteBuf buf) {
@@ -87,7 +99,8 @@ public final class AreaTipPackets {
             boolean hasBounds = buf.readBoolean();
             BlockPos min = hasBounds ? buf.readBlockPos() : null;
             BlockPos max = hasBounds ? buf.readBlockPos() : null;
-            return new AreaData(id, groupId, center, shape, half, sizeX, sizeY, sizeZ, color, min, max);
+            List<BlockPos> blocks = readBlocks(buf);
+            return new AreaData(id, groupId, center, shape, half, sizeX, sizeY, sizeZ, color, min, max, blocks);
         }
 
         private void write(RegistryByteBuf buf) {
@@ -106,6 +119,7 @@ public final class AreaTipPackets {
                 buf.writeBlockPos(min);
                 buf.writeBlockPos(max);
             }
+            writeBlocks(buf, blocks);
         }
     }
 
@@ -334,5 +348,139 @@ public final class AreaTipPackets {
         public Id<? extends CustomPayload> getId() {
             return ID;
         }
+    }
+
+    public record DeleteBoundsC2S(UUID groupId, BlockPos min, BlockPos max) implements CustomPayload {
+        public static final Id<DeleteBoundsC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "delete_area_tip_bounds"));
+        public static final PacketCodec<RegistryByteBuf, DeleteBoundsC2S> CODEC = PacketCodec.of(DeleteBoundsC2S::write, DeleteBoundsC2S::new);
+        private static boolean registered = false;
+
+        public DeleteBoundsC2S {
+            groupId = groupId == null ? new UUID(0L, 0L) : groupId;
+            min = min == null ? BlockPos.ORIGIN : min.toImmutable();
+            max = max == null ? min : max.toImmutable();
+        }
+
+        private DeleteBoundsC2S(RegistryByteBuf buf) {
+            this(buf.readUuid(), buf.readBlockPos(), buf.readBlockPos());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeUuid(groupId);
+            buf.writeBlockPos(min);
+            buf.writeBlockPos(max);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record PlaceSelectionC2S(UUID groupId, List<BlockPos> blocks, int color) implements CustomPayload {
+        public static final Id<PlaceSelectionC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "place_area_tip_selection"));
+        public static final PacketCodec<RegistryByteBuf, PlaceSelectionC2S> CODEC = PacketCodec.of(PlaceSelectionC2S::write, PlaceSelectionC2S::new);
+        private static boolean registered = false;
+
+        public PlaceSelectionC2S {
+            groupId = groupId == null ? new UUID(0L, 0L) : groupId;
+            blocks = sanitizeBlocks(blocks);
+            color = 0xFF000000 | (color & 0xFFFFFF);
+        }
+
+        private PlaceSelectionC2S(RegistryByteBuf buf) {
+            this(buf.readUuid(), readBlocks(buf), buf.readInt());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeUuid(groupId);
+            writeBlocks(buf, blocks);
+            buf.writeInt(color);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record DeleteSelectionC2S(UUID groupId, List<BlockPos> blocks) implements CustomPayload {
+        public static final Id<DeleteSelectionC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "delete_area_tip_selection"));
+        public static final PacketCodec<RegistryByteBuf, DeleteSelectionC2S> CODEC = PacketCodec.of(DeleteSelectionC2S::write, DeleteSelectionC2S::new);
+        private static boolean registered = false;
+
+        public DeleteSelectionC2S {
+            groupId = groupId == null ? new UUID(0L, 0L) : groupId;
+            blocks = sanitizeBlocks(blocks);
+        }
+
+        private DeleteSelectionC2S(RegistryByteBuf buf) {
+            this(buf.readUuid(), readBlocks(buf));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeUuid(groupId);
+            writeBlocks(buf, blocks);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    private static List<BlockPos> readBlocks(RegistryByteBuf buf) {
+        int count = Math.min(buf.readVarInt(), MAX_REGION_BLOCKS);
+        List<BlockPos> blocks = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            blocks.add(buf.readBlockPos());
+        }
+        return sanitizeBlocks(blocks);
+    }
+
+    private static void writeBlocks(RegistryByteBuf buf, List<BlockPos> blocks) {
+        List<BlockPos> sanitized = sanitizeBlocks(blocks);
+        buf.writeVarInt(sanitized.size());
+        for (BlockPos block : sanitized) {
+            buf.writeBlockPos(block);
+        }
+    }
+
+    private static List<BlockPos> sanitizeBlocks(List<BlockPos> blocks) {
+        if (blocks == null || blocks.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<BlockPos> sanitized = new LinkedHashSet<>();
+        for (BlockPos block : blocks) {
+            if (block == null) {
+                continue;
+            }
+            sanitized.add(block.toImmutable());
+            if (sanitized.size() >= MAX_REGION_BLOCKS) {
+                break;
+            }
+        }
+        return List.copyOf(sanitized);
     }
 }

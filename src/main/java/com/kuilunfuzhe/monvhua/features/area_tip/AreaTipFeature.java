@@ -45,6 +45,15 @@ public final class AreaTipFeature {
         ServerPlayNetworking.registerGlobalReceiver(AreaTipPackets.PlaceBoundsC2S.ID, (packet, context) ->
                 context.server().execute(() -> placeBounds(context.player(), packet)));
 
+        ServerPlayNetworking.registerGlobalReceiver(AreaTipPackets.DeleteBoundsC2S.ID, (packet, context) ->
+                context.server().execute(() -> deleteBounds(context.player(), packet)));
+
+        ServerPlayNetworking.registerGlobalReceiver(AreaTipPackets.PlaceSelectionC2S.ID, (packet, context) ->
+                context.server().execute(() -> placeSelection(context.player(), packet)));
+
+        ServerPlayNetworking.registerGlobalReceiver(AreaTipPackets.DeleteSelectionC2S.ID, (packet, context) ->
+                context.server().execute(() -> deleteSelection(context.player(), packet)));
+
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> syncTo(handler.getPlayer()));
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -129,12 +138,79 @@ public final class AreaTipFeature {
         ));
         broadcastArea(world, area);
         player.sendMessage(Text.literal("\u00a7aArea tip placed from Axiom selection"), true);
+        sendGroupMessage(player, packet.groupId());
+    }
+
+    private static void placeSelection(ServerPlayerEntity player, AreaTipPackets.PlaceSelectionC2S packet) {
+        if (player == null || !(player.getWorld() instanceof ServerWorld world) || !canUseAreaTip(player) || packet.blocks().isEmpty()) {
+            return;
+        }
+        BlockPos min = minOf(packet.blocks());
+        BlockPos max = maxOf(packet.blocks());
+        BlockPos center = new BlockPos(
+                (min.getX() + max.getX()) / 2,
+                (min.getY() + max.getY()) / 2,
+                (min.getZ() + max.getZ()) / 2
+        );
+        AreaTipAreaStore.StoredArea area = AreaTipAreaStore.get(world).add(new AreaTipAreaStore.StoredArea(
+                UUID.randomUUID(),
+                packet.groupId(),
+                center,
+                GravityAreaSpec.Shape.BOX.ordinal(),
+                GravityAreaSpec.Half.FULL.ordinal(),
+                1,
+                1,
+                1,
+                packet.color(),
+                min,
+                max,
+                packet.blocks()
+        ));
+        broadcastArea(world, area);
+        player.sendMessage(Text.literal("\u00a7aArea tip filled " + area.blocks().size() + " selected block(s)"), true);
+        sendGroupMessage(player, packet.groupId());
+    }
+
+    private static void deleteBounds(ServerPlayerEntity player, AreaTipPackets.DeleteBoundsC2S packet) {
+        if (player == null || !(player.getWorld() instanceof ServerWorld world) || !canUseAreaTip(player)) {
+            return;
+        }
+        int removed = AreaTipAreaStore.get(world).removeIntersecting(packet.groupId(), packet.min(), packet.max());
+        if (removed > 0) {
+            broadcastFullSync(world);
+            player.sendMessage(Text.literal("\u00a7eDeleted " + removed + " area tip range(s)"), true);
+        } else {
+            player.sendMessage(Text.literal("\u00a7cNo area tip ranges intersect the Axiom selection"), true);
+        }
+    }
+
+    private static void deleteSelection(ServerPlayerEntity player, AreaTipPackets.DeleteSelectionC2S packet) {
+        if (player == null || !(player.getWorld() instanceof ServerWorld world) || !canUseAreaTip(player) || packet.blocks().isEmpty()) {
+            return;
+        }
+        int removed = AreaTipAreaStore.get(world).removeIntersectingBlocks(packet.groupId(), packet.blocks());
+        if (removed > 0) {
+            broadcastFullSync(world);
+            player.sendMessage(Text.literal("\u00a7eDeleted " + removed + " area tip block(s)"), true);
+        } else {
+            player.sendMessage(Text.literal("\u00a7cNo area tip blocks intersect the Axiom selection"), true);
+        }
     }
 
     private static void broadcastArea(ServerWorld world, AreaTipAreaStore.StoredArea area) {
         AreaTipPackets.AreaUpdateS2C update = new AreaTipPackets.AreaUpdateS2C(AreaTipPackets.AreaData.fromStored(area));
         for (ServerPlayerEntity target : world.getPlayers()) {
             ServerPlayNetworking.send(target, update);
+        }
+    }
+
+    private static void broadcastFullSync(ServerWorld world) {
+        List<AreaTipPackets.AreaData> areas = AreaTipAreaStore.get(world).toAreas().stream()
+                .map(AreaTipPackets.AreaData::fromStored)
+                .toList();
+        AreaTipPackets.FullSyncS2C packet = new AreaTipPackets.FullSyncS2C(areas);
+        for (ServerPlayerEntity target : world.getPlayers()) {
+            ServerPlayNetworking.send(target, packet);
         }
     }
 
@@ -152,6 +228,30 @@ public final class AreaTipFeature {
                 Math.max(first.getY(), second.getY()),
                 Math.max(first.getZ(), second.getZ())
         );
+    }
+
+    private static BlockPos minOf(List<BlockPos> blocks) {
+        int x = Integer.MAX_VALUE;
+        int y = Integer.MAX_VALUE;
+        int z = Integer.MAX_VALUE;
+        for (BlockPos block : blocks) {
+            x = Math.min(x, block.getX());
+            y = Math.min(y, block.getY());
+            z = Math.min(z, block.getZ());
+        }
+        return new BlockPos(x, y, z);
+    }
+
+    private static BlockPos maxOf(List<BlockPos> blocks) {
+        int x = Integer.MIN_VALUE;
+        int y = Integer.MIN_VALUE;
+        int z = Integer.MIN_VALUE;
+        for (BlockPos block : blocks) {
+            x = Math.max(x, block.getX());
+            y = Math.max(y, block.getY());
+            z = Math.max(z, block.getZ());
+        }
+        return new BlockPos(x, y, z);
     }
 
     private static void syncAreasTo(ServerPlayerEntity player) {
@@ -179,6 +279,15 @@ public final class AreaTipFeature {
             return;
         }
         LAST_TRIGGERED_GROUP.put(player.getUuid(), groupId);
+        String message = AreaTipConfig.getInstance().findGroup(groupId)
+                .map(group -> group.message)
+                .orElse("");
+        if (!message.isBlank()) {
+            player.sendMessage(parseLegacyText(message), false);
+        }
+    }
+
+    private static void sendGroupMessage(ServerPlayerEntity player, UUID groupId) {
         String message = AreaTipConfig.getInstance().findGroup(groupId)
                 .map(group -> group.message)
                 .orElse("");

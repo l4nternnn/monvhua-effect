@@ -3,7 +3,10 @@
 	"package": "com.kuilunfuzhe.monvhua.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"client": [
-		"compat.axiom.AxiomEditorUIFontMixin"
+		"compat.axiom.AxiomEditorUIFontMixin",
+		"compat.axiom.AxiomSelectionDeleteModeMixin",
+		"compat.axiom.AxiomUserActionDeleteModeMixin",
+		"compat.axiom.AxiomWrappedCustomToolRenderMixin"
 	],
 	"injectors": {
 		"defaultRequire": 0
