@@ -2,6 +2,7 @@
 	"required": false,
 	"package": "com.kuilunfuzhe.monvhua.mixin",
 	"compatibilityLevel": "JAVA_21",
+	"plugin": "com.kuilunfuzhe.monvhua.mixin.compat.axiom.AxiomCompatMixinPlugin",
 	"client": [
 		"compat.axiom.AxiomEditorUIFontMixin",
 		"compat.axiom.AxiomSelectionDeleteModeMixin",

@@ -41,5 +41,8 @@
 		"java": ">=21",
 		"fabric-api": "*",
 		"modernui": "*"
+	},
+	"suggests": {
+		"axiom": "*"
 	}
 }

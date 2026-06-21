@@ -8,7 +8,6 @@ import com.kuilunfuzhe.monvhua.event.WorldRenderHandler;
 import com.kuilunfuzhe.monvhua.compat.DhCompat;
 import com.kuilunfuzhe.monvhua.compat.EmfCompat;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryTransformDebugCommand;
-import com.kuilunfuzhe.monvhua.features.area_tip.AreaTipAxiomIntegration;
 import com.kuilunfuzhe.monvhua.features.area_tip.AreaTipClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceEnergyClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.SignedEvilTooltipClient;
@@ -56,6 +55,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import com.kuilunfuzhe.monvhua.gui.hud.EnergyHud;
+import net.fabricmc.loader.api.FabricLoader;
 
 /**
  * 模组客户端入口，负责所有客户端初始化逻辑。
@@ -95,7 +95,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         SignedEvilTooltipClient.initialize();
         GravityClient.initialize();
         AreaTipClient.initialize();
-        AreaTipAxiomIntegration.initialize();
+        initializeOptionalAxiomAreaTip();
         PaintOverlayClient.initialize();
         DrawingBoardClient.initialize();
         DhCompat.init(); // 远处地平线兼容初始化
@@ -236,4 +236,17 @@ public class MonvhuaModClient implements ClientModInitializer {
 //            System.out.println("§e[调试] 收到标签同步 - 完全魔女化: " + packet.hasFullWitchTag() + ", 飞行: " + packet.hasFullWitchFlight() + ", Floating: " + packet.hasFloatingTag());
         });
     }  // ← onInitializeClient 方法结束
+
+    private static void initializeOptionalAxiomAreaTip() {
+        if (!FabricLoader.getInstance().isModLoaded("axiom")) {
+            MonvhuaMod.LOGGER.info("[Monvhua] Axiom not found; area tip stick will run without Axiom tools");
+            return;
+        }
+        try {
+            Class<?> integration = Class.forName("com.kuilunfuzhe.monvhua.features.area_tip.AreaTipAxiomIntegration");
+            integration.getMethod("initialize").invoke(null);
+        } catch (ReflectiveOperationException | LinkageError throwable) {
+            MonvhuaMod.LOGGER.warn("[Monvhua] Failed to initialize optional Axiom area tip integration", throwable);
+        }
+    }
 }  // ← 类结束
