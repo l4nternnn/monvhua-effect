@@ -17,10 +17,12 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
 
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public final class AreaTipFeature {
@@ -79,11 +81,26 @@ public final class AreaTipFeature {
             return;
         }
         AreaTipConfig config = AreaTipConfig.fromJson(json);
+        Set<UUID> validGroupIds = groupIds(config);
         AreaTipConfig.setInstance(config);
+        LAST_TRIGGERED_GROUP.entrySet().removeIf(entry -> !validGroupIds.contains(entry.getValue()));
+        for (ServerWorld world : player.getServer().getWorlds()) {
+            if (AreaTipAreaStore.get(world).removeGroupsNotIn(validGroupIds) > 0) {
+                broadcastFullSync(world);
+            }
+        }
         for (ServerPlayerEntity target : player.getServer().getPlayerManager().getPlayerList()) {
             ServerPlayNetworking.send(target, new AreaTipPackets.ConfigS2C(config.toJson()));
         }
         player.sendMessage(Text.literal("\u00a7aArea tip config updated"), true);
+    }
+
+    private static Set<UUID> groupIds(AreaTipConfig config) {
+        Set<UUID> ids = new HashSet<>();
+        for (AreaTipConfig.GroupConfig group : config.groups) {
+            ids.add(group.uuid());
+        }
+        return ids;
     }
 
     private static void placeArea(ServerPlayerEntity player, AreaTipPackets.PlaceAreaC2S packet) {
@@ -97,7 +114,7 @@ public final class AreaTipFeature {
                 packet.sizeY(),
                 packet.sizeZ()
         );
-        AreaTipAreaStore.StoredArea area = AreaTipAreaStore.get(world).add(new AreaTipAreaStore.StoredArea(
+        AreaTipAreaStore.StoredArea area = AreaTipAreaStore.get(world).addLatest(new AreaTipAreaStore.StoredArea(
                 UUID.randomUUID(),
                 packet.groupId(),
                 packet.center(),
@@ -108,7 +125,7 @@ public final class AreaTipFeature {
                 spec.sizeZ(),
                 packet.color()
         ));
-        broadcastArea(world, area);
+        broadcastFullSync(world);
         player.sendMessage(Text.literal("\u00a7aArea tip placed"), true);
     }
 
@@ -123,7 +140,7 @@ public final class AreaTipFeature {
                 (min.getY() + max.getY()) / 2,
                 (min.getZ() + max.getZ()) / 2
         );
-        AreaTipAreaStore.StoredArea area = AreaTipAreaStore.get(world).add(new AreaTipAreaStore.StoredArea(
+        AreaTipAreaStore.StoredArea area = AreaTipAreaStore.get(world).addLatest(new AreaTipAreaStore.StoredArea(
                 UUID.randomUUID(),
                 packet.groupId(),
                 center,
@@ -136,7 +153,7 @@ public final class AreaTipFeature {
                 min,
                 max
         ));
-        broadcastArea(world, area);
+        broadcastFullSync(world);
         player.sendMessage(Text.literal("\u00a7aArea tip placed from Axiom selection"), true);
         sendGroupMessage(player, packet.groupId());
     }
@@ -152,7 +169,7 @@ public final class AreaTipFeature {
                 (min.getY() + max.getY()) / 2,
                 (min.getZ() + max.getZ()) / 2
         );
-        AreaTipAreaStore.StoredArea area = AreaTipAreaStore.get(world).add(new AreaTipAreaStore.StoredArea(
+        AreaTipAreaStore.StoredArea area = AreaTipAreaStore.get(world).addLatest(new AreaTipAreaStore.StoredArea(
                 UUID.randomUUID(),
                 packet.groupId(),
                 center,
@@ -166,7 +183,7 @@ public final class AreaTipFeature {
                 max,
                 packet.blocks()
         ));
-        broadcastArea(world, area);
+        broadcastFullSync(world);
         player.sendMessage(Text.literal("\u00a7aArea tip filled " + area.blocks().size() + " selected block(s)"), true);
         sendGroupMessage(player, packet.groupId());
     }
