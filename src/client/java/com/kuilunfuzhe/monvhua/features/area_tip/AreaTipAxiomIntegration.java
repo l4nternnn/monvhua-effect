@@ -17,11 +17,8 @@ import imgui.moulberry92.type.ImString;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
-import org.joml.Matrix4f;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -105,11 +102,6 @@ public final class AreaTipAxiomIntegration {
                 return true;
             }
             return handleDeleteSelection();
-        }
-
-        @Override
-        public void render(Camera camera, float tickDelta, long nanos, MatrixStack matrices, Matrix4f projection) {
-            refreshAxiomPlacedVisibility();
         }
 
         @Override

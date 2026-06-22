@@ -45,50 +45,41 @@ loom {
 
 }
 
+configurations {
+	axiomCompileOnlyMod {
+		transitive = false
+	}
+}
+
+def axiomClientApiJar = layout.buildDirectory.file("generated/axiom/axiomclientapi.jar")
+def extractAxiomClientApi = tasks.register("extractAxiomClientApi", Copy) {
+	from({ zipTree(configurations.axiomCompileOnlyMod.singleFile) }) {
+		include "META-INF/jars/axiomclientapi.jar"
+		eachFile { fileCopyDetails ->
+			fileCopyDetails.path = "axiomclientapi.jar"
+		}
+	}
+	into(axiomClientApiJar.map { it.asFile.parentFile })
+	includeEmptyDirs = false
+	doLast {
+		if (!axiomClientApiJar.get().asFile.isFile()) {
+			throw new GradleException("Axiom dependency did not contain META-INF/jars/axiomclientapi.jar")
+		}
+	}
+}
+def axiomClientApiCompileOnly = files(axiomClientApiJar).builtBy(extractAxiomClientApi)
+
 dependencies {
 	// To change the versions see the gradle.properties file
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-	// Optional Sodium mixins compile against Loom's processed jar because the targets use development names.
-	def sodiumCompileOnlyJars = fileTree("run/.fabric/processedMods") {
-		include "sodium-*.jar"
-	}.files
-	if (sodiumCompileOnlyJars.empty) {
-		logger.warn("No processed Sodium jar found in run/.fabric/processedMods; Sodium mixin source may not resolve in the IDE.")
-	}
-	def sodiumCompileOnly = files(sodiumCompileOnlyJars)
-	compileOnly sodiumCompileOnly
-	clientCompileOnly sodiumCompileOnly
 
-	// Axiom custom tools compile against Loom's processed runtime jars because the
-	// public API shipped by the current Axiom runtime differs from GitHub master.
-	// These stay compile-only so Axiom remains an optional runtime dependency:
-	// com.moulberry.axiomclientapi, com.moulberry.axiom, and imgui.moulberry92.
-	def axiomApiCompileOnlyJars = fileTree("run/.fabric/processedMods") {
-		include "com_moulberry_axiomclientapi-*.jar"
-	}.files.sort { it.name }
-	def axiomCompileOnlyJars = fileTree("run/.fabric/processedMods") {
-		include "axiom-*.jar"
-	}.files.sort { it.name }
-	def axiomImguiCompileOnlyJars = fileTree("run/.fabric/processedMods") {
-		include "imgui*.jar"
-		include "*imgui*.jar"
-	}.files.sort { it.name }
-	if (axiomApiCompileOnlyJars.empty || axiomCompileOnlyJars.empty) {
-		logger.warn("No processed Axiom jars found in run/.fabric/processedMods; Axiom integration source may not compile until the client has been launched once.")
-	}
-	def axiomCompileOnly = []
-	if (!axiomApiCompileOnlyJars.empty) {
-		axiomCompileOnly.add(axiomApiCompileOnlyJars.last())
-	}
-	if (!axiomCompileOnlyJars.empty) {
-		axiomCompileOnly.add(axiomCompileOnlyJars.last())
-	}
-	if (!axiomImguiCompileOnlyJars.empty) {
-		axiomCompileOnly.add(axiomImguiCompileOnlyJars.last())
-	}
-	clientCompileOnly files(axiomCompileOnly)
+	// Axiom remains optional at runtime. The compile classpath is resolved from
+	// Modrinth so a fresh checkout does not depend on run/.fabric/processedMods.
+	axiomCompileOnlyMod "maven.modrinth:axiom:${project.axiom_version}"
+	clientCompileOnly files(configurations.axiomCompileOnlyMod)
+	clientCompileOnly axiomClientApiCompileOnly
 
 	modImplementation "curse.maven:modern-ui-352491:7025818"
 	modImplementation "curse.maven:forge-config-api-port-547434:6941149"
