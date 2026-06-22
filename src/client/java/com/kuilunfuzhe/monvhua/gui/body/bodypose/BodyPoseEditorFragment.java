@@ -14,6 +14,8 @@ import com.kuilunfuzhe.monvhua.renderer.bodypose.skeletal.BodyPoseSkeletalPrevie
 import icyllis.modernui.core.Context;
 import icyllis.modernui.fragment.Fragment;
 import icyllis.modernui.R;
+import icyllis.modernui.graphics.Canvas;
+import icyllis.modernui.graphics.Paint;
 import icyllis.modernui.graphics.drawable.ColorDrawable;
 import icyllis.modernui.graphics.drawable.ShapeDrawable;
 import icyllis.modernui.graphics.drawable.StateListDrawable;
@@ -60,6 +62,7 @@ import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix3x2fStack;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.*;
 import java.util.function.Consumer;
@@ -137,6 +140,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final float BUTTON_NORMAL_ALPHA = 1.0F;
     private static final float BUTTON_PRESSED_SCALE = 0.985F;
     private static final float BUTTON_NORMAL_SCALE = 1.0F;
+    private static final String DEFAULT_PRESET_NAME = "预设";
 
     // ═══════════════════════════════════════════════════════
     //  静态状态 — 跨会话保持
@@ -160,6 +164,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final Map<String, PartPose> PART_POSES = createPartPoses();
     private static final Map<String, PartPose> SKELETAL_POSES = createPartPoses();
     private static final Map<String, PartPose> TRUE_SKELETAL_POSES = new HashMap<>();
+    private static BodyPosePresetStore.StoreData presetStore = BodyPosePresetStore.load();
 
     private static boolean worldPreviewEnabled = true;
     private static PreviewMode worldPreviewMode = PreviewMode.FOLLOW_PLAYER;
@@ -242,6 +247,12 @@ public class BodyPoseEditorFragment extends Fragment {
     private LinearLayout poseControlsContainer;
     private LinearLayout playerListContainer;
     private LinearLayout itemListContainer;
+    private LinearLayout pageTabsContainer;
+    private LinearLayout presetListContainer;
+    private LinearLayout renameContainer;
+    private EditText renameField;
+    private RenameTarget renameTarget = RenameTarget.NONE;
+    private String renameTargetId = "";
     private final Map<Button, String> partButtonValues = new HashMap<>();
     private Button playerButton;
     private Button modelTypeButton;
@@ -275,7 +286,8 @@ public class BodyPoseEditorFragment extends Fragment {
     // ═══════════════════════════════════════════════════════
 
     public static void open() {
-        resetEditorOpenState();
+        loadPresetStore();
+        applyActivePageState();
         openEditorScreen();
     }
 
@@ -289,8 +301,10 @@ public class BodyPoseEditorFragment extends Fragment {
             return false;
         }
 
+        loadPresetStore();
         resetEditorOpenState();
         loadEditorStateFromCombinedBodyStack(stack);
+        saveCurrentPageStateStatic();
         openEditorScreen();
         client.player.sendMessage(Text.literal("已载入已放置躯体姿态"), true);
         return true;
@@ -499,6 +513,225 @@ public class BodyPoseEditorFragment extends Fragment {
     //  Fragment 生命周期
     // ═══════════════════════════════════════════════════════
 
+    private static void loadPresetStore() {
+        presetStore = BodyPosePresetStore.load();
+    }
+
+    private static BodyPosePresetStore.PageData getActivePage() {
+        if (presetStore == null) {
+            loadPresetStore();
+        }
+        if (presetStore.pages == null || presetStore.pages.isEmpty()) {
+            presetStore.pages = new ArrayList<>();
+            presetStore.pages.add(new BodyPosePresetStore.PageData(
+                    BodyPosePresetStore.newId(), "界面 1", captureEditorState("界面 1")));
+            presetStore.activePageIndex = 0;
+        }
+        presetStore.activePageIndex = Math.max(0, Math.min(presetStore.activePageIndex, presetStore.pages.size() - 1));
+        return presetStore.pages.get(presetStore.activePageIndex);
+    }
+
+    private static void applyActivePageState() {
+        BodyPosePresetStore.PageData page = getActivePage();
+        if (page.state == null) {
+            resetEditorOpenState();
+            page.state = captureEditorState(page.name);
+        } else {
+            applyEditorState(page.state);
+        }
+    }
+
+    private static void saveCurrentPageStateStatic() {
+        BodyPosePresetStore.PageData page = getActivePage();
+        page.state = captureEditorState(page.name);
+        page.state.name = page.name;
+        BodyPosePresetStore.save(presetStore);
+    }
+
+    private static BodyPosePresetStore.EditorStateData captureEditorState(String name) {
+        BodyPosePresetStore.EditorStateData state = new BodyPosePresetStore.EditorStateData(name);
+        state.selectedSkin = selectedSkin;
+        state.selectedPlayerName = selectedPlayerName;
+        state.selectedSkinSource = selectedSkinSource.name();
+        state.selectedPart = selectedPart;
+        state.slimModel = slimModel;
+        state.modelOffsetX = modelOffsetX;
+        state.modelOffsetY = modelOffsetY;
+        state.modelOffsetZ = modelOffsetZ;
+        state.modelPitch = modelPitch;
+        state.modelYaw = modelYaw;
+        state.modelRoll = modelRoll;
+        state.wholeBodyScale = wholeBodyScale;
+        state.poseEditMode = poseEditMode.name();
+        state.defaultItemDisplayMode = defaultItemDisplayMode.name();
+        state.showWholePreview = showWholePreview;
+        state.showCoordinateAxes = showCoordinateAxes;
+        state.coordinateAxesMovable = coordinateAxesMovable;
+        state.partPoses = capturePoseMap(PART_POSES);
+        state.skeletalPoses = capturePoseMap(SKELETAL_POSES);
+        ensureTrueSkeletalPoses();
+        state.trueSkeletalPoses = capturePoseMap(TRUE_SKELETAL_POSES);
+        state.editorItems = captureEditorItems();
+        return state;
+    }
+
+    private static Map<String, BodyPosePresetStore.PoseData> capturePoseMap(Map<String, PartPose> poses) {
+        Map<String, BodyPosePresetStore.PoseData> data = new LinkedHashMap<>();
+        for (Map.Entry<String, PartPose> entry : poses.entrySet()) {
+            data.put(entry.getKey(), capturePose(entry.getValue()));
+        }
+        return data;
+    }
+
+    private static BodyPosePresetStore.PoseData capturePose(PartPose pose) {
+        BodyPosePresetStore.PoseData data = new BodyPosePresetStore.PoseData();
+        if (pose == null) {
+            return data;
+        }
+        data.pitch = pose.pitch;
+        data.yaw = pose.yaw;
+        data.roll = pose.roll;
+        data.bendPitch = pose.bendPitch;
+        data.bendYaw = pose.bendYaw;
+        data.bendRoll = pose.bendRoll;
+        data.offsetX = pose.offsetX;
+        data.offsetY = pose.offsetY;
+        data.offsetZ = pose.offsetZ;
+        data.scale = pose.scale;
+        return data;
+    }
+
+    private static List<BodyPosePresetStore.EditorItemData> captureEditorItems() {
+        List<BodyPosePresetStore.EditorItemData> items = new ArrayList<>();
+        for (EditorItemModel item : EDITOR_ITEMS) {
+            Identifier itemId = Registries.ITEM.getId(item.stack.getItem());
+            if (itemId == null) {
+                continue;
+            }
+            BodyPosePresetStore.EditorItemData data = new BodyPosePresetStore.EditorItemData();
+            data.itemId = itemId.toString();
+            data.offsetX = item.offsetX;
+            data.offsetY = item.offsetY;
+            data.offsetZ = item.offsetZ;
+            data.pitch = item.pitch;
+            data.yaw = item.yaw;
+            data.roll = item.roll;
+            data.displayMode = item.displayMode.name();
+            items.add(data);
+        }
+        return items;
+    }
+
+    private static void applyEditorState(BodyPosePresetStore.EditorStateData state) {
+        if (state == null) {
+            resetEditorOpenState();
+            return;
+        }
+        selectedSkin = state.selectedSkin != null && !state.selectedSkin.isBlank()
+                ? state.selectedSkin : BodyModelSelectionCatalog.LOCAL_SKINS[0];
+        selectedPlayerName = state.selectedPlayerName != null ? state.selectedPlayerName : "";
+        selectedSkinSource = enumValue(SkinSource.class, state.selectedSkinSource, SkinSource.LOCAL);
+        selectedPart = state.selectedPart != null && !state.selectedPart.isBlank()
+                ? state.selectedPart : getDefaultSelectedPart();
+        slimModel = state.slimModel;
+        modelOffsetX = clampPreview(state.modelOffsetX, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+        modelOffsetY = clampPreview(state.modelOffsetY, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+        modelOffsetZ = clampPreview(state.modelOffsetZ, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+        modelPitch = clampPreview(state.modelPitch, -180.0F, 180.0F);
+        modelYaw = normalizeDegrees(state.modelYaw);
+        modelRoll = normalizeDegrees(state.modelRoll);
+        wholeBodyScale = clampPreview(state.wholeBodyScale, MODEL_SCALE_MIN, MODEL_SCALE_MAX);
+        poseEditMode = enumValue(PoseEditMode.class, state.poseEditMode, PoseEditMode.SKELETAL);
+        defaultItemDisplayMode = enumValue(EditorItemDisplayMode.class, state.defaultItemDisplayMode, EditorItemDisplayMode.BLOCK);
+        showWholePreview = state.showWholePreview;
+        showCoordinateAxes = state.showCoordinateAxes;
+        coordinateAxesMovable = state.coordinateAxesMovable;
+        applyPoseMap(PART_POSES, state.partPoses, false);
+        applyPoseMap(SKELETAL_POSES, state.skeletalPoses, false);
+        applyPoseMap(TRUE_SKELETAL_POSES, state.trueSkeletalPoses, true);
+        applyEditorItems(state.editorItems);
+        ensureValidSelectedPartForMode();
+    }
+
+    private static void applyPoseMap(Map<String, PartPose> target,
+                                     Map<String, BodyPosePresetStore.PoseData> source,
+                                     boolean trueSkeletal) {
+        target.clear();
+        if (trueSkeletal) {
+            ensureTrueSkeletalPoses();
+        } else {
+            for (String part : BodyModelSelectionCatalog.PARTS) {
+                if (!"all".equals(part)) {
+                    target.put(part, new PartPose());
+                }
+            }
+        }
+        if (source == null) {
+            return;
+        }
+        for (Map.Entry<String, BodyPosePresetStore.PoseData> entry : source.entrySet()) {
+            if (entry.getKey() == null || entry.getKey().isBlank() || entry.getValue() == null) {
+                continue;
+            }
+            target.put(entry.getKey(), applyPose(entry.getValue()));
+        }
+    }
+
+    private static PartPose applyPose(BodyPosePresetStore.PoseData data) {
+        PartPose pose = new PartPose();
+        pose.pitch = clampPreview(data.pitch, -180.0F, 180.0F);
+        pose.yaw = normalizeDegrees(data.yaw);
+        pose.roll = normalizeDegrees(data.roll);
+        pose.bendPitch = clampPreview(data.bendPitch, -180.0F, 180.0F);
+        pose.bendYaw = normalizeDegrees(data.bendYaw);
+        pose.bendRoll = normalizeDegrees(data.bendRoll);
+        pose.offsetX = clampPreview(data.offsetX, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+        pose.offsetY = clampPreview(data.offsetY, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+        pose.offsetZ = clampPreview(data.offsetZ, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
+        pose.scale = clampPreview(data.scale <= 0.0F ? 1.0F : data.scale, MODEL_SCALE_MIN, MODEL_SCALE_MAX);
+        return pose;
+    }
+
+    private static void applyEditorItems(List<BodyPosePresetStore.EditorItemData> items) {
+        EDITOR_ITEMS.clear();
+        if (items == null) {
+            return;
+        }
+        for (BodyPosePresetStore.EditorItemData data : items) {
+            if (data == null || data.itemId == null || data.itemId.isBlank()) {
+                continue;
+            }
+            Identifier id = Identifier.tryParse(data.itemId);
+            if (id == null) {
+                continue;
+            }
+            Item item = Registries.ITEM.get(id);
+            if (item == Items.AIR) {
+                continue;
+            }
+            EditorItemModel model = new EditorItemModel(new ItemStack(item));
+            model.offsetX = data.offsetX;
+            model.offsetY = data.offsetY;
+            model.offsetZ = data.offsetZ;
+            model.pitch = data.pitch;
+            model.yaw = data.yaw;
+            model.roll = data.roll;
+            model.displayMode = enumValue(EditorItemDisplayMode.class, data.displayMode, defaultItemDisplayMode);
+            EDITOR_ITEMS.add(model);
+        }
+    }
+
+    private static <E extends Enum<E>> E enumValue(Class<E> type, String name, E fallback) {
+        if (name == null || name.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Enum.valueOf(type, name);
+        } catch (IllegalArgumentException ignored) {
+            return fallback;
+        }
+    }
+
     @Override
     public View onCreateView(icyllis.modernui.view.LayoutInflater inflater, ViewGroup container,
                              icyllis.modernui.util.DataSet savedInstanceState) {
@@ -514,6 +747,12 @@ public class BodyPoseEditorFragment extends Fragment {
                     && event.getAction() == KeyEvent.ACTION_DOWN
                     && event.getRepeatCount() == 0) {
                 toggleWorldPreviewMode();
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_F2
+                    && event.getAction() == KeyEvent.ACTION_DOWN
+                    && event.getRepeatCount() == 0) {
+                beginRenameSelectedTarget();
                 return true;
             }
             return false;
@@ -557,15 +796,21 @@ public class BodyPoseEditorFragment extends Fragment {
     @Override
     public void onPause() {
         super.onPause();
+        saveCurrentPageState();
         activeInstance = null;
     }
 
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        saveCurrentPageState();
         stopRepeatingTransform();
         rootView = null;
         surfaceView = null;
+        pageTabsContainer = null;
+        presetListContainer = null;
+        renameContainer = null;
+        renameField = null;
         previewSurfaceWidth = 0;
         previewSurfaceHeight = 0;
         activeInstance = null;
@@ -590,6 +835,7 @@ public class BodyPoseEditorFragment extends Fragment {
         title.setTextSize(18);
         title.setPadding(0, 0, 0, 8);
         panel.addView(title, new LinearLayout.LayoutParams(-1, -2));
+        addPresetControls(panel, ctx);
 
         // ── 玩家选择 ──
         TextView playerLabel = new TextView(ctx);
@@ -628,6 +874,399 @@ public class BodyPoseEditorFragment extends Fragment {
         refreshButtonLabels();
         refreshNumericValueBindings();
         return scrollView;
+    }
+
+    private void addPresetControls(LinearLayout panel, Context ctx) {
+        addSectionLabel(panel, ctx, "姿势预设");
+
+        LinearLayout row = new LinearLayout(ctx);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+
+        Button savePreset = createStyledButton(ctx);
+        savePreset.setText("保存");
+        savePreset.setOnClickListener(v -> saveCurrentAsPreset());
+        row.addView(savePreset, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        Button newPreset = createStyledButton(ctx);
+        newPreset.setText("新建");
+        newPreset.setOnClickListener(v -> createPresetFromCurrent());
+        row.addView(newPreset, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        panel.addView(row, new LinearLayout.LayoutParams(-1, -2));
+
+        renameContainer = new LinearLayout(ctx);
+        renameContainer.setOrientation(LinearLayout.VERTICAL);
+        renameContainer.setVisibility(View.GONE);
+        renameField = new EditText(ctx);
+        renameField.setTextColor(0xFFE8E8E8);
+        renameField.setTextSize(12);
+        renameContainer.addView(renameField, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout renameButtons = new LinearLayout(ctx);
+        renameButtons.setOrientation(LinearLayout.HORIZONTAL);
+        Button confirm = createStyledButton(ctx);
+        confirm.setText("确认");
+        confirm.setOnClickListener(v -> confirmRename());
+        renameButtons.addView(confirm, new LinearLayout.LayoutParams(0, -2, 1f));
+        Button cancel = createStyledButton(ctx);
+        cancel.setText("取消");
+        cancel.setOnClickListener(v -> cancelRename());
+        renameButtons.addView(cancel, new LinearLayout.LayoutParams(0, -2, 1f));
+        renameContainer.addView(renameButtons, new LinearLayout.LayoutParams(-1, -2));
+        panel.addView(renameContainer, new LinearLayout.LayoutParams(-1, -2));
+
+        presetListContainer = new LinearLayout(ctx);
+        presetListContainer.setOrientation(LinearLayout.VERTICAL);
+        panel.addView(presetListContainer, new LinearLayout.LayoutParams(-1, -2));
+        rebuildPresetList();
+    }
+
+    private void rebuildPageTabs() {
+        if (pageTabsContainer == null || getContext() == null) return;
+        Context ctx = getContext();
+        pageTabsContainer.removeAllViews();
+
+        Button add = createStyledButton(ctx);
+        add.setText("+");
+        add.setOnClickListener(v -> addEditorPage());
+        pageTabsContainer.addView(add, new LinearLayout.LayoutParams(28, -2));
+
+        for (int i = 0; i < presetStore.pages.size(); i++) {
+            BodyPosePresetStore.PageData page = presetStore.pages.get(i);
+            boolean selected = i == presetStore.activePageIndex;
+            LinearLayout tab = new LinearLayout(ctx);
+            tab.setOrientation(LinearLayout.HORIZONTAL);
+
+            Button nameButton = createStyledButton(ctx);
+            nameButton.setText((selected ? "> " : "") + truncate(page.name, 12));
+            nameButton.setTextColor(selected ? 0xFFFFDD66 : 0xFFE8E8E8);
+            int pageIndex = i;
+            nameButton.setOnClickListener(v -> switchEditorPage(pageIndex));
+            nameButton.setOnTouchListener((view, event) -> {
+                applyButtonFeedback(view, event);
+                if (isSecondaryPress(event)) {
+                    beginRenamePage(pageIndex);
+                    return true;
+                }
+                return false;
+            });
+            tab.addView(nameButton, new LinearLayout.LayoutParams(0, -2, 1f));
+
+            Button close = createStyledButton(ctx);
+            close.setText("x");
+            close.setOnClickListener(v -> deleteEditorPage(pageIndex));
+            tab.addView(close, new LinearLayout.LayoutParams(24, -2));
+
+            pageTabsContainer.addView(tab, new LinearLayout.LayoutParams(0, -2, 1f));
+        }
+    }
+
+    private void rebuildPresetList() {
+        if (presetListContainer == null || getContext() == null) return;
+        Context ctx = getContext();
+        presetListContainer.removeAllViews();
+        if (presetStore.presets.isEmpty()) {
+            TextView empty = new TextView(ctx);
+            empty.setText("暂无已保存预设");
+            empty.setTextColor(0xFF888888);
+            empty.setPadding(4, 4, 4, 4);
+            presetListContainer.addView(empty, new LinearLayout.LayoutParams(-1, -2));
+            return;
+        }
+
+        for (BodyPosePresetStore.PresetData preset : presetStore.presets) {
+            LinearLayout row = new LinearLayout(ctx);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+
+            LinearLayout presetColumn = new LinearLayout(ctx);
+            presetColumn.setOrientation(LinearLayout.VERTICAL);
+
+            Button button = createStyledButton(ctx);
+            boolean selected = preset.id != null && preset.id.equals(presetStore.selectedPresetId);
+            button.setText((selected ? "> " : "") + truncate(preset.name, 13) + "  " + getPresetSummary(preset.state));
+            button.setTextColor(selected ? 0xFFFFDD66 : 0xFFE8E8E8);
+            button.setOnClickListener(v -> applyPresetToCurrentPage(preset.id));
+            button.setOnTouchListener((view, event) -> {
+                applyButtonFeedback(view, event);
+                if (isSecondaryPress(event)) {
+                    beginRenamePreset(preset.id);
+                    return true;
+                }
+                return false;
+            });
+            presetColumn.addView(button, new LinearLayout.LayoutParams(-1, -2));
+
+            PresetPreviewView preview = new PresetPreviewView(ctx, preset.state);
+            presetColumn.addView(preview, new LinearLayout.LayoutParams(-1, 48));
+            row.addView(presetColumn, new LinearLayout.LayoutParams(0, -2, 1f));
+
+            Button del = createStyledButton(ctx);
+            del.setText("x");
+            del.setOnClickListener(v -> deletePreset(preset.id));
+            row.addView(del, new LinearLayout.LayoutParams(24, -2));
+
+            presetListContainer.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        }
+    }
+
+    private String getPresetSummary(BodyPosePresetStore.EditorStateData state) {
+        if (state == null) {
+            return "空";
+        }
+        int poseCount = countChangedPoses(state.partPoses) + countChangedPoses(state.skeletalPoses) + countChangedPoses(state.trueSkeletalPoses);
+        String skin = "PLAYER".equals(state.selectedSkinSource) && state.selectedPlayerName != null && !state.selectedPlayerName.isBlank()
+                ? state.selectedPlayerName : state.selectedSkin;
+        return truncate(skin, 10) + " | " + state.poseEditMode + " | " + poseCount + " 处";
+    }
+
+    private int countChangedPoses(Map<String, BodyPosePresetStore.PoseData> poses) {
+        if (poses == null) return 0;
+        int count = 0;
+        for (BodyPosePresetStore.PoseData pose : poses.values()) {
+            if (pose == null) continue;
+            if (pose.pitch != 0.0F || pose.yaw != 0.0F || pose.roll != 0.0F
+                    || pose.bendPitch != 0.0F || pose.bendYaw != 0.0F || pose.bendRoll != 0.0F
+                    || pose.offsetX != 0.0F || pose.offsetY != 0.0F || pose.offsetZ != 0.0F
+                    || pose.scale != 1.0F) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static boolean isSecondaryPress(MotionEvent event) {
+        int action = event.getActionMasked();
+        return (action == MotionEvent.ACTION_BUTTON_PRESS || action == MotionEvent.ACTION_DOWN)
+                && (event.getActionButton() == MotionEvent.BUTTON_SECONDARY
+                || event.isButtonPressed(MotionEvent.BUTTON_SECONDARY));
+    }
+
+    private void saveCurrentPageState() {
+        if (presetStore == null) {
+            return;
+        }
+        saveCurrentPageStateStatic();
+    }
+
+    private void refreshPresetUi() {
+        rebuildPageTabs();
+        rebuildPresetList();
+        refreshButtonLabels();
+        refreshNumericValueBindings();
+        invalidatePreview();
+        if (rootView != null) {
+            rootView.requestLayout();
+            rootView.invalidate();
+        }
+    }
+
+    private void switchEditorPage(int index) {
+        if (index < 0 || index >= presetStore.pages.size() || index == presetStore.activePageIndex) {
+            return;
+        }
+        saveCurrentPageState();
+        presetStore.activePageIndex = index;
+        applyActivePageState();
+        selectedEditorItemIndex = -1;
+        BodyPosePresetStore.save(presetStore);
+        rebuildPartButtons();
+        rebuildPoseControls();
+        refreshPresetUi();
+    }
+
+    private void addEditorPage() {
+        if (presetStore.pages.size() >= BodyPosePresetStore.MAX_PAGES) {
+            showActionbar("最多只能创建6个模型界面");
+            return;
+        }
+        saveCurrentPageState();
+        int number = presetStore.pages.size() + 1;
+        String name = "界面 " + number;
+        BodyPosePresetStore.EditorStateData state = captureEditorState(name);
+        presetStore.pages.add(new BodyPosePresetStore.PageData(BodyPosePresetStore.newId(), name, state));
+        presetStore.activePageIndex = presetStore.pages.size() - 1;
+        BodyPosePresetStore.save(presetStore);
+        refreshPresetUi();
+        beginRenameActivePage();
+    }
+
+    private void deleteEditorPage(int index) {
+        if (index < 0 || index >= presetStore.pages.size()) {
+            return;
+        }
+        int oldActive = presetStore.activePageIndex;
+        presetStore.pages.remove(index);
+        if (presetStore.pages.isEmpty()) {
+            presetStore.pages.add(new BodyPosePresetStore.PageData(
+                    BodyPosePresetStore.newId(), "界面 1", captureEditorState("界面 1")));
+            presetStore.activePageIndex = 0;
+        } else if (index < oldActive) {
+            presetStore.activePageIndex = oldActive - 1;
+        } else if (index == oldActive) {
+            presetStore.activePageIndex = Math.min(index, presetStore.pages.size() - 1);
+        } else {
+            presetStore.activePageIndex = oldActive;
+        }
+        presetStore.activePageIndex = Math.max(0, Math.min(presetStore.activePageIndex, presetStore.pages.size() - 1));
+        applyActivePageState();
+        selectedEditorItemIndex = -1;
+        BodyPosePresetStore.save(presetStore);
+        rebuildPartButtons();
+        rebuildPoseControls();
+        refreshPresetUi();
+    }
+
+    private void saveCurrentAsPreset() {
+        saveCurrentPageState();
+        String selectedId = presetStore.selectedPresetId;
+        BodyPosePresetStore.PresetData preset = findPreset(selectedId);
+        if (preset == null) {
+            createPresetFromCurrent();
+            return;
+        }
+        preset.state = captureEditorState(preset.name);
+        preset.state.name = preset.name;
+        BodyPosePresetStore.save(presetStore);
+        rebuildPresetList();
+        showActionbar("姿势预设已保存");
+    }
+
+    private void createPresetFromCurrent() {
+        BodyPosePresetStore.PageData page = getActivePage();
+        String name = page.name == null || page.name.isBlank()
+                ? DEFAULT_PRESET_NAME + " " + (presetStore.presets.size() + 1)
+                : page.name + " 预设";
+        BodyPosePresetStore.PresetData preset = new BodyPosePresetStore.PresetData(
+                BodyPosePresetStore.newId(), name, captureEditorState(name));
+        presetStore.presets.add(preset);
+        presetStore.selectedPresetId = preset.id;
+        BodyPosePresetStore.save(presetStore);
+        rebuildPresetList();
+        beginRenamePreset(preset.id);
+    }
+
+    private void applyPresetToCurrentPage(String presetId) {
+        BodyPosePresetStore.PresetData preset = findPreset(presetId);
+        if (preset == null || preset.state == null) {
+            return;
+        }
+        applyEditorState(preset.state);
+        presetStore.selectedPresetId = preset.id;
+        BodyPosePresetStore.PageData page = getActivePage();
+        page.state = captureEditorState(page.name);
+        BodyPosePresetStore.save(presetStore);
+        selectedEditorItemIndex = -1;
+        rebuildPartButtons();
+        rebuildPoseControls();
+        refreshPresetUi();
+    }
+
+    private void deletePreset(String presetId) {
+        presetStore.presets.removeIf(preset -> Objects.equals(preset.id, presetId));
+        if (Objects.equals(presetStore.selectedPresetId, presetId)) {
+            presetStore.selectedPresetId = "";
+        }
+        BodyPosePresetStore.save(presetStore);
+        rebuildPresetList();
+    }
+
+    private BodyPosePresetStore.PresetData findPreset(String presetId) {
+        if (presetId == null || presetId.isBlank()) {
+            return null;
+        }
+        for (BodyPosePresetStore.PresetData preset : presetStore.presets) {
+            if (Objects.equals(preset.id, presetId)) {
+                return preset;
+            }
+        }
+        return null;
+    }
+
+    private void beginRenameActivePage() {
+        beginRenamePage(presetStore.activePageIndex);
+    }
+
+    private void beginRenameSelectedTarget() {
+        if (findPreset(presetStore.selectedPresetId) != null) {
+            beginRenamePreset(presetStore.selectedPresetId);
+            return;
+        }
+        beginRenameActivePage();
+    }
+
+    private void beginRenamePage(int pageIndex) {
+        if (pageIndex < 0 || pageIndex >= presetStore.pages.size()) {
+            return;
+        }
+        BodyPosePresetStore.PageData page = presetStore.pages.get(pageIndex);
+        renameTarget = RenameTarget.PAGE;
+        renameTargetId = page.id;
+        showRenameControls(page.name);
+    }
+
+    private void beginRenamePreset(String presetId) {
+        BodyPosePresetStore.PresetData preset = findPreset(presetId);
+        if (preset == null) {
+            return;
+        }
+        renameTarget = RenameTarget.PRESET;
+        renameTargetId = preset.id;
+        showRenameControls(preset.name);
+    }
+
+    private void showRenameControls(String currentName) {
+        if (renameContainer == null || renameField == null) {
+            return;
+        }
+        renameField.setText(currentName == null ? "" : currentName);
+        renameContainer.setVisibility(View.VISIBLE);
+        renameField.requestFocus();
+    }
+
+    private void confirmRename() {
+        String name = renameField != null && renameField.getText() != null
+                ? renameField.getText().toString().trim() : "";
+        if (name.isBlank()) {
+            showActionbar("名称不能为空");
+            return;
+        }
+        if (renameTarget == RenameTarget.PAGE) {
+            for (BodyPosePresetStore.PageData page : presetStore.pages) {
+                if (Objects.equals(page.id, renameTargetId)) {
+                    page.name = name;
+                    if (page.state != null) {
+                        page.state.name = name;
+                    }
+                    break;
+                }
+            }
+        } else if (renameTarget == RenameTarget.PRESET) {
+            BodyPosePresetStore.PresetData preset = findPreset(renameTargetId);
+            if (preset != null) {
+                preset.name = name;
+                if (preset.state != null) {
+                    preset.state.name = name;
+                }
+            }
+        }
+        BodyPosePresetStore.save(presetStore);
+        cancelRename();
+        refreshPresetUi();
+    }
+
+    private void cancelRename() {
+        renameTarget = RenameTarget.NONE;
+        renameTargetId = "";
+        if (renameContainer != null) {
+            renameContainer.setVisibility(View.GONE);
+        }
+    }
+
+    private static void showActionbar(String message) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null && client.player != null) {
+            client.player.sendMessage(Text.literal(message), true);
+        }
     }
 
     private void togglePlayerList() {
@@ -847,6 +1486,12 @@ public class BodyPoseEditorFragment extends Fragment {
         infoBar.setId(View.generateViewId());
         infoBar.setPadding(0, 4, 0, 2);
         panel.addView(infoBar, new LinearLayout.LayoutParams(-1, -2));
+
+        pageTabsContainer = new LinearLayout(ctx);
+        pageTabsContainer.setOrientation(LinearLayout.HORIZONTAL);
+        pageTabsContainer.setPadding(0, 2, 0, 2);
+        panel.addView(pageTabsContainer, new LinearLayout.LayoutParams(-1, -2));
+        rebuildPageTabs();
 
         // 3D 预览 (MinecraftSurfaceView)
         surfaceView = new MinecraftSurfaceView(ctx);
@@ -2654,6 +3299,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void placePosedBody(boolean backpackEnabled) {
+        saveCurrentPageState();
         if (poseEditMode == PoseEditMode.TRUE_SKELETAL) {
             placeTrueSkeletalBody(backpackEnabled);
             return;
@@ -2681,6 +3327,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void placeTrueSkeletalBody(boolean backpackEnabled) {
+        saveCurrentPageState();
         List<PlaceTrueSkeletalBodyC2SPacket.BonePose> bones = createTrueSkeletalBonePoseList();
         Vec3d fixedBase = getFixedPlacementBaseForPacket();
         if (fixedBase != null) {
@@ -2707,6 +3354,7 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private void placeEditorItems() {
         if (EDITOR_ITEMS.isEmpty()) return;
+        saveCurrentPageState();
         List<PlacePoseEditorItemsC2SPacket.ItemPlacement> placements = new ArrayList<>();
         for (EditorItemModel item : EDITOR_ITEMS) {
             Identifier itemId = Registries.ITEM.getId(item.stack.getItem());
@@ -2732,6 +3380,10 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private static void closeEditorScreen() {
+        BodyPoseEditorFragment inst = activeInstance;
+        if (inst != null) {
+            inst.saveCurrentPageState();
+        }
         MinecraftClient client = MinecraftClient.getInstance();
         if (client != null) {
             client.execute(() -> client.setScreen(null));
@@ -3573,6 +4225,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private enum MoveAxis { NONE, X, Y, Z }
     private enum RotationAxis { NONE, PITCH, YAW, ROLL }
     private enum PoseEditMode { STATIC_PART, SKELETAL, TRUE_SKELETAL }
+    private enum RenameTarget { NONE, PAGE, PRESET }
 
     public enum PreviewMode {
         FOLLOW_PLAYER,
@@ -3674,6 +4327,81 @@ public class BodyPoseEditorFragment extends Fragment {
         @Override
         public void afterTextChanged(Editable s) {
             listener.onChange(s);
+        }
+    }
+
+    private static final class PresetPreviewView extends View {
+        private final BodyPosePresetStore.EditorStateData state;
+
+        private PresetPreviewView(Context context, BodyPosePresetStore.EditorStateData state) {
+            super(context);
+            this.state = state;
+            setWillNotDraw(false);
+            setBackground(new ColorDrawable(0x22111118));
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            int width = getWidth();
+            int height = getHeight();
+            if (width <= 0 || height <= 0) {
+                return;
+            }
+            Paint paint = Paint.obtain();
+            try {
+                paint.setStroke(true);
+                paint.setStrokeWidth(1.3F);
+                paint.setStrokeCap(Paint.CAP_ROUND);
+                paint.setColor(0x883A4658);
+                canvas.drawRect(0, 0, width, height, paint);
+
+                paint.setColor(0xFFFFDD66);
+                float cx = width * 0.5F;
+                float headY = height * 0.18F;
+                float neckY = height * 0.34F;
+                float hipY = height * 0.62F;
+                float limb = Math.max(8.0F, Math.min(width, height) * 0.26F);
+
+                canvas.drawCircle(cx, headY, Math.max(3.5F, height * 0.08F), paint);
+                canvas.drawLine(cx, neckY, cx, hipY, paint);
+
+                drawLimb(canvas, paint, cx, neckY, limb, 210.0F + poseYaw("left_arm"), posePitch("left_arm") * 0.35F);
+                drawLimb(canvas, paint, cx, neckY, limb, -30.0F + poseYaw("right_arm"), posePitch("right_arm") * 0.35F);
+                drawLimb(canvas, paint, cx, hipY, limb, 120.0F + poseYaw("left_leg"), posePitch("left_leg") * 0.25F);
+                drawLimb(canvas, paint, cx, hipY, limb, 60.0F + poseYaw("right_leg"), posePitch("right_leg") * 0.25F);
+            } finally {
+                paint.recycle();
+            }
+        }
+
+        private void drawLimb(Canvas canvas, Paint paint, float x, float y, float length, float angleDegrees, float yBias) {
+            double radians = Math.toRadians(angleDegrees);
+            float endX = x + (float) Math.cos(radians) * length;
+            float endY = y + (float) Math.sin(radians) * length + yBias;
+            canvas.drawLine(x, y, endX, endY, paint);
+        }
+
+        private float posePitch(String part) {
+            BodyPosePresetStore.PoseData pose = getPose(part);
+            return pose != null ? pose.pitch : 0.0F;
+        }
+
+        private float poseYaw(String part) {
+            BodyPosePresetStore.PoseData pose = getPose(part);
+            return pose != null ? pose.yaw : 0.0F;
+        }
+
+        private BodyPosePresetStore.PoseData getPose(String part) {
+            if (state == null) {
+                return null;
+            }
+            Map<String, BodyPosePresetStore.PoseData> poses = switch (state.poseEditMode) {
+                case "STATIC_PART" -> state.partPoses;
+                case "TRUE_SKELETAL" -> state.trueSkeletalPoses;
+                default -> state.skeletalPoses;
+            };
+            return poses != null ? poses.get(part) : null;
         }
     }
 
