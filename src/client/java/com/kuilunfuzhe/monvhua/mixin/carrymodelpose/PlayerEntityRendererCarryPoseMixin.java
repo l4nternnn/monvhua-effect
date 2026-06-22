@@ -109,16 +109,9 @@ public abstract class PlayerEntityRendererCarryPoseMixin {
 	@Unique
 	private void monvhua$syncEmfCarrierUpperBodyAnimationState(PlayerEntityRenderState playerState, PlayerEntityModel playerModel) {
 		PlayerEntity player = monvhua$getRenderedPlayer(playerState.id);
-		if (player == null) {
-			return;
+		if (player != null) {
+			EmfCompat.resumeCarrierAnimations(player);
 		}
-
-		if (CarryPoseClientState.isAnyCarrier(playerState.id)) {
-			EmfCompat.pauseCarrierUpperBodyAnimations(new EmfCompat.PlayerEntityModelParts(player, playerModel.body, playerModel.rightArm, playerModel.leftArm), playerState.id);
-			return;
-		}
-
-		EmfCompat.resumeCarrierAnimations(player);
 	}
 
 	@Unique
