@@ -25,7 +25,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.ServiceLoader;
-import java.util.Set;
 import java.util.UUID;
 
 public final class AreaTipAxiomIntegration {
@@ -196,6 +195,7 @@ public final class AreaTipAxiomIntegration {
                 config.selectedGroupId = groups.get(selectedIndex).id;
                 loadGroup(groups.get(selectedIndex));
                 markDirty();
+                flushIfNeeded(config, true);
             }
         }
 
@@ -253,18 +253,21 @@ public final class AreaTipAxiomIntegration {
         }
 
         private boolean placeSelection() {
-            return placeSelection(currentSelection());
+            return placeSelection(currentPlacementSelection());
         }
 
         private boolean placeSelection(SelectionBlocks selection) {
             MinecraftClient client = MinecraftClient.getInstance();
-            if (selection == null || selection.blocks().isEmpty()) {
+            if (selection == null || selection.isEmpty()) {
                 if (client.player != null) {
                     client.player.sendMessage(Text.literal("\u00a7cNo Axiom selection"), true);
                 }
                 return false;
             }
             flushIfNeeded(AreaTipConfig.getInstance(), true);
+            if (selection.isFullCuboid()) {
+                return AreaTipClient.placeCurrentGroupBounds(selection.min(), selection.max());
+            }
             return AreaTipClient.placeCurrentGroupSelection(selection.blocks());
         }
 
@@ -526,14 +529,15 @@ public final class AreaTipAxiomIntegration {
         }
         List<BlockPos> result = new ArrayList<>();
         HashSet<BlockPos> seen = new HashSet<>();
-        Set<BlockPos> selectedBlocks = new HashSet<>(selection.blocks());
-        for (AreaTipClient.AreaView range : ranges) {
-            if (!intersects(range.minBlock(), range.maxBlock(), selection.min(), selection.max())) {
-                continue;
-            }
-            List<BlockPos> coveredBlocks = range.coveredBlocks();
-            for (BlockPos block : coveredBlocks) {
-                if (!selectedBlocks.contains(block)) {
+        List<AreaTipClient.AreaView> candidates = ranges.stream()
+                .filter(range -> intersects(range.minBlock(), range.maxBlock(), selection.min(), selection.max()))
+                .toList();
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+        for (BlockPos block : selection.blocks()) {
+            for (AreaTipClient.AreaView range : candidates) {
+                if (!range.containsBlock(block)) {
                     continue;
                 }
                 if (result.size() >= AreaTipAxiomTool.MAX_SELECTION_BLOCKS) {
@@ -542,6 +546,7 @@ public final class AreaTipAxiomIntegration {
                 if (seen.add(block)) {
                     result.add(block);
                 }
+                break;
             }
         }
         return List.copyOf(result);
@@ -552,18 +557,6 @@ public final class AreaTipAxiomIntegration {
             return false;
         }
         return new HashSet<>(first).equals(new HashSet<>(second));
-    }
-
-    private static boolean intersectsAnyBlock(List<BlockPos> first, Set<BlockPos> second) {
-        if (first == null || first.isEmpty() || second == null || second.isEmpty()) {
-            return false;
-        }
-        for (BlockPos block : first) {
-            if (second.contains(block)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static boolean intersects(BlockPos firstMin, BlockPos firstMax, BlockPos secondMin, BlockPos secondMax) {
@@ -633,6 +626,28 @@ public final class AreaTipAxiomIntegration {
             };
             bufferClass.getMethod("forEach", TriIntConsumer.class).invoke(buffer, consumer);
             return new SelectionBlocks(min, max, blocks, totalBlocks);
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return null;
+        }
+    }
+
+    private static SelectionBlocks currentPlacementSelection() {
+        try {
+            Class<?> selectionClass = Class.forName("com.moulberry.axiom.clipboard.Selection");
+            Class<?> bufferClass = Class.forName("com.moulberry.axiom.clipboard.SelectionBuffer");
+            Method getSelectionBuffer = selectionClass.getMethod("getSelectionBuffer");
+            Object buffer = getSelectionBuffer.invoke(null);
+            if (buffer == null || (boolean) bufferClass.getMethod("isEmpty").invoke(buffer)) {
+                return null;
+            }
+            int totalBlocks = ((Number) bufferClass.getMethod("size").invoke(buffer)).intValue();
+            BlockPos min = ((BlockPos) bufferClass.getMethod("min").invoke(buffer)).toImmutable();
+            BlockPos max = ((BlockPos) bufferClass.getMethod("max").invoke(buffer)).toImmutable();
+            SelectionBlocks summary = new SelectionBlocks(min, max, List.of(), totalBlocks);
+            if (summary.isFullCuboid()) {
+                return summary;
+            }
+            return currentSelection();
         } catch (ReflectiveOperationException | LinkageError ignored) {
             return null;
         }
@@ -737,6 +752,18 @@ public final class AreaTipAxiomIntegration {
 
         private boolean wasTruncated() {
             return totalBlocks > blocks.size();
+        }
+
+        private boolean isEmpty() {
+            return totalBlocks <= 0;
+        }
+
+        private boolean isFullCuboid() {
+            return volume() == totalBlocks;
+        }
+
+        private long volume() {
+            return (long) sizeX() * (long) sizeY() * (long) sizeZ();
         }
 
         private static String posText(BlockPos pos) {

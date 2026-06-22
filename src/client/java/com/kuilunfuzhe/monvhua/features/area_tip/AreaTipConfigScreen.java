@@ -177,8 +177,7 @@ public class AreaTipConfigScreen extends Screen {
 
     @Override
     public void removed() {
-        config.selectedGroupId = currentGroup().id;
-        AreaTipClient.sendConfigUpdate(config);
+        sendConfigUpdate();
         if (colorMapTexture != null) {
             MinecraftClient.getInstance().getTextureManager().destroyTexture(COLOR_MAP_TEXTURE_ID);
             colorMapTexture = null;
@@ -332,6 +331,12 @@ public class AreaTipConfigScreen extends Screen {
         }
         config.groups.remove(selectedIndex);
         selectGroup(Math.min(selectedIndex, config.groups.size() - 1));
+        sendConfigUpdate();
+    }
+
+    private void sendConfigUpdate() {
+        config.selectedGroupId = currentGroup().id;
+        AreaTipClient.sendConfigUpdate(config);
     }
 
     private void cycleShape() {

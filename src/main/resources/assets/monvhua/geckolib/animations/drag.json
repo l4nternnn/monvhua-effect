@@ -1,1 +1,4 @@
-{"length":0,"animations":[{"bone":"torso_midium","target":"rotation","keyframes":[{"timestamp":0,"target":[-25,0,0],"interpolation":"linear"}]},{"bone":"head","target":"rotation","keyframes":[{"timestamp":0,"target":[-25,0,0],"interpolation":"linear"}]},{"bone":"torso_on","target":"rotation","keyframes":[{"timestamp":0,"target":[-15,0,0],"interpolation":"linear"}]},{"bone":"all_aontrol","target":"rotation","keyframes":[{"timestamp":0,"target":[-102.5001,0.0002,-179.9999],"interpolation":"linear"}]}]}
+{
+  "format_version": "1.8.0",
+  "animations": {}
+}

@@ -39,7 +39,7 @@ public final class BodyPoseSkeletalPreviewRenderer {
     private static final Identifier MODEL_ID = Identifier.of("monvhua", "models/entity/skeletal_model2.bbmodel");
     private static final Identifier ANIMATION_ID = Identifier.of("monvhua", "models/entity/animation.json");
     private static final Identifier EYE_ANIMATION_ID = Identifier.of("monvhua", "models/entity/eye_on_off.json");
-    private static final Identifier DRAG_ANIMATION_ID = Identifier.of("monvhua", "geckolib/animations/drag.json");
+    private static final Identifier DRAG_ANIMATION_ID = Identifier.of("monvhua", "models/entity/drag_pose.json");
     private static final Set<String> DRAG_ROOT_BONES = Set.of("all_aontrol");
     private static final int DEFAULT_VERTEX_COLOR = 0xFFFFFFFF;
     private static final int SKIN_TONE_OVERLAY_COLOR = 0xFFFFF3EC;

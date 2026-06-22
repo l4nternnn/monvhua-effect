@@ -4,6 +4,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 
 /**
@@ -53,6 +54,54 @@ public final class CarryPoseModelApplier {
 		}
 	}
 
+	public static boolean isRenderingCarrierPose() {
+		return currentRenderState != null && CarryPoseClientState.isAnyCarrier(currentRenderState.id);
+	}
+
+	public static boolean isCurrentRightArmPart(ModelPart part) {
+		return currentRenderModel != null && (part == currentRenderModel.rightArm || part == currentRenderModel.rightSleeve);
+	}
+
+	public static boolean isCurrentLeftArmPart(ModelPart part) {
+		return currentRenderModel != null && (part == currentRenderModel.leftArm || part == currentRenderModel.leftSleeve);
+	}
+
+	public static void applyCarrierRightArmPose(ModelPart part) {
+		if (part == null) {
+			return;
+		}
+		part.pitch = CarryPoseTuning.CARRIER_RIGHT_ARM_PITCH;
+		part.yaw = CarryPoseTuning.CARRIER_RIGHT_ARM_YAW;
+		part.roll = CarryPoseTuning.CARRIER_RIGHT_ARM_ROLL;
+	}
+
+	public static void applyCarrierLeftArmPose(ModelPart part) {
+		if (part == null) {
+			return;
+		}
+		part.pitch = CarryPoseTuning.CARRIER_LEFT_ARM_PITCH;
+		part.yaw = CarryPoseTuning.CARRIER_LEFT_ARM_YAW;
+		part.roll = CarryPoseTuning.CARRIER_LEFT_ARM_ROLL;
+	}
+
+	public static void applyCarrierRightArmPoseToMatrix(MatrixStack matrices) {
+		if (matrices != null) {
+			matrices.multiply(new org.joml.Quaternionf()
+					.rotateZ(CarryPoseTuning.CARRIER_RIGHT_ARM_ROLL)
+					.rotateY(CarryPoseTuning.CARRIER_RIGHT_ARM_YAW)
+					.rotateX(CarryPoseTuning.CARRIER_RIGHT_ARM_PITCH));
+		}
+	}
+
+	public static void applyCarrierLeftArmPoseToMatrix(MatrixStack matrices) {
+		if (matrices != null) {
+			matrices.multiply(new org.joml.Quaternionf()
+					.rotateZ(CarryPoseTuning.CARRIER_LEFT_ARM_ROLL)
+					.rotateY(CarryPoseTuning.CARRIER_LEFT_ARM_YAW)
+					.rotateX(CarryPoseTuning.CARRIER_LEFT_ARM_PITCH));
+		}
+	}
+
 	public static void apply(PlayerEntityModel model, PlayerEntityRenderState state) {
 		if (CarryPoseClientState.isAnyCarrier(state.id)) {
 			applyCarrierPose(model);
@@ -65,12 +114,10 @@ public final class CarryPoseModelApplier {
 
 	private static void applyCarrierPose(PlayerEntityModel model) {
 		model.body.pitch = CarryPoseTuning.CARRIER_BODY_PITCH;
-		model.rightArm.pitch = CarryPoseTuning.CARRIER_RIGHT_ARM_PITCH;
-		model.rightArm.yaw = CarryPoseTuning.CARRIER_RIGHT_ARM_YAW;
-		model.rightArm.roll = CarryPoseTuning.CARRIER_RIGHT_ARM_ROLL;
-		model.leftArm.pitch = CarryPoseTuning.CARRIER_LEFT_ARM_PITCH;
-		model.leftArm.yaw = CarryPoseTuning.CARRIER_LEFT_ARM_YAW;
-		model.leftArm.roll = CarryPoseTuning.CARRIER_LEFT_ARM_ROLL;
+		applyCarrierRightArmPose(model.rightArm);
+		applyCarrierRightArmPose(model.rightSleeve);
+		applyCarrierLeftArmPose(model.leftArm);
+		applyCarrierLeftArmPose(model.leftSleeve);
 	}
 
 	private static void applyCarrierPartPose(PlayerEntityModel model, ModelPart part) {
@@ -78,16 +125,12 @@ public final class CarryPoseModelApplier {
 			model.body.pitch = CarryPoseTuning.CARRIER_BODY_PITCH;
 			return;
 		}
-		if (part == model.rightArm) {
-			model.rightArm.pitch = CarryPoseTuning.CARRIER_RIGHT_ARM_PITCH;
-			model.rightArm.yaw = CarryPoseTuning.CARRIER_RIGHT_ARM_YAW;
-			model.rightArm.roll = CarryPoseTuning.CARRIER_RIGHT_ARM_ROLL;
+		if (part == model.rightArm || part == model.rightSleeve) {
+			applyCarrierRightArmPose(part);
 			return;
 		}
-		if (part == model.leftArm) {
-			model.leftArm.pitch = CarryPoseTuning.CARRIER_LEFT_ARM_PITCH;
-			model.leftArm.yaw = CarryPoseTuning.CARRIER_LEFT_ARM_YAW;
-			model.leftArm.roll = CarryPoseTuning.CARRIER_LEFT_ARM_ROLL;
+		if (part == model.leftArm || part == model.leftSleeve) {
+			applyCarrierLeftArmPose(part);
 		}
 	}
 

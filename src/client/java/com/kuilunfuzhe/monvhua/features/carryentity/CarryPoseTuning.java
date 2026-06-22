@@ -275,6 +275,8 @@ public final class CarryPoseTuning {
 	public static float CARRIED_HEAD_VIEW_PITCH_DIRECTION = -1.0F;
 
 	// ========== 抱人者模型部件姿态参数，单位：弧度 ==========
+	// 抱人者抱持时保留的手臂动态摆动比例；1.0 = 原幅度，0.0 = 完全锁死，建议 0.25~0.5。
+	public static float CARRIER_ARM_MOTION_SCALE = 0.35F;
 	// 抱人者身体上下俯仰；略微正值可表现为身体前倾用力抱人。
 	public static float CARRIER_BODY_PITCH = 0.08F;
 	// 抱人者右臂上下摆动；更负通常表示手臂向前抬起托住被抱者。

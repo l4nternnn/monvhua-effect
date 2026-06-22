@@ -291,9 +291,6 @@ public final class AreaTipClient {
                 min = null;
                 max = null;
             }
-            if (blocks.isEmpty()) {
-                blocks = min != null && max != null ? blocksInBounds(min, max) : spec.coveredBlocks(center);
-            }
             if (!blocks.isEmpty() && (min == null || max == null)) {
                 min = minOf(blocks);
                 max = maxOf(blocks);
@@ -320,22 +317,47 @@ public final class AreaTipClient {
         }
 
         public List<BlockPos> coveredBlocks() {
-            return blocks;
+            if (!blocks.isEmpty()) {
+                return blocks;
+            }
+            if (hasExactBounds()) {
+                return List.of();
+            }
+            return spec.coveredBlocks(center);
         }
 
-        private static List<BlockPos> blocksInBounds(BlockPos min, BlockPos max) {
-            List<BlockPos> blocks = new ArrayList<>();
-            for (int x = min.getX(); x <= max.getX(); x++) {
-                for (int y = min.getY(); y <= max.getY(); y++) {
-                    for (int z = min.getZ(); z <= max.getZ(); z++) {
-                        blocks.add(new BlockPos(x, y, z));
-                        if (blocks.size() >= GravityAreaSpec.MAX_RENDER_BLOCKS) {
-                            return blocks;
-                        }
-                    }
-                }
+        public boolean hasExactBounds() {
+            return min != null && max != null;
+        }
+
+        public boolean hasExplicitBlocks() {
+            return !blocks.isEmpty();
+        }
+
+        public boolean containsBlock(BlockPos block) {
+            if (block == null) {
+                return false;
             }
-            return blocks;
+            if (hasExplicitBlocks()) {
+                return blocks.contains(block);
+            }
+            if (hasExactBounds()) {
+                return block.getX() >= min.getX() && block.getX() <= max.getX()
+                        && block.getY() >= min.getY() && block.getY() <= max.getY()
+                        && block.getZ() >= min.getZ() && block.getZ() <= max.getZ();
+            }
+            return spec.containsBlock(center, block);
+        }
+
+        public int approximateBlockCount() {
+            if (hasExplicitBlocks()) {
+                return blocks.size();
+            }
+            BlockPos min = minBlock();
+            BlockPos max = maxBlock();
+            return Math.max(0, max.getX() - min.getX() + 1)
+                    * Math.max(0, max.getY() - min.getY() + 1)
+                    * Math.max(0, max.getZ() - min.getZ() + 1);
         }
 
         public BlockPos minBlock() {
@@ -363,7 +385,7 @@ public final class AreaTipClient {
         public String boundsText() {
             BlockPos min = minBlock();
             BlockPos max = maxBlock();
-            String prefix = blocks.isEmpty() ? "" : blocks.size() + " blocks  ";
+            String prefix = hasExplicitBlocks() ? blocks.size() + " blocks  " : "";
             return prefix + min.getX() + "," + min.getY() + "," + min.getZ()
                     + " -> " + max.getX() + "," + max.getY() + "," + max.getZ();
         }

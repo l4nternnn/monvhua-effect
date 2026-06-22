@@ -48,11 +48,11 @@ import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWScrollCallbackI;
 
 import java.util.ArrayList;
-import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -66,6 +66,8 @@ public final class PaintOverlayClient {
     private static final int DENSE_CHUNK_VERTEX_THRESHOLD = 24_000;
     private static final double EDITOR_RAY_DISTANCE = 64.0D;
     private static final int REPEATED_STROKE_SKIP_CALLS = 1;
+    private static final int MAX_EDITOR_HISTORY = 64;
+    private static final long EDITOR_HISTORY_CLOSE_DELAY_MS = 160L;
     private static final double FULL_DETAIL_DISTANCE_SQUARED = 12.0D * 12.0D;
     private static final double MEDIUM_DETAIL_DISTANCE_SQUARED = 32.0D * 32.0D;
     private static final MeshData EMPTY_MESH = new MeshData(new float[0], new int[0], new float[0]);
@@ -75,7 +77,8 @@ public final class PaintOverlayClient {
     private static final Map<ChunkPos, Set<PaintOverlayStore.FaceKey>> CHUNK_FACE_KEYS = new HashMap<>();
     private static final List<Integer> RECENT_COLORS = new ArrayList<>();
     private static final List<Integer> FAVORITE_COLORS = new ArrayList<>();
-    private static final Deque<PaintOverlayPackets.FaceData> EDITOR_UNDO = new ArrayDeque<>();
+    private static final List<EditorHistoryStep> EDITOR_HISTORY = new ArrayList<>();
+    private static final Map<PaintOverlayStore.FaceKey, List<SuppressedEditorHistoryUpdate>> SUPPRESSED_EDITOR_HISTORY_UPDATES = new HashMap<>();
     private static GLFWScrollCallbackI previousScrollCallback;
     private static boolean scrollCallbackRegistered = false;
     private static int selectedRadius = 1;
@@ -91,6 +94,9 @@ public final class PaintOverlayClient {
     private static int editorKeyCooldown;
     private static boolean editorViewPassthrough;
     private static PaintEditorScreen suspendedPaintEditorScreen;
+    private static int editorHistoryCursor;
+    private static int editorHistorySequence = 1;
+    private static PendingEditorHistoryStep pendingEditorHistory;
 
     private PaintOverlayClient() {
     }
@@ -110,6 +116,7 @@ public final class PaintOverlayClient {
             }
             tickBrushSlotKeys(client);
             tickContinuousPainting(client);
+            finishPendingEditorHistoryIfIdle(false);
         });
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (!world.isClient() || player == null
@@ -288,6 +295,27 @@ public final class PaintOverlayClient {
 
     public static boolean eraserFaceMode() {
         return eraserFaceMode;
+    }
+
+    public static List<EditorHistoryEntry> editorHistory() {
+        List<EditorHistoryEntry> entries = new ArrayList<>(EDITOR_HISTORY.size());
+        for (int i = 0; i < EDITOR_HISTORY.size(); i++) {
+            EditorHistoryStep step = EDITOR_HISTORY.get(i);
+            entries.add(new EditorHistoryEntry(i, step.sequence(), step.label(), step.changes().size()));
+        }
+        return List.copyOf(entries);
+    }
+
+    public static int editorHistoryCurrentIndex() {
+        return editorHistoryCursor - 1;
+    }
+
+    public static boolean canUndoEditorStroke() {
+        return editorHistoryCursor > 0;
+    }
+
+    public static boolean canRedoEditorStroke() {
+        return editorHistoryCursor < EDITOR_HISTORY.size();
     }
 
     public static void setSelectedRadius(int radius) {
@@ -663,7 +691,7 @@ public final class PaintOverlayClient {
         }
         lastStrokeKey = key;
         repeatedStrokeTicks = 0;
-        pushUndo(pos, face);
+        beginEditorHistory(tool, clear, pos, face);
         SafeClientNetworking.send(new PaintOverlayPackets.EditorPaintStrokeC2S(pos, face, pixel[0], pixel[1], tool.networkId(), clear));
     }
 
@@ -688,13 +716,48 @@ public final class PaintOverlayClient {
     public static void stopEditorUse() {
         lastStrokeKey = null;
         repeatedStrokeTicks = 0;
+        closePendingEditorHistory();
     }
 
     public static void undoEditorStroke(MinecraftClient client) {
-        if (client == null || client.player == null || EDITOR_UNDO.isEmpty()) {
+        finishPendingEditorHistoryIfIdle(true);
+        if (client == null || client.player == null || !canUndoEditorStroke()) {
             return;
         }
-        SafeClientNetworking.send(new PaintOverlayPackets.RestoreFaceC2S(EDITOR_UNDO.pop()));
+        EditorHistoryStep step = EDITOR_HISTORY.get(editorHistoryCursor - 1);
+        restoreEditorHistoryStep(step, false);
+        editorHistoryCursor--;
+    }
+
+    public static void redoEditorStroke(MinecraftClient client) {
+        finishPendingEditorHistoryIfIdle(true);
+        if (client == null || client.player == null || !canRedoEditorStroke()) {
+            return;
+        }
+        EditorHistoryStep step = EDITOR_HISTORY.get(editorHistoryCursor);
+        restoreEditorHistoryStep(step, true);
+        editorHistoryCursor++;
+    }
+
+    public static void jumpEditorHistory(MinecraftClient client, int targetIndex) {
+        finishPendingEditorHistoryIfIdle(true);
+        if (client == null || client.player == null || targetIndex < 0 || targetIndex >= EDITOR_HISTORY.size()) {
+            return;
+        }
+        int targetCursor = targetIndex + 1;
+        if (targetCursor == editorHistoryCursor) {
+            return;
+        }
+        if (targetCursor < editorHistoryCursor) {
+            for (int i = editorHistoryCursor - 1; i >= targetCursor; i--) {
+                restoreEditorHistoryStep(EDITOR_HISTORY.get(i), false);
+            }
+        } else {
+            for (int i = editorHistoryCursor; i < targetCursor; i++) {
+                restoreEditorHistoryStep(EDITOR_HISTORY.get(i), true);
+            }
+        }
+        editorHistoryCursor = targetCursor;
     }
 
     public static void moveEditorView(MinecraftClient client, double amount) {
@@ -825,16 +888,131 @@ public final class PaintOverlayClient {
         client.player.setPitch(MathHelper.clamp(client.player.getPitch() + (float) deltaY * sensitivity, -89.9F, 89.9F));
     }
 
-    private static void pushUndo(BlockPos pos, Direction face) {
-        int[] pixels = FACE_PIXELS.get(new PaintOverlayStore.FaceKey(pos, face));
-        int[] snapshot = new int[PaintOverlayStore.FACE_PIXELS];
-        if (pixels != null) {
-            System.arraycopy(pixels, 0, snapshot, 0, Math.min(pixels.length, snapshot.length));
+    private static void beginEditorHistory(EditorTool tool, boolean clearFace, BlockPos pos, Direction face) {
+        Set<PaintOverlayStore.FaceKey> expectedKeys = expectedEditorHistoryKeys(tool, clearFace, pos, face);
+        if (pendingEditorHistory == null || pendingEditorHistory.closed()) {
+            finishPendingEditorHistoryIfIdle(true);
+            pendingEditorHistory = new PendingEditorHistoryStep(editorHistorySequence++, editorHistoryLabel(tool, clearFace), expectedKeys);
+            return;
         }
-        EDITOR_UNDO.push(new PaintOverlayPackets.FaceData(pos, face, snapshot));
-        while (EDITOR_UNDO.size() > 32) {
-            EDITOR_UNDO.removeLast();
+        pendingEditorHistory.touch(expectedKeys);
+    }
+
+    private static Set<PaintOverlayStore.FaceKey> expectedEditorHistoryKeys(EditorTool tool, boolean clearFace, BlockPos pos, Direction face) {
+        Set<PaintOverlayStore.FaceKey> keys = new HashSet<>();
+        if (tool == EditorTool.ERASER && clearFace) {
+            int blockRadius = Math.max(0, MathHelper.clamp(selectedRadius, PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_RADIUS) - 1);
+            for (int a = -blockRadius; a <= blockRadius; a++) {
+                for (int b = -blockRadius; b <= blockRadius; b++) {
+                    if (a * a + b * b <= blockRadius * blockRadius) {
+                        keys.add(new PaintOverlayStore.FaceKey(offsetOnFacePlane(pos, face, a, b), face));
+                    }
+                }
+            }
+        } else {
+            keys.add(new PaintOverlayStore.FaceKey(pos, face));
         }
+        return keys;
+    }
+
+    private static BlockPos offsetOnFacePlane(BlockPos pos, Direction face, int a, int b) {
+        return switch (face) {
+            case UP, DOWN -> pos.add(a, 0, b);
+            case NORTH, SOUTH -> pos.add(a, b, 0);
+            case WEST, EAST -> pos.add(0, b, a);
+        };
+    }
+
+    private static String editorHistoryLabel(EditorTool tool, boolean clearFace) {
+        if (tool == EditorTool.ERASER) {
+            return clearFace ? "擦除整面" : "擦除像素";
+        }
+        if (tool == EditorTool.BRUSH) {
+            return "画笔绘制";
+        }
+        return "编辑";
+    }
+
+    private static void closePendingEditorHistory() {
+        if (pendingEditorHistory != null) {
+            pendingEditorHistory.close();
+        }
+    }
+
+    private static void finishPendingEditorHistoryIfIdle(boolean force) {
+        if (pendingEditorHistory == null) {
+            return;
+        }
+        if (!force && !pendingEditorHistory.readyToFinish()) {
+            return;
+        }
+        EditorHistoryStep step = pendingEditorHistory.toStep();
+        pendingEditorHistory = null;
+        if (step == null) {
+            return;
+        }
+        if (editorHistoryCursor < EDITOR_HISTORY.size()) {
+            EDITOR_HISTORY.subList(editorHistoryCursor, EDITOR_HISTORY.size()).clear();
+        }
+        EDITOR_HISTORY.add(step);
+        editorHistoryCursor = EDITOR_HISTORY.size();
+        while (EDITOR_HISTORY.size() > MAX_EDITOR_HISTORY) {
+            EDITOR_HISTORY.remove(0);
+            editorHistoryCursor = Math.max(0, editorHistoryCursor - 1);
+        }
+    }
+
+    private static void recordEditorFaceUpdate(PaintOverlayStore.FaceKey key, int[] before, int[] after) {
+        SuppressedEditorHistoryUpdate suppressed = takeSuppressedEditorHistoryUpdate(key, after);
+        if (suppressed != null) {
+            return;
+        }
+        if (pendingEditorHistory == null) {
+            return;
+        }
+        if (!pendingEditorHistory.expects(key)) {
+            return;
+        }
+        pendingEditorHistory.record(key, before, after);
+    }
+
+    private static void restoreEditorHistoryStep(EditorHistoryStep step, boolean after) {
+        for (EditorHistoryChange change : step.changes()) {
+            int[] pixels = after ? change.after() : change.before();
+            PaintOverlayPackets.FaceData faceData = new PaintOverlayPackets.FaceData(change.key().pos(), change.key().face(), pixels);
+            suppressEditorHistoryUpdate(faceData);
+            SafeClientNetworking.send(new PaintOverlayPackets.RestoreFaceC2S(faceData));
+        }
+    }
+
+    private static void suppressEditorHistoryUpdate(PaintOverlayPackets.FaceData faceData) {
+        PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(faceData.pos(), faceData.face());
+        SUPPRESSED_EDITOR_HISTORY_UPDATES
+                .computeIfAbsent(key, ignored -> new ArrayList<>())
+                .add(new SuppressedEditorHistoryUpdate(copyPixels(faceData.pixels()), System.currentTimeMillis() + 2_000L));
+    }
+
+    private static SuppressedEditorHistoryUpdate takeSuppressedEditorHistoryUpdate(PaintOverlayStore.FaceKey key, int[] after) {
+        List<SuppressedEditorHistoryUpdate> updates = SUPPRESSED_EDITOR_HISTORY_UPDATES.get(key);
+        if (updates == null || updates.isEmpty()) {
+            return null;
+        }
+        long now = System.currentTimeMillis();
+        updates.removeIf(update -> update.expiresAtMs() < now);
+        for (int i = 0; i < updates.size(); i++) {
+            SuppressedEditorHistoryUpdate update = updates.get(i);
+            if (Arrays.equals(update.pixels(), after)) {
+                updates.remove(i);
+                if (updates.isEmpty()) {
+                    SUPPRESSED_EDITOR_HISTORY_UPDATES.remove(key);
+                }
+                return update;
+            }
+        }
+        if (updates.isEmpty()) {
+            SUPPRESSED_EDITOR_HISTORY_UPDATES.remove(key);
+        }
+        return null;
     }
 
     private static int pickBlockTextureColor(MinecraftClient client) {
@@ -1253,17 +1431,34 @@ public final class PaintOverlayClient {
     }
 
     private static void applyFace(PaintOverlayPackets.FaceData face) {
+        applyFace(face, true);
+    }
+
+    private static void applyFace(PaintOverlayPackets.FaceData face, boolean recordHistory) {
         PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(face.pos(), face.face());
         ChunkPos chunkPos = chunkPos(key.pos());
-        if (!hasPixels(face.pixels())) {
+        int[] before = recordHistory ? copyFacePixels(key) : null;
+        int[] after = copyPixels(face.pixels());
+        if (!hasPixels(after)) {
             FACE_PIXELS.remove(key);
             removeFaceMesh(key, chunkPos);
             rebuildChunkMesh(chunkPos);
+            if (recordHistory && !Arrays.equals(before, after)) {
+                recordEditorFaceUpdate(key, before, after);
+            }
             return;
         }
-        FACE_PIXELS.put(key, copyPixels(face.pixels()));
-        putFaceMesh(key, buildMesh(key, face.pixels()), chunkPos);
+        FACE_PIXELS.put(key, after);
+        putFaceMesh(key, buildMesh(key, after), chunkPos);
         rebuildChunkMesh(chunkPos);
+        if (recordHistory && !Arrays.equals(before, after)) {
+            recordEditorFaceUpdate(key, before, after);
+        }
+    }
+
+    private static int[] copyFacePixels(PaintOverlayStore.FaceKey key) {
+        int[] pixels = FACE_PIXELS.get(key);
+        return pixels == null ? new int[PaintOverlayStore.FACE_PIXELS] : copyPixels(pixels);
     }
 
     private static int[] copyPixels(int[] source) {
@@ -1625,6 +1820,105 @@ public final class PaintOverlayClient {
     }
 
     public record ScreenPanAnchor(Vec3d point, double distance) {
+    }
+
+    public record EditorHistoryEntry(int index, int sequence, String label, int changedFaces) {
+    }
+
+    private record EditorHistoryStep(int sequence, String label, List<EditorHistoryChange> changes) {
+        private EditorHistoryStep {
+            changes = List.copyOf(changes);
+        }
+    }
+
+    private record EditorHistoryChange(PaintOverlayStore.FaceKey key, int[] before, int[] after) {
+        private EditorHistoryChange {
+            before = copyPixels(before);
+            after = copyPixels(after);
+        }
+    }
+
+    private record SuppressedEditorHistoryUpdate(int[] pixels, long expiresAtMs) {
+        private SuppressedEditorHistoryUpdate {
+            pixels = copyPixels(pixels);
+        }
+    }
+
+    private static final class PendingEditorHistoryStep {
+        private final int sequence;
+        private final String label;
+        private final Set<PaintOverlayStore.FaceKey> expectedKeys = new HashSet<>();
+        private final Map<PaintOverlayStore.FaceKey, PendingEditorHistoryChange> changes = new LinkedHashMap<>();
+        private long closeAtMs = -1L;
+
+        private PendingEditorHistoryStep(int sequence, String label, Set<PaintOverlayStore.FaceKey> expectedKeys) {
+            this.sequence = sequence;
+            this.label = label;
+            touch(expectedKeys);
+        }
+
+        private void touch(Set<PaintOverlayStore.FaceKey> expectedKeys) {
+            this.expectedKeys.addAll(expectedKeys);
+            closeAtMs = -1L;
+        }
+
+        private boolean expects(PaintOverlayStore.FaceKey key) {
+            return expectedKeys.contains(key);
+        }
+
+        private void record(PaintOverlayStore.FaceKey key, int[] before, int[] after) {
+            PendingEditorHistoryChange change = changes.get(key);
+            if (change == null) {
+                changes.put(key, new PendingEditorHistoryChange(before, after));
+            } else {
+                change.setAfter(after);
+            }
+        }
+
+        private void close() {
+            closeAtMs = System.currentTimeMillis() + EDITOR_HISTORY_CLOSE_DELAY_MS;
+        }
+
+        private boolean closed() {
+            return closeAtMs >= 0L;
+        }
+
+        private boolean readyToFinish() {
+            return closeAtMs >= 0L && System.currentTimeMillis() >= closeAtMs;
+        }
+
+        private EditorHistoryStep toStep() {
+            List<EditorHistoryChange> finalChanges = new ArrayList<>();
+            for (Map.Entry<PaintOverlayStore.FaceKey, PendingEditorHistoryChange> entry : changes.entrySet()) {
+                PendingEditorHistoryChange change = entry.getValue();
+                if (!Arrays.equals(change.before(), change.after())) {
+                    finalChanges.add(new EditorHistoryChange(entry.getKey(), change.before(), change.after()));
+                }
+            }
+            return finalChanges.isEmpty() ? null : new EditorHistoryStep(sequence, label, finalChanges);
+        }
+    }
+
+    private static final class PendingEditorHistoryChange {
+        private final int[] before;
+        private int[] after;
+
+        private PendingEditorHistoryChange(int[] before, int[] after) {
+            this.before = copyPixels(before);
+            this.after = copyPixels(after);
+        }
+
+        private int[] before() {
+            return before;
+        }
+
+        private int[] after() {
+            return after;
+        }
+
+        private void setAfter(int[] after) {
+            this.after = copyPixels(after);
+        }
     }
 
     private static class MeshBuilder {

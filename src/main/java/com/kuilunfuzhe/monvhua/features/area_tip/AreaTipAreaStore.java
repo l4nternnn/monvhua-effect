@@ -55,9 +55,14 @@ public class AreaTipAreaStore extends PersistentState {
     }
 
     private AreaTipAreaStore(List<StoredArea> entries) {
+        boolean changed = false;
         for (StoredArea entry : entries) {
             StoredArea area = entry.sanitized();
-            areas.put(area.id(), area);
+            changed |= removeBlocksCoveredByLatest(area);
+            changed |= areas.put(area.id(), area) != null;
+        }
+        if (changed) {
+            markDirty();
         }
     }
 
@@ -81,8 +86,37 @@ public class AreaTipAreaStore extends PersistentState {
         return sanitized;
     }
 
+    public StoredArea addLatest(StoredArea area) {
+        StoredArea sanitized = area.sanitized();
+        removeBlocksCoveredByLatest(sanitized);
+        areas.put(sanitized.id(), sanitized);
+        blockLookupCache.remove(sanitized.id());
+        markDirty();
+        return sanitized;
+    }
+
     public List<StoredArea> toAreas() {
         return new ArrayList<>(areas.values());
+    }
+
+    public int removeGroupsNotIn(Set<UUID> validGroupIds) {
+        if (validGroupIds == null || validGroupIds.isEmpty()) {
+            return 0;
+        }
+        List<UUID> removedIds = new ArrayList<>();
+        for (StoredArea area : areas.values()) {
+            if (!validGroupIds.contains(area.groupId())) {
+                removedIds.add(area.id());
+            }
+        }
+        for (UUID id : removedIds) {
+            areas.remove(id);
+            blockLookupCache.remove(id);
+        }
+        if (!removedIds.isEmpty()) {
+            markDirty();
+        }
+        return removedIds.size();
     }
 
     public int removeIntersecting(UUID groupId, BlockPos min, BlockPos max) {
@@ -91,20 +125,71 @@ public class AreaTipAreaStore extends PersistentState {
         }
         BlockPos fixedMin = min(min, max);
         BlockPos fixedMax = max(min, max);
-        List<UUID> removed = new ArrayList<>();
-        for (StoredArea area : areas.values()) {
-            if (groupId.equals(area.groupId()) && area.intersects(fixedMin, fixedMax)) {
-                removed.add(area.id());
+        List<UUID> removedIds = new ArrayList<>();
+        List<StoredArea> replacements = new ArrayList<>();
+        int changedCount = 0;
+        for (StoredArea area : new ArrayList<>(areas.values())) {
+            if (!groupId.equals(area.groupId()) || !area.intersects(fixedMin, fixedMax)) {
+                continue;
+            }
+            if (boxContains(fixedMin, fixedMax, area.minBlock(), area.maxBlock())) {
+                removedIds.add(area.id());
+                changedCount++;
+                continue;
+            }
+            if (isFullBoundingBox(area)) {
+                removedIds.add(area.id());
+                replacements.addAll(subtractBox(area, fixedMin, fixedMax));
+                changedCount++;
+                continue;
+            }
+            List<BlockPos> areaBlocks = area.coveredBlocks();
+            if (areaBlocks.isEmpty() || (!area.hasBlockSet() && areaBlocks.size() >= MAX_STORED_BLOCKS)) {
+                continue;
+            }
+            List<BlockPos> remaining = new ArrayList<>(areaBlocks.size());
+            boolean changed = false;
+            for (BlockPos block : areaBlocks) {
+                if (containsBlock(fixedMin, fixedMax, block)) {
+                    changed = true;
+                    continue;
+                }
+                remaining.add(block);
+            }
+            if (!changed) {
+                continue;
+            }
+            removedIds.add(area.id());
+            changedCount++;
+            if (!remaining.isEmpty()) {
+                replacements.add(new StoredArea(
+                        area.id(),
+                        area.groupId(),
+                        area.center(),
+                        area.shape(),
+                        area.half(),
+                        area.sizeX(),
+                        area.sizeY(),
+                        area.sizeZ(),
+                        area.color(),
+                        null,
+                        null,
+                        remaining
+                ));
             }
         }
-        for (UUID id : removed) {
+        for (UUID id : removedIds) {
             areas.remove(id);
             blockLookupCache.remove(id);
         }
-        if (!removed.isEmpty()) {
+        for (StoredArea replacement : replacements) {
+            areas.put(replacement.id(), replacement);
+            blockLookupCache.remove(replacement.id());
+        }
+        if (changedCount > 0) {
             markDirty();
         }
-        return removed.size();
+        return changedCount;
     }
 
     public int removeIntersectingBlocks(UUID groupId, List<BlockPos> selectedBlocks) {
@@ -115,6 +200,7 @@ public class AreaTipAreaStore extends PersistentState {
         Set<BlockPos> selected = new LinkedHashSet<>(sanitizedBlocks);
         BlockPos selectedMin = minOf(sanitizedBlocks);
         BlockPos selectedMax = maxOf(sanitizedBlocks);
+        boolean selectedIsFullCuboid = isFullCuboid(selected, selectedMin, selectedMax);
         List<UUID> removedIds = new ArrayList<>();
         List<StoredArea> replacements = new ArrayList<>();
         int removedCount = 0;
@@ -122,8 +208,14 @@ public class AreaTipAreaStore extends PersistentState {
             if (!groupId.equals(area.groupId()) || !area.intersects(selectedMin, selectedMax)) {
                 continue;
             }
+            if (isFullBoundingBox(area) && selectedIsFullCuboid) {
+                removedIds.add(area.id());
+                replacements.addAll(subtractBox(area, selectedMin, selectedMax));
+                removedCount += intersectionVolume(area.minBlock(), area.maxBlock(), selectedMin, selectedMax);
+                continue;
+            }
             List<BlockPos> areaBlocks = area.coveredBlocks();
-            if (areaBlocks.isEmpty()) {
+            if (areaBlocks.isEmpty() || (!area.hasBlockSet() && areaBlocks.size() >= MAX_STORED_BLOCKS)) {
                 continue;
             }
             List<BlockPos> remaining = new ArrayList<>(areaBlocks.size());
@@ -171,6 +263,195 @@ public class AreaTipAreaStore extends PersistentState {
         return removedCount;
     }
 
+    private boolean removeBlocksCoveredByLatest(StoredArea latest) {
+        Set<BlockPos> latestSet = latest.hasBlockSet() ? new LinkedHashSet<>(latest.blocks()) : Set.of();
+        BlockPos latestMin = latest.minBlock();
+        BlockPos latestMax = latest.maxBlock();
+        List<UUID> removedIds = new ArrayList<>();
+        List<StoredArea> replacements = new ArrayList<>();
+
+        for (StoredArea area : new ArrayList<>(areas.values())) {
+            if (area.id().equals(latest.id()) || !area.intersects(latestMin, latestMax)) {
+                continue;
+            }
+            if (latestCoversArea(latest, latestSet, area)) {
+                removedIds.add(area.id());
+                continue;
+            }
+            if (isFullBoundingBox(area) && isFullBoundingBox(latest)) {
+                removedIds.add(area.id());
+                replacements.addAll(subtractBox(area, latestMin, latestMax));
+                continue;
+            }
+            List<BlockPos> areaBlocks = area.coveredBlocks();
+            if (areaBlocks.isEmpty() || (!area.hasBlockSet() && areaBlocks.size() >= MAX_STORED_BLOCKS)) {
+                continue;
+            }
+            List<BlockPos> remaining = new ArrayList<>(areaBlocks.size());
+            boolean changed = false;
+            for (BlockPos block : areaBlocks) {
+                if (latestContainsBlock(latest, latestSet, block)) {
+                    changed = true;
+                    continue;
+                }
+                remaining.add(block);
+            }
+            if (!changed) {
+                continue;
+            }
+            removedIds.add(area.id());
+            if (!remaining.isEmpty()) {
+                replacements.add(new StoredArea(
+                        area.id(),
+                        area.groupId(),
+                        area.center(),
+                        area.shape(),
+                        area.half(),
+                        area.sizeX(),
+                        area.sizeY(),
+                        area.sizeZ(),
+                        area.color(),
+                        null,
+                        null,
+                        remaining
+                ));
+            }
+        }
+
+        for (UUID id : removedIds) {
+            areas.remove(id);
+            blockLookupCache.remove(id);
+        }
+        for (StoredArea replacement : replacements) {
+            areas.put(replacement.id(), replacement);
+            blockLookupCache.remove(replacement.id());
+        }
+        return !removedIds.isEmpty();
+    }
+
+    private static boolean latestCoversArea(StoredArea latest, Set<BlockPos> latestSet, StoredArea area) {
+        if (isFullBoundingBox(latest) && boxContains(latest.minBlock(), latest.maxBlock(), area.minBlock(), area.maxBlock())) {
+            return true;
+        }
+        List<BlockPos> areaBlocks = area.coveredBlocks();
+        if (!area.hasBlockSet() && areaBlocks.size() >= MAX_STORED_BLOCKS) {
+            return false;
+        }
+        for (BlockPos block : areaBlocks) {
+            if (!latestContainsBlock(latest, latestSet, block)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean latestContainsBlock(StoredArea latest, Set<BlockPos> latestSet, BlockPos block) {
+        return latest.hasBlockSet() ? latestSet.contains(block) : latest.containsBlock(block);
+    }
+
+    private static boolean isFullBoundingBox(StoredArea area) {
+        return !area.hasBlockSet()
+                && (area.hasExactBounds()
+                || area.spec().shape() == GravityAreaSpec.Shape.BOX
+                || area.spec().shape() == GravityAreaSpec.Shape.CUBE);
+    }
+
+    private static boolean boxContains(BlockPos outerMin, BlockPos outerMax, BlockPos innerMin, BlockPos innerMax) {
+        return outerMin.getX() <= innerMin.getX() && outerMax.getX() >= innerMax.getX()
+                && outerMin.getY() <= innerMin.getY() && outerMax.getY() >= innerMax.getY()
+                && outerMin.getZ() <= innerMin.getZ() && outerMax.getZ() >= innerMax.getZ();
+    }
+
+    private static boolean intersects(BlockPos firstMin, BlockPos firstMax, BlockPos secondMin, BlockPos secondMax) {
+        return firstMin.getX() <= secondMax.getX() && firstMax.getX() >= secondMin.getX()
+                && firstMin.getY() <= secondMax.getY() && firstMax.getY() >= secondMin.getY()
+                && firstMin.getZ() <= secondMax.getZ() && firstMax.getZ() >= secondMin.getZ();
+    }
+
+    private static boolean containsBlock(BlockPos min, BlockPos max, BlockPos block) {
+        return block.getX() >= min.getX() && block.getX() <= max.getX()
+                && block.getY() >= min.getY() && block.getY() <= max.getY()
+                && block.getZ() >= min.getZ() && block.getZ() <= max.getZ();
+    }
+
+    private static boolean isFullCuboid(Set<BlockPos> blocks, BlockPos min, BlockPos max) {
+        return blocks != null && blocks.size() == volume(min, max);
+    }
+
+    private static int intersectionVolume(BlockPos firstMin, BlockPos firstMax, BlockPos secondMin, BlockPos secondMax) {
+        if (!intersects(firstMin, firstMax, secondMin, secondMax)) {
+            return 0;
+        }
+        BlockPos min = max(firstMin, secondMin);
+        BlockPos max = min(firstMax, secondMax);
+        return volume(min, max);
+    }
+
+    private static int volume(BlockPos min, BlockPos max) {
+        long volume = (long) Math.max(0, max.getX() - min.getX() + 1)
+                * (long) Math.max(0, max.getY() - min.getY() + 1)
+                * (long) Math.max(0, max.getZ() - min.getZ() + 1);
+        return volume > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) volume;
+    }
+
+    private static List<StoredArea> subtractBox(StoredArea area, BlockPos removeMin, BlockPos removeMax) {
+        BlockPos oldMin = area.minBlock();
+        BlockPos oldMax = area.maxBlock();
+        BlockPos cutMin = max(oldMin, removeMin);
+        BlockPos cutMax = min(oldMax, removeMax);
+        if (!intersects(oldMin, oldMax, cutMin, cutMax)) {
+            return List.of(area);
+        }
+
+        List<StoredArea> result = new ArrayList<>(6);
+        addBox(result, area, oldMin.getX(), oldMin.getY(), oldMin.getZ(),
+                cutMin.getX() - 1, oldMax.getY(), oldMax.getZ());
+        addBox(result, area, cutMax.getX() + 1, oldMin.getY(), oldMin.getZ(),
+                oldMax.getX(), oldMax.getY(), oldMax.getZ());
+
+        int minX = cutMin.getX();
+        int maxX = cutMax.getX();
+        addBox(result, area, minX, oldMin.getY(), oldMin.getZ(),
+                maxX, cutMin.getY() - 1, oldMax.getZ());
+        addBox(result, area, minX, cutMax.getY() + 1, oldMin.getZ(),
+                maxX, oldMax.getY(), oldMax.getZ());
+
+        int minY = cutMin.getY();
+        int maxY = cutMax.getY();
+        addBox(result, area, minX, minY, oldMin.getZ(),
+                maxX, maxY, cutMin.getZ() - 1);
+        addBox(result, area, minX, minY, cutMax.getZ() + 1,
+                maxX, maxY, oldMax.getZ());
+        return List.copyOf(result);
+    }
+
+    private static void addBox(List<StoredArea> result, StoredArea source,
+                               int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        if (minX > maxX || minY > maxY || minZ > maxZ) {
+            return;
+        }
+        BlockPos min = new BlockPos(minX, minY, minZ);
+        BlockPos max = new BlockPos(maxX, maxY, maxZ);
+        BlockPos center = new BlockPos(
+                (minX + maxX) / 2,
+                (minY + maxY) / 2,
+                (minZ + maxZ) / 2
+        );
+        result.add(new StoredArea(
+                UUID.randomUUID(),
+                source.groupId(),
+                center,
+                GravityAreaSpec.Shape.BOX.ordinal(),
+                GravityAreaSpec.Half.FULL.ordinal(),
+                1,
+                1,
+                1,
+                source.color(),
+                min,
+                max
+        ));
+    }
+
     public Optional<StoredArea> firstContaining(Box box) {
         Vec3d center = box.getCenter();
         for (StoredArea area : areas.values()) {
@@ -197,27 +478,6 @@ public class AreaTipAreaStore extends PersistentState {
             return area.contains(pos);
         }
         return blockLookup(area).contains(BlockPos.ofFloored(pos));
-    }
-
-    private boolean intersectsAnyBlock(StoredArea area, Set<BlockPos> selectedBlocks) {
-        if (!area.hasBlockSet()) {
-            return area.intersectsAnyBlock(selectedBlocks);
-        }
-        Set<BlockPos> lookup = blockLookup(area);
-        if (selectedBlocks.size() <= lookup.size()) {
-            for (BlockPos block : selectedBlocks) {
-                if (lookup.contains(block)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        for (BlockPos block : lookup) {
-            if (selectedBlocks.contains(block)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private Set<BlockPos> blockLookup(StoredArea area) {
@@ -403,7 +663,7 @@ public class AreaTipAreaStore extends PersistentState {
             return false;
         }
 
-        private boolean containsBlock(BlockPos block) {
+        public boolean containsBlock(BlockPos block) {
             if (hasBlockSet()) {
                 return blocks.contains(block);
             }

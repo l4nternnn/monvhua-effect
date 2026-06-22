@@ -1,0 +1,12 @@
+﻿{
+	"required": false,
+	"package": "com.kuilunfuzhe.monvhua.mixin.compat.emf",
+	"compatibilityLevel": "JAVA_21",
+	"plugin": "com.kuilunfuzhe.monvhua.mixin.compat.emf.EmfCompatMixinPlugin",
+	"client": [
+		"EmfModelPartCarryPoseMixin"
+	],
+	"injectors": {
+		"defaultRequire": 0
+	}
+}

@@ -31,6 +31,10 @@ public class PaintEditorScreen extends Screen {
     private static final int BRUSH_RADIUS_Y = 380;
     private static final int ERASER_RADIUS_Y = 82;
     private static final int ERASER_MODE_Y = 118;
+    private static final int ERASER_HISTORY_Y = 176;
+    private static final int HISTORY_ROW_HEIGHT = 17;
+    private static final int HISTORY_MENU_WIDTH = 86;
+    private static final int HISTORY_MENU_HEIGHT = 24;
     private static final int PAPER_SIZE_Y = 82;
     private static final int TOOL_X = 10;
     private static final int TOOL_BRUSH_Y = 36;
@@ -64,6 +68,9 @@ public class PaintEditorScreen extends Screen {
     private PaintOverlayClient.ScreenPanAnchor rightPanAnchor;
     private double lastMouseX;
     private double lastMouseY;
+    private int historyMenuIndex = -1;
+    private int historyMenuX;
+    private int historyMenuY;
 
     public PaintEditorScreen() {
         super(Text.literal("Paint Editor"));
@@ -131,6 +138,7 @@ public class PaintEditorScreen extends Screen {
         drawLeftPanel(context, mouseX, mouseY);
         drawRightPanel(context, mouseX, mouseY);
         super.render(context, mouseX, mouseY, delta);
+        drawHistoryContextMenu(context, mouseX, mouseY);
     }
 
     @Override
@@ -143,13 +151,25 @@ public class PaintEditorScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (handleHistoryContextMenuClick(mouseX, mouseY, button)) {
+            return true;
+        }
+        if (historyMenuIndex >= 0) {
+            closeHistoryContextMenu();
+            return true;
+        }
         if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
+            closeHistoryContextMenu();
             PaintOverlayClient.handleBrushPickInputAtScreenPoint(client, mouseX, mouseY, width, height);
             loadSelectedColor();
             updateHexField();
             return true;
         }
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+            if (handleHistoryRightClick(mouseX, mouseY)) {
+                return true;
+            }
+            closeHistoryContextMenu();
             if (selectedTool != PaintOverlayClient.EditorTool.NONE && !isCtrlDown()) {
                 rightUsing = true;
                 PaintOverlayClient.performEditorUseAtScreenPoint(client, selectedTool, mouseX, mouseY, width, height);
@@ -163,8 +183,10 @@ public class PaintEditorScreen extends Screen {
             return false;
         }
         if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            closeHistoryContextMenu();
             return super.mouseClicked(mouseX, mouseY, button);
         }
+        closeHistoryContextMenu();
         if (hexField != null && hexField.visible && hexField.isMouseOver(mouseX, mouseY)) {
             return super.mouseClicked(mouseX, mouseY, button);
         }
@@ -266,17 +288,21 @@ public class PaintEditorScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        boolean ctrl = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
+        if (ctrl && keyCode == GLFW.GLFW_KEY_Z) {
+            PaintOverlayClient.undoEditorStroke(client);
+            return true;
+        }
+        if (ctrl && keyCode == GLFW.GLFW_KEY_Y) {
+            PaintOverlayClient.redoEditorStroke(client);
+            return true;
+        }
         if (hexField != null && hexField.visible && hexField.keyPressed(keyCode, scanCode, modifiers)) {
             return true;
         }
-        boolean ctrl = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
         if (keyCode == GLFW.GLFW_KEY_B || keyCode == GLFW.GLFW_KEY_ESCAPE) {
             PaintOverlayClient.markPaintEditorKeyConsumed();
             close();
-            return true;
-        }
-        if (ctrl && keyCode == GLFW.GLFW_KEY_Z) {
-            PaintOverlayClient.undoEditorStroke(client);
             return true;
         }
         if (ctrl && keyCode == GLFW.GLFW_KEY_C) {
@@ -397,10 +423,136 @@ public class PaintEditorScreen extends Screen {
         drawSection(context, x - 8, 48, 166, 112);
         drawSectionTitle(context, x, 56, "Eraser");
         drawRadiusControls(context, x, ERASER_RADIUS_Y);
+        drawHistoryPanel(context, x, lastMouseX, lastMouseY);
         int modeY = ERASER_MODE_Y;
         boolean faceMode = PaintOverlayClient.eraserFaceMode();
         drawToggle(context, x, modeY, 52, 18, "Pixel-像素格", !faceMode);
         drawToggle(context, x + 58, modeY, 52, 18, "Face-方块面", faceMode);
+    }
+
+    private void drawHistoryPanel(DrawContext context, int x, double mouseX, double mouseY) {
+        int sectionY = ERASER_HISTORY_Y - 18;
+        int sectionH = Math.max(72, height - sectionY - 16);
+        drawSection(context, x - 8, sectionY, 166, sectionH);
+        drawSectionTitle(context, x, sectionY + 8, "历史记录");
+
+        List<PaintOverlayClient.EditorHistoryEntry> entries = PaintOverlayClient.editorHistory();
+        int currentIndex = PaintOverlayClient.editorHistoryCurrentIndex();
+        int listY = ERASER_HISTORY_Y + 12;
+        int maxRows = Math.max(1, (height - listY - 24) / HISTORY_ROW_HEIGHT);
+        if (entries.isEmpty()) {
+            context.drawText(textRenderer, Text.literal("暂无记录"), x, listY + 4, TEXT_SECONDARY, false);
+            return;
+        }
+        int start = historyStartIndex(entries.size(), currentIndex, maxRows);
+        int end = Math.min(entries.size(), start + maxRows);
+        for (int i = start; i < end; i++) {
+            PaintOverlayClient.EditorHistoryEntry entry = entries.get(i);
+            int rowY = historyRowY(i, start);
+            boolean current = i == currentIndex;
+            boolean menuSelected = i == historyMenuIndex;
+            boolean hover = isInside(x - 2, rowY, 148, HISTORY_ROW_HEIGHT - 1, mouseX, mouseY);
+            int fill = current ? ACCENT_DARK : (menuSelected ? 0x993F5F72 : (hover ? SURFACE_HOVER : 0));
+            if (fill != 0) {
+                fillChamfered(context, x - 2, rowY, 148, HISTORY_ROW_HEIGHT - 1, 3, fill);
+            }
+            if (current) {
+                context.fill(x - 5, rowY + 3, x - 3, rowY + HISTORY_ROW_HEIGHT - 4, ACCENT);
+            }
+            String text = "#" + entry.sequence() + " " + entry.label();
+            int textColor = current || menuSelected ? TEXT_PRIMARY : TEXT_SECONDARY;
+            context.drawText(textRenderer, Text.literal(trimToWidth(text, 114)), x + 3, rowY + 4, textColor, false);
+            String faces = String.valueOf(entry.changedFaces());
+            context.drawText(textRenderer, Text.literal(faces), x + 138 - textRenderer.getWidth(faces), rowY + 4, textColor, false);
+        }
+    }
+
+    private void drawHistoryContextMenu(DrawContext context, int mouseX, int mouseY) {
+        if (historyMenuIndex < 0 || selectedTool != PaintOverlayClient.EditorTool.ERASER) {
+            return;
+        }
+        int x = MathHelper.clamp(historyMenuX, 2, Math.max(2, width - HISTORY_MENU_WIDTH - 2));
+        int y = MathHelper.clamp(historyMenuY, 2, Math.max(2, height - HISTORY_MENU_HEIGHT - 2));
+        boolean hover = isInside(x, y, HISTORY_MENU_WIDTH, HISTORY_MENU_HEIGHT, mouseX, mouseY);
+        drawControlSurface(context, x, y, HISTORY_MENU_WIDTH, HISTORY_MENU_HEIGHT, false, hover);
+        context.drawText(textRenderer, Text.literal("跳到此步"), x + 8, y + 8, TEXT_PRIMARY, false);
+    }
+
+    private boolean handleHistoryContextMenuClick(double mouseX, double mouseY, int button) {
+        if (historyMenuIndex < 0) {
+            return false;
+        }
+        int x = MathHelper.clamp(historyMenuX, 2, Math.max(2, width - HISTORY_MENU_WIDTH - 2));
+        int y = MathHelper.clamp(historyMenuY, 2, Math.max(2, height - HISTORY_MENU_HEIGHT - 2));
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && isInside(x, y, HISTORY_MENU_WIDTH, HISTORY_MENU_HEIGHT, mouseX, mouseY)) {
+            PaintOverlayClient.jumpEditorHistory(client, historyMenuIndex);
+            closeHistoryContextMenu();
+            return true;
+        }
+        if (!isInside(x, y, HISTORY_MENU_WIDTH, HISTORY_MENU_HEIGHT, mouseX, mouseY)) {
+            closeHistoryContextMenu();
+        }
+        return false;
+    }
+
+    private boolean handleHistoryRightClick(double mouseX, double mouseY) {
+        if (selectedTool != PaintOverlayClient.EditorTool.ERASER) {
+            return false;
+        }
+        int index = historyIndexAt(mouseX, mouseY);
+        if (index < 0) {
+            return false;
+        }
+        historyMenuIndex = index;
+        historyMenuX = MathHelper.clamp((int) mouseX + 8, 2, Math.max(2, width - HISTORY_MENU_WIDTH - 2));
+        historyMenuY = MathHelper.clamp((int) mouseY - 2, 2, Math.max(2, height - HISTORY_MENU_HEIGHT - 2));
+        return true;
+    }
+
+    private void closeHistoryContextMenu() {
+        historyMenuIndex = -1;
+    }
+
+    private int historyIndexAt(double mouseX, double mouseY) {
+        int x = rightX() + 16;
+        List<PaintOverlayClient.EditorHistoryEntry> entries = PaintOverlayClient.editorHistory();
+        if (entries.isEmpty()) {
+            return -1;
+        }
+        int listY = ERASER_HISTORY_Y + 12;
+        int maxRows = Math.max(1, (height - listY - 24) / HISTORY_ROW_HEIGHT);
+        int start = historyStartIndex(entries.size(), PaintOverlayClient.editorHistoryCurrentIndex(), maxRows);
+        int end = Math.min(entries.size(), start + maxRows);
+        if (!isInside(x - 2, listY, 148, (end - start) * HISTORY_ROW_HEIGHT, mouseX, mouseY)) {
+            return -1;
+        }
+        int index = start + (int) ((mouseY - listY) / HISTORY_ROW_HEIGHT);
+        return index >= start && index < end ? index : -1;
+    }
+
+    private int historyStartIndex(int size, int currentIndex, int maxRows) {
+        if (size <= maxRows) {
+            return 0;
+        }
+        int focus = currentIndex >= 0 ? currentIndex : size - 1;
+        return MathHelper.clamp(focus - maxRows / 2, 0, size - maxRows);
+    }
+
+    private int historyRowY(int index, int start) {
+        return ERASER_HISTORY_Y + 12 + (index - start) * HISTORY_ROW_HEIGHT;
+    }
+
+    private String trimToWidth(String text, int maxWidth) {
+        if (textRenderer.getWidth(text) <= maxWidth) {
+            return text;
+        }
+        String suffix = "...";
+        int suffixWidth = textRenderer.getWidth(suffix);
+        StringBuilder builder = new StringBuilder(text);
+        while (!builder.isEmpty() && textRenderer.getWidth(builder.toString()) + suffixWidth > maxWidth) {
+            builder.deleteCharAt(builder.length() - 1);
+        }
+        return builder + suffix;
     }
 
     private void drawPaperPanel(DrawContext context, int x) {
