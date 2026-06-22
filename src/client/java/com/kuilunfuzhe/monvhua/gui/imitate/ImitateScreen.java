@@ -29,13 +29,13 @@ public class ImitateScreen extends Screen {
     private int panelHeight;
     private int panelX;
     private int panelY;
-    private final int witchStage;
+    private final int witchScore;
     private final int soundWaveThreshold;
     private final int silenceThreshold;
 
-    public ImitateScreen(int witchStage) {
+    public ImitateScreen(int witchScore) {
         super(Text.literal("模仿"));
-        this.witchStage = witchStage;
+        this.witchScore = witchScore;
         ImitateConfig config = ImitateConfig.getInstance();
         this.soundWaveThreshold = config != null ? config.getSoundWaveUnlockThreshold() : DEFAULT_SOUND_WAVE_THRESHOLD;
         this.silenceThreshold = config != null ? config.getSilenceUnlockThreshold() : DEFAULT_SILENCE_THRESHOLD;
@@ -129,7 +129,7 @@ public class ImitateScreen extends Screen {
         int soundWaveWidth = 220;
         int soundWaveX = panelX + (panelWidth - soundWaveWidth) / 2;
 
-        boolean canUseSoundWave = witchStage >= soundWaveThreshold;
+        boolean canUseSoundWave = witchScore >= soundWaveThreshold;
         Text soundWaveText = canUseSoundWave 
                 ? Text.literal("§b♪ 声音震荡 §r♪") 
                 : Text.literal("§7♪ 声音震荡 (需魔女化" + soundWaveThreshold + ") §r♪");
@@ -153,7 +153,7 @@ public class ImitateScreen extends Screen {
         int silenceWidth = 220;
         int silenceX = panelX + (panelWidth - silenceWidth) / 2;
 
-        boolean canUseSilence = witchStage >= silenceThreshold;
+        boolean canUseSilence = witchScore >= silenceThreshold;
         Text silenceText = canUseSilence 
                 ? Text.literal("§c🔇 屏蔽声音 §r🔇") 
                 : Text.literal("§7🔇 屏蔽声音 (需魔女化" + silenceThreshold + ") §r🔇");
@@ -166,9 +166,10 @@ public class ImitateScreen extends Screen {
                     }
                     if (client != null && client.player != null) {
                         try {
-                            int stage = witchStage;
+                            com.kuilunfuzhe.monvhua.WitchStage witchStageEnum = com.kuilunfuzhe.monvhua.WitchStage.fromScore(witchScore);
+                            int stage = witchStageEnum.ordinal() + 1;
                             ImitateConfig config = ImitateConfig.getInstance();
-                            double radius = config != null ? config.getSilenceRadius(stage) : 10.0;
+                            double radius = config != null ? config.getSilenceRadius(Math.min(stage, 7)) : 10.0;
                             client.setScreen(new SilenceTargetScreen(radius));
                         } catch (Exception e) {
                             client.setScreen(new SilenceTargetScreen(10.0));
