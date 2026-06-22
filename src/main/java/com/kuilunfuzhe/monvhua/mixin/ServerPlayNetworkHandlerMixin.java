@@ -1,12 +1,15 @@
 package com.kuilunfuzhe.monvhua.mixin;
 
+import com.kuilunfuzhe.monvhua.WitchStage;
 import com.kuilunfuzhe.monvhua.features.imitate.ImitateManager;
+import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
 import com.kuilunfuzhe.monvhua.network.imitate.SilenceServerManager;
 import net.minecraft.network.message.SignedMessage;
 import net.minecraft.server.network.ServerPlayNetworkHandler;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.math.Vec3d;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -62,11 +65,47 @@ public abstract class ServerPlayNetworkHandlerMixin {
                 .append(Text.literal(" └─ ").formatted(Formatting.GRAY))
                 .append(garbledText);
 
-        for (ServerPlayerEntity recipient : Objects.requireNonNull(player.getServer()).getPlayerManager().getPlayerList()) {
-            if (SilenceServerManager.isPlayerSilenced(recipient.getUuid())) {
-                recipient.sendMessage(silenceMessage, false);
+        if (ImitateManager.isImitating(player)) {
+            Vec3d center;
+            double radius;
+
+            if (ImitateManager.hasAreaImitate(player)) {
+                ImitateManager.AreaInfo areaInfo = ImitateManager.getAreaInfo(player);
+                center = new Vec3d(areaInfo.centerX, areaInfo.centerY, areaInfo.centerZ);
+                radius = areaInfo.radius;
             } else {
-                recipient.sendMessage(normalMessage, false);
+                center = player.getPos();
+                int stage = WitchStage.fromScore(ImitateManager.getWitchScore(player)).ordinal() + 1;
+                ImitateConfig config = ImitateConfig.getInstance();
+                radius = config != null ? config.getImitateRadius(stage) : 5.0;
+            }
+
+            for (ServerPlayerEntity recipient : Objects.requireNonNull(player.getServer()).getPlayerManager().getPlayerList()) {
+                if (recipient.equals(player)) {
+                    if (SilenceServerManager.isPlayerSilenced(recipient.getUuid())) {
+                        recipient.sendMessage(silenceMessage, false);
+                    } else {
+                        recipient.sendMessage(normalMessage, false);
+                    }
+                    continue;
+                }
+
+                double distance = recipient.getPos().distanceTo(center);
+                if (distance <= radius) {
+                    if (SilenceServerManager.isPlayerSilenced(recipient.getUuid())) {
+                        recipient.sendMessage(silenceMessage, false);
+                    } else {
+                        recipient.sendMessage(normalMessage, false);
+                    }
+                }
+            }
+        } else {
+            for (ServerPlayerEntity recipient : Objects.requireNonNull(player.getServer()).getPlayerManager().getPlayerList()) {
+                if (SilenceServerManager.isPlayerSilenced(recipient.getUuid())) {
+                    recipient.sendMessage(silenceMessage, false);
+                } else {
+                    recipient.sendMessage(normalMessage, false);
+                }
             }
         }
 

@@ -1,14 +1,17 @@
 package com.kuilunfuzhe.monvhua.register.imitate;
 
+import com.kuilunfuzhe.monvhua.client.imitate.AreaSelectClientManager;
 import com.kuilunfuzhe.monvhua.client.imitate.ImitateClientManager;
 import com.kuilunfuzhe.monvhua.client.imitate.ImitateCooldownNotifier;
 import com.kuilunfuzhe.monvhua.client.imitate.SoundWaveClientManager;
 import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 import com.kuilunfuzhe.monvhua.gui.imitate.ImitateScreen;
 import com.kuilunfuzhe.monvhua.gui.imitate.SilenceTargetScreen;
+import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateOpenUIPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateSyncS2CPacket;
+import com.kuilunfuzhe.monvhua.network.imitate.AreaImitateSelectPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ResetCooldownsS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SilencePacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SilenceTargetsS2CPacket;
@@ -23,9 +26,11 @@ public class ImitateClientPacketHandler {
         SoundWaveClientManager.initialize();
         ImitateClientManager.initialize();
         ImitateCooldownNotifier.initialize();
+        AreaSelectClientManager.initialize();
 
         SilencePacket.register();
         SilenceTargetsS2CPacket.register();
+        AreaImitateSelectPacket.register();
 
         ClientPlayNetworking.registerGlobalReceiver(ImitateOpenUIPacket.ID, (packet, context) -> {
             context.client().execute(() -> {
@@ -69,8 +74,11 @@ public class ImitateClientPacketHandler {
         ClientPlayNetworking.registerGlobalReceiver(ImitateConfigS2CPacket.ID, (packet, context) -> {
             context.client().execute(() -> {
                 MinecraftClient client = MinecraftClient.getInstance();
+                ImitateConfig newConfig = packet.getConfig();
+                ImitateConfig.setInstance(newConfig);
+                
                 if (client.currentScreen instanceof CombinedConfigScreen screen) {
-                    screen.receiveImitateConfig(packet.getConfig());
+                    screen.receiveImitateConfig(newConfig);
                 }
             });
         });

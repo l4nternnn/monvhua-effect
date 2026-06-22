@@ -57,6 +57,7 @@ import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.network.general_stage.GeneralStagePackets.*;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateSelectPacket;
+import com.kuilunfuzhe.monvhua.network.imitate.AreaImitateSelectPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.RequestImitateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.RequestSilenceTargetsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ResetCooldownsS2CPacket;
@@ -229,6 +230,8 @@ public class MonvhuaMod implements ModInitializer {
         ThroughConfigUpdateC2SPacket.register();
         ImitateSelectPacket.register();
         ImitateSelectPacket.registerHandler();
+        AreaImitateSelectPacket.register();
+        AreaImitateSelectPacket.registerHandler();
         SilencePacket.register();
         RequestSilenceTargetsC2SPacket.register();
         SilenceEffectS2CPacket.register();

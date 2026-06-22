@@ -6,6 +6,7 @@ import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
 import com.kuilunfuzhe.monvhua.features.through.ThroughClientManager;
+import com.kuilunfuzhe.monvhua.client.imitate.AreaSelectClientManager;
 import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
@@ -42,6 +43,7 @@ public class ClientTickHandler {
         // Main key handling tick
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             ThroughClientManager.tick();
+            AreaSelectClientManager.tick(client);
             ActionEditorFragment.tickActive();
             if (client.player == null) return;
             if (PaintOverlayClient.isPaintEditorActive(client)) {

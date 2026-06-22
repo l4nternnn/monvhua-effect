@@ -1,5 +1,7 @@
 package com.kuilunfuzhe.monvhua.gui.imitate;
 
+import com.kuilunfuzhe.monvhua.WitchStage;
+import com.kuilunfuzhe.monvhua.client.imitate.AreaSelectClientManager;
 import com.kuilunfuzhe.monvhua.client.imitate.ImitateClientManager;
 import com.kuilunfuzhe.monvhua.features.imitate.ImitateManager;
 import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
@@ -24,6 +26,7 @@ public class ImitateScreen extends Screen {
     private static final int PADDING = 10;
     private static final int DEFAULT_SOUND_WAVE_THRESHOLD = 60;
     private static final int DEFAULT_SILENCE_THRESHOLD = 70;
+    private static final int DEFAULT_AREA_SELECT_THRESHOLD = 30;
 
     private int panelWidth;
     private int panelHeight;
@@ -32,6 +35,7 @@ public class ImitateScreen extends Screen {
     private final int witchScore;
     private final int soundWaveThreshold;
     private final int silenceThreshold;
+    private final int areaSelectThreshold;
 
     public ImitateScreen(int witchScore) {
         super(Text.literal("模仿"));
@@ -39,6 +43,7 @@ public class ImitateScreen extends Screen {
         ImitateConfig config = ImitateConfig.getInstance();
         this.soundWaveThreshold = config != null ? config.getSoundWaveUnlockThreshold() : DEFAULT_SOUND_WAVE_THRESHOLD;
         this.silenceThreshold = config != null ? config.getSilenceUnlockThreshold() : DEFAULT_SILENCE_THRESHOLD;
+        this.areaSelectThreshold = config != null ? config.getAreaSelectUnlockThreshold() : DEFAULT_AREA_SELECT_THRESHOLD;
     }
 
     @Override
@@ -48,7 +53,7 @@ public class ImitateScreen extends Screen {
         int totalButtons = ImitateManager.ROLES.length;
         int rows = (int) Math.ceil((double) totalButtons / COLUMNS);
 
-        int extraFooterHeight = 60;
+        int extraFooterHeight = 90;
 
         panelWidth = COLUMNS * (BUTTON_WIDTH + BUTTON_SPACING) - BUTTON_SPACING + PADDING * 2;
         panelHeight = HEADER_HEIGHT + rows * (BUTTON_HEIGHT + BUTTON_SPACING) - BUTTON_SPACING + FOOTER_HEIGHT + PADDING * 2 + extraFooterHeight;
@@ -166,10 +171,9 @@ public class ImitateScreen extends Screen {
                     }
                     if (client != null && client.player != null) {
                         try {
-                            com.kuilunfuzhe.monvhua.WitchStage witchStageEnum = com.kuilunfuzhe.monvhua.WitchStage.fromScore(witchScore);
-                            int stage = witchStageEnum.ordinal() + 1;
+                            int stage = WitchStage.fromScore(witchScore).ordinal() + 1;
                             ImitateConfig config = ImitateConfig.getInstance();
-                            double radius = config != null ? config.getSilenceRadius(Math.min(stage, 7)) : 10.0;
+                            double radius = config != null ? config.getSilenceRadius(stage) : 10.0;
                             client.setScreen(new SilenceTargetScreen(radius));
                         } catch (Exception e) {
                             client.setScreen(new SilenceTargetScreen(10.0));
@@ -179,6 +183,30 @@ public class ImitateScreen extends Screen {
                 .dimensions(silenceX, silenceY, silenceWidth, BUTTON_HEIGHT)
                 .build();
         addDrawableChild(silenceBtn);
+
+        int areaSelectY = silenceY + BUTTON_HEIGHT + 10;
+        int areaSelectWidth = 220;
+        int areaSelectX = panelX + (panelWidth - areaSelectWidth) / 2;
+
+        boolean canUseAreaSelect = witchScore >= areaSelectThreshold;
+        Text areaSelectText = canUseAreaSelect 
+                ? Text.literal("§a◎ 区域选择模仿 §r◎") 
+                : Text.literal("§7◎ 区域选择模仿 (需魔女化" + areaSelectThreshold + ") §r◎");
+        ButtonWidget areaSelectBtn = ButtonWidget.builder(areaSelectText, button -> {
+                    if (!canUseAreaSelect) {
+                        if (client != null && client.player != null) {
+                            client.player.sendMessage(Text.literal("§c魔女化不足，需要达到 " + areaSelectThreshold + " 才能使用区域选择模仿"), true);
+                        }
+                        return;
+                    }
+                    if (client != null) {
+                        AreaSelectClientManager.startSelecting(witchScore);
+                        client.setScreen(null);
+                    }
+                })
+                .dimensions(areaSelectX, areaSelectY, areaSelectWidth, BUTTON_HEIGHT)
+                .build();
+        addDrawableChild(areaSelectBtn);
     }
 
     @Override

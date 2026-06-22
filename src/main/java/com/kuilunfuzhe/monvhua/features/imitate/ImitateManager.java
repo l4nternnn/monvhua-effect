@@ -26,6 +26,21 @@ public class ImitateManager {
     private static final Map<UUID, Long> soundWaveCooldownEnd = new ConcurrentHashMap<>();
     private static final Map<UUID, Long> silenceCooldownEnd = new ConcurrentHashMap<>();
     private static final Map<UUID, Boolean> notifiedImitateEnd = new ConcurrentHashMap<>();
+    private static final Map<UUID, AreaInfo> areaImitateMap = new ConcurrentHashMap<>();
+
+    public static class AreaInfo {
+        public final double centerX;
+        public final double centerY;
+        public final double centerZ;
+        public final double radius;
+
+        public AreaInfo(double centerX, double centerY, double centerZ, double radius) {
+            this.centerX = centerX;
+            this.centerY = centerY;
+            this.centerZ = centerZ;
+            this.radius = radius;
+        }
+    }
 
     public static final String[] ROLES = {
             "樱羽艾玛",
@@ -82,6 +97,7 @@ public class ImitateManager {
         }
 
         imitateMap.put(player.getUuid(), roleName);
+        areaImitateMap.remove(player.getUuid());
 
         int stage = getPlayerStage(player);
         ImitateConfig config = ImitateConfig.getInstance();
@@ -106,9 +122,42 @@ public class ImitateManager {
         notifiedImitateEnd.remove(player.getUuid());
     }
 
+    public static void setAreaImitate(ServerPlayerEntity player, String roleName, double centerX, double centerY, double centerZ, double radius) {
+        if (isInSwitchCooldown(player)) {
+            player.sendMessage(Text.literal("§c模仿冷却中，请等待").append(Text.literal(String.valueOf(getSwitchCooldownRemaining(player))).formatted(Formatting.RED)).append(Text.literal("秒")), true);
+            return;
+        }
+
+        imitateMap.put(player.getUuid(), roleName);
+        areaImitateMap.put(player.getUuid(), new AreaInfo(centerX, centerY, centerZ, radius));
+
+        int stage = getPlayerStage(player);
+        ImitateConfig config = ImitateConfig.getInstance();
+        int duration = config.getDuration(stage);
+        int cooldown = config.getSwitchCooldown(stage);
+
+        LOGGER.info("设置区域模仿: 玩家={}, 角色={}, 阶段={}, 持续时间={}, 切换冷却={}, 中心=({},{},{}), 范围={}", 
+            player.getName().getString(), roleName, stage, duration, cooldown, centerX, centerY, centerZ, radius);
+
+        if (duration > 0) {
+            long endTime = System.currentTimeMillis() + duration * 1000L;
+            imitateEndTime.put(player.getUuid(), endTime);
+        }
+
+        if (cooldown > 0) {
+            long cooldownEnd = System.currentTimeMillis() + cooldown * 1000L;
+            switchCooldownEnd.put(player.getUuid(), cooldownEnd);
+        }
+
+        player.sendMessage(Text.literal("§a开始区域模仿 ").append(getColoredRoleName(roleName)), true);
+        player.sendMessage(Text.literal("§a你已开始区域模仿 ").append(getColoredRoleName(roleName)).append(Text.literal("§a，范围: " + radius + "格")).formatted(Formatting.GREEN), false);
+        notifiedImitateEnd.remove(player.getUuid());
+    }
+
     public static void clearImitate(ServerPlayerEntity player) {
         imitateMap.remove(player.getUuid());
         imitateEndTime.remove(player.getUuid());
+        areaImitateMap.remove(player.getUuid());
 
         int stage = getPlayerStage(player);
         ImitateConfig config = ImitateConfig.getInstance();
@@ -120,6 +169,14 @@ public class ImitateManager {
         }
 
         player.sendMessage(Text.literal("§a已取消模仿"), true);
+    }
+
+    public static AreaInfo getAreaInfo(ServerPlayerEntity player) {
+        return areaImitateMap.get(player.getUuid());
+    }
+
+    public static boolean hasAreaImitate(ServerPlayerEntity player) {
+        return areaImitateMap.containsKey(player.getUuid());
     }
 
     public static String getImitateName(ServerPlayerEntity player) {
@@ -196,6 +253,7 @@ public class ImitateManager {
                 }
                 imitateMap.remove(uuid);
                 imitateEndTime.remove(uuid);
+                areaImitateMap.remove(uuid);
             }
         });
     }

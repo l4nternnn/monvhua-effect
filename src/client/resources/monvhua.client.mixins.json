@@ -44,7 +44,8 @@
 		"ThroughLookLockMixin",
 		"ThroughPhaseInputMixin",
 		"ThroughStalledMotionMixin",
-		"SpriteContentsAccessor"
+		"SpriteContentsAccessor",
+		"MouseMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

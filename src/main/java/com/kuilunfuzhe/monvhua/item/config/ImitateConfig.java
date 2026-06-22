@@ -22,6 +22,7 @@ public class ImitateConfig {
 
     public int soundWaveUnlockThreshold = 60;
     public int silenceUnlockThreshold = 70;
+    public int areaSelectUnlockThreshold = 30;
     public StageConfig[] stages = new StageConfig[STAGES];
 
     public static class StageConfig {
@@ -34,6 +35,7 @@ public class ImitateConfig {
         public double silenceRadius = 10.0;
         public int silenceDuration = 10;
         public int silenceCooldown = 0;
+        public double imitateRadius = 5.0;
     }
 
     public ImitateConfig() {
@@ -96,6 +98,7 @@ public class ImitateConfig {
             config.stages[i].silenceRadius = Math.max(1.0, config.stages[i].silenceRadius);
             config.stages[i].silenceDuration = Math.max(1, config.stages[i].silenceDuration);
             config.stages[i].silenceCooldown = Math.max(0, config.stages[i].silenceCooldown);
+            config.stages[i].imitateRadius = Math.max(1.0, config.stages[i].imitateRadius);
         }
         return config;
     }
@@ -114,6 +117,7 @@ public class ImitateConfig {
             config.stages[i].silenceRadius = 10.0 + stage * 1.0;
             config.stages[i].silenceDuration = 10 + stage * 2;
             config.stages[i].silenceCooldown = 0;
+            config.stages[i].imitateRadius = 5.0;
         }
         return config;
     }
@@ -146,6 +150,7 @@ public class ImitateConfig {
     public double getSilenceRadius(int stage) { return stages[stage - 1].silenceRadius; }
     public int getSilenceDuration(int stage) { return stages[stage - 1].silenceDuration; }
     public int getSilenceCooldown(int stage) { return stages[stage - 1].silenceCooldown; }
+    public double getImitateRadius(int stage) { return stages[stage - 1].imitateRadius; }
 
     public void setDuration(int stage, int val) { stages[stage - 1].durationSeconds = Math.max(0, val); save(); }
     public void setSwitchCooldown(int stage, int val) { stages[stage - 1].switchCooldownSeconds = Math.max(0, val); save(); }
@@ -155,9 +160,12 @@ public class ImitateConfig {
     public void setSilenceRadius(int stage, double val) { stages[stage - 1].silenceRadius = Math.max(1.0, val); save(); }
     public void setSilenceDuration(int stage, int val) { stages[stage - 1].silenceDuration = Math.max(1, val); save(); }
     public void setSilenceCooldown(int stage, int val) { stages[stage - 1].silenceCooldown = Math.max(0, val); save(); }
+    public void setImitateRadius(int stage, double val) { stages[stage - 1].imitateRadius = Math.max(1.0, val); save(); }
 
     public int getSoundWaveUnlockThreshold() { return soundWaveUnlockThreshold; }
     public int getSilenceUnlockThreshold() { return silenceUnlockThreshold; }
+    public int getAreaSelectUnlockThreshold() { return areaSelectUnlockThreshold; }
     public void setSoundWaveUnlockThreshold(int val) { soundWaveUnlockThreshold = Math.max(0, Math.min(100, val)); save(); }
     public void setSilenceUnlockThreshold(int val) { silenceUnlockThreshold = Math.max(0, Math.min(100, val)); save(); }
+    public void setAreaSelectUnlockThreshold(int val) { areaSelectUnlockThreshold = Math.max(0, Math.min(100, val)); save(); }
 }
