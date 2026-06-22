@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.gui.imitate;
 
 import com.kuilunfuzhe.monvhua.WitchStage;
+import com.kuilunfuzhe.monvhua.client.imitate.AreaImitateClientManager;
 import com.kuilunfuzhe.monvhua.client.imitate.AreaSelectClientManager;
 import com.kuilunfuzhe.monvhua.client.imitate.ImitateClientManager;
 import com.kuilunfuzhe.monvhua.features.imitate.ImitateManager;
@@ -121,6 +122,7 @@ public class ImitateScreen extends Screen {
         addDrawableChild(resetBtn);
 
         ButtonWidget cancelBtn = ButtonWidget.builder(Text.literal("§c✖ 取消模仿"), button -> {
+                    AreaImitateClientManager.clearAreaImitate();
                     ClientPlayNetworking.send(new ImitateSelectPacket("cancel"));
                     if (client != null) {
                         client.setScreen(null);

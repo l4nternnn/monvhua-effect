@@ -14,6 +14,7 @@ public class ImitateClientManager {
         if (roleName == null || roleName.isEmpty()) {
             imitateMap.remove(uuid);
             imitateEndTime.remove(uuid);
+            AreaImitateClientManager.clearAreaImitate();
         } else {
             imitateMap.put(uuid, roleName);
             imitateEndTime.put(uuid, endTime);

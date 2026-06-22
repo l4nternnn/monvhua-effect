@@ -74,7 +74,9 @@ public class ClientTickHandler {
             if (KeyBindingHandler.markKey.wasPressed()) {
                 ItemStack mainHand = client.player.getMainHandStack();
 
-                if (mainHand.getItem() == Evil_Eyes.CLAIRVOYANCE_ITEM) {
+                if (mainHand.getItem() == com.kuilunfuzhe.monvhua.item.imitate.ImitateItem.IMITATE_ITEM) {
+                    AreaSelectClientManager.markPosition();
+                } else if (mainHand.getItem() == Evil_Eyes.CLAIRVOYANCE_ITEM) {
                     Vec3d eye = client.player.getEyePos();
                     Vec3d look = client.player.getRotationVec(1.0f);
                     Vec3d end = eye.add(look.multiply(50.0));

@@ -1,6 +1,8 @@
 package com.kuilunfuzhe.monvhua.gui.imitate;
 
 import com.kuilunfuzhe.monvhua.WitchStage;
+import com.kuilunfuzhe.monvhua.client.imitate.AreaImitateClientManager;
+import com.kuilunfuzhe.monvhua.client.imitate.AreaSelectClientManager;
 import com.kuilunfuzhe.monvhua.client.imitate.ImitateClientManager;
 import com.kuilunfuzhe.monvhua.features.imitate.ImitateManager;
 import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
@@ -79,6 +81,7 @@ public class AreaImitateRoleScreen extends Screen {
                                 return;
                             }
                         }
+                        AreaImitateClientManager.setAreaImitate(center, radius);
                         ClientPlayNetworking.send(new AreaImitateSelectPacket(role, center.x, center.y, center.z, radius));
                         if (client != null) {
                             client.setScreen(null);
@@ -102,6 +105,7 @@ public class AreaImitateRoleScreen extends Screen {
         int footerStartX = panelX + (panelWidth - totalWidth) / 2;
 
         ButtonWidget cancelBtn = ButtonWidget.builder(Text.literal("§c✖ 取消"), button -> {
+                    AreaSelectClientManager.stopSelecting();
                     if (client != null) {
                         client.setScreen(new ImitateScreen(witchScore));
                     }
