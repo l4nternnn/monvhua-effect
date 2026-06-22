@@ -97,13 +97,13 @@ public class GlobalConfigManager {
     /** 各阶段默认配置，阶段越高观察tick越少、限额越宽松 */
     private StageConfig getDefaultConfig(int stage) {
         return switch (stage) {
-            case 1 -> new StageConfig(10, 3, 0, 5, 40, 2, 2, 1.0D, 8.0D, 2.0D);
-            case 2 -> new StageConfig(10, 4, 6, 20, 40, 3, 2, 1.0D, 8.0D, 2.5D);
-            case 3 -> new StageConfig(8, 5, 21, 40, 40, 5, 2, 1.2D, 9.0D, 3.0D);
-            case 4 -> new StageConfig(8, 6, 41, 60, 40, 7, 2, 1.2D, 9.0D, 3.5D);
-            case 5 -> new StageConfig(6, 7, 61, 70, 40, 8, 2, 1.5D, 10.0D, 4.0D);
-            case 6 -> new StageConfig(6, 8, 71, 80, 40, 9, 2, 1.5D, 10.0D, 4.5D);
-            case 7 -> new StageConfig(5, 10, 81, 100, 40, 10, 2, 2.0D, 12.0D, 5.0D);
+            case 1 -> new StageConfig(10, 3, 0, 9, 40, 2, 2, 1.0D, 8.0D, 2.0D);
+            case 2 -> new StageConfig(10, 4, 10, 24, 40, 3, 2, 1.0D, 8.0D, 2.5D);
+            case 3 -> new StageConfig(8, 5, 25, 44, 40, 5, 2, 1.2D, 9.0D, 3.0D);
+            case 4 -> new StageConfig(8, 6, 45, 59, 40, 7, 2, 1.2D, 9.0D, 3.5D);
+            case 5 -> new StageConfig(6, 7, 60, 69, 40, 8, 2, 1.5D, 10.0D, 4.0D);
+            case 6 -> new StageConfig(6, 8, 70, 79, 40, 9, 2, 1.5D, 10.0D, 4.5D);
+            case 7 -> new StageConfig(5, 10, 80, 100, 40, 10, 2, 2.0D, 12.0D, 5.0D);
             default -> new StageConfig(10, 5, 0, 100, 40, 12, 2, 1.0D, 8.0D, 2.0D);
         };
     }
