@@ -72,9 +72,9 @@ public final class CarriedPlayerViewState {
 			clearHeadViewRotation(carried.getId());
 			return;
 		}
-		float baseHeadYaw = CarryPoseTuning.HEAD_YAW + CarryPoseTuning.CUSTOM_HEAD_YAW;
-		float baseHeadPitch = CarryPoseTuning.HEAD_PITCH + CarryPoseTuning.CUSTOM_HEAD_PITCH;
-		float baseHeadRoll = CarryPoseTuning.HEAD_ROLL + CarryPoseTuning.CUSTOM_HEAD_ROLL;
+		float baseHeadYaw = CarryAttachedRenderMath.getCarriedBaseHeadYaw(carried);
+		float baseHeadPitch = CarryAttachedRenderMath.getCarriedBaseHeadPitch(carried);
+		float baseHeadRoll = CarryAttachedRenderMath.getCarriedBaseHeadRoll(carried);
 		CarryAttachedRenderMath.HeadViewOffset viewOffset = CarryAttachedRenderMath.getCarriedHeadViewOffsetForWorldView(
 				carrier,
 				carried,
@@ -143,8 +143,12 @@ public final class CarriedPlayerViewState {
 	}
 
 	private static void updateHeadViewRotation(int entityId, float headLocalYawDegrees, float headLocalPitchDegrees) {
-		float baseHeadYaw = CarryPoseTuning.HEAD_YAW + CarryPoseTuning.CUSTOM_HEAD_YAW;
-		float baseHeadPitch = CarryPoseTuning.HEAD_PITCH + CarryPoseTuning.CUSTOM_HEAD_PITCH;
+		float baseHeadYaw = CarryPoseClientState.isDragCarried(entityId)
+				? CarryPoseTuning.DRAG_HEAD_YAW
+				: CarryPoseTuning.HEAD_YAW + CarryPoseTuning.CUSTOM_HEAD_YAW;
+		float baseHeadPitch = CarryPoseClientState.isDragCarried(entityId)
+				? CarryPoseTuning.DRAG_HEAD_PITCH
+				: CarryPoseTuning.HEAD_PITCH + CarryPoseTuning.CUSTOM_HEAD_PITCH;
 
 		headInitialized = true;
 		headCarriedEntityId = entityId;

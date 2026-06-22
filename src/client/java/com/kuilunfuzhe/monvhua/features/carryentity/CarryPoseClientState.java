@@ -42,7 +42,13 @@ public final class CarryPoseClientState {
 
 	public static boolean isCarried(int entityId) {
 		PoseData data = POSES.get(entityId);
-		return data != null && data.pose == CarryPoseSyncS2CPacket.POSE_CARRIED;
+		return data != null && (data.pose == CarryPoseSyncS2CPacket.POSE_CARRIED
+				|| data.pose == CarryPoseSyncS2CPacket.POSE_CARRIED_DRAG);
+	}
+
+	public static boolean isDragCarried(int entityId) {
+		PoseData data = POSES.get(entityId);
+		return data != null && data.pose == CarryPoseSyncS2CPacket.POSE_CARRIED_DRAG;
 	}
 
 	public static int getCarrierId(int entityId) {

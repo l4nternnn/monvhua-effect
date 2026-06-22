@@ -93,6 +93,10 @@ public final class CarryPoseModelApplier {
 
 	private static void applyCarriedPose(PlayerEntityModel model, int entityId) {
 		// 身体
+		if (CarryPoseClientState.isDragCarried(entityId)) {
+			applyCarriedDragPose(model, entityId);
+			return;
+		}
 		model.body.pitch = CarryPoseTuning.BODY_PITCH + CarryPoseTuning.CUSTOM_BODY_PITCH;
 		model.body.yaw = CarryPoseTuning.BODY_YAW + CarryPoseTuning.CUSTOM_BODY_YAW;
 		model.body.roll = CarryPoseTuning.BODY_ROLL + CarryPoseTuning.CUSTOM_BODY_ROLL;
@@ -117,6 +121,35 @@ public final class CarryPoseModelApplier {
 		model.head.pitch = CarryPoseTuning.HEAD_PITCH + CarryPoseTuning.CUSTOM_HEAD_PITCH;
 		model.head.yaw = CarryPoseTuning.HEAD_YAW + CarryPoseTuning.CUSTOM_HEAD_YAW;
 		model.head.roll = CarryPoseTuning.HEAD_ROLL + CarryPoseTuning.CUSTOM_HEAD_ROLL;
+		updateCarriedHeadViewRotation(entityId);
+		if (CarriedPlayerViewState.shouldApplyHeadViewRotation(entityId)) {
+			model.head.pitch = CarriedPlayerViewState.getHeadPitchRadians();
+			model.head.yaw = CarriedPlayerViewState.getHeadYawRadians();
+		}
+	}
+
+	private static void applyCarriedDragPose(PlayerEntityModel model, int entityId) {
+		model.body.pitch = CarryPoseTuning.DRAG_BODY_PITCH;
+		model.body.yaw = CarryPoseTuning.DRAG_BODY_YAW;
+		model.body.roll = CarryPoseTuning.DRAG_BODY_ROLL;
+
+		model.rightArm.pitch = CarryPoseTuning.DRAG_RIGHT_ARM_PITCH;
+		model.rightArm.yaw = CarryPoseTuning.DRAG_RIGHT_ARM_YAW;
+		model.rightArm.roll = CarryPoseTuning.DRAG_RIGHT_ARM_ROLL;
+		model.leftArm.pitch = CarryPoseTuning.DRAG_LEFT_ARM_PITCH;
+		model.leftArm.yaw = CarryPoseTuning.DRAG_LEFT_ARM_YAW;
+		model.leftArm.roll = CarryPoseTuning.DRAG_LEFT_ARM_ROLL;
+
+		model.rightLeg.pitch = CarryPoseTuning.DRAG_RIGHT_LEG_PITCH;
+		model.rightLeg.yaw = CarryPoseTuning.DRAG_RIGHT_LEG_YAW;
+		model.rightLeg.roll = CarryPoseTuning.DRAG_RIGHT_LEG_ROLL;
+		model.leftLeg.pitch = CarryPoseTuning.DRAG_LEFT_LEG_PITCH;
+		model.leftLeg.yaw = CarryPoseTuning.DRAG_LEFT_LEG_YAW;
+		model.leftLeg.roll = CarryPoseTuning.DRAG_LEFT_LEG_ROLL;
+
+		model.head.pitch = CarryPoseTuning.DRAG_HEAD_PITCH;
+		model.head.yaw = CarryPoseTuning.DRAG_HEAD_YAW;
+		model.head.roll = CarryPoseTuning.DRAG_HEAD_ROLL;
 		updateCarriedHeadViewRotation(entityId);
 		if (CarriedPlayerViewState.shouldApplyHeadViewRotation(entityId)) {
 			model.head.pitch = CarriedPlayerViewState.getHeadPitchRadians();

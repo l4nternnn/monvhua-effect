@@ -83,7 +83,7 @@ public abstract class PlayerEntityRendererCarryPoseMixin {
 		}
 
 		matrices.push();
-		CarryAttachedRenderMath.applyCarriedModelHorizontalTransform(matrices, state.baseScale);
+		CarryAttachedRenderMath.applyCarriedModelHorizontalTransform(matrices, state.baseScale, monvhua$isDragCarriedTransform(state));
 	}
 
 	@Inject(method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
@@ -169,5 +169,14 @@ public abstract class PlayerEntityRendererCarryPoseMixin {
 			return true;
 		}
 		return state instanceof PlayerEntityRenderState playerState && CarryPoseClientState.isCarried(playerState.id);
+	}
+
+	@Unique
+	private static boolean monvhua$isDragCarriedTransform(LivingEntityRenderState state) {
+		if (CarryAttachmentRenderState.isRenderingAttachedCarriedEntity()) {
+			int entityId = CarryAttachmentRenderState.getRenderingAttachedCarriedEntityId();
+			return entityId >= 0 && CarryPoseClientState.isDragCarried(entityId);
+		}
+		return state instanceof PlayerEntityRenderState playerState && CarryPoseClientState.isDragCarried(playerState.id);
 	}
 }

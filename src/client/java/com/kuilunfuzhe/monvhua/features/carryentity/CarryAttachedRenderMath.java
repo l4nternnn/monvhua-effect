@@ -40,6 +40,10 @@ public final class CarryAttachedRenderMath {
 	public static final float CARRIED_MODEL_ROTATION_Y_DEGREES = -75.0F;
 	// 被抱者模型绕 Z 轴的翻滚角度，单位：度；用于让身体向左/右侧倾斜。
 	public static final float CARRIED_MODEL_ROTATION_Z_DEGREES = -10.0F;
+	public static final float DRAG_CARRIED_MODEL_ROTATION_X_DEGREES = -102.5001F;
+	public static final float DRAG_CARRIED_MODEL_ROTATION_Y_DEGREES = 0.0002F;
+	public static final float DRAG_CARRIED_MODEL_ROTATION_Z_DEGREES = -179.9999F;
+	public static final float DRAG_CARRIED_MODEL_FACE_AXIS_FIX_X_DEGREES = 180.0F;
 
 	// 沿被抱者“头 -> 脚 / 脚 -> 头”身体长轴的摄像机偏移，单位：方块；用于把第一人称原点推到头部附近。
 	// 注意：这里不直接放到局部 Y，因为当前渲染矩阵里局部 Y 的移动轨迹会垂直于身体长轴。
@@ -57,6 +61,27 @@ public final class CarryAttachedRenderMath {
 	private static final Vector3f CAMERA_LOCAL_RIGHT = new Vector3f(-1.0F, 0.0F, 0.0F);
 
 	private CarryAttachedRenderMath() {
+	}
+
+	public static float getCarriedBaseHeadYaw(Entity carried) {
+		if (isDragCarried(carried)) {
+			return CarryPoseTuning.DRAG_HEAD_YAW;
+		}
+		return CarryPoseTuning.HEAD_YAW + CarryPoseTuning.CUSTOM_HEAD_YAW;
+	}
+
+	public static float getCarriedBaseHeadPitch(Entity carried) {
+		if (isDragCarried(carried)) {
+			return CarryPoseTuning.DRAG_HEAD_PITCH;
+		}
+		return CarryPoseTuning.HEAD_PITCH + CarryPoseTuning.CUSTOM_HEAD_PITCH;
+	}
+
+	public static float getCarriedBaseHeadRoll(Entity carried) {
+		if (isDragCarried(carried)) {
+			return CarryPoseTuning.DRAG_HEAD_ROLL;
+		}
+		return CarryPoseTuning.HEAD_ROLL + CarryPoseTuning.CUSTOM_HEAD_ROLL;
 	}
 
 	public static void applyAttachedTransform(MatrixStack matrices) {
@@ -117,7 +142,7 @@ public final class CarryAttachedRenderMath {
 	public static Vec3d getCarriedCameraHeadWorldPos(Entity carrier, Entity carried, float tickProgress) {
 		MatrixStack matrices = createCarrierWorldMatrix(carrier, tickProgress);
 		applyAttachedTransform(matrices, carrier, carried);
-		applyCarriedModelHorizontalTransform(matrices, 1.0F);
+		applyCarriedModelHorizontalTransform(matrices, 1.0F, isDragCarried(carried));
 		return transformLocalPoint(matrices, CARRIED_CAMERA_HEAD_LOCAL_X, CARRIED_CAMERA_HEAD_LOCAL_Y, CARRIED_CAMERA_HEAD_LOCAL_Z);
 	}
 
@@ -157,9 +182,9 @@ public final class CarryAttachedRenderMath {
 	}
 
 	public static DebugTransform getCarriedBaseHeadDebugTransform(Entity carrier, Entity carried, float tickProgress) {
-		float baseHeadYaw = CarryPoseTuning.HEAD_YAW + CarryPoseTuning.CUSTOM_HEAD_YAW;
-		float baseHeadPitch = CarryPoseTuning.HEAD_PITCH + CarryPoseTuning.CUSTOM_HEAD_PITCH;
-		float baseHeadRoll = CarryPoseTuning.HEAD_ROLL + CarryPoseTuning.CUSTOM_HEAD_ROLL;
+		float baseHeadYaw = getCarriedBaseHeadYaw(carried);
+		float baseHeadPitch = getCarriedBaseHeadPitch(carried);
+		float baseHeadRoll = getCarriedBaseHeadRoll(carried);
 		return createDebugTransform(createCarriedBaseHeadMatrix(
 				carrier,
 				carried,
@@ -189,9 +214,9 @@ public final class CarryAttachedRenderMath {
 	}
 
 	private static MatrixStack createConfiguredCarriedViewMatrix(Entity carrier, Entity carried, float tickProgress, float localYawDegrees, float localPitchDegrees) {
-		float baseHeadYaw = CarryPoseTuning.HEAD_YAW + CarryPoseTuning.CUSTOM_HEAD_YAW;
-		float baseHeadPitch = CarryPoseTuning.HEAD_PITCH + CarryPoseTuning.CUSTOM_HEAD_PITCH;
-		float baseHeadRoll = CarryPoseTuning.HEAD_ROLL + CarryPoseTuning.CUSTOM_HEAD_ROLL;
+		float baseHeadYaw = getCarriedBaseHeadYaw(carried);
+		float baseHeadPitch = getCarriedBaseHeadPitch(carried);
+		float baseHeadRoll = getCarriedBaseHeadRoll(carried);
 		return createCarriedViewMatrix(
 				carrier,
 				carried,
@@ -336,7 +361,7 @@ public final class CarryAttachedRenderMath {
 	private static MatrixStack createCarriedHeadParentMatrix(Entity carrier, Entity carried, float tickProgress) {
 		MatrixStack matrices = createCarrierWorldMatrix(carrier, tickProgress);
 		applyAttachedTransform(matrices, carrier, carried);
-		applyCarriedModelHorizontalTransform(matrices, 1.0F);
+		applyCarriedModelHorizontalTransform(matrices, 1.0F, isDragCarried(carried));
 		return matrices;
 	}
 
@@ -355,9 +380,17 @@ public final class CarryAttachedRenderMath {
 	}
 
 	public static void applyCarriedModelHorizontalTransform(MatrixStack matrices, float baseScale) {
+		applyCarriedModelHorizontalTransform(matrices, baseScale, false);
+	}
+
+	public static void applyCarriedModelHorizontalTransform(MatrixStack matrices, float baseScale, boolean dragPose) {
 		float pivotY = CARRIED_MODEL_PIVOT_Y / baseScale;
 		matrices.translate(0.0F, pivotY, 0.0F);
-		applyCarriedModelRotation(matrices);
+		if (dragPose) {
+			applyDragCarriedModelRotation(matrices);
+		} else {
+			applyCarriedModelRotation(matrices);
+		}
 		matrices.translate(0.0F, -pivotY, 0.0F);
 	}
 
@@ -370,6 +403,21 @@ public final class CarryAttachedRenderMath {
 		}
 		if (CARRIED_MODEL_ROTATION_Z_DEGREES != 0.0F) {
 			matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(CARRIED_MODEL_ROTATION_Z_DEGREES));
+		}
+	}
+
+	public static void applyDragCarriedModelRotation(MatrixStack matrices) {
+		if (DRAG_CARRIED_MODEL_ROTATION_Y_DEGREES != 0.0F) {
+			matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(DRAG_CARRIED_MODEL_ROTATION_Y_DEGREES));
+		}
+		if (DRAG_CARRIED_MODEL_ROTATION_X_DEGREES != 0.0F) {
+			matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(DRAG_CARRIED_MODEL_ROTATION_X_DEGREES));
+		}
+		if (DRAG_CARRIED_MODEL_ROTATION_Z_DEGREES != 0.0F) {
+			matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(DRAG_CARRIED_MODEL_ROTATION_Z_DEGREES));
+		}
+		if (DRAG_CARRIED_MODEL_FACE_AXIS_FIX_X_DEGREES != 0.0F) {
+			matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(DRAG_CARRIED_MODEL_FACE_AXIS_FIX_X_DEGREES));
 		}
 	}
 
@@ -427,6 +475,10 @@ public final class CarryAttachedRenderMath {
 		Matrix4f matrix = matrices.peek().getPositionMatrix();
 		Vector4f direction = matrix.transform(new Vector4f(localX, localY, localZ, 0.0F));
 		return new Vector3f(direction.x, direction.y, direction.z).normalize();
+	}
+
+	private static boolean isDragCarried(Entity carried) {
+		return carried != null && CarryPoseClientState.isDragCarried(carried.getId());
 	}
 
 	private static DebugTransform createDebugTransform(MatrixStack matrices) {

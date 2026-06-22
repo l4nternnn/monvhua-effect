@@ -52,7 +52,7 @@ public abstract class CarrierAttachedEntityRenderMixin {
 		matrices.push();
 		CarryAttachedRenderMath.applyAttachedTransform(matrices, carrier, carried);
 
-		CarryAttachmentRenderState.beginAttachedCarriedEntityRender();
+		CarryAttachmentRenderState.beginAttachedCarriedEntityRender(carried.getId());
 		try {
 			dispatcher.render(carried, 0.0D, 0.0D, 0.0D, tickProgress, matrices, vertexConsumers, light);
 		} finally {

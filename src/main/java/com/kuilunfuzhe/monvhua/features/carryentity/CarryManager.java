@@ -26,6 +26,31 @@ public class CarryManager {
 	private static final double CARRY_BOX_EPSILON = 1.0E-7D;
 	private static final String STAMINA_OBJECTIVE = "stamina";
 
+	public enum CarryPoseMode {
+		PRINCESS(CarryPoseSyncS2CPacket.POSE_CARRIED, "princess"),
+		DRAG(CarryPoseSyncS2CPacket.POSE_CARRIED_DRAG, "drag");
+
+		private final int carriedPacketPose;
+		private final String displayName;
+
+		CarryPoseMode(int carriedPacketPose, String displayName) {
+			this.carriedPacketPose = carriedPacketPose;
+			this.displayName = displayName;
+		}
+
+		public int carriedPacketPose() {
+			return carriedPacketPose;
+		}
+
+		public String displayName() {
+			return displayName;
+		}
+
+		public CarryPoseMode next() {
+			return this == PRINCESS ? DRAG : PRINCESS;
+		}
+	}
+
 	// 搬运者 -> 被搬运实体数据
 	public static final Map<ServerPlayerEntity, CarriedEntityData> CARRIED_ENTITIES = new ConcurrentHashMap<>();
 	// 被搬运实体 -> 搬运者（用于快速挣扎查找）
@@ -39,6 +64,7 @@ public class CarryManager {
 	public static int CARRY_STAMINA_DRAIN_RATE = 1;
 
 	private static final Set<UUID> FALL_DAMAGE_PROCESSING = ConcurrentHashMap.newKeySet();
+	private static final Map<UUID, CarryPoseMode> CARRY_POSE_MODES = new ConcurrentHashMap<>();
 
 	public static class CarriedEntityData {
 		public final Entity entity;
@@ -75,6 +101,23 @@ public class CarryManager {
 		return !shouldDrainCarryExperience(carrier) || getCarryStaminaScore(carrier) >= CARRY_STAMINA_DRAIN_RATE;
 	}
 
+	public static CarryPoseMode getCarryPoseMode(ServerPlayerEntity player) {
+		return CARRY_POSE_MODES.getOrDefault(player.getUuid(), CarryPoseMode.PRINCESS);
+	}
+
+	public static CarryPoseMode setCarryPoseMode(ServerPlayerEntity player, CarryPoseMode mode) {
+		CARRY_POSE_MODES.put(player.getUuid(), mode);
+		CarriedEntityData data = CARRIED_ENTITIES.get(player);
+		if (data != null) {
+			syncCarryPose(player, data.entity, true);
+		}
+		return mode;
+	}
+
+	public static CarryPoseMode toggleCarryPoseMode(ServerPlayerEntity player) {
+		return setCarryPoseMode(player, getCarryPoseMode(player).next());
+	}
+
 	public static void syncCarryPose(ServerPlayerEntity carrier, Entity carried, boolean active) {
 		MinecraftServer server = carrier.getServer();
 		if (server == null) return;
@@ -91,7 +134,7 @@ public class CarryManager {
 
 	private static void sendCarryPose(ServerPlayerEntity receiver, ServerPlayerEntity carrier, Entity carried, boolean active) {
 		int carrierPose = active ? CarryPoseSyncS2CPacket.POSE_CARRIER : CarryPoseSyncS2CPacket.POSE_NONE;
-		int carriedPose = active ? CarryPoseSyncS2CPacket.POSE_CARRIED : CarryPoseSyncS2CPacket.POSE_NONE;
+		int carriedPose = active ? getCarryPoseMode(carrier).carriedPacketPose() : CarryPoseSyncS2CPacket.POSE_NONE;
 		ServerPlayNetworking.send(receiver, new CarryPoseSyncS2CPacket(carrier.getId(), carrierPose, active ? carried.getId() : -1));
 		ServerPlayNetworking.send(receiver, new CarryPoseSyncS2CPacket(carried.getId(), carriedPose, active ? carrier.getId() : -1));
 	}
@@ -279,6 +322,7 @@ public class CarryManager {
 		CARRIED_COOLDOWN.remove(player);
 		STRUGGLE_COUNTER.remove(player);
 		CARRY_STAMINA_TICK_COUNTER.remove(player);
+		CARRY_POSE_MODES.remove(player.getUuid());
 	}
 
 	public static void cleanupCooldowns() {

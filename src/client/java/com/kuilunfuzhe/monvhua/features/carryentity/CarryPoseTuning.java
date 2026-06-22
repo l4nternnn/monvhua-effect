@@ -99,6 +99,26 @@ public final class CarryPoseTuning {
 	// 被抱者头部 roll 附加偏移。
 	public static float CUSTOM_HEAD_ROLL = -0.2F;
 
+	// ========== 拖动姿势额外参数，单位：弧度 ==========
+	public static float DRAG_BODY_PITCH = degreesToRadians(-25.0F);
+	public static float DRAG_BODY_YAW = 0.0F;
+	public static float DRAG_BODY_ROLL = 0.0F;
+	public static float DRAG_RIGHT_ARM_PITCH = 0.0F;
+	public static float DRAG_RIGHT_ARM_YAW = 0.0F;
+	public static float DRAG_RIGHT_ARM_ROLL = 0.0F;
+	public static float DRAG_LEFT_ARM_PITCH = 0.0F;
+	public static float DRAG_LEFT_ARM_YAW = 0.0F;
+	public static float DRAG_LEFT_ARM_ROLL = 0.0F;
+	public static float DRAG_RIGHT_LEG_PITCH = 0.0F;
+	public static float DRAG_RIGHT_LEG_YAW = 0.0F;
+	public static float DRAG_RIGHT_LEG_ROLL = 0.0F;
+	public static float DRAG_LEFT_LEG_PITCH = 0.0F;
+	public static float DRAG_LEFT_LEG_YAW = 0.0F;
+	public static float DRAG_LEFT_LEG_ROLL = 0.0F;
+	public static float DRAG_HEAD_PITCH = degreesToRadians(-25.0F);
+	public static float DRAG_HEAD_YAW = 0.0F;
+	public static float DRAG_HEAD_ROLL = 0.0F;
+
 	// ========== 被抱者第一人称视角限制/头部同步参数 ==========
 	// 开启后，被抱者第一人称视角固定到下面的 local yaw/pitch，不再由鼠标控制；模型头部也不再跟随视角，改由 HEAD_* / CUSTOM_HEAD_* 手调。
 	public static boolean CARRIED_FIXED_VIEW_ENABLED = true;
@@ -140,4 +160,8 @@ public final class CarryPoseTuning {
 	public static float CARRIER_LEFT_ARM_YAW = 0.45F;
 	// 抱人者左臂侧向扭转；通常和右臂 roll 取相反方向。
 	public static float CARRIER_LEFT_ARM_ROLL = -0.32F;
+
+	private static float degreesToRadians(float degrees) {
+		return degrees * ((float) Math.PI / 180.0F);
+	}
 }

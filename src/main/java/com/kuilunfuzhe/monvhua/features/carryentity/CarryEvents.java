@@ -207,7 +207,43 @@ public class CarryEvents {
 					.then(CommandManager.argument("amount", IntegerArgumentType.integer(0, 100))
 							.executes(ctx -> setCarryStaminaDrainRate(ctx, IntegerArgumentType.getInteger(ctx, "amount"))))
 					.executes(ctx -> showCarryStaminaDrainRate(ctx)));
+			dispatcher.register(CommandManager.literal("carry-pose")
+					.requires(source -> source.getEntity() instanceof ServerPlayerEntity)
+					.then(CommandManager.literal("princess")
+							.executes(ctx -> setCarryPoseMode(ctx, CarryManager.CarryPoseMode.PRINCESS)))
+					.then(CommandManager.literal("drag")
+							.executes(ctx -> setCarryPoseMode(ctx, CarryManager.CarryPoseMode.DRAG)))
+					.then(CommandManager.literal("toggle")
+							.executes(ctx -> toggleCarryPoseMode(ctx)))
+					.executes(ctx -> showCarryPoseMode(ctx)));
 		});
+	}
+
+	private static int setCarryPoseMode(com.mojang.brigadier.context.CommandContext<net.minecraft.server.command.ServerCommandSource> ctx, CarryManager.CarryPoseMode mode) {
+		if (!(ctx.getSource().getEntity() instanceof ServerPlayerEntity player)) {
+			return 0;
+		}
+		CarryManager.setCarryPoseMode(player, mode);
+		ctx.getSource().sendMessage(Text.literal("Carry pose: " + mode.displayName()));
+		return 1;
+	}
+
+	private static int toggleCarryPoseMode(com.mojang.brigadier.context.CommandContext<net.minecraft.server.command.ServerCommandSource> ctx) {
+		if (!(ctx.getSource().getEntity() instanceof ServerPlayerEntity player)) {
+			return 0;
+		}
+		CarryManager.CarryPoseMode mode = CarryManager.toggleCarryPoseMode(player);
+		ctx.getSource().sendMessage(Text.literal("Carry pose: " + mode.displayName()));
+		return 1;
+	}
+
+	private static int showCarryPoseMode(com.mojang.brigadier.context.CommandContext<net.minecraft.server.command.ServerCommandSource> ctx) {
+		if (!(ctx.getSource().getEntity() instanceof ServerPlayerEntity player)) {
+			return 0;
+		}
+		CarryManager.CarryPoseMode mode = CarryManager.getCarryPoseMode(player);
+		ctx.getSource().sendMessage(Text.literal("Carry pose: " + mode.displayName() + " (/carry-pose princess|drag|toggle)"));
+		return 1;
 	}
 
 	private static int setCarryStaminaDrainRate(com.mojang.brigadier.context.CommandContext<net.minecraft.server.command.ServerCommandSource> ctx, int amount) {

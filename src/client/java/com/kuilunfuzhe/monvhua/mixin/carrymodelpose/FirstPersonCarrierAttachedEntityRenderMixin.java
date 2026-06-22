@@ -72,9 +72,9 @@ public abstract class FirstPersonCarrierAttachedEntityRenderMixin {
 		int light = WorldRenderer.getLightmapCoordinates(client.world, carried.getBlockPos());
 
 		if (firstPersonSelfCarried) {
-			CarryAttachmentRenderState.beginFirstPersonSelfCarriedEntityRender();
+			CarryAttachmentRenderState.beginFirstPersonSelfCarriedEntityRender(carried.getId());
 		} else {
-			CarryAttachmentRenderState.beginAttachedCarriedEntityRender();
+			CarryAttachmentRenderState.beginAttachedCarriedEntityRender(carried.getId());
 		}
 		try {
 			dispatcher.render(carried, 0.0D, 0.0D, 0.0D, tickProgress, matrices, vertexConsumers, light);

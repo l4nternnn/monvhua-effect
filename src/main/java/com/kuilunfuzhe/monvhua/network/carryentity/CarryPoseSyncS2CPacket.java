@@ -12,6 +12,7 @@ public record CarryPoseSyncS2CPacket(int entityId, int pose, int partnerId) impl
 	public static final int POSE_CARRIER = 1;
 	public static final int POSE_CARRIED = 2;
 	public static final int POSE_BUCKET_CARRIER = 3;
+	public static final int POSE_CARRIED_DRAG = 4;
 
 	public static final CustomPayload.Id<CarryPoseSyncS2CPacket> ID =
 		new CustomPayload.Id<>(Identifier.of("monvhua", "carry_pose_sync"));
