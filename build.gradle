@@ -63,11 +63,17 @@ dependencies {
 
 	// Axiom custom tools compile against Loom's processed runtime jars because the
 	// public API shipped by the current Axiom runtime differs from GitHub master.
+	// These stay compile-only so Axiom remains an optional runtime dependency:
+	// com.moulberry.axiomclientapi, com.moulberry.axiom, and imgui.moulberry92.
 	def axiomApiCompileOnlyJars = fileTree("run/.fabric/processedMods") {
 		include "com_moulberry_axiomclientapi-*.jar"
 	}.files.sort { it.name }
 	def axiomCompileOnlyJars = fileTree("run/.fabric/processedMods") {
 		include "axiom-*.jar"
+	}.files.sort { it.name }
+	def axiomImguiCompileOnlyJars = fileTree("run/.fabric/processedMods") {
+		include "imgui*.jar"
+		include "*imgui*.jar"
 	}.files.sort { it.name }
 	if (axiomApiCompileOnlyJars.empty || axiomCompileOnlyJars.empty) {
 		logger.warn("No processed Axiom jars found in run/.fabric/processedMods; Axiom integration source may not compile until the client has been launched once.")
@@ -78,6 +84,9 @@ dependencies {
 	}
 	if (!axiomCompileOnlyJars.empty) {
 		axiomCompileOnly.add(axiomCompileOnlyJars.last())
+	}
+	if (!axiomImguiCompileOnlyJars.empty) {
+		axiomCompileOnly.add(axiomImguiCompileOnlyJars.last())
 	}
 	clientCompileOnly files(axiomCompileOnly)
 
