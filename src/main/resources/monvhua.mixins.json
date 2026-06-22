@@ -24,8 +24,7 @@
 		"InvertedWallMountedBlockItemMixin",
 		"InvertedWallMountedPlacementMixin",
 		"ServerPlayNetworkHandlerMixin",
-		"ThroughPhaseCollisionMixin",
-		"StyledChatStylesMixin"
+		"ThroughPhaseCollisionMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
