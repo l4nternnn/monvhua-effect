@@ -11,6 +11,8 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler
 import com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient;
 import com.kuilunfuzhe.monvhua.features.through.ThroughClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
+import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseTuning;
+import com.kuilunfuzhe.monvhua.features.carryentity.CarryTransformConfig;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import com.kuilunfuzhe.monvhua.features.action.ActionConfig;
 import com.kuilunfuzhe.monvhua.features.action.TimelineClientState;
@@ -39,6 +41,7 @@ import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.StateS2C;
 import com.kuilunfuzhe.monvhua.network.through.ThroughConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
+import com.kuilunfuzhe.monvhua.network.carryentity.CarryTransformPackets;
 import com.kuilunfuzhe.monvhua.network.action.ActionPackets.*;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.AnchorButtonRenderer;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.BackTextureRenderer;
@@ -373,6 +376,10 @@ public class ClientPacketHandler {
             context.client().execute(() -> CarryPoseClientState.apply(packet));
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(CarryTransformPackets.ConfigS2C.ID, (packet, context) -> {
+            context.client().execute(() -> CarryPoseTuning.applyTransformConfig(CarryTransformConfig.fromJson(packet.json())));
+        });
+
         ClientPlayNetworking.registerGlobalReceiver(ActionsConfigS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 ActionEditorFragment inst = ActionEditorFragment.activeInstance;
@@ -421,6 +428,7 @@ public class ClientPacketHandler {
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             CarryPoseClientState.clear();
+            CarryPoseTuning.resetTransformConfig();
             ActionPoseClientState.clear();
             Evil_EyesClient.setViewMode("viewport");
             com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceViewportRenderer.cleanup();

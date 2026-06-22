@@ -25,6 +25,7 @@ public class CarryManager {
 	private static final double CARRY_Y_OFFSET = 0.8D;
 	private static final double CARRY_BOX_EPSILON = 1.0E-7D;
 	private static final String STAMINA_OBJECTIVE = "stamina";
+	private static final float DRAG_CARRIED_PITCH = 90.0F;
 
 	public enum CarryPoseMode {
 		PRINCESS(CarryPoseSyncS2CPacket.POSE_CARRIED, "princess"),
@@ -209,10 +210,16 @@ public class CarryManager {
 		double dz = carrier.getZ() - carried.getZ();
 		float yawToCarrier = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90);
 
+		boolean dragMode = getCarryPoseMode(carrier) == CarryPoseMode.DRAG;
+		float carriedYaw = dragMode ? carrier.getYaw() + 180.0F : yawToCarrier;
+		float carriedPitch = dragMode ? DRAG_CARRIED_PITCH : carried.getPitch();
+
 		if (!(carried instanceof ServerPlayerEntity)) {
 			carried.setPosition(targetPos.x, targetPos.y, targetPos.z);
-			carried.setYaw(yawToCarrier);
-//			carried.setPitch(pitch);
+			carried.setYaw(carriedYaw);
+			carried.setPitch(carriedPitch);
+			carried.setBodyYaw(carriedYaw);
+			carried.setHeadYaw(carriedYaw);
 		}
 		carried.setVelocity(Vec3d.ZERO);
 		carried.setNoGravity(true);

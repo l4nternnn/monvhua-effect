@@ -91,6 +91,7 @@ public final class CarryAttachedRenderMath {
 	public static void applyAttachedTransform(MatrixStack matrices, Entity carrier, Entity carried) {
 		matrices.translate(getAttachedCarriedX(carrier, carried), getAttachedCarriedY(carrier, carried), ATTACHED_CARRIED_Z);
 		matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(ATTACHED_CARRIED_YAW_DEGREES));
+		applyCarriedPoseAdjustment(matrices, isDragCarried(carried));
 	}
 
 	public static float getAttachedCarriedX(Entity carrier, Entity carried) {
@@ -143,7 +144,8 @@ public final class CarryAttachedRenderMath {
 		MatrixStack matrices = createCarrierWorldMatrix(carrier, tickProgress);
 		applyAttachedTransform(matrices, carrier, carried);
 		applyCarriedModelHorizontalTransform(matrices, 1.0F, isDragCarried(carried));
-		return transformLocalPoint(matrices, CARRIED_CAMERA_HEAD_LOCAL_X, CARRIED_CAMERA_HEAD_LOCAL_Y, CARRIED_CAMERA_HEAD_LOCAL_Z);
+		boolean dragPose = isDragCarried(carried);
+		return transformLocalPoint(matrices, getCameraLocalX(dragPose), getCameraLocalY(dragPose), getCameraLocalZ(dragPose));
 	}
 
 	public static WorldViewRotation getCarriedLocalViewWorldRotation(Entity carrier, float tickProgress, float localYawDegrees, float localPitchDegrees) {
@@ -253,7 +255,7 @@ public final class CarryAttachedRenderMath {
 
 	public static HeadViewOffset getCarriedHeadViewOffsetForWorldView(Entity carrier, Entity carried, float tickProgress, float viewYawDegrees, float viewPitchDegrees, float baseHeadYawRadians, float baseHeadPitchRadians, float baseHeadRollRadians) {
 		Vector4f worldForward = getWorldForwardVector(viewYawDegrees, viewPitchDegrees);
-		Matrix4f inverseBaseHeadMatrix = new Matrix4f(createCarriedBaseHeadMatrix(
+		Matrix4f inverseBaseHeadMatrix = new Matrix4f(createCarriedDefaultViewBaseMatrix(
 				carrier,
 				carried,
 				tickProgress,
@@ -295,7 +297,7 @@ public final class CarryAttachedRenderMath {
 				CarryPoseTuning.CARRIED_VIEW_PITCH_DOWN_LIMIT_DEGREES
 		);
 		Vector4f localForward = getLocalForwardVector(clampedYawDegrees, clampedPitchDegrees);
-		Vector4f worldForward = createCarriedBaseHeadMatrix(
+		Vector4f worldForward = createCarriedDefaultViewBaseMatrix(
 				carrier,
 				carried,
 				tickProgress,
@@ -327,7 +329,7 @@ public final class CarryAttachedRenderMath {
 	}
 
 	private static MatrixStack createCarriedViewMatrix(Entity carrier, Entity carried, float tickProgress, float baseHeadYawRadians, float baseHeadPitchRadians, float baseHeadRollRadians, float centerYawDegrees, float centerPitchDegrees, float localYawDegrees, float localPitchDegrees) {
-		MatrixStack matrices = createCarriedBaseHeadMatrix(
+		MatrixStack matrices = createCarriedDefaultViewBaseMatrix(
 				carrier,
 				carried,
 				tickProgress,
@@ -339,6 +341,12 @@ public final class CarryAttachedRenderMath {
 		matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(centerPitchDegrees));
 		matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(localYawDegrees));
 		matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(localPitchDegrees));
+		return matrices;
+	}
+
+	private static MatrixStack createCarriedDefaultViewBaseMatrix(Entity carrier, Entity carried, float tickProgress, float headYawRadians, float headPitchRadians, float headRollRadians) {
+		MatrixStack matrices = createCarriedBaseHeadMatrix(carrier, carried, tickProgress, headYawRadians, headPitchRadians, headRollRadians);
+		applyDefaultViewRotation(matrices, isDragCarried(carried));
 		return matrices;
 	}
 
@@ -392,6 +400,57 @@ public final class CarryAttachedRenderMath {
 			applyCarriedModelRotation(matrices);
 		}
 		matrices.translate(0.0F, -pivotY, 0.0F);
+	}
+
+	private static void applyCarriedPoseAdjustment(MatrixStack matrices, boolean dragPose) {
+		float offsetX = CarryPoseTuning.getCarriedPoseOffsetX(dragPose);
+		float offsetY = CarryPoseTuning.getCarriedPoseOffsetY(dragPose);
+		float offsetZ = CarryPoseTuning.getCarriedPoseOffsetZ(dragPose);
+		float yawDegrees = CarryPoseTuning.getCarriedPoseYawDegrees(dragPose);
+		float pitchDegrees = CarryPoseTuning.getCarriedPosePitchDegrees(dragPose);
+		float rollDegrees = CarryPoseTuning.getCarriedPoseRollDegrees(dragPose);
+		if (offsetX != 0.0F || offsetY != 0.0F || offsetZ != 0.0F) {
+			matrices.translate(offsetX, offsetY, offsetZ);
+		}
+		if (yawDegrees != 0.0F) {
+			matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(yawDegrees));
+		}
+		if (pitchDegrees != 0.0F) {
+			matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(pitchDegrees));
+		}
+		if (rollDegrees != 0.0F) {
+			matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rollDegrees));
+		}
+	}
+
+	private static void applyDefaultViewRotation(MatrixStack matrices, boolean dragPose) {
+		if (!CarryPoseTuning.isDefaultViewTransformEnabled(dragPose)) {
+			return;
+		}
+		float yawDegrees = CarryPoseTuning.getDefaultViewYawDegrees(dragPose);
+		float pitchDegrees = CarryPoseTuning.getDefaultViewPitchDegrees(dragPose);
+		float rollDegrees = CarryPoseTuning.getDefaultViewRollDegrees(dragPose);
+		if (yawDegrees != 0.0F) {
+			matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(yawDegrees));
+		}
+		if (pitchDegrees != 0.0F) {
+			matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(pitchDegrees));
+		}
+		if (rollDegrees != 0.0F) {
+			matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rollDegrees));
+		}
+	}
+
+	private static float getCameraLocalX(boolean dragPose) {
+		return CARRIED_CAMERA_HEAD_LOCAL_X + (CarryPoseTuning.isDefaultViewTransformEnabled(dragPose) ? CarryPoseTuning.getDefaultViewOffsetX(dragPose) : 0.0F);
+	}
+
+	private static float getCameraLocalY(boolean dragPose) {
+		return CARRIED_CAMERA_HEAD_LOCAL_Y + (CarryPoseTuning.isDefaultViewTransformEnabled(dragPose) ? CarryPoseTuning.getDefaultViewOffsetY(dragPose) : 0.0F);
+	}
+
+	private static float getCameraLocalZ(boolean dragPose) {
+		return CARRIED_CAMERA_HEAD_LOCAL_Z + (CarryPoseTuning.isDefaultViewTransformEnabled(dragPose) ? CarryPoseTuning.getDefaultViewOffsetZ(dragPose) : 0.0F);
 	}
 
 	public static void applyCarriedModelRotation(MatrixStack matrices) {

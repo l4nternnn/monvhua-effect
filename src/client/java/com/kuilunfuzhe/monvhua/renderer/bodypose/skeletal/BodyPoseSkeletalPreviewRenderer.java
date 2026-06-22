@@ -39,6 +39,8 @@ public final class BodyPoseSkeletalPreviewRenderer {
     private static final Identifier MODEL_ID = Identifier.of("monvhua", "models/entity/skeletal_model2.bbmodel");
     private static final Identifier ANIMATION_ID = Identifier.of("monvhua", "models/entity/animation.json");
     private static final Identifier EYE_ANIMATION_ID = Identifier.of("monvhua", "models/entity/eye_on_off.json");
+    private static final Identifier DRAG_ANIMATION_ID = Identifier.of("monvhua", "geckolib/animations/drag.json");
+    private static final Set<String> DRAG_ROOT_BONES = Set.of("all_aontrol");
     private static final int DEFAULT_VERTEX_COLOR = 0xFFFFFFFF;
     private static final int SKIN_TONE_OVERLAY_COLOR = 0xFFFFF3EC;
     private static final int NOSE_VERTEX_COLOR = 0xFFFFEFEA;
@@ -60,6 +62,7 @@ public final class BodyPoseSkeletalPreviewRenderer {
     private static SkeletalModel cachedModel;
     private static boolean loadFailed;
     private static boolean loggedColoredVoxelStats;
+    private static Map<String, float[]> cachedDragRotations;
 
     private BodyPoseSkeletalPreviewRenderer() {
     }
@@ -110,6 +113,16 @@ public final class BodyPoseSkeletalPreviewRenderer {
                                  int light, Map<String, float[]> rotations, Map<String, float[]> offsets,
                                  Map<String, Float> scales, Set<String> visibleParts, boolean slim, RenderLayer renderLayer) {
         return render(matrices, vertexConsumers, texture, light, rotations, offsets, scales, visibleParts, slim, true, renderLayer, true);
+    }
+
+    public static boolean renderDragPose(MatrixStack matrices, VertexConsumerProvider vertexConsumers,
+                                         Identifier texture, int light, boolean slim) {
+        return renderDragPose(matrices, vertexConsumers, texture, light, slim, Set.of());
+    }
+
+    public static boolean renderDragPose(MatrixStack matrices, VertexConsumerProvider vertexConsumers,
+                                         Identifier texture, int light, boolean slim, Set<String> visibleParts) {
+        return render(matrices, vertexConsumers, texture, light, getDragRotations(), Map.of(), Map.of(), visibleParts, slim);
     }
 
     private static boolean render(MatrixStack matrices, VertexConsumerProvider vertexConsumers, Identifier texture,
@@ -600,6 +613,21 @@ public final class BodyPoseSkeletalPreviewRenderer {
         } catch (Exception e) {
             System.err.println("[Monvhua] Failed to load skeletal body pose animation " + id + ": " + e.getMessage());
         }
+    }
+
+    private static Map<String, float[]> getDragRotations() {
+        if (cachedDragRotations != null) {
+            return cachedDragRotations;
+        }
+
+        AnimationPose pose = new AnimationPose();
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null) {
+            loadAnimationResource(client, DRAG_ANIMATION_ID, pose);
+        }
+        pose.rotations.keySet().removeIf(DRAG_ROOT_BONES::contains);
+        cachedDragRotations = Map.copyOf(pose.rotations);
+        return cachedDragRotations;
     }
 
     private static final class AnimationPose {

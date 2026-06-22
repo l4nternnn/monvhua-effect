@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.mixin.carrymodelpose;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryAttachedRenderMath;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryAttachmentRenderState;
+import com.kuilunfuzhe.monvhua.features.carryentity.CarryDragSkeletalRenderer;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
@@ -77,7 +78,9 @@ public abstract class FirstPersonCarrierAttachedEntityRenderMixin {
 			CarryAttachmentRenderState.beginAttachedCarriedEntityRender(carried.getId());
 		}
 		try {
-			dispatcher.render(carried, 0.0D, 0.0D, 0.0D, tickProgress, matrices, vertexConsumers, light);
+			if (!CarryDragSkeletalRenderer.renderIfDragCarried(carried, matrices, vertexConsumers, light, firstPersonSelfCarried)) {
+				dispatcher.render(carried, 0.0D, 0.0D, 0.0D, tickProgress, matrices, vertexConsumers, light);
+			}
 		} finally {
 			if (firstPersonSelfCarried) {
 				CarryAttachmentRenderState.endFirstPersonSelfCarriedEntityRender();

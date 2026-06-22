@@ -1,7 +1,12 @@
 package com.kuilunfuzhe.monvhua.features.carryentity;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.FloatArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
 import com.kuilunfuzhe.monvhua.event.tag_pitch;
+import com.kuilunfuzhe.monvhua.network.carryentity.CarryTransformPackets;
 import com.kuilunfuzhe.monvhua.network.openback.CarryEntityPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -19,6 +24,7 @@ import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
@@ -82,10 +88,19 @@ public class CarryEvents {
 		});
 
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+			CarryTransformConfig.syncTo(handler.getPlayer());
 			CarryManager.syncAllCarryPosesTo(handler.getPlayer());
 		});
 
 		// 搬运实体请求
+		ServerPlayNetworking.registerGlobalReceiver(CarryTransformPackets.RequestConfigC2S.ID, (packet, context) -> {
+			CarryTransformConfig.syncTo(context.player());
+		});
+
+		ServerPlayNetworking.registerGlobalReceiver(CarryTransformPackets.UpdateC2S.ID, (packet, context) -> {
+			context.server().execute(() -> updateCarryTransform(context.player(), packet));
+		});
+
 		ServerPlayNetworking.registerGlobalReceiver(CarryEntityPayload.ID, (payload, context) -> {
 			ServerPlayerEntity carrier = context.player();
 			if (!carrier.isSneaking()) return;
@@ -197,6 +212,7 @@ public class CarryEvents {
 
 		// stamina drain rate commands. carry-xp-rate is kept as a compatibility alias.
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+			registerCarryTransformCommands(dispatcher);
 			dispatcher.register(CommandManager.literal("carry-stamina-rate")
 					.requires(source -> source.hasPermissionLevel(2))
 					.then(CommandManager.argument("amount", IntegerArgumentType.integer(0, 100))
@@ -217,6 +233,107 @@ public class CarryEvents {
 							.executes(ctx -> toggleCarryPoseMode(ctx)))
 					.executes(ctx -> showCarryPoseMode(ctx)));
 		});
+	}
+
+	private static void registerCarryTransformCommands(CommandDispatcher<ServerCommandSource> dispatcher) {
+		dispatcher.register(buildCarryTransformCommand("monvhua_carry_pose_transform", CarryTransformPackets.TARGET_POSE));
+		dispatcher.register(buildCarryTransformCommand("monvhua_carry_view_transform", CarryTransformPackets.TARGET_VIEW));
+	}
+
+	private static LiteralArgumentBuilder<ServerCommandSource> buildCarryTransformCommand(String name, int target) {
+		LiteralArgumentBuilder<ServerCommandSource> root = addCarryTransformActions(
+				CommandManager.literal(name),
+				CarryTransformPackets.POSE_PRINCESS,
+				target
+		);
+		root.then(addCarryTransformActions(CommandManager.literal("princess"), CarryTransformPackets.POSE_PRINCESS, target));
+		root.then(addCarryTransformActions(CommandManager.literal("drag"), CarryTransformPackets.POSE_DRAG, target));
+		return root;
+	}
+
+	private static LiteralArgumentBuilder<ServerCommandSource> addCarryTransformActions(
+			LiteralArgumentBuilder<ServerCommandSource> root,
+			int poseMode,
+			int target
+	) {
+		return root
+				.then(buildCarryTransformAction("set", poseMode, target, CarryTransformPackets.ACTION_SET))
+				.then(buildCarryTransformAction("add", poseMode, target, CarryTransformPackets.ACTION_ADD))
+				.then(CommandManager.literal("reset")
+						.executes(ctx -> resetCarryTransform(ctx, poseMode, target)))
+				.executes(ctx -> showCarryTransform(ctx, poseMode, target));
+	}
+
+	private static LiteralArgumentBuilder<ServerCommandSource> buildCarryTransformAction(String name, int poseMode, int target, int action) {
+		return CommandManager.literal(name)
+				.then(CommandManager.argument("x", FloatArgumentType.floatArg())
+						.then(CommandManager.argument("y", FloatArgumentType.floatArg())
+								.then(CommandManager.argument("z", FloatArgumentType.floatArg())
+										.then(CommandManager.argument("pitch", FloatArgumentType.floatArg())
+												.then(CommandManager.argument("yaw", FloatArgumentType.floatArg())
+														.then(CommandManager.argument("roll", FloatArgumentType.floatArg())
+																.executes(ctx -> applyCarryTransformCommand(
+																		ctx,
+																		poseMode,
+																		target,
+																		action,
+																		FloatArgumentType.getFloat(ctx, "x"),
+																		FloatArgumentType.getFloat(ctx, "y"),
+																		FloatArgumentType.getFloat(ctx, "z"),
+																		FloatArgumentType.getFloat(ctx, "pitch"),
+																		FloatArgumentType.getFloat(ctx, "yaw"),
+																		FloatArgumentType.getFloat(ctx, "roll")
+																))))))));
+	}
+
+	private static void updateCarryTransform(ServerPlayerEntity player, CarryTransformPackets.UpdateC2S packet) {
+		if (player == null || (packet.target() != CarryTransformPackets.TARGET_POSE && packet.target() != CarryTransformPackets.TARGET_VIEW)) {
+			return;
+		}
+		int poseMode = CarryTransformConfig.sanitizePoseMode(packet.poseMode());
+		CarryTransformConfig config = CarryTransformConfig.applyRequest(packet);
+		CarryTransformConfig.syncToAll(player.getServer());
+		player.sendMessage(Text.literal("Carry " + CarryTransformConfig.poseModeName(poseMode) + " " + carryTransformTargetName(packet.target()) + " transform synced: " + carryTransformFormat(config, poseMode, packet.target())), true);
+	}
+
+	private static int applyCarryTransformCommand(CommandContext<ServerCommandSource> ctx, int poseMode, int target, int action, float x, float y, float z, float pitch, float yaw, float roll) {
+		CarryTransformConfig config;
+		if (target == CarryTransformPackets.TARGET_VIEW) {
+			config = action == CarryTransformPackets.ACTION_ADD
+					? CarryTransformConfig.addViewTransform(poseMode, x, y, z, pitch, yaw, roll)
+					: CarryTransformConfig.setViewTransform(poseMode, x, y, z, pitch, yaw, roll);
+		} else {
+			config = action == CarryTransformPackets.ACTION_ADD
+					? CarryTransformConfig.addPoseTransform(poseMode, x, y, z, pitch, yaw, roll)
+					: CarryTransformConfig.setPoseTransform(poseMode, x, y, z, pitch, yaw, roll);
+		}
+		return finishCarryTransformCommand(ctx, poseMode, target, config);
+	}
+
+	private static int resetCarryTransform(CommandContext<ServerCommandSource> ctx, int poseMode, int target) {
+		CarryTransformConfig config = target == CarryTransformPackets.TARGET_VIEW
+				? CarryTransformConfig.resetViewTransform(poseMode)
+				: CarryTransformConfig.resetPoseTransform(poseMode);
+		return finishCarryTransformCommand(ctx, poseMode, target, config);
+	}
+
+	private static int showCarryTransform(CommandContext<ServerCommandSource> ctx, int poseMode, int target) {
+		ctx.getSource().sendMessage(Text.literal("Carry " + CarryTransformConfig.poseModeName(poseMode) + " " + carryTransformTargetName(target) + " transform: " + carryTransformFormat(CarryTransformConfig.getInstance(), poseMode, target)));
+		return 1;
+	}
+
+	private static int finishCarryTransformCommand(CommandContext<ServerCommandSource> ctx, int poseMode, int target, CarryTransformConfig config) {
+		CarryTransformConfig.syncToAll(ctx.getSource().getServer());
+		ctx.getSource().sendMessage(Text.literal("Carry " + CarryTransformConfig.poseModeName(poseMode) + " " + carryTransformTargetName(target) + " transform synced: " + carryTransformFormat(config, poseMode, target)));
+		return 1;
+	}
+
+	private static String carryTransformTargetName(int target) {
+		return target == CarryTransformPackets.TARGET_VIEW ? "view" : "pose";
+	}
+
+	private static String carryTransformFormat(CarryTransformConfig config, int poseMode, int target) {
+		return target == CarryTransformPackets.TARGET_VIEW ? config.formatView(poseMode) : config.formatPose(poseMode);
 	}
 
 	private static int setCarryPoseMode(com.mojang.brigadier.context.CommandContext<net.minecraft.server.command.ServerCommandSource> ctx, CarryManager.CarryPoseMode mode) {

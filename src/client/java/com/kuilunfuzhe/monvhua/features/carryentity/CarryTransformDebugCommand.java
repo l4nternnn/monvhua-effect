@@ -1,6 +1,10 @@
 package com.kuilunfuzhe.monvhua.features.carryentity;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.FloatArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
+import com.kuilunfuzhe.monvhua.network.carryentity.CarryTransformPackets;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
@@ -21,6 +25,8 @@ import java.util.Locale;
 public final class CarryTransformDebugCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(CarryTransformDebugCommand.class);
 	private static final String COMMAND_NAME = "monvhua_carry_debug_transform";
+	private static final String POSE_TRANSFORM_COMMAND = "monvhua_carry_pose_transform";
+	private static final String VIEW_TRANSFORM_COMMAND = "monvhua_carry_view_transform";
 
 	private CarryTransformDebugCommand() {
 	}
@@ -32,6 +38,106 @@ public final class CarryTransformDebugCommand {
 	private static void registerCommands(CommandDispatcher<FabricClientCommandSource> dispatcher, Object registryAccess) {
 		dispatcher.register(ClientCommandManager.literal(COMMAND_NAME)
 				.executes(context -> dumpCurrentTransform(context.getSource())));
+		dispatcher.register(buildTransformCommand(POSE_TRANSFORM_COMMAND, CarryTransformPackets.TARGET_POSE));
+		dispatcher.register(buildTransformCommand(VIEW_TRANSFORM_COMMAND, CarryTransformPackets.TARGET_VIEW));
+	}
+
+	private static LiteralArgumentBuilder<FabricClientCommandSource> buildTransformCommand(String name, int target) {
+		LiteralArgumentBuilder<FabricClientCommandSource> root = addTransformActions(
+				ClientCommandManager.literal(name),
+				CarryTransformPackets.POSE_PRINCESS,
+				target
+		);
+		root.then(addTransformActions(ClientCommandManager.literal("princess"), CarryTransformPackets.POSE_PRINCESS, target));
+		root.then(addTransformActions(ClientCommandManager.literal("drag"), CarryTransformPackets.POSE_DRAG, target));
+		return root;
+	}
+
+	private static LiteralArgumentBuilder<FabricClientCommandSource> addTransformActions(
+			LiteralArgumentBuilder<FabricClientCommandSource> root,
+			int poseMode,
+			int target
+	) {
+		return root
+				.then(buildTransformAction("set", poseMode, target, CarryTransformPackets.ACTION_SET))
+				.then(buildTransformAction("add", poseMode, target, CarryTransformPackets.ACTION_ADD))
+				.then(ClientCommandManager.literal("reset")
+						.executes(context -> sendTransformUpdate(
+								context.getSource(),
+								poseMode,
+								target,
+								CarryTransformPackets.ACTION_RESET,
+								0.0F,
+								0.0F,
+								0.0F,
+								0.0F,
+								0.0F,
+								0.0F
+						)))
+				.executes(context -> showTransform(context.getSource(), poseMode, target));
+	}
+
+	private static LiteralArgumentBuilder<FabricClientCommandSource> buildTransformAction(String name, int poseMode, int target, int action) {
+		return ClientCommandManager.literal(name)
+				.then(ClientCommandManager.argument("x", FloatArgumentType.floatArg())
+						.then(ClientCommandManager.argument("y", FloatArgumentType.floatArg())
+								.then(ClientCommandManager.argument("z", FloatArgumentType.floatArg())
+										.then(ClientCommandManager.argument("pitch", FloatArgumentType.floatArg())
+												.then(ClientCommandManager.argument("yaw", FloatArgumentType.floatArg())
+														.then(ClientCommandManager.argument("roll", FloatArgumentType.floatArg())
+																.executes(context -> sendTransformUpdate(
+																		context.getSource(),
+																		poseMode,
+																		target,
+																		action,
+																		FloatArgumentType.getFloat(context, "x"),
+																		FloatArgumentType.getFloat(context, "y"),
+																		FloatArgumentType.getFloat(context, "z"),
+																		FloatArgumentType.getFloat(context, "pitch"),
+																		FloatArgumentType.getFloat(context, "yaw"),
+																		FloatArgumentType.getFloat(context, "roll")
+																))))))));
+	}
+
+	private static int sendTransformUpdate(FabricClientCommandSource source, int poseMode, int target, int action, float x, float y, float z, float pitch, float yaw, float roll) {
+		boolean sent = SafeClientNetworking.send(new CarryTransformPackets.UpdateC2S(poseMode, target, action, x, y, z, pitch, yaw, roll));
+		if (!sent) {
+			source.sendFeedback(Text.literal("Unable to send carry transform update to server."));
+			return 0;
+		}
+		source.sendFeedback(Text.literal("Carry " + CarryTransformConfig.poseModeName(poseMode) + " " + transformTargetName(target) + " transform update sent to server."));
+		return 1;
+	}
+
+	private static int showTransform(FabricClientCommandSource source, int poseMode, int target) {
+		boolean dragPose = CarryTransformConfig.sanitizePoseMode(poseMode) == CarryTransformPackets.POSE_DRAG;
+		source.sendFeedback(Text.literal("Carry " + CarryTransformConfig.poseModeName(poseMode) + " " + transformTargetName(target) + " transform: " + formatCurrentTransform(dragPose, target)));
+		return 1;
+	}
+
+	private static String formatCurrentTransform(boolean dragPose, int target) {
+		if (target == CarryTransformPackets.TARGET_VIEW) {
+			return "enabled=" + CarryPoseTuning.isDefaultViewTransformEnabled(dragPose) + " " + formatSix(
+					CarryPoseTuning.getDefaultViewOffsetX(dragPose),
+					CarryPoseTuning.getDefaultViewOffsetY(dragPose),
+					CarryPoseTuning.getDefaultViewOffsetZ(dragPose),
+					CarryPoseTuning.getDefaultViewPitchDegrees(dragPose),
+					CarryPoseTuning.getDefaultViewYawDegrees(dragPose),
+					CarryPoseTuning.getDefaultViewRollDegrees(dragPose)
+			);
+		}
+		return formatSix(
+				CarryPoseTuning.getCarriedPoseOffsetX(dragPose),
+				CarryPoseTuning.getCarriedPoseOffsetY(dragPose),
+				CarryPoseTuning.getCarriedPoseOffsetZ(dragPose),
+				CarryPoseTuning.getCarriedPosePitchDegrees(dragPose),
+				CarryPoseTuning.getCarriedPoseYawDegrees(dragPose),
+				CarryPoseTuning.getCarriedPoseRollDegrees(dragPose)
+		);
+	}
+
+	private static String transformTargetName(int target) {
+		return target == CarryTransformPackets.TARGET_VIEW ? "view" : "pose";
 	}
 
 	private static int dumpCurrentTransform(FabricClientCommandSource source) {
@@ -135,9 +241,24 @@ public final class CarryTransformDebugCommand {
 		builder.append("tuning.modelRotation=(xDeg=").append(f(CarryAttachedRenderMath.CARRIED_MODEL_ROTATION_X_DEGREES))
 				.append(", yDeg=").append(f(CarryAttachedRenderMath.CARRIED_MODEL_ROTATION_Y_DEGREES))
 				.append(", zDeg=").append(f(CarryAttachedRenderMath.CARRIED_MODEL_ROTATION_Z_DEGREES)).append(")\n");
+		builder.append("tuning.poseTransform=").append(formatSix(
+				CarryPoseTuning.CARRIED_POSE_OFFSET_X,
+				CarryPoseTuning.CARRIED_POSE_OFFSET_Y,
+				CarryPoseTuning.CARRIED_POSE_OFFSET_Z,
+				CarryPoseTuning.CARRIED_POSE_PITCH_DEGREES,
+				CarryPoseTuning.CARRIED_POSE_YAW_DEGREES,
+				CarryPoseTuning.CARRIED_POSE_ROLL_DEGREES)).append('\n');
 		builder.append("tuning.cameraLocal=(x=").append(f(CarryAttachedRenderMath.CARRIED_CAMERA_HEAD_LOCAL_X))
 				.append(", y=").append(f(CarryAttachedRenderMath.CARRIED_CAMERA_HEAD_LOCAL_Y))
 				.append(", z=").append(f(CarryAttachedRenderMath.CARRIED_CAMERA_HEAD_LOCAL_Z)).append(")\n");
+		builder.append("tuning.defaultViewTransform=(enabled=").append(CarryPoseTuning.CARRIED_DEFAULT_VIEW_TRANSFORM_ENABLED)
+				.append(", ").append(formatSix(
+						CarryPoseTuning.CARRIED_DEFAULT_VIEW_OFFSET_X,
+						CarryPoseTuning.CARRIED_DEFAULT_VIEW_OFFSET_Y,
+						CarryPoseTuning.CARRIED_DEFAULT_VIEW_OFFSET_Z,
+						CarryPoseTuning.CARRIED_DEFAULT_VIEW_PITCH_DEGREES,
+						CarryPoseTuning.CARRIED_DEFAULT_VIEW_YAW_DEGREES,
+						CarryPoseTuning.CARRIED_DEFAULT_VIEW_ROLL_DEGREES)).append(")\n");
 		builder.append("tuning.headBaseRadians=(yaw=").append(f(CarryPoseTuning.HEAD_YAW + CarryPoseTuning.CUSTOM_HEAD_YAW))
 				.append(", pitch=").append(f(CarryPoseTuning.HEAD_PITCH + CarryPoseTuning.CUSTOM_HEAD_PITCH))
 				.append(", roll=").append(f(CarryPoseTuning.HEAD_ROLL + CarryPoseTuning.CUSTOM_HEAD_ROLL)).append(")\n");
@@ -172,6 +293,10 @@ public final class CarryTransformDebugCommand {
 
 	private static void copyToClipboard(MinecraftClient client, String text) {
 		GLFW.glfwSetClipboardString(client.getWindow().getHandle(), text);
+	}
+
+	private static String formatSix(float x, float y, float z, float pitch, float yaw, float roll) {
+		return String.format(Locale.ROOT, "offset=(%.4f, %.4f, %.4f), rotation=(pitch=%.4f, yaw=%.4f, roll=%.4f)", x, y, z, pitch, yaw, roll);
 	}
 
 	private static String f(float value) {
