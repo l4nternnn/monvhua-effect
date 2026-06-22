@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.area_tip;
 
+import com.kuilunfuzhe.monvhua.features.gravity.GravityAreaSpec;
 import com.kuilunfuzhe.monvhua.item.config.AreaTipConfig;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.client.MinecraftClient;
@@ -78,15 +79,22 @@ public final class AreaTipAreaRenderer {
         cachedHoldingStick = holdingStick;
         cachedAxiomGroupId = axiomGroupId;
 
+        List<RenderGroup> groups = new ArrayList<>();
         Map<Integer, Set<BlockPos>> blocksByColor = new HashMap<>();
         for (AreaTipClient.AreaView view : AreaTipClient.areas()) {
             if (!holdingStick && (axiomGroupId == null || !axiomGroupId.equals(view.groupId()))) {
                 continue;
             }
             int color = AreaTipClient.colorFor(view.groupId(), view.color());
+            RenderGroup boundsGroup = createFullBoundsGroup(color, view);
+            if (boundsGroup != null) {
+                groups.add(boundsGroup);
+                continue;
+            }
             addBlocks(blocksByColor.computeIfAbsent(color, ignored -> new HashSet<>()), view.coveredBlocks());
         }
-        cachedAreaGroups = buildGroups(blocksByColor);
+        groups.addAll(buildGroups(blocksByColor));
+        cachedAreaGroups = List.copyOf(groups);
         return cachedAreaGroups;
     }
 
@@ -105,6 +113,12 @@ public final class AreaTipAreaRenderer {
         }
         PreviewKey key = new PreviewKey(preview, group.color, group.spec());
         if (key.equals(cachedPreviewKey)) {
+            return cachedPreviewGroup;
+        }
+        RenderGroup boundsGroup = createFullBoundsGroup(key.color(), key.spec(), preview);
+        if (boundsGroup != null) {
+            cachedPreviewKey = key;
+            cachedPreviewGroup = boundsGroup;
             return cachedPreviewGroup;
         }
         Set<BlockPos> blocks = new HashSet<>();
@@ -139,6 +153,40 @@ public final class AreaTipAreaRenderer {
             return null;
         }
         return new RenderGroup(color, bounds, edges);
+    }
+
+    private static RenderGroup createFullBoundsGroup(int color, AreaTipClient.AreaView view) {
+        if (view.hasExplicitBlocks()) {
+            return null;
+        }
+        if (view.hasExactBounds() || isBoxLike(view.spec())) {
+            return createBoundsGroup(color, view.minBlock(), view.maxBlock());
+        }
+        return null;
+    }
+
+    private static RenderGroup createFullBoundsGroup(int color, GravityAreaSpec spec, BlockPos center) {
+        if (!isBoxLike(spec)) {
+            return null;
+        }
+        GravityAreaSpec.Bounds bounds = spec.bounds(center);
+        return createBoundsGroup(
+                color,
+                new BlockPos(bounds.minX(), bounds.minY(), bounds.minZ()),
+                new BlockPos(bounds.maxX(), bounds.maxY(), bounds.maxZ())
+        );
+    }
+
+    private static boolean isBoxLike(GravityAreaSpec spec) {
+        return spec.shape() == GravityAreaSpec.Shape.BOX || spec.shape() == GravityAreaSpec.Shape.CUBE;
+    }
+
+    private static RenderGroup createBoundsGroup(int color, BlockPos min, BlockPos max) {
+        if (min == null || max == null) {
+            return null;
+        }
+        Bounds bounds = Bounds.of(min, max);
+        return new RenderGroup(color, bounds, boxEdges(bounds));
     }
 
     private static void addBlocks(Set<BlockPos> target, List<BlockPos> source) {
@@ -177,6 +225,46 @@ public final class AreaTipAreaRenderer {
             }
         }
         return List.copyOf(edges);
+    }
+
+    private static List<LineSegment> boxEdges(Bounds bounds) {
+        List<LineSegment> edges = new ArrayList<>(12);
+        float minX = (float) bounds.minX();
+        float minY = (float) bounds.minY();
+        float minZ = (float) bounds.minZ();
+        float maxX = (float) bounds.maxX();
+        float maxY = (float) bounds.maxY();
+        float maxZ = (float) bounds.maxZ();
+
+        addLine(edges, minX, minY, minZ, maxX, minY, minZ);
+        addLine(edges, minX, minY, maxZ, maxX, minY, maxZ);
+        addLine(edges, minX, maxY, minZ, maxX, maxY, minZ);
+        addLine(edges, minX, maxY, maxZ, maxX, maxY, maxZ);
+
+        addLine(edges, minX, minY, minZ, minX, maxY, minZ);
+        addLine(edges, minX, minY, maxZ, minX, maxY, maxZ);
+        addLine(edges, maxX, minY, minZ, maxX, maxY, minZ);
+        addLine(edges, maxX, minY, maxZ, maxX, maxY, maxZ);
+
+        addLine(edges, minX, minY, minZ, minX, minY, maxZ);
+        addLine(edges, minX, maxY, minZ, minX, maxY, maxZ);
+        addLine(edges, maxX, minY, minZ, maxX, minY, maxZ);
+        addLine(edges, maxX, maxY, minZ, maxX, maxY, maxZ);
+        return List.copyOf(edges);
+    }
+
+    private static void addLine(List<LineSegment> edges, float x1, float y1, float z1,
+                                float x2, float y2, float z2) {
+        float normalX = x2 - x1;
+        float normalY = y2 - y1;
+        float normalZ = z2 - z1;
+        float length = (float) Math.sqrt(normalX * normalX + normalY * normalY + normalZ * normalZ);
+        if (length > 0.0F) {
+            normalX /= length;
+            normalY /= length;
+            normalZ /= length;
+        }
+        edges.add(new LineSegment(x1, y1, z1, x2, y2, z2, normalX, normalY, normalZ));
     }
 
     private static boolean isBoundary(BlockPos pos, Set<BlockPos> blocks, BlockPos.Mutable scratch) {
@@ -311,6 +399,17 @@ public final class AreaTipAreaRenderer {
                 maxZ = Math.max(maxZ, pos.getZ() + 1.0D);
             }
             return new Bounds(minX, minY, minZ, maxX, maxY, maxZ);
+        }
+
+        private static Bounds of(BlockPos min, BlockPos max) {
+            return new Bounds(
+                    min.getX(),
+                    min.getY(),
+                    min.getZ(),
+                    max.getX() + 1.0D,
+                    max.getY() + 1.0D,
+                    max.getZ() + 1.0D
+            );
         }
     }
 }
