@@ -141,7 +141,7 @@ public class Evil_Eyes {
             UUID uuid = entry.getKey();
             Entity e = player.getWorld().getEntity(uuid);
             // 过滤锚点盔甲架
-            if (isAnchorStand(e)) continue;
+            if (!canMarkTarget(e)) continue;
             String name = e == null ? "未知实体" : e.getName().getString();
             ServerPlayNetworking.send(player, new EntityMarkedS2C(uuid, name, tag_pitch.tagForEntity(e)));
         }
@@ -158,6 +158,13 @@ public class Evil_Eyes {
         if (!(e instanceof ArmorStandEntity as)) return false;
         Text name = as.getCustomName();
         return name != null && "clairvoyance_evil_eyes".equals(name.getString());
+    }
+
+    public static boolean canMarkTarget(Entity entity) {
+        return entity instanceof LivingEntity
+                && entity.isAlive()
+                && !isAnchorStand(entity)
+                && !tag_pitch.tagForEntity(entity).isBlank();
     }
 
     /**
@@ -265,6 +272,14 @@ public class Evil_Eyes {
     public static void addMark(UUID markerUuid, UUID targetUuid, long expiryTick) {
         playerMarkedEntities.computeIfAbsent(markerUuid, k -> new ConcurrentHashMap<>())
             .put(targetUuid, expiryTick);
+    }
+
+    public static boolean addMark(ServerPlayerEntity marker, Entity target, long expiryTick) {
+        if (marker == null || !canMarkTarget(target)) {
+            return false;
+        }
+        addMark(marker.getUuid(), target.getUuid(), expiryTick);
+        return true;
     }
 
     /**
@@ -411,7 +426,11 @@ public class Evil_Eyes {
             ServerPlayerEntity player = context.player();
             World world = player.getWorld();
             Entity target = world.getEntityById(payload.entityId());
-            if (!(target instanceof LivingEntity) || player.getMainHandStack().getItem() != CLAIRVOYANCE_ITEM) return;
+            if (player.getMainHandStack().getItem() != CLAIRVOYANCE_ITEM) return;
+            if (!canMarkTarget(target)) {
+                player.sendMessage(Text.literal("§c只能标记带有 player tag 的玩家或生物"), true);
+                return;
+            }
 
             int stage = getPlayerStage(player, configManager);
             int maxMarks = configManager.getStageConfig(stage).maxMarks();
@@ -565,8 +584,7 @@ public class Evil_Eyes {
                     UUID entityUuid = entry.getKey();
                     long expire = entry.getValue();
                     Entity entity = server.getWorld(World.OVERWORLD).getEntity(entityUuid);
-                    boolean dead = (entity == null || !entity.isAlive());
-                    if (expire <= now || dead) {
+                    if (expire <= now || !canMarkTarget(entity)) {
                         it.remove();
                         changed = true;
                         outRange.remove(entityUuid);
@@ -616,6 +634,7 @@ public class Evil_Eyes {
 
         // 7. 自动标记：实体看向手持千里眼的玩家（注视检测）
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            if (!Boolean.getBoolean("monvhua.clairvoyance.lookAutoMark")) return;
             if (server.getTicks() % 5 != 0) return; // 每5tick（0.25秒）执行一次，降低开销
             World world = server.getWorld(World.OVERWORLD);
             if (world == null) return;
@@ -628,7 +647,7 @@ public class Evil_Eyes {
                 double range = ANCHOR_RANGE;
                 Box searchBox = player.getBoundingBox().expand(range);
                 for (Entity entity : world.getOtherEntities(player, searchBox, e ->
-                        e instanceof LivingEntity && e.isAlive() && !isAnchorStand(e))) {
+                        canMarkTarget(e) && e != player)) {
                     if (marks.containsKey(entity.getUuid())) continue;
                     if (recentlyUnmarked.getOrDefault(entity.getUuid(), 0L) > world.getTime()) continue;
                     if (getCurrentMarkCount(player.getUuid()) >= maxMarks) continue;
@@ -777,7 +796,7 @@ public class Evil_Eyes {
                 double range = ANCHOR_RANGE;
                 Box searchBox = stand.getBoundingBox().expand(range);
                 List<LivingEntity> nearby = world.getEntitiesByClass(LivingEntity.class, searchBox,
-                        e -> e.isAlive() && e != owner && e != stand && !isAnchorStand(e));
+                        e -> canMarkTarget(e) && e != owner && e != stand);
 
                 for (LivingEntity living : nearby) {
                     if (marks.containsKey(living.getUuid())) continue;

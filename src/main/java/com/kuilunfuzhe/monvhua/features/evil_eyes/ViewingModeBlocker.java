@@ -109,6 +109,7 @@ public class ViewingModeBlocker {
 						continue;
 					}
 					if (markerUuid.equals(player.getUuid())) continue;
+					if (!Evil_Eyes.canMarkTarget(player)) continue;
 					String pairKey = markerUuid.toString() + ":" + player.getUuid().toString();
 					boolean firstTime = SIGNED_EVIL_NOTIFIED.add(pairKey);
 					if (!Evil_Eyes.hasActiveMark(markerUuid, player.getUuid())) {
