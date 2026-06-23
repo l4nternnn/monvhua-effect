@@ -227,6 +227,7 @@ final class BodyPosePresetStore {
         float offsetY;
         float offsetZ;
         float scale = 1.0F;
+        boolean visible = true;
     }
 
     static final class EditorItemData {

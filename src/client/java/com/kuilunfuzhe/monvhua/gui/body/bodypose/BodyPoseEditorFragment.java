@@ -26,6 +26,7 @@ import icyllis.modernui.text.TextWatcher;
 import icyllis.modernui.view.KeyEvent;
 import icyllis.modernui.view.MotionEvent;
 import icyllis.modernui.view.SoundEffectConstants;
+import icyllis.modernui.view.Gravity;
 import icyllis.modernui.view.View;
 import icyllis.modernui.view.ViewGroup;
 import icyllis.modernui.widget.*;
@@ -126,6 +127,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final int RIGHT_PANEL_WIDTH = 500;
     private static final int PLAYER_LIST_VISIBLE_ROWS = 6;
     private static final int ITEM_LIST_VISIBLE_ROWS = 8;
+    private static final int POSE_HISTORY_MAX_ENTRIES = 200;
     private static final int PREVIEW_ITEM_SELECTOR_WIDTH = 180;
     private static final int PREVIEW_ITEM_SELECTOR_HEIGHT = 18;
     private static final int PREVIEW_ITEM_ROW_HEIGHT = 18;
@@ -199,8 +201,13 @@ public class BodyPoseEditorFragment extends Fragment {
     private MoveAxis draggingMoveAxis = MoveAxis.NONE;
     private RotationAxis hoveredRotationAxis = RotationAxis.NONE;
     private RotationAxis draggingRotationAxis = RotationAxis.NONE;
+    private boolean rotationGizmoMode;
+    private boolean ctrlGizmoToggleKeyDown;
     private boolean draggingPreview;
     private boolean draggingRightPreview;
+    private boolean previewTransformDirty;
+    private boolean skipNextCtrlPollToggle;
+    private boolean previewInvalidationQueued;
     private int activePreviewButton;
     private View repeatingTransformView;
     private Runnable repeatingTransformAction;
@@ -240,6 +247,11 @@ public class BodyPoseEditorFragment extends Fragment {
     private int previewScreenLeft;
     private int previewScreenTop;
     private final int[] previewSurfaceLocation = new int[2];
+    private Vector3f currentGizmoCenter = new Vector3f();
+    private final Vector3f dragStartGizmoCenter = new Vector3f();
+    private float dragStartMouseX;
+    private float dragStartMouseY;
+    private float dragStartMoveOffset;
 
     // UI 引用
     private LinearLayout skinButtonsContainer;
@@ -275,11 +287,20 @@ public class BodyPoseEditorFragment extends Fragment {
     private Button placeButton;
     private Button placeBackpackButton;
     private Button applySkeletalButton;
+    private Button poseHistoryButton;
+    private PopupWindow poseHistoryWindow;
+    private PopupWindow poseHistoryConfirmWindow;
+    private LinearLayout poseHistoryListContainer;
     private List<Button> partButtons = new ArrayList<>();
     private List<Button> poseButtons = new ArrayList<>();
     private List<Button> skinButtons = new ArrayList<>();
     private final List<NumericValueBinding> transformValueBindings = new ArrayList<>();
     private final List<NumericValueBinding> poseValueBindings = new ArrayList<>();
+    private final List<PoseHistoryEntry> poseHistoryEntries = new ArrayList<>();
+    private BodyPosePresetStore.EditorStateData poseHistoryBaseline;
+    private int poseHistorySequence;
+    private int selectedPoseHistoryIndex = -1;
+    private boolean suppressPoseHistory;
 
     // ═══════════════════════════════════════════════════════
     //  静态方法 — 打开编辑器
@@ -496,6 +517,7 @@ public class BodyPoseEditorFragment extends Fragment {
             pose.offsetY = clampPreview(bone.getFloat("offset_y", 0.0F), MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
             pose.offsetZ = clampPreview(bone.getFloat("offset_z", 0.0F), MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
             pose.scale = clampPreview(bone.getFloat("scale", 1.0F), MODEL_SCALE_MIN, MODEL_SCALE_MAX);
+            pose.visible = bone.getBoolean("visible", true);
         }
     }
 
@@ -598,6 +620,7 @@ public class BodyPoseEditorFragment extends Fragment {
         data.offsetY = pose.offsetY;
         data.offsetZ = pose.offsetZ;
         data.scale = pose.scale;
+        data.visible = pose.visible;
         return data;
     }
 
@@ -689,6 +712,7 @@ public class BodyPoseEditorFragment extends Fragment {
         pose.offsetY = clampPreview(data.offsetY, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
         pose.offsetZ = clampPreview(data.offsetZ, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
         pose.scale = clampPreview(data.scale <= 0.0F ? 1.0F : data.scale, MODEL_SCALE_MIN, MODEL_SCALE_MAX);
+        pose.visible = data.visible;
         return pose;
     }
 
@@ -742,21 +766,7 @@ public class BodyPoseEditorFragment extends Fragment {
         root.setBackground(new ColorDrawable(0xCC000000));
         root.setFocusable(true);
         root.setFocusableInTouchMode(true);
-        root.setOnKeyListener((view, keyCode, event) -> {
-            if (keyCode == KeyEvent.KEY_P
-                    && event.getAction() == KeyEvent.ACTION_DOWN
-                    && event.getRepeatCount() == 0) {
-                toggleWorldPreviewMode();
-                return true;
-            }
-            if (keyCode == GLFW.GLFW_KEY_F2
-                    && event.getAction() == KeyEvent.ACTION_DOWN
-                    && event.getRepeatCount() == 0) {
-                beginRenameSelectedTarget();
-                return true;
-            }
-            return false;
-        });
+        root.setOnKeyListener((view, keyCode, event) -> handleEditorKey(keyCode, event));
 
         // 左栏：皮肤/玩家选择
         View left = createLeftPanel(ctx);
@@ -771,7 +781,38 @@ public class BodyPoseEditorFragment extends Fragment {
         root.addView(right, new LinearLayout.LayoutParams(RIGHT_PANEL_WIDTH, -1));
 
         rootView = root;
+        resetPoseHistoryBaseline();
         return root;
+    }
+
+    private boolean handleEditorKey(int keyCode, KeyEvent event) {
+        if (keyCode == GLFW.GLFW_KEY_LEFT_CONTROL || keyCode == GLFW.GLFW_KEY_RIGHT_CONTROL) {
+            if (event.getAction() == KeyEvent.ACTION_UP) {
+                ctrlGizmoToggleKeyDown = false;
+                return true;
+            }
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                if (!ctrlGizmoToggleKeyDown) {
+                    toggleGizmoMode(true);
+                    ctrlGizmoToggleKeyDown = true;
+                    skipNextCtrlPollToggle = true;
+                }
+                return true;
+            }
+            return false;
+        }
+        if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() != 0) {
+            return false;
+        }
+        if (keyCode == KeyEvent.KEY_P) {
+            toggleWorldPreviewMode();
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_F2) {
+            beginRenameSelectedTarget();
+            return true;
+        }
+        return false;
     }
 
     @Override
@@ -804,11 +845,13 @@ public class BodyPoseEditorFragment extends Fragment {
     public void onDestroyView() {
         super.onDestroyView();
         saveCurrentPageState();
+        dismissPoseHistoryWindows();
         stopRepeatingTransform();
         rootView = null;
         surfaceView = null;
         pageTabsContainer = null;
         presetListContainer = null;
+        poseHistoryListContainer = null;
         renameContainer = null;
         renameField = null;
         previewSurfaceWidth = 0;
@@ -1027,7 +1070,7 @@ public class BodyPoseEditorFragment extends Fragment {
             if (pose.pitch != 0.0F || pose.yaw != 0.0F || pose.roll != 0.0F
                     || pose.bendPitch != 0.0F || pose.bendYaw != 0.0F || pose.bendRoll != 0.0F
                     || pose.offsetX != 0.0F || pose.offsetY != 0.0F || pose.offsetZ != 0.0F
-                    || pose.scale != 1.0F) {
+                    || pose.scale != 1.0F || !pose.visible) {
                 count++;
             }
         }
@@ -1060,6 +1103,315 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
+    private void resetPoseHistoryBaseline() {
+        poseHistoryEntries.clear();
+        poseHistorySequence = 0;
+        selectedPoseHistoryIndex = -1;
+        poseHistoryBaseline = captureEditorState("history");
+        rebuildPoseHistoryList();
+        refreshButtonLabels();
+    }
+
+    private void recordPoseHistoryStep(String source) {
+        if (suppressPoseHistory) {
+            return;
+        }
+        BodyPosePresetStore.EditorStateData current = captureEditorState("history");
+        if (poseHistoryBaseline == null) {
+            poseHistoryBaseline = current;
+            return;
+        }
+        List<String> changes = describeEditorStateChanges(poseHistoryBaseline, current);
+        if (changes.isEmpty()) {
+            poseHistoryBaseline = current;
+            return;
+        }
+        poseHistorySequence++;
+        poseHistoryEntries.add(new PoseHistoryEntry(poseHistorySequence, source, summarizeHistoryChanges(changes), changes, current));
+        while (poseHistoryEntries.size() > POSE_HISTORY_MAX_ENTRIES) {
+            poseHistoryEntries.remove(0);
+        }
+        selectedPoseHistoryIndex = poseHistoryEntries.size() - 1;
+        poseHistoryBaseline = current;
+        rebuildPoseHistoryList();
+        refreshButtonLabels();
+    }
+
+    private void openPoseHistoryWindow() {
+        if (rootView == null || getContext() == null) {
+            return;
+        }
+        if (poseHistoryBaseline == null) {
+            poseHistoryBaseline = captureEditorState("history");
+        }
+        dismissPoseHistoryWindows();
+
+        Context ctx = getContext();
+        LinearLayout panel = new LinearLayout(ctx);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(10, 10, 10, 10);
+        panel.setBackground(new ColorDrawable(0xF0111118));
+
+        TextView title = new TextView(ctx);
+        title.setText("姿势历史记录");
+        title.setTextColor(0xFFE8E8E8);
+        title.setTextSize(14);
+        title.setPadding(0, 0, 0, 6);
+        panel.addView(title, new LinearLayout.LayoutParams(-1, -2));
+
+        ScrollView scrollView = new ScrollView(ctx);
+        poseHistoryListContainer = new LinearLayout(ctx);
+        poseHistoryListContainer.setOrientation(LinearLayout.VERTICAL);
+        scrollView.addView(poseHistoryListContainer, new FrameLayout.LayoutParams(-1, -2));
+        panel.addView(scrollView, new LinearLayout.LayoutParams(-1, 380));
+
+        LinearLayout footer = new LinearLayout(ctx);
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        Button close = createStyledButton(ctx);
+        close.setText("关闭");
+        close.setOnClickListener(v -> dismissPoseHistoryWindows());
+        footer.addView(close, new LinearLayout.LayoutParams(0, -2, 1f));
+        panel.addView(footer, new LinearLayout.LayoutParams(-1, -2));
+
+        poseHistoryWindow = new PopupWindow(panel, 480, 470, true);
+        poseHistoryWindow.setBackgroundDrawable(new ColorDrawable(0xF0111118));
+        poseHistoryWindow.setOutsideTouchable(true);
+        poseHistoryWindow.setFocusable(true);
+        poseHistoryWindow.setOnDismissListener(() -> {
+            poseHistoryListContainer = null;
+            poseHistoryWindow = null;
+        });
+        poseHistoryWindow.showAtLocation(rootView, Gravity.CENTER, 0, 0);
+        rebuildPoseHistoryList();
+    }
+
+    private void rebuildPoseHistoryList() {
+        if (poseHistoryListContainer == null || getContext() == null) {
+            return;
+        }
+        Context ctx = getContext();
+        poseHistoryListContainer.removeAllViews();
+        if (poseHistoryEntries.isEmpty()) {
+            TextView empty = new TextView(ctx);
+            empty.setText("暂无调整记录");
+            empty.setTextColor(0xFF888888);
+            empty.setPadding(4, 4, 4, 4);
+            poseHistoryListContainer.addView(empty, new LinearLayout.LayoutParams(-1, -2));
+            return;
+        }
+
+        for (int i = 0; i < poseHistoryEntries.size(); i++) {
+            PoseHistoryEntry entry = poseHistoryEntries.get(i);
+            LinearLayout entryBox = new LinearLayout(ctx);
+            entryBox.setOrientation(LinearLayout.VERTICAL);
+            Button row = createStyledButton(ctx);
+            boolean selected = i == selectedPoseHistoryIndex;
+            row.setText((selected ? "> " : "  ") + "#" + entry.step + " " + entry.source + "  " + entry.summary);
+            row.setTextColor(selected ? 0xFFFFDD66 : 0xFFE8E8E8);
+            int index = i;
+            row.setOnClickListener(v -> {
+                selectedPoseHistoryIndex = index;
+                rebuildPoseHistoryList();
+            });
+            row.setOnTouchListener((view, event) -> {
+                applyButtonFeedback(view, event);
+                if (isSecondaryPress(event)) {
+                    selectedPoseHistoryIndex = index;
+                    rebuildPoseHistoryList();
+                    showPoseHistoryJumpConfirm(view, index);
+                    return true;
+                }
+                return false;
+            });
+            entryBox.addView(row, new LinearLayout.LayoutParams(-1, -2));
+            if (selected) {
+                TextView detail = new TextView(ctx);
+                detail.setText(String.join("\n", entry.changes));
+                detail.setTextColor(0xFFB8C7D8);
+                detail.setTextSize(11);
+                detail.setPadding(8, 2, 4, 6);
+                entryBox.addView(detail, new LinearLayout.LayoutParams(-1, -2));
+            }
+            poseHistoryListContainer.addView(entryBox, new LinearLayout.LayoutParams(-1, -2));
+        }
+    }
+
+    private void showPoseHistoryJumpConfirm(View anchor, int index) {
+        if (index < 0 || index >= poseHistoryEntries.size() || getContext() == null) {
+            return;
+        }
+        if (poseHistoryConfirmWindow != null && poseHistoryConfirmWindow.isShowing()) {
+            poseHistoryConfirmWindow.dismiss();
+        }
+        Context ctx = getContext();
+        PoseHistoryEntry entry = poseHistoryEntries.get(index);
+        LinearLayout panel = new LinearLayout(ctx);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(8, 8, 8, 8);
+        panel.setBackground(new ColorDrawable(0xF0181822));
+
+        TextView title = new TextView(ctx);
+        title.setText("跳转到 #" + entry.step + " ?");
+        title.setTextColor(0xFFE8E8E8);
+        title.setPadding(0, 0, 0, 4);
+        panel.addView(title, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout buttons = new LinearLayout(ctx);
+        buttons.setOrientation(LinearLayout.HORIZONTAL);
+        Button jump = createStyledButton(ctx);
+        jump.setText("跳转");
+        jump.setOnClickListener(v -> jumpToPoseHistory(index));
+        buttons.addView(jump, new LinearLayout.LayoutParams(0, -2, 1f));
+        Button cancel = createStyledButton(ctx);
+        cancel.setText("取消");
+        cancel.setOnClickListener(v -> {
+            if (poseHistoryConfirmWindow != null) {
+                poseHistoryConfirmWindow.dismiss();
+            }
+        });
+        buttons.addView(cancel, new LinearLayout.LayoutParams(0, -2, 1f));
+        panel.addView(buttons, new LinearLayout.LayoutParams(-1, -2));
+
+        poseHistoryConfirmWindow = new PopupWindow(panel, 220, 96, true);
+        poseHistoryConfirmWindow.setBackgroundDrawable(new ColorDrawable(0xF0181822));
+        poseHistoryConfirmWindow.setOutsideTouchable(true);
+        poseHistoryConfirmWindow.setFocusable(true);
+        poseHistoryConfirmWindow.setOnDismissListener(() -> poseHistoryConfirmWindow = null);
+        poseHistoryConfirmWindow.showAsDropDown(anchor, 16, -anchor.getHeight());
+    }
+
+    private void jumpToPoseHistory(int index) {
+        if (index < 0 || index >= poseHistoryEntries.size()) {
+            return;
+        }
+        PoseHistoryEntry entry = poseHistoryEntries.get(index);
+        suppressPoseHistory = true;
+        try {
+            applyEditorState(entry.snapshot);
+            selectedEditorItemIndex = -1;
+            saveCurrentPageState();
+            poseHistoryBaseline = captureEditorState("history");
+            selectedPoseHistoryIndex = index;
+        } finally {
+            suppressPoseHistory = false;
+        }
+        if (poseHistoryConfirmWindow != null) {
+            poseHistoryConfirmWindow.dismiss();
+        }
+        rebuildPartButtons();
+        rebuildPoseControls();
+        refreshPresetUi();
+        rebuildPoseHistoryList();
+        showActionbar("已跳转到历史步骤 #" + entry.step);
+    }
+
+    private void dismissPoseHistoryWindows() {
+        if (poseHistoryConfirmWindow != null && poseHistoryConfirmWindow.isShowing()) {
+            poseHistoryConfirmWindow.dismiss();
+        }
+        poseHistoryConfirmWindow = null;
+        if (poseHistoryWindow != null && poseHistoryWindow.isShowing()) {
+            poseHistoryWindow.dismiss();
+        }
+        poseHistoryWindow = null;
+        poseHistoryListContainer = null;
+    }
+
+    private List<String> describeEditorStateChanges(BodyPosePresetStore.EditorStateData before,
+                                                    BodyPosePresetStore.EditorStateData after) {
+        List<String> changes = new ArrayList<>();
+        if (before == null || after == null) {
+            return changes;
+        }
+        addFloatHistoryChange(changes, "模型 X", before.modelOffsetX, after.modelOffsetX);
+        addFloatHistoryChange(changes, "模型 Y", before.modelOffsetY, after.modelOffsetY);
+        addFloatHistoryChange(changes, "模型 Z", before.modelOffsetZ, after.modelOffsetZ);
+        addFloatHistoryChange(changes, "模型 Pitch", before.modelPitch, after.modelPitch);
+        addFloatHistoryChange(changes, "模型 Yaw", before.modelYaw, after.modelYaw);
+        addFloatHistoryChange(changes, "模型 Roll", before.modelRoll, after.modelRoll);
+        addFloatHistoryChange(changes, "整体大小", before.wholeBodyScale, after.wholeBodyScale);
+        describePoseMapChanges(changes, "静态", before.partPoses, after.partPoses);
+        describePoseMapChanges(changes, "骨骼", before.skeletalPoses, after.skeletalPoses);
+        describePoseMapChanges(changes, "真骨骼", before.trueSkeletalPoses, after.trueSkeletalPoses);
+        describeEditorItemChanges(changes, before.editorItems, after.editorItems);
+        return changes;
+    }
+
+    private void describePoseMapChanges(List<String> changes, String group,
+                                        Map<String, BodyPosePresetStore.PoseData> before,
+                                        Map<String, BodyPosePresetStore.PoseData> after) {
+        Set<String> keys = new TreeSet<>();
+        if (before != null) keys.addAll(before.keySet());
+        if (after != null) keys.addAll(after.keySet());
+        for (String key : keys) {
+            BodyPosePresetStore.PoseData left = before != null ? before.get(key) : null;
+            BodyPosePresetStore.PoseData right = after != null ? after.get(key) : null;
+            if (left == null) left = new BodyPosePresetStore.PoseData();
+            if (right == null) right = new BodyPosePresetStore.PoseData();
+            String prefix = group + "/" + getPartButtonLabel(key) + " ";
+            addFloatHistoryChange(changes, prefix + "Pitch", left.pitch, right.pitch);
+            addFloatHistoryChange(changes, prefix + "Yaw", left.yaw, right.yaw);
+            addFloatHistoryChange(changes, prefix + "Roll", left.roll, right.roll);
+            addFloatHistoryChange(changes, prefix + "BendP", left.bendPitch, right.bendPitch);
+            addFloatHistoryChange(changes, prefix + "BendY", left.bendYaw, right.bendYaw);
+            addFloatHistoryChange(changes, prefix + "BendR", left.bendRoll, right.bendRoll);
+            addFloatHistoryChange(changes, prefix + "X", left.offsetX, right.offsetX);
+            addFloatHistoryChange(changes, prefix + "Y", left.offsetY, right.offsetY);
+            addFloatHistoryChange(changes, prefix + "Z", left.offsetZ, right.offsetZ);
+            addFloatHistoryChange(changes, prefix + "大小", left.scale, right.scale);
+            if (left.visible != right.visible) {
+                changes.add(prefix + "显示 " + (left.visible ? "开" : "关") + "->" + (right.visible ? "开" : "关"));
+            }
+        }
+    }
+
+    private void describeEditorItemChanges(List<String> changes,
+                                           List<BodyPosePresetStore.EditorItemData> before,
+                                           List<BodyPosePresetStore.EditorItemData> after) {
+        int leftSize = before != null ? before.size() : 0;
+        int rightSize = after != null ? after.size() : 0;
+        if (leftSize != rightSize) {
+            changes.add("物品数量 " + leftSize + "->" + rightSize);
+        }
+        int count = Math.min(leftSize, rightSize);
+        for (int i = 0; i < count; i++) {
+            BodyPosePresetStore.EditorItemData left = before.get(i);
+            BodyPosePresetStore.EditorItemData right = after.get(i);
+            String prefix = "物品" + (i + 1) + " ";
+            if (!Objects.equals(left.itemId, right.itemId)) {
+                changes.add(prefix + "类型");
+            }
+            addFloatHistoryChange(changes, prefix + "X", left.offsetX, right.offsetX);
+            addFloatHistoryChange(changes, prefix + "Y", left.offsetY, right.offsetY);
+            addFloatHistoryChange(changes, prefix + "Z", left.offsetZ, right.offsetZ);
+            addFloatHistoryChange(changes, prefix + "Pitch", left.pitch, right.pitch);
+            addFloatHistoryChange(changes, prefix + "Yaw", left.yaw, right.yaw);
+            addFloatHistoryChange(changes, prefix + "Roll", left.roll, right.roll);
+            if (!Objects.equals(left.displayMode, right.displayMode)) {
+                changes.add(prefix + "显示 " + left.displayMode + "->" + right.displayMode);
+            }
+        }
+    }
+
+    private static void addFloatHistoryChange(List<String> changes, String label, float before, float after) {
+        if (Math.abs(before - after) <= 0.0001F) {
+            return;
+        }
+        changes.add(label + " " + formatOffset(before) + "->" + formatOffset(after));
+    }
+
+    private static String summarizeHistoryChanges(List<String> changes) {
+        if (changes.isEmpty()) {
+            return "";
+        }
+        int visible = Math.min(3, changes.size());
+        String summary = String.join(", ", changes.subList(0, visible));
+        if (changes.size() > visible) {
+            summary += " +" + (changes.size() - visible);
+        }
+        return summary;
+    }
+
     private void switchEditorPage(int index) {
         if (index < 0 || index >= presetStore.pages.size() || index == presetStore.activePageIndex) {
             return;
@@ -1072,6 +1424,7 @@ public class BodyPoseEditorFragment extends Fragment {
         rebuildPartButtons();
         rebuildPoseControls();
         refreshPresetUi();
+        resetPoseHistoryBaseline();
     }
 
     private void addEditorPage() {
@@ -1087,6 +1440,7 @@ public class BodyPoseEditorFragment extends Fragment {
         presetStore.activePageIndex = presetStore.pages.size() - 1;
         BodyPosePresetStore.save(presetStore);
         refreshPresetUi();
+        resetPoseHistoryBaseline();
         beginRenameActivePage();
     }
 
@@ -1114,6 +1468,7 @@ public class BodyPoseEditorFragment extends Fragment {
         rebuildPartButtons();
         rebuildPoseControls();
         refreshPresetUi();
+        resetPoseHistoryBaseline();
     }
 
     private void saveCurrentAsPreset() {
@@ -1159,6 +1514,7 @@ public class BodyPoseEditorFragment extends Fragment {
         rebuildPartButtons();
         rebuildPoseControls();
         refreshPresetUi();
+        resetPoseHistoryBaseline();
     }
 
     private void deletePreset(String presetId) {
@@ -1473,6 +1829,9 @@ public class BodyPoseEditorFragment extends Fragment {
 
         applySkeletalButton = createStyledButton(ctx);
         panel.addView(applySkeletalButton, new LinearLayout.LayoutParams(-1, -2));
+
+        poseHistoryButton = createStyledButton(ctx);
+        panel.addView(poseHistoryButton, new LinearLayout.LayoutParams(-1, -2));
     }
 
     private View createCenterPanel(Context ctx) {
@@ -1496,6 +1855,9 @@ public class BodyPoseEditorFragment extends Fragment {
         // 3D 预览 (MinecraftSurfaceView)
         surfaceView = new MinecraftSurfaceView(ctx);
         surfaceView.setRenderer(new PreviewRenderer());
+        surfaceView.setFocusable(true);
+        surfaceView.setFocusableInTouchMode(true);
+        surfaceView.setOnKeyListener((view, keyCode, event) -> handleEditorKey(keyCode, event));
         surfaceView.setOnTouchListener(new PreviewTouchListener());
         surfaceView.setOnGenericMotionListener(this::handlePreviewGenericMotion);
         panel.addView(surfaceView, new LinearLayout.LayoutParams(-1, 0, 1f));
@@ -1722,7 +2084,18 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void invalidatePreview() {
-        if (surfaceView != null) surfaceView.invalidate();
+        MinecraftSurfaceView view = surfaceView;
+        if (view == null || previewInvalidationQueued) {
+            return;
+        }
+        previewInvalidationQueued = true;
+        boolean posted = view.post(() -> {
+            previewInvalidationQueued = false;
+            view.invalidate();
+        });
+        if (!posted) {
+            previewInvalidationQueued = false;
+        }
     }
 
     private void adjustActiveOffset(MoveAxis axis, float amount) {
@@ -1801,6 +2174,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private void rebuildTrueSkeletalPartButtons(Context ctx) {
         addPartButton(partButtonsContainer, ctx, "all", "all", -1.0F);
         addTrueSkeletalPartGroup(ctx, "eye", "Eye", "eye_left", "eye_right");
+        addTrueSkeletalPartGroup(ctx, "eye_highlight", "Highlight", "eye_highlight_left", "eye_highlight_right");
         addTrueSkeletalPartGroup(ctx, "eyelid", "Lid", "eyelid_left", "eyelid_right");
         addTrueSkeletalPartGroup(ctx, "head", "头");
         addTrueSkeletalPartGroup(ctx, "torso", "躯干", "torso_low", "torso_midium", "torso_on");
@@ -1828,6 +2202,7 @@ public class BodyPoseEditorFragment extends Fragment {
         button.setTextColor(selected ? 0xFFFFDD66 : 0xFFE8E8E8);
         button.setOnClickListener(v -> {
             selectedPart = partId;
+            clearGizmoInteractionState();
             rebuildPoseControls();
             refreshButtonLabels();
             refreshNumericValueBindings();
@@ -1864,9 +2239,38 @@ public class BodyPoseEditorFragment extends Fragment {
             case "torso_on" -> "上";
             case "left_arm_on", "right_arm_on", "left_leg_on", "right_leg_on" -> "上";
             case "left_arm_low", "right_arm_low", "left_leg_low", "right_leg_low" -> "下";
-            case "eye_left", "eyelid_left" -> "R";
-            case "eye_right", "eyelid_right" -> "L";
+            case "eye_left", "eyelid_left", "eye_highlight_left" -> "R";
+            case "eye_right", "eyelid_right", "eye_highlight_right" -> "L";
+            case "eye_highlight" -> "HL";
             default -> part;
+        };
+    }
+
+    private static boolean isEyeTarget(String part) {
+        return "eye".equals(part) || "eye_left".equals(part) || "eye_right".equals(part);
+    }
+
+    private static boolean isEyelidTarget(String part) {
+        return "eyelid".equals(part) || "eyelid_left".equals(part) || "eyelid_right".equals(part);
+    }
+
+    private static boolean isEyeHighlightTarget(String part) {
+        return "eye_highlight".equals(part) || "eye_highlight_left".equals(part) || "eye_highlight_right".equals(part);
+    }
+
+    private static String matchingEyelidTarget(String part) {
+        return switch (part) {
+            case "eye_left" -> "eyelid_left";
+            case "eye_right" -> "eyelid_right";
+            default -> "eyelid";
+        };
+    }
+
+    private static String matchingHighlightTarget(String part) {
+        return switch (part) {
+            case "eye_left" -> "eye_highlight_left";
+            case "eye_right" -> "eye_highlight_right";
+            default -> "eye_highlight";
         };
     }
 
@@ -1886,15 +2290,31 @@ public class BodyPoseEditorFragment extends Fragment {
                 MODEL_SCALE_STEP, MODEL_SCALE_MIN, MODEL_SCALE_MAX, false,
                 poseValueBindings));
 
-        if (!editingAll && poseEditMode == PoseEditMode.TRUE_SKELETAL) {
-            poseControlsContainer.addView(createPositionRow(ctx, "X", MoveAxis.X));
-            poseControlsContainer.addView(createPositionRow(ctx, "Y", MoveAxis.Y));
-            poseControlsContainer.addView(createPositionRow(ctx, "Z", MoveAxis.Z));
+        if (!editingAll && poseEditMode == PoseEditMode.TRUE_SKELETAL
+                && !isEyeTarget(selectedPart) && !isEyelidTarget(selectedPart) && !isEyeHighlightTarget(selectedPart)) {
+            poseControlsContainer.addView(createPositionRow(ctx, "X", selectedPart, MoveAxis.X));
+            poseControlsContainer.addView(createPositionRow(ctx, "Y", selectedPart, MoveAxis.Y));
+            poseControlsContainer.addView(createPositionRow(ctx, "Z", selectedPart, MoveAxis.Z));
         }
 
         if (editingAll) {
             addAllBendControls(ctx);
             return;
+        }
+
+        if (poseEditMode == PoseEditMode.TRUE_SKELETAL) {
+            if (isEyeTarget(selectedPart)) {
+                addEyeControls(ctx);
+                return;
+            }
+            if (isEyelidTarget(selectedPart)) {
+                addEyelidControls(ctx);
+                return;
+            }
+            if (isEyeHighlightTarget(selectedPart)) {
+                addEyeHighlightControls(ctx);
+                return;
+            }
         }
 
         poseControlsContainer.addView(createNumericRow(ctx, "部位大小",
@@ -1920,7 +2340,79 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
+    private void addEyeControls(Context ctx) {
+        String eyePart = selectedPart;
+
+        addSectionLabel(poseControlsContainer, ctx, "Eye");
+        poseControlsContainer.addView(createVisibilityRow(ctx, "Visible", eyePart));
+        poseControlsContainer.addView(createScaleRow(ctx, "Size", eyePart));
+        addPoseRows(ctx, "Eye", eyePart);
+        addPositionRows(ctx, "Eye", eyePart);
+    }
+
+    private void addEyelidControls(Context ctx) {
+        addSectionLabel(poseControlsContainer, ctx, "Eyelid");
+        poseControlsContainer.addView(createVisibilityRow(ctx, "Visible", selectedPart));
+        addPoseRows(ctx, "Lid", selectedPart);
+        addPositionRows(ctx, "Lid", selectedPart);
+    }
+
+    private void addEyeHighlightControls(Context ctx) {
+        addSectionLabel(poseControlsContainer, ctx, "Highlight");
+        poseControlsContainer.addView(createVisibilityRow(ctx, "Visible", selectedPart));
+        poseControlsContainer.addView(createScaleRow(ctx, "Size", selectedPart));
+        addPoseRows(ctx, "HL", selectedPart);
+        addPositionRows(ctx, "HL", selectedPart);
+    }
+
+    private void addPoseRows(Context ctx, String prefix, String part) {
+        poseControlsContainer.addView(createPoseRow(ctx, prefix + " Pitch", part, Axis.PITCH));
+        poseControlsContainer.addView(createPoseRow(ctx, prefix + " Yaw", part, Axis.YAW));
+        poseControlsContainer.addView(createPoseRow(ctx, prefix + " Roll", part, Axis.ROLL));
+    }
+
+    private void addPositionRows(Context ctx, String prefix, String part) {
+        poseControlsContainer.addView(createPositionRow(ctx, prefix + " X", part, MoveAxis.X));
+        poseControlsContainer.addView(createPositionRow(ctx, prefix + " Y", part, MoveAxis.Y));
+        poseControlsContainer.addView(createPositionRow(ctx, prefix + " Z", part, MoveAxis.Z));
+    }
+
+    private LinearLayout createScaleRow(Context ctx, String label, String part) {
+        return createNumericRow(ctx, label,
+                () -> getPartScale(part),
+                value -> setPartScale(part, value),
+                MODEL_SCALE_STEP, MODEL_SCALE_MIN, MODEL_SCALE_MAX, false,
+                poseValueBindings);
+    }
+
+    private LinearLayout createVisibilityRow(Context ctx, String label, String part) {
+        LinearLayout row = new LinearLayout(ctx);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+
+        TextView labelView = new TextView(ctx);
+        labelView.setText(label);
+        labelView.setTextColor(0xFFAAAAAA);
+        labelView.setWidth(88);
+        row.addView(labelView, new LinearLayout.LayoutParams(-2, -2));
+
+        Button toggle = createStyledButton(ctx);
+        toggle.setText(isPartVisible(part) ? "Show" : "Hide");
+        toggle.setOnClickListener(v -> {
+            setPartVisible(part, !isPartVisible(part));
+            rebuildPoseControls();
+            refreshButtonLabels();
+            invalidatePreview();
+            recordPoseHistoryStep("可见性");
+        });
+        row.addView(toggle, new LinearLayout.LayoutParams(0, -2, 1f));
+        return row;
+    }
+
     private LinearLayout createPoseRow(Context ctx, String label, Axis axis) {
+        return createPoseRow(ctx, label, selectedPart, axis);
+    }
+
+    private LinearLayout createPoseRow(Context ctx, String label, String part, Axis axis) {
         LinearLayout row = new LinearLayout(ctx);
         row.setOrientation(LinearLayout.HORIZONTAL);
 
@@ -1931,8 +2423,8 @@ public class BodyPoseEditorFragment extends Fragment {
         row.addView(labelView, new LinearLayout.LayoutParams(-2, -2));
 
         NumericValueBinding binding = new NumericValueBinding(
-                () -> getSelectedPoseValue(axis),
-                value -> setSelectedPoseValue(axis, value),
+                () -> getPartPoseValue(part, axis),
+                value -> setPartPoseValue(part, axis, value),
                 -180.0F, 180.0F, axis != Axis.PITCH);
         installNumericFieldScroll(row, binding, ROTATION_STEP_DEGREES);
 
@@ -1960,13 +2452,21 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private LinearLayout createBendRow(Context ctx, String label, Axis axis) {
-        return createPartBendRow(ctx, label, selectedPart, axis, true);
+        return createBendRow(ctx, label, selectedPart, axis);
+    }
+
+    private LinearLayout createBendRow(Context ctx, String label, String part, Axis axis) {
+        return createPartBendRow(ctx, label, part, axis, true);
     }
 
     private LinearLayout createPositionRow(Context ctx, String label, MoveAxis axis) {
+        return createPositionRow(ctx, label, selectedPart, axis);
+    }
+
+    private LinearLayout createPositionRow(Context ctx, String label, String part, MoveAxis axis) {
         return createNumericRow(ctx, label,
-                () -> getSelectedPoseOffset(axis),
-                value -> setSelectedPoseOffset(axis, value),
+                () -> getPartPoseOffset(part, axis),
+                value -> setPartPoseOffset(part, axis, value),
                 TRUE_SKELETAL_OFFSET_STEP, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX, false,
                 poseValueBindings);
     }
@@ -2072,10 +2572,12 @@ public class BodyPoseEditorFragment extends Fragment {
                 EditorItemModel model = new EditorItemModel(stack.copyWithCount(1));
                 EDITOR_ITEMS.add(model);
                 selectedEditorItemIndex = EDITOR_ITEMS.size() - 1;
+                clearGizmoInteractionState();
                 itemListOpen = false;
                 itemListContainer.setVisibility(View.GONE);
                 refreshButtonLabels();
                 refreshNumericValueBindings();
+                recordPoseHistoryStep("添加物品");
             });
             itemListContainer.addView(b, new LinearLayout.LayoutParams(-1, -2));
         }
@@ -2123,12 +2625,24 @@ public class BodyPoseEditorFragment extends Fragment {
             previewScale = getPreviewBaseScale(pWidth, pHeight) * previewZoom;
             previewCenterX = (previewAreaLeft + previewAreaRight) * 0.5F + previewPanX;
             previewCenterY = (previewAreaTop + previewAreaBottom) * 0.5F + previewPanY;
+            updateGizmoModeToggleKey();
+            updateGizmoCenter();
 
             // 更新 hover 状态
             float localMouseX = mouseX - previewScreenLeft;
             float localMouseY = mouseY - previewScreenTop;
-            hoveredMoveAxis = draggingMoveAxis == MoveAxis.NONE ? findMoveAxis(localMouseX, localMouseY) : draggingMoveAxis;
-            hoveredRotationAxis = draggingRotationAxis == RotationAxis.NONE ? findRotationRing(localMouseX, localMouseY) : draggingRotationAxis;
+            boolean rotationMode = isRotationGizmoMode();
+            if (rotationMode) {
+                hoveredMoveAxis = MoveAxis.NONE;
+                hoveredRotationAxis = draggingRotationAxis != RotationAxis.NONE
+                        ? draggingRotationAxis
+                        : findRotationRing(localMouseX, localMouseY);
+            } else {
+                hoveredRotationAxis = RotationAxis.NONE;
+                hoveredMoveAxis = draggingMoveAxis != MoveAxis.NONE
+                        ? draggingMoveAxis
+                        : findMoveAxis(localMouseX, localMouseY);
+            }
 
             // 地面网格
             if (showCoordinateAxes) {
@@ -2180,6 +2694,153 @@ public class BodyPoseEditorFragment extends Fragment {
         return scroll;
     }
 
+    private boolean isRotationGizmoMode() {
+        if (draggingRotationAxis != RotationAxis.NONE) return true;
+        if (draggingMoveAxis != MoveAxis.NONE) return false;
+        return rotationGizmoMode;
+    }
+
+    private void toggleGizmoMode(boolean invalidate) {
+        rotationGizmoMode = !rotationGizmoMode;
+        hoveredMoveAxis = MoveAxis.NONE;
+        hoveredRotationAxis = RotationAxis.NONE;
+        clearActiveGizmoDrag();
+        draggingPreview = false;
+        draggingRightPreview = false;
+        previewTransformDirty = false;
+        activePreviewButton = 0;
+        updateGizmoCenter();
+        if (invalidate) {
+            invalidatePreview();
+        }
+    }
+
+    private void updateGizmoModeToggleKey() {
+        boolean down = isCtrlDown();
+        if (down && !ctrlGizmoToggleKeyDown) {
+            if (!skipNextCtrlPollToggle) {
+                toggleGizmoMode(false);
+            }
+            skipNextCtrlPollToggle = false;
+        }
+        if (!down) {
+            skipNextCtrlPollToggle = false;
+        }
+        ctrlGizmoToggleKeyDown = down;
+    }
+
+    private static boolean isCtrlDown() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null) {
+            return false;
+        }
+        long handle = client.getWindow().getHandle();
+        return GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_LEFT_CONTROL) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_RIGHT_CONTROL) == GLFW.GLFW_PRESS;
+    }
+
+    private boolean usesSelectedPartGizmoTarget() {
+        return !hasSelectedItemModel()
+                && !selectedPart.equals("all");
+    }
+
+    private void updateGizmoCenter() {
+        currentGizmoCenter = resolveGizmoCenter();
+    }
+
+    private void beginMoveGizmoDrag(MoveAxis axis, float mouseX, float mouseY) {
+        if (axis == MoveAxis.NONE) {
+            return;
+        }
+        captureGizmoDragStart(mouseX, mouseY);
+        dragStartMoveOffset = usesSelectedPartGizmoTarget()
+                ? getSelectedPoseOffset(axis)
+                : getActiveOffset(axis);
+        draggingMoveAxis = axis;
+        draggingRotationAxis = RotationAxis.NONE;
+        draggingPreview = false;
+        draggingRightPreview = false;
+    }
+
+    private void beginRotationGizmoDrag(RotationAxis axis, float mouseX, float mouseY) {
+        if (axis == RotationAxis.NONE) {
+            return;
+        }
+        captureGizmoDragStart(mouseX, mouseY);
+        draggingRotationAxis = axis;
+        draggingMoveAxis = MoveAxis.NONE;
+        draggingPreview = false;
+        draggingRightPreview = false;
+    }
+
+    private void captureGizmoDragStart(float mouseX, float mouseY) {
+        updateGizmoCenter();
+        dragStartGizmoCenter.set(currentGizmoCenter);
+        dragStartMouseX = mouseX;
+        dragStartMouseY = mouseY;
+    }
+
+    private void clearActiveGizmoDrag() {
+        draggingMoveAxis = MoveAxis.NONE;
+        draggingRotationAxis = RotationAxis.NONE;
+        dragStartMoveOffset = 0.0F;
+    }
+
+    private Vector3f resolveGizmoCenter() {
+        if (usesSelectedPartGizmoTarget()) {
+            if (poseEditMode == PoseEditMode.TRUE_SKELETAL) {
+                Vector3f center = BodyPoseSkeletalPreviewRenderer.getPoseTargetBaseRenderPosition(selectedPart);
+                if (center != null) {
+                    return center.add(
+                            getSelectedPoseOffset(MoveAxis.X),
+                            getSelectedPoseOffset(MoveAxis.Y),
+                            getSelectedPoseOffset(MoveAxis.Z));
+                }
+            } else {
+                return getStaticPartGizmoCenter(selectedPart);
+            }
+        }
+        return new Vector3f(getActiveOffsetX(), getActiveOffsetY(), getActiveOffsetZ());
+    }
+
+    private Vector3f getStaticPartGizmoCenter(String part) {
+        Vector3f center = switch (part) {
+            case "head" -> new Vector3f(0.0F, 1.0F, 0.0F);
+            case "torso" -> new Vector3f(0.0F, 0.25F, 0.0F);
+            case "left_arm" -> new Vector3f(0.375F, 0.25F, 0.0F);
+            case "right_arm" -> new Vector3f(-0.375F, 0.25F, 0.0F);
+            case "left_leg" -> new Vector3f(0.125F, -0.75F, 0.0F);
+            case "right_leg" -> new Vector3f(-0.125F, -0.75F, 0.0F);
+            default -> new Vector3f(0.0F, 0.0F, 0.0F);
+        };
+        PartPose pose = getActivePoseMap().computeIfAbsent(part, ignored -> new PartPose());
+        center.add(pose.offsetX, pose.offsetY, pose.offsetZ);
+        return center;
+    }
+
+    private void clearGizmoInteractionState() {
+        hoveredMoveAxis = MoveAxis.NONE;
+        hoveredRotationAxis = RotationAxis.NONE;
+        clearActiveGizmoDrag();
+        draggingPreview = false;
+        draggingRightPreview = false;
+        previewTransformDirty = false;
+        activePreviewButton = 0;
+    }
+
+    private void cancelGizmoStep() {
+        hoveredMoveAxis = MoveAxis.NONE;
+        hoveredRotationAxis = RotationAxis.NONE;
+        clearActiveGizmoDrag();
+        previewTransformDirty = false;
+        invalidatePreview();
+    }
+
+    private boolean hasActiveGizmoStep() {
+        return draggingMoveAxis != MoveAxis.NONE
+                || draggingRotationAxis != RotationAxis.NONE;
+    }
+
     // ═══════════════════════════════════════════════════════
     //  预览渲染方法
     // ═══════════════════════════════════════════════════════
@@ -2199,13 +2860,43 @@ public class BodyPoseEditorFragment extends Fragment {
                     return handlePreviewScroll(event);
                 }
                 case MotionEvent.ACTION_DOWN, MotionEvent.ACTION_BUTTON_PRESS -> {
+                    if (handlePreviewItemSelectorClick(x, y)) {
+                        return true;
+                    }
                     lastX = x;
                     lastY = y;
                     activePreviewButton = getPreviewButton(event, action);
-                    draggingPreview = activePreviewButton == MotionEvent.BUTTON_PRIMARY;
-                    draggingRightPreview = activePreviewButton == MotionEvent.BUTTON_SECONDARY;
-                    draggingMoveAxis = MoveAxis.NONE;
-                    draggingRotationAxis = RotationAxis.NONE;
+                    updateGizmoCenter();
+
+                    if (activePreviewButton == MotionEvent.BUTTON_SECONDARY) {
+                        if (hasActiveGizmoStep()) {
+                            cancelGizmoStep();
+                            return true;
+                        }
+                        draggingPreview = false;
+                        draggingRightPreview = true;
+                        return true;
+                    }
+
+                    if (activePreviewButton == MotionEvent.BUTTON_PRIMARY) {
+                        if (isRotationGizmoMode()) {
+                            RotationAxis rotationAxis = findRotationRing(x, y);
+                            if (rotationAxis != RotationAxis.NONE) {
+                                beginRotationGizmoDrag(rotationAxis, x, y);
+                                return true;
+                            }
+                        } else {
+                            MoveAxis moveAxis = findMoveAxis(x, y);
+                            if (moveAxis != MoveAxis.NONE) {
+                                beginMoveGizmoDrag(moveAxis, x, y);
+                                return true;
+                            }
+                        }
+                        draggingPreview = true;
+                        draggingRightPreview = false;
+                        clearActiveGizmoDrag();
+                        return true;
+                    }
                     return true;
                 }
                 case MotionEvent.ACTION_MOVE -> {
@@ -2216,7 +2907,16 @@ public class BodyPoseEditorFragment extends Fragment {
                     boolean secondaryDown = activePreviewButton == MotionEvent.BUTTON_SECONDARY
                             || event.isButtonPressed(MotionEvent.BUTTON_SECONDARY);
 
-                    if (primaryDown && draggingPreview) {
+                    if (secondaryDown && hasActiveGizmoStep()) {
+                        cancelGizmoStep();
+                        return true;
+                    }
+
+                    if (primaryDown && draggingRotationAxis != RotationAxis.NONE) {
+                        dragGizmoRotation(draggingRotationAxis, x, y, dX, dY);
+                    } else if (primaryDown && draggingMoveAxis != MoveAxis.NONE) {
+                        dragGizmoOffset(draggingMoveAxis, x, y);
+                    } else if (primaryDown && draggingPreview) {
                         previewYaw -= dX * 0.65F;
                         previewPitch = clampPreview(previewPitch - dY * 0.65F, -60.0F, 60.0F);
                     } else if (secondaryDown && draggingRightPreview) {
@@ -2224,21 +2924,47 @@ public class BodyPoseEditorFragment extends Fragment {
                         previewPanY += dY;
                     }
 
-                    hoveredRotationAxis = findRotationRing(x, y);
-                    hoveredMoveAxis = findMoveAxis(x, y);
+                    updateGizmoCenter();
+                    if (isRotationGizmoMode()) {
+                        hoveredMoveAxis = MoveAxis.NONE;
+                        hoveredRotationAxis = draggingRotationAxis != RotationAxis.NONE
+                                ? draggingRotationAxis
+                                : findRotationRing(x, y);
+                    } else {
+                        hoveredRotationAxis = RotationAxis.NONE;
+                        hoveredMoveAxis = draggingMoveAxis != MoveAxis.NONE
+                                ? draggingMoveAxis
+                                : findMoveAxis(x, y);
+                    }
                     lastX = x;
                     lastY = y;
                     invalidatePreview();
                     return true;
                 }
-                case MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_BUTTON_RELEASE -> {
+                case MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_OUTSIDE,
+                        MotionEvent.ACTION_HOVER_EXIT, MotionEvent.ACTION_BUTTON_RELEASE -> {
+                    boolean changed = previewTransformDirty;
+                    boolean movedAxis = draggingMoveAxis != MoveAxis.NONE;
+                    boolean rotatedAxis = draggingRotationAxis != RotationAxis.NONE;
                     draggingPreview = false;
                     draggingRightPreview = false;
-                    draggingMoveAxis = MoveAxis.NONE;
-                    draggingRotationAxis = RotationAxis.NONE;
+                    if (draggingMoveAxis != MoveAxis.NONE || draggingRotationAxis != RotationAxis.NONE) {
+                        clearActiveGizmoDrag();
+                    }
+                    if (changed) {
+                        saveCurrentPageState();
+                        recordPoseHistoryStep(movedAxis ? "移动轴" : rotatedAxis ? "旋转轴" : "调整");
+                    }
+                    previewTransformDirty = false;
                     activePreviewButton = 0;
-                    hoveredRotationAxis = findRotationRing(x, y);
-                    hoveredMoveAxis = findMoveAxis(x, y);
+                    updateGizmoCenter();
+                    if (isRotationGizmoMode()) {
+                        hoveredMoveAxis = MoveAxis.NONE;
+                        hoveredRotationAxis = findRotationRing(x, y);
+                    } else {
+                        hoveredRotationAxis = RotationAxis.NONE;
+                        hoveredMoveAxis = findMoveAxis(x, y);
+                    }
                     invalidatePreview();
                     return true;
                 }
@@ -2389,6 +3115,7 @@ public class BodyPoseEditorFragment extends Fragment {
         EditorItemModel model = new EditorItemModel(stacks.get(index).copyWithCount(1));
         EDITOR_ITEMS.add(model);
         selectedEditorItemIndex = EDITOR_ITEMS.size() - 1;
+        clearGizmoInteractionState();
         itemListOpen = false;
         refreshButtonLabels();
         refreshNumericValueBindings();
@@ -2439,15 +3166,25 @@ public class BodyPoseEditorFragment extends Fragment {
         }
 
         String label = hasSelectedItemModel() ? "Item " + (selectedEditorItemIndex + 1) : "Player";
+        if (usesSelectedPartGizmoTarget()) {
+            label = selectedPart;
+        }
+        float readoutOffsetX = usesSelectedPartGizmoTarget() ? getSelectedPoseOffset(MoveAxis.X) : getActiveOffsetX();
+        float readoutOffsetY = usesSelectedPartGizmoTarget() ? getSelectedPoseOffset(MoveAxis.Y) : getActiveOffsetY();
+        float readoutOffsetZ = usesSelectedPartGizmoTarget() ? getSelectedPoseOffset(MoveAxis.Z) : getActiveOffsetZ();
+        float readoutPitch = usesSelectedPartGizmoTarget() ? getSelectedPoseValue(Axis.PITCH) : getActivePitch();
+        float readoutYaw = usesSelectedPartGizmoTarget() ? getSelectedPoseValue(Axis.YAW) : getActiveYaw();
+        float readoutRoll = usesSelectedPartGizmoTarget() ? getSelectedPoseValue(Axis.ROLL) : getActiveRoll();
+        float readoutScale = usesSelectedPartGizmoTarget() ? getPartScale(selectedPart) : wholeBodyScale;
         String line1 = label + "  pos "
-                + formatOffset(getActiveOffsetX()) + " "
-                + formatOffset(getActiveOffsetY()) + " "
-                + formatOffset(getActiveOffsetZ());
+                + formatOffset(readoutOffsetX) + " "
+                + formatOffset(readoutOffsetY) + " "
+                + formatOffset(readoutOffsetZ);
         String line2 = "rot "
-                + formatDegrees(getActivePitch()) + " "
-                + formatDegrees(getActiveYaw()) + " "
-                + formatDegrees(getActiveRoll());
-        String line3 = "scale " + formatOffset(wholeBodyScale);
+                + formatDegrees(readoutPitch) + " "
+                + formatDegrees(readoutYaw) + " "
+                + formatDegrees(readoutRoll);
+        String line3 = "scale " + formatOffset(readoutScale);
 
         int x = previewAreaLeft + 6;
         int y = Math.max(previewAreaTop + 6, previewAreaBottom - 34);
@@ -2571,31 +3308,34 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void renderModelTransformGizmos(DrawContext context) {
-        renderRotationRing(context, RotationAxis.PITCH, 0xD0FF4646);
-        renderRotationRing(context, RotationAxis.YAW, 0xD046E646);
-        renderRotationRing(context, RotationAxis.ROLL, 0xD05A6EFF);
+        if (isRotationGizmoMode()) {
+            renderRotationRing(context, RotationAxis.PITCH, 0xD0FF4646);
+            renderRotationRing(context, RotationAxis.YAW, 0xD046E646);
+            renderRotationRing(context, RotationAxis.ROLL, 0xD05A6EFF);
+        } else {
+            renderMoveAxis(context, MoveAxis.X, 0xF5FF3232);
+            renderMoveAxis(context, MoveAxis.Y, 0xF532DC32);
+            renderMoveAxis(context, MoveAxis.Z, 0xF53C50FF);
+        }
 
-        renderMoveAxis(context, MoveAxis.X, 0xF5FF3232);
-        renderMoveAxis(context, MoveAxis.Y, 0xF532DC32);
-        renderMoveAxis(context, MoveAxis.Z, 0xF53C50FF);
-
-        ScreenPoint center = projectModelPoint(getActiveOffsetX(), getActiveOffsetY(), getActiveOffsetZ());
+        ScreenPoint center = projectGizmoPoint(currentGizmoCenter.x, currentGizmoCenter.y, currentGizmoCenter.z);
         drawHandle(context, center, 3, 0xFFFFFFFF);
     }
 
     private void renderMoveAxis(DrawContext context, MoveAxis axis, int color) {
-        float ox = getActiveOffsetX();
-        float oy = getActiveOffsetY();
-        float oz = getActiveOffsetZ();
-        ScreenPoint center = projectModelPoint(ox, oy, oz);
+        float ox = currentGizmoCenter.x;
+        float oy = currentGizmoCenter.y;
+        float oz = currentGizmoCenter.z;
+        ScreenPoint center = projectGizmoPoint(ox, oy, oz);
         ScreenPoint end = switch (axis) {
-            case X -> projectModelPoint(ox + MOVE_AXIS_LENGTH, oy, oz);
-            case Y -> projectModelPoint(ox, oy + MOVE_AXIS_LENGTH, oz);
-            case Z -> projectModelPoint(ox, oy, oz + MOVE_AXIS_LENGTH);
+            case X -> projectGizmoPoint(ox + MOVE_AXIS_LENGTH, oy, oz);
+            case Y -> projectGizmoPoint(ox, oy + MOVE_AXIS_LENGTH, oz);
+            case Z -> projectGizmoPoint(ox, oy, oz + MOVE_AXIS_LENGTH);
             default -> center;
         };
 
-        boolean highlighted = axis == draggingMoveAxis || (draggingMoveAxis == MoveAxis.NONE && axis == hoveredMoveAxis);
+        boolean highlighted = axis == draggingMoveAxis
+                || (draggingMoveAxis == MoveAxis.NONE && axis == hoveredMoveAxis);
         int drawColor = highlighted ? 0xFFFFFF5A : color;
         drawProjectedLine(context, center, end, drawColor);
         if (highlighted) {
@@ -2659,6 +3399,76 @@ public class BodyPoseEditorFragment extends Fragment {
     // ═══════════════════════════════════════════════════════
     //  3D 投影数学
     // ═══════════════════════════════════════════════════════
+
+    private ScreenPoint projectGizmoPoint(float x, float y, float z) {
+        if (usesSelectedPartGizmoTarget()) {
+            return projectSelectedPartPoint(x, y, z);
+        }
+        return projectModelPoint(x, y, z);
+    }
+
+    private ScreenPoint projectSelectedPartPoint(float x, float y, float z) {
+        if (poseEditMode == PoseEditMode.TRUE_SKELETAL) {
+            return projectTrueSkeletalEditorPoint(x, y, z);
+        }
+        return projectWholeModelPoint(x, y, z);
+    }
+
+    private ScreenPoint projectTrueSkeletalEditorPoint(float x, float y, float z) {
+        float scale = wholeBodyScale;
+        float scaledX = x * scale;
+        float scaledY = -y * scale;
+        float scaledZ = z * scale;
+
+        float rollRad = (float) Math.toRadians(modelRoll);
+        float rollCos = (float) Math.cos(rollRad);
+        float rollSin = (float) Math.sin(rollRad);
+        float rollX = scaledX * rollCos - scaledY * rollSin;
+        float rollY = scaledX * rollSin + scaledY * rollCos;
+        float rollZ = scaledZ;
+
+        float yawRad = (float) Math.toRadians(-modelYaw);
+        float yawCos = (float) Math.cos(yawRad);
+        float yawSin = (float) Math.sin(yawRad);
+        float yawX = rollX * yawCos + rollZ * yawSin;
+        float yawZ = rollZ * yawCos - rollX * yawSin;
+        float yawY = rollY;
+
+        float pitchRad = (float) Math.toRadians(modelPitch);
+        float pitchCos = (float) Math.cos(pitchRad);
+        float pitchSin = (float) Math.sin(pitchRad);
+        float pitchY = yawY * pitchCos - yawZ * pitchSin;
+        float pitchZ = yawZ * pitchCos + yawY * pitchSin;
+        float pitchX = yawX;
+
+        return projectPreviewPoint(
+                modelOffsetX + pitchX,
+                modelOffsetY + pitchY,
+                modelOffsetZ + pitchZ);
+    }
+
+    private ScreenPoint projectWholeModelPoint(float x, float y, float z) {
+        float yawRad = (float) Math.toRadians(-modelYaw);
+        float yawCos = (float) Math.cos(yawRad);
+        float yawSin = (float) Math.sin(yawRad);
+        float yawX = x * yawCos + z * yawSin;
+        float yawZ = z * yawCos - x * yawSin;
+
+        float pitchRad = (float) Math.toRadians(modelPitch);
+        float pitchCos = (float) Math.cos(pitchRad);
+        float pitchSin = (float) Math.sin(pitchRad);
+        float pitchY = y * pitchCos - yawZ * pitchSin;
+        float pitchZ = yawZ * pitchCos + y * pitchSin;
+        float pitchX = yawX;
+
+        float rollRad = (float) Math.toRadians(modelRoll);
+        float rollCos = (float) Math.cos(rollRad);
+        float rollSin = (float) Math.sin(rollRad);
+        float rollX = pitchX * rollCos - pitchY * rollSin;
+        float rollY = pitchX * rollSin + pitchY * rollCos;
+
+        return projectPreviewPoint(modelOffsetX + rollX, modelOffsetY + rollY, modelOffsetZ + pitchZ);
+    }
 
     private ScreenPoint projectModelPoint(float x, float y, float z) {
         float offsetX = getActiveOffsetX();
@@ -2733,18 +3543,18 @@ public class BodyPoseEditorFragment extends Fragment {
     private MoveAxis findMoveAxis(double px, double py) {
         if (!showCoordinateAxes) return MoveAxis.NONE;
         if (!isInsidePreviewArea((float) px, (float) py)) return MoveAxis.NONE;
-        float ox = getActiveOffsetX();
-        float oy = getActiveOffsetY();
-        float oz = getActiveOffsetZ();
-        ScreenPoint center = projectModelPoint(ox, oy, oz);
+        float ox = currentGizmoCenter.x;
+        float oy = currentGizmoCenter.y;
+        float oz = currentGizmoCenter.z;
+        ScreenPoint center = projectGizmoPoint(ox, oy, oz);
         double bestDist = MOVE_AXIS_HIT_RADIUS;
         MoveAxis best = MoveAxis.NONE;
 
-        double d = distanceToSegment(px, py, center, projectModelPoint(ox + MOVE_AXIS_LENGTH, oy, oz));
+        double d = distanceToSegment(px, py, center, projectGizmoPoint(ox + MOVE_AXIS_LENGTH, oy, oz));
         if (d <= bestDist) { bestDist = d; best = MoveAxis.X; }
-        d = distanceToSegment(px, py, center, projectModelPoint(ox, oy + MOVE_AXIS_LENGTH, oz));
+        d = distanceToSegment(px, py, center, projectGizmoPoint(ox, oy + MOVE_AXIS_LENGTH, oz));
         if (d <= bestDist) { bestDist = d; best = MoveAxis.Y; }
-        d = distanceToSegment(px, py, center, projectModelPoint(ox, oy, oz + MOVE_AXIS_LENGTH));
+        d = distanceToSegment(px, py, center, projectGizmoPoint(ox, oy, oz + MOVE_AXIS_LENGTH));
         if (d <= bestDist) { best = MoveAxis.Z; }
         return best;
     }
@@ -2779,14 +3589,103 @@ public class BodyPoseEditorFragment extends Fragment {
         float angle = (float) (Math.PI * 2.0 * segment / ROTATION_RING_SEGMENTS);
         float cos = (float) Math.cos(angle) * ROTATION_RING_RADIUS;
         float sin = (float) Math.sin(angle) * ROTATION_RING_RADIUS;
-        float ox = getActiveOffsetX();
-        float oy = getActiveOffsetY();
-        float oz = getActiveOffsetZ();
+        float ox = currentGizmoCenter.x;
+        float oy = currentGizmoCenter.y;
+        float oz = currentGizmoCenter.z;
         return switch (axis) {
-            case PITCH -> projectModelPoint(ox, oy + cos, oz + sin);
-            case YAW -> projectModelPoint(ox + cos, oy, oz + sin);
-            case ROLL -> projectModelPoint(ox + cos, oy + sin, oz);
-            default -> projectModelPoint(ox, oy, oz);
+            case PITCH -> projectGizmoPoint(ox, oy + cos, oz + sin);
+            case YAW -> projectGizmoPoint(ox + cos, oy, oz + sin);
+            case ROLL -> projectGizmoPoint(ox + cos, oy + sin, oz);
+            default -> projectGizmoPoint(ox, oy, oz);
+        };
+    }
+
+    private void dragGizmoOffset(MoveAxis axis, double mouseX, double mouseY) {
+        if (axis == MoveAxis.NONE) {
+            return;
+        }
+        float ox = dragStartGizmoCenter.x;
+        float oy = dragStartGizmoCenter.y;
+        float oz = dragStartGizmoCenter.z;
+        ScreenPoint center = projectGizmoPoint(ox, oy, oz);
+        ScreenPoint end = switch (axis) {
+            case X -> projectGizmoPoint(ox + MOVE_AXIS_LENGTH, oy, oz);
+            case Y -> projectGizmoPoint(ox, oy + MOVE_AXIS_LENGTH, oz);
+            case Z -> projectGizmoPoint(ox, oy, oz + MOVE_AXIS_LENGTH);
+            default -> center;
+        };
+        double axisX = end.x - center.x;
+        double axisY = end.y - center.y;
+        double axisLength = Math.sqrt(axisX * axisX + axisY * axisY);
+        if (axisLength < 0.001D) {
+            return;
+        }
+        double deltaX = mouseX - dragStartMouseX;
+        double deltaY = mouseY - dragStartMouseY;
+        float deltaUnits = (float) ((deltaX * axisX + deltaY * axisY) / axisLength / getPreviewPixelsPerGrid());
+        deltaUnits *= getMoveAxisDragSign(axis);
+        float previous = usesSelectedPartGizmoTarget()
+                ? getSelectedPoseOffset(axis)
+                : getActiveOffset(axis);
+        float target = dragStartMoveOffset + deltaUnits;
+        if (usesSelectedPartGizmoTarget()) {
+            setSelectedPoseOffset(axis, target);
+        } else {
+            setActiveOffset(axis, target);
+        }
+        float next = usesSelectedPartGizmoTarget()
+                ? getSelectedPoseOffset(axis)
+                : getActiveOffset(axis);
+        if (Math.abs(next - previous) > 0.0001F) {
+            previewTransformDirty = true;
+            refreshNumericValueBindings();
+        }
+    }
+
+    private void dragGizmoRotation(RotationAxis axis, double mouseX, double mouseY, double deltaX, double deltaY) {
+        if (axis == RotationAxis.NONE) {
+            return;
+        }
+        ScreenPoint center = projectGizmoPoint(dragStartGizmoCenter.x, dragStartGizmoCenter.y, dragStartGizmoCenter.z);
+        double previousAngle = Math.atan2(mouseY - deltaY - center.y, mouseX - deltaX - center.x);
+        double currentAngle = Math.atan2(mouseY - center.y, mouseX - center.x);
+        float degrees = -normalizeDegrees((float) Math.toDegrees(currentAngle - previousAngle));
+        degrees *= getRotationAxisDragSign(axis);
+        if (usesSelectedPartGizmoTarget()) {
+            switch (axis) {
+                case PITCH -> setSelectedPoseValue(Axis.PITCH, getSelectedPoseValue(Axis.PITCH) - degrees);
+                case YAW -> setSelectedPoseValue(Axis.YAW, getSelectedPoseValue(Axis.YAW) + degrees);
+                case ROLL -> setSelectedPoseValue(Axis.ROLL, getSelectedPoseValue(Axis.ROLL) - degrees);
+                default -> {
+                }
+            }
+        } else {
+            switch (axis) {
+                case PITCH -> setActiveRotation(Axis.PITCH, getActiveRotation(Axis.PITCH) - degrees);
+                case YAW -> setActiveRotation(Axis.YAW, getActiveRotation(Axis.YAW) + degrees);
+                case ROLL -> setActiveRotation(Axis.ROLL, getActiveRotation(Axis.ROLL) - degrees);
+                default -> {
+                }
+            }
+        }
+        previewTransformDirty = true;
+        refreshNumericValueBindings();
+    }
+
+    private float getMoveAxisDragSign(MoveAxis axis) {
+        if (axis == MoveAxis.Y && poseEditMode == PoseEditMode.TRUE_SKELETAL && usesSelectedPartGizmoTarget()) {
+            return 1.0F;
+        }
+        return switch (axis) {
+            case Y, Z -> -1.0F;
+            default -> 1.0F;
+        };
+    }
+
+    private static float getRotationAxisDragSign(RotationAxis axis) {
+        return switch (axis) {
+            case YAW, ROLL -> -1.0F;
+            default -> 1.0F;
         };
     }
 
@@ -3150,11 +4049,13 @@ public class BodyPoseEditorFragment extends Fragment {
             poseModeButton.setOnClickListener(v -> {
                 poseEditMode = nextPoseEditMode();
                 ensureValidSelectedPartForMode();
+                clearGizmoInteractionState();
                 rebuildPartButtons();
                 rebuildPoseControls();
                 refreshButtonLabels();
                 refreshNumericValueBindings();
                 invalidatePreview();
+                recordPoseHistoryStep("模式切换");
             });
         }
         if (setDefaultPoseModeButton != null) {
@@ -3168,6 +4069,7 @@ public class BodyPoseEditorFragment extends Fragment {
                 resetSelectedPose();
                 refreshNumericValueBindings();
                 invalidatePreview();
+                recordPoseHistoryStep("重置当前");
             });
         }
         if (resetAllPoseButton != null) {
@@ -3176,6 +4078,7 @@ public class BodyPoseEditorFragment extends Fragment {
                 resetAllPartPoses();
                 refreshNumericValueBindings();
                 invalidatePreview();
+                recordPoseHistoryStep("重置全部");
             });
         }
         if (runCommandButton != null) {
@@ -3194,6 +4097,10 @@ public class BodyPoseEditorFragment extends Fragment {
             applySkeletalButton.setText("应用骨骼姿势");
             applySkeletalButton.setEnabled(poseEditMode == PoseEditMode.SKELETAL);
             applySkeletalButton.setOnClickListener(v -> applySkeletalPose());
+        }
+        if (poseHistoryButton != null) {
+            poseHistoryButton.setText("历史记录 (" + poseHistoryEntries.size() + ")");
+            poseHistoryButton.setOnClickListener(v -> openPoseHistoryWindow());
         }
         if (itemButton != null) {
             itemButton.setText("物品: " + getSelectedItemLabel());
@@ -3528,6 +4435,21 @@ public class BodyPoseEditorFragment extends Fragment {
         return Set.of(selectedPart);
     }
 
+    public static Set<String> getWorldHiddenSkeletalMeshes() {
+        if (poseEditMode != PoseEditMode.TRUE_SKELETAL) {
+            return Set.of();
+        }
+        ensureTrueSkeletalPoses();
+        Set<String> hidden = new HashSet<>();
+        for (Map.Entry<String, PartPose> entry : TRUE_SKELETAL_POSES.entrySet()) {
+            PartPose pose = entry.getValue();
+            if (pose != null && !pose.visible) {
+                hidden.addAll(BodyPoseSkeletalPreviewRenderer.getHiddenMeshNamesForPoseTarget(entry.getKey()));
+            }
+        }
+        return hidden;
+    }
+
     private static void putLimbRotation(Map<String, float[]> rotations, String upperBone, String lowerBone, PartPose pose) {
         putPoseRotation(rotations, upperBone, pose);
         if (poseEditMode == PoseEditMode.SKELETAL && pose != null) {
@@ -3595,6 +4517,7 @@ public class BodyPoseEditorFragment extends Fragment {
             case "right_arm" -> List.of("right_arm_on");
             case "left_leg" -> List.of("left_leg_on");
             case "right_leg" -> List.of("right_leg_on");
+            case "eye_highlight" -> List.of("eye_highlight_left", "eye_highlight_right");
             default -> List.of(part);
         };
     }
@@ -3606,6 +4529,7 @@ public class BodyPoseEditorFragment extends Fragment {
             case "right_arm" -> List.of("right_arm_on", "right_arm_low");
             case "left_leg" -> List.of("left_leg_on", "left_leg_low");
             case "right_leg" -> List.of("right_leg_on", "right_leg_low");
+            case "eye_highlight" -> List.of("eye_highlight_left", "eye_highlight_right");
             default -> List.of(part);
         };
     }
@@ -3618,6 +4542,7 @@ public class BodyPoseEditorFragment extends Fragment {
             case "right_arm" -> List.of("right_arm_on");
             case "left_leg" -> List.of("left_leg_on");
             case "right_leg" -> List.of("right_leg_on");
+            case "eye_highlight" -> List.of("eye_highlight_left", "eye_highlight_right");
             default -> List.of(part);
         };
     }
@@ -3625,7 +4550,9 @@ public class BodyPoseEditorFragment extends Fragment {
     public static String getStaticHighlightedMoveAxis() {
         BodyPoseEditorFragment inst = activeInstance;
         if (inst == null) return "";
-        MoveAxis axis = inst.draggingMoveAxis != MoveAxis.NONE ? inst.draggingMoveAxis : inst.hoveredMoveAxis;
+        MoveAxis axis = inst.draggingMoveAxis != MoveAxis.NONE
+                ? inst.draggingMoveAxis
+                : inst.hoveredMoveAxis;
         return switch (axis) {
             case X -> "x";
             case Y -> "y";
@@ -3637,13 +4564,20 @@ public class BodyPoseEditorFragment extends Fragment {
     public static String getStaticHighlightedRotationAxis() {
         BodyPoseEditorFragment inst = activeInstance;
         if (inst == null) return "";
-        RotationAxis axis = inst.draggingRotationAxis != RotationAxis.NONE ? inst.draggingRotationAxis : inst.hoveredRotationAxis;
+        RotationAxis axis = inst.draggingRotationAxis != RotationAxis.NONE
+                ? inst.draggingRotationAxis
+                : inst.hoveredRotationAxis;
         return switch (axis) {
             case PITCH -> "pitch";
             case YAW -> "yaw";
             case ROLL -> "roll";
             default -> "";
         };
+    }
+
+    public static boolean isStaticRotationGizmoMode() {
+        BodyPoseEditorFragment inst = activeInstance;
+        return inst != null && inst.isRotationGizmoMode();
     }
 
     public static Identifier getWorldSkinTexture() {
@@ -3696,7 +4630,9 @@ public class BodyPoseEditorFragment extends Fragment {
     public float getModelOffsetZ() { return getActiveOffsetZ(); }
 
     public String getHighlightedMoveAxis() {
-        MoveAxis axis = draggingMoveAxis != MoveAxis.NONE ? draggingMoveAxis : hoveredMoveAxis;
+        MoveAxis axis = draggingMoveAxis != MoveAxis.NONE
+                ? draggingMoveAxis
+                : hoveredMoveAxis;
         return switch (axis) {
             case X -> "x";
             case Y -> "y";
@@ -3706,7 +4642,9 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     public String getHighlightedRotationAxis() {
-        RotationAxis axis = draggingRotationAxis != RotationAxis.NONE ? draggingRotationAxis : hoveredRotationAxis;
+        RotationAxis axis = draggingRotationAxis != RotationAxis.NONE
+                ? draggingRotationAxis
+                : hoveredRotationAxis;
         return switch (axis) {
             case PITCH -> "pitch";
             case YAW -> "yaw";
@@ -3754,21 +4692,26 @@ public class BodyPoseEditorFragment extends Fragment {
         }
         refreshButtonLabels();
         invalidatePreview();
+        recordPoseHistoryStep("物品显示");
     }
 
     private void clearSelectedItemModel() {
         if (!hasSelectedItemModel()) return;
         EDITOR_ITEMS.remove(selectedEditorItemIndex);
         selectedEditorItemIndex = Math.min(selectedEditorItemIndex, EDITOR_ITEMS.size() - 1);
+        clearGizmoInteractionState();
         refreshButtonLabels();
         refreshNumericValueBindings();
+        recordPoseHistoryStep("清除物品");
     }
 
     private void clearAllItemModels() {
         EDITOR_ITEMS.clear();
         selectedEditorItemIndex = -1;
+        clearGizmoInteractionState();
         refreshButtonLabels();
         refreshNumericValueBindings();
+        recordPoseHistoryStep("清除全部物品");
     }
 
     private void resetActiveTransform() {
@@ -3782,6 +4725,7 @@ public class BodyPoseEditorFragment extends Fragment {
         }
         refreshNumericValueBindings();
         invalidatePreview();
+        recordPoseHistoryStep("重置偏移");
     }
 
     // ── 活动偏移/旋转（根据是否选中物品而不同） ──
@@ -3824,6 +4768,11 @@ public class BodyPoseEditorFragment extends Fragment {
                 parts.add(bone);
             }
         }
+        for (String target : BodyPoseSkeletalPreviewRenderer.getExtraEditablePoseTargetNames()) {
+            if (!parts.contains(target)) {
+                parts.add(target);
+            }
+        }
         return parts;
     }
 
@@ -3837,6 +4786,11 @@ public class BodyPoseEditorFragment extends Fragment {
         for (String bone : bones) {
             if (!TRUE_SKELETAL_POSES.containsKey(bone)) {
                 TRUE_SKELETAL_POSES.put(bone, new PartPose());
+            }
+        }
+        for (String target : BodyPoseSkeletalPreviewRenderer.getExtraEditablePoseTargetNames()) {
+            if (!TRUE_SKELETAL_POSES.containsKey(target)) {
+                TRUE_SKELETAL_POSES.put(target, new PartPose());
             }
         }
     }
@@ -3866,8 +4820,12 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private static float getSelectedPoseValue(Axis axis) {
-        if (selectedPart.equals("all")) return 0.0F;
-        PartPose pose = getSelectedPose();
+        return getPartPoseValue(selectedPart, axis);
+    }
+
+    private static float getPartPoseValue(String part, Axis axis) {
+        if (part == null || part.equals("all")) return 0.0F;
+        PartPose pose = getActivePoseMap().computeIfAbsent(part, k -> new PartPose());
         switch (axis) {
             case PITCH -> { return pose.pitch; }
             case YAW -> { return pose.yaw; }
@@ -3877,8 +4835,12 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private static void setSelectedPoseValue(Axis axis, float value) {
-        if (selectedPart.equals("all")) return;
-        PartPose pose = getSelectedPose();
+        setPartPoseValue(selectedPart, axis, value);
+    }
+
+    private static void setPartPoseValue(String part, Axis axis, float value) {
+        if (part == null || part.equals("all")) return;
+        PartPose pose = getActivePoseMap().computeIfAbsent(part, k -> new PartPose());
         switch (axis) {
             case PITCH -> pose.pitch = clampPreview(value, -180.0F, 180.0F);
             case YAW -> pose.yaw = normalizeDegrees(value);
@@ -3887,8 +4849,12 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private static float getSelectedPoseOffset(MoveAxis axis) {
-        if (selectedPart.equals("all")) return 0.0F;
-        PartPose pose = getSelectedPose();
+        return getPartPoseOffset(selectedPart, axis);
+    }
+
+    private static float getPartPoseOffset(String part, MoveAxis axis) {
+        if (part == null || part.equals("all")) return 0.0F;
+        PartPose pose = getActivePoseMap().computeIfAbsent(part, k -> new PartPose());
         return switch (axis) {
             case X -> pose.offsetX;
             case Y -> pose.offsetY;
@@ -3898,8 +4864,12 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private static void setSelectedPoseOffset(MoveAxis axis, float value) {
-        if (selectedPart.equals("all")) return;
-        PartPose pose = getSelectedPose();
+        setPartPoseOffset(selectedPart, axis, value);
+    }
+
+    private static void setPartPoseOffset(String part, MoveAxis axis, float value) {
+        if (part == null || part.equals("all")) return;
+        PartPose pose = getActivePoseMap().computeIfAbsent(part, k -> new PartPose());
         float next = clampPreview(value, MODEL_OFFSET_MIN, MODEL_OFFSET_MAX);
         switch (axis) {
             case X -> pose.offsetX = next;
@@ -3960,13 +4930,31 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private static float getSelectedPartScale() {
-        if (selectedPart.equals("all")) return 1.0F;
-        return getSelectedPose().scale;
+        return getPartScale(selectedPart);
     }
 
     private static void setSelectedPartScale(float value) {
-        if (selectedPart.equals("all")) return;
-        getSelectedPose().scale = clampPreview(value, MODEL_SCALE_MIN, MODEL_SCALE_MAX);
+        setPartScale(selectedPart, value);
+    }
+
+    private static float getPartScale(String part) {
+        if (part == null || part.equals("all")) return 1.0F;
+        return getActivePoseMap().computeIfAbsent(part, k -> new PartPose()).scale;
+    }
+
+    private static void setPartScale(String part, float value) {
+        if (part == null || part.equals("all")) return;
+        getActivePoseMap().computeIfAbsent(part, k -> new PartPose()).scale = clampPreview(value, MODEL_SCALE_MIN, MODEL_SCALE_MAX);
+    }
+
+    private static boolean isPartVisible(String part) {
+        if (part == null || part.equals("all")) return true;
+        return getActivePoseMap().computeIfAbsent(part, k -> new PartPose()).visible;
+    }
+
+    private static void setPartVisible(String part, boolean visible) {
+        if (part == null || part.equals("all")) return;
+        getActivePoseMap().computeIfAbsent(part, k -> new PartPose()).visible = visible;
     }
 
     private static void setWholeBodyScale(float value) {
@@ -3999,6 +4987,7 @@ public class BodyPoseEditorFragment extends Fragment {
         pose.offsetY = 0.0F;
         pose.offsetZ = 0.0F;
         pose.scale = 1.0F;
+        pose.visible = true;
     }
 
     private static float[] createStaticPoseValueArray() {
@@ -4028,11 +5017,19 @@ public class BodyPoseEditorFragment extends Fragment {
         names.addAll(rotations.keySet());
         names.addAll(offsets.keySet());
         names.addAll(scales.keySet());
+        ensureTrueSkeletalPoses();
+        for (Map.Entry<String, PartPose> entry : TRUE_SKELETAL_POSES.entrySet()) {
+            PartPose pose = entry.getValue();
+            if (pose != null && !pose.visible) {
+                names.add(entry.getKey());
+            }
+        }
         List<PlaceTrueSkeletalBodyC2SPacket.BonePose> poses = new ArrayList<>();
         for (String name : names) {
             float[] rotation = rotations.get(name);
             float[] offset = offsets.get(name);
             float scale = scales.getOrDefault(name, 1.0F);
+            PartPose pose = TRUE_SKELETAL_POSES.get(name);
             poses.add(new PlaceTrueSkeletalBodyC2SPacket.BonePose(name,
                     rotation != null && rotation.length > 0 ? rotation[0] : 0.0F,
                     rotation != null && rotation.length > 1 ? rotation[1] : 0.0F,
@@ -4040,7 +5037,8 @@ public class BodyPoseEditorFragment extends Fragment {
                     offset != null && offset.length > 0 ? offset[0] : 0.0F,
                     offset != null && offset.length > 1 ? offset[1] : 0.0F,
                     offset != null && offset.length > 2 ? offset[2] : 0.0F,
-                    scale));
+                    scale,
+                    pose == null || pose.visible));
         }
         return poses;
     }
@@ -4247,6 +5245,23 @@ public class BodyPoseEditorFragment extends Fragment {
     //  内部数据类
     // ═══════════════════════════════════════════════════════
 
+    private static final class PoseHistoryEntry {
+        private final int step;
+        private final String source;
+        private final String summary;
+        private final List<String> changes;
+        private final BodyPosePresetStore.EditorStateData snapshot;
+
+        private PoseHistoryEntry(int step, String source, String summary, List<String> changes,
+                                 BodyPosePresetStore.EditorStateData snapshot) {
+            this.step = step;
+            this.source = source;
+            this.summary = summary;
+            this.changes = List.copyOf(changes);
+            this.snapshot = snapshot;
+        }
+    }
+
     private final class NumericValueBinding {
         private final Supplier<Float> getter;
         private final Consumer<Float> setter;
@@ -4281,12 +5296,16 @@ public class BodyPoseEditorFragment extends Fragment {
         }
 
         private void apply(float value, boolean syncField) {
+            float before = getter.get();
             float next = wrap ? normalizeDegrees(value) : clampPreview(value, min, max);
             setter.accept(next);
             if (syncField) {
                 sync();
             }
             invalidatePreview();
+            if (Math.abs(before - next) > 0.0001F) {
+                recordPoseHistoryStep("数值调整");
+            }
         }
 
         private void sync() {
@@ -4416,6 +5435,7 @@ public class BodyPoseEditorFragment extends Fragment {
         private float offsetY;
         private float offsetZ;
         private float scale = 1.0F;
+        private boolean visible = true;
     }
 
     private enum EditorItemDisplayMode {
