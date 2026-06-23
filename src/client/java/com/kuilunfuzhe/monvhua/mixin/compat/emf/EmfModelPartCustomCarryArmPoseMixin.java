@@ -38,8 +38,27 @@ public abstract class EmfModelPartCustomCarryArmPoseMixin {
 
 	@Inject(method = "render(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumer;III)V", at = @At("HEAD"), require = 0)
 	private void monvhua$applyCarrierArmPoseToEmfCustomPart(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color, CallbackInfo ci) {
-		monvhua$scaledArmMotion = false;
-		if (!monvhua$isRenderingCarrierPose() || partToBeAttached == null || matrices == null) {
+		monvhua$beginApplyCarrierArmPose(matrices);
+	}
+
+	@Inject(method = "method_22699(Lnet/minecraft/class_4587;Lnet/minecraft/class_4588;III)V", at = @At("HEAD"), require = 0)
+	private void monvhua$applyCarrierArmPoseToEmfCustomPartIntermediary(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color, CallbackInfo ci) {
+		monvhua$beginApplyCarrierArmPose(matrices);
+	}
+
+	@Inject(method = "render(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumer;III)V", at = @At("RETURN"), require = 0)
+	private void monvhua$restoreCarrierArmMotion(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color, CallbackInfo ci) {
+		monvhua$restoreCarrierArmMotion();
+	}
+
+	@Inject(method = "method_22699(Lnet/minecraft/class_4587;Lnet/minecraft/class_4588;III)V", at = @At("RETURN"), require = 0)
+	private void monvhua$restoreCarrierArmMotionIntermediary(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color, CallbackInfo ci) {
+		monvhua$restoreCarrierArmMotion();
+	}
+
+	@Unique
+	private void monvhua$beginApplyCarrierArmPose(MatrixStack matrices) {
+		if (monvhua$scaledArmMotion || !monvhua$isRenderingCarrierPose() || partToBeAttached == null || matrices == null) {
 			return;
 		}
 		String attachedPart = partToBeAttached.toLowerCase(Locale.ROOT);
@@ -54,8 +73,8 @@ public abstract class EmfModelPartCustomCarryArmPoseMixin {
 		}
 	}
 
-	@Inject(method = "render(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumer;III)V", at = @At("RETURN"), require = 0)
-	private void monvhua$restoreCarrierArmMotion(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color, CallbackInfo ci) {
+	@Unique
+	private void monvhua$restoreCarrierArmMotion() {
 		if (!monvhua$scaledArmMotion) {
 			return;
 		}

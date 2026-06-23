@@ -37,8 +37,27 @@ public abstract class EmfModelPartVanillaCarryArmMotionMixin {
 
 	@Inject(method = "render(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumer;III)V", at = @At("HEAD"), require = 0)
 	private void monvhua$scaleCarrierArmMotion(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color, CallbackInfo ci) {
-		monvhua$scaledArmMotion = false;
-		if (!monvhua$isRenderingCarrierPose() || name == null) {
+		monvhua$beginScaleCarrierArmMotion();
+	}
+
+	@Inject(method = "method_22699(Lnet/minecraft/class_4587;Lnet/minecraft/class_4588;III)V", at = @At("HEAD"), require = 0)
+	private void monvhua$scaleCarrierArmMotionIntermediary(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color, CallbackInfo ci) {
+		monvhua$beginScaleCarrierArmMotion();
+	}
+
+	@Inject(method = "render(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumer;III)V", at = @At("RETURN"), require = 0)
+	private void monvhua$restoreCarrierArmMotion(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color, CallbackInfo ci) {
+		monvhua$restoreCarrierArmMotion();
+	}
+
+	@Inject(method = "method_22699(Lnet/minecraft/class_4587;Lnet/minecraft/class_4588;III)V", at = @At("RETURN"), require = 0)
+	private void monvhua$restoreCarrierArmMotionIntermediary(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color, CallbackInfo ci) {
+		monvhua$restoreCarrierArmMotion();
+	}
+
+	@Unique
+	private void monvhua$beginScaleCarrierArmMotion() {
+		if (monvhua$scaledArmMotion || !monvhua$isRenderingCarrierPose() || name == null) {
 			return;
 		}
 		String partName = name.toLowerCase(Locale.ROOT);
@@ -51,8 +70,8 @@ public abstract class EmfModelPartVanillaCarryArmMotionMixin {
 		}
 	}
 
-	@Inject(method = "render(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumer;III)V", at = @At("RETURN"), require = 0)
-	private void monvhua$restoreCarrierArmMotion(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color, CallbackInfo ci) {
+	@Unique
+	private void monvhua$restoreCarrierArmMotion() {
 		if (!monvhua$scaledArmMotion) {
 			return;
 		}
