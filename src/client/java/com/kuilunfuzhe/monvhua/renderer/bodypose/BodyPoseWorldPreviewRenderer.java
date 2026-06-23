@@ -47,6 +47,7 @@ public class BodyPoseWorldPreviewRenderer {
 		boolean showAxes = BodyPoseEditorFragment.isWorldAxesShown();
 		boolean axesMovable = BodyPoseEditorFragment.isWorldAxesMovable();
 		boolean fixedMode = BodyPoseEditorFragment.getWorldPreviewMode() == BodyPoseEditorFragment.PreviewMode.FIXED;
+		boolean rotationMode = BodyPoseEditorFragment.isStaticRotationGizmoMode();
 		String highlightedMove = BodyPoseEditorFragment.getStaticHighlightedMoveAxis();
 		String highlightedRot = BodyPoseEditorFragment.getStaticHighlightedRotationAxis();
 		float offsetX = BodyPoseEditorFragment.getWorldModelOffsetX();
@@ -90,7 +91,7 @@ public class BodyPoseWorldPreviewRenderer {
 		}
 
 		// 3. Move axes (world orientation, at model offset — NO rotation applied)
-		if (showAxes) {
+		if (showAxes && !rotationMode) {
 			matrices.push();
 			matrices.translate(dx, dy, dz);
 			applyFixedModeFlip(matrices, fixedMode);
@@ -100,7 +101,7 @@ public class BodyPoseWorldPreviewRenderer {
 		}
 
 		// 4. Rotation rings (model orientation, with combined preview+model rotation)
-		if (showAxes) {
+		if (showAxes && rotationMode) {
 			matrices.push();
 			matrices.translate(dx, dy, dz);
 			applyFixedModeFlip(matrices, fixedMode);

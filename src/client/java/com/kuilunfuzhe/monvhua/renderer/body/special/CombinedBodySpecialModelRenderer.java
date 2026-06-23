@@ -26,6 +26,7 @@ import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -149,6 +150,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         Map<String, float[]> rotations = new HashMap<>();
         Map<String, float[]> offsets = new HashMap<>();
         Map<String, Float> scales = new HashMap<>();
+        Set<String> hiddenMeshes = new HashSet<>();
         NbtList bones = customData.getListOrEmpty("true_skeletal_bones");
         for (int i = 0; i < bones.size(); i++) {
             NbtCompound bone = bones.getCompound(i).orElse(null);
@@ -166,6 +168,10 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
             float offsetY = bone.getFloat("offset_y", 0.0F);
             float offsetZ = bone.getFloat("offset_z", 0.0F);
             float scale = Math.max(0.1F, bone.getFloat("scale", 1.0F));
+            boolean visible = bone.getBoolean("visible", true);
+            if (!visible) {
+                hiddenMeshes.addAll(BodyPoseSkeletalPreviewRenderer.getHiddenMeshNamesForPoseTarget(name));
+            }
             if (pitch != 0.0F || yaw != 0.0F || roll != 0.0F) {
                 rotations.put(name, new float[] { pitch, yaw, roll });
             }
@@ -181,7 +187,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         matrices.scale(1.0F, -1.0F, 1.0F);
         applyTrueSkeletalPlacementTransform(matrices, customData);
         boolean rendered = BodyPoseSkeletalPreviewRenderer.render(matrices, vertexConsumers, data.texture(), light,
-                rotations, offsets, scales, Set.of(), "slim".equals(data.armModel()), renderLayer);
+                rotations, offsets, scales, Set.of(), "slim".equals(data.armModel()), renderLayer, hiddenMeshes);
         matrices.pop();
         return rendered;
     }

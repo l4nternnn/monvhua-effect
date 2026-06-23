@@ -41,6 +41,7 @@ public final class DrawingBoardPackets {
 
     public static void registerC2S() {
         StrokeC2S.register();
+        ApplyPixelsC2S.register();
         RequestSyncC2S.register();
         SaveToPaperC2S.register();
     }
@@ -48,6 +49,8 @@ public final class DrawingBoardPackets {
     public static void registerReceivers() {
         ServerPlayNetworking.registerGlobalReceiver(StrokeC2S.ID, (packet, context) ->
                 context.server().execute(() -> handleStroke(context.player(), packet)));
+        ServerPlayNetworking.registerGlobalReceiver(ApplyPixelsC2S.ID, (packet, context) ->
+                context.server().execute(() -> handleApplyPixels(context.player(), packet)));
         ServerPlayNetworking.registerGlobalReceiver(RequestSyncC2S.ID, (packet, context) ->
                 context.server().execute(() -> sendSync(context.player(), packet.pos())));
         ServerPlayNetworking.registerGlobalReceiver(SaveToPaperC2S.ID, (packet, context) ->
@@ -88,6 +91,16 @@ public final class DrawingBoardPackets {
         if (changed) {
             broadcast(world, packet.pos(), board.copyPixels());
         }
+    }
+
+    private static void handleApplyPixels(ServerPlayerEntity player, ApplyPixelsC2S packet) {
+        if (!(player.getWorld() instanceof ServerWorld world)
+                || Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED
+                || !(world.getBlockEntity(packet.pos()) instanceof DrawingBoardBlockEntity board)) {
+            return;
+        }
+        board.setPixels(packet.pixels());
+        broadcast(world, packet.pos(), board.copyPixels());
     }
 
     private static void sendSync(ServerPlayerEntity player, BlockPos pos) {
@@ -348,6 +361,40 @@ public final class DrawingBoardPackets {
 
         private void write(RegistryByteBuf buf) {
             buf.writeBlockPos(pos);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record ApplyPixelsC2S(BlockPos pos, int[] pixels) implements CustomPayload {
+        public static final Id<ApplyPixelsC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "drawing_board_apply_pixels"));
+        public static final PacketCodec<RegistryByteBuf, ApplyPixelsC2S> CODEC = PacketCodec.of(ApplyPixelsC2S::write, ApplyPixelsC2S::new);
+        private static boolean registered;
+
+        public ApplyPixelsC2S {
+            pos = pos.toImmutable();
+            pixels = sanitizePixels(pixels);
+        }
+
+        private ApplyPixelsC2S(RegistryByteBuf buf) {
+            this(buf.readBlockPos(), readPixels(buf));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeBlockPos(pos);
+            for (int pixel : pixels) {
+                buf.writeInt(pixel);
+            }
         }
 
         public static void register() {

@@ -76,6 +76,7 @@ public record PlaceTrueSkeletalBodyC2SPacket(String skinName, boolean slimModel,
             buf.writeFloat(pose.offsetY());
             buf.writeFloat(pose.offsetZ());
             buf.writeFloat(pose.scale());
+            buf.writeBoolean(pose.visible());
         }
         buf.writeFloat(this.offsetX);
         buf.writeFloat(this.offsetY);
@@ -96,7 +97,7 @@ public record PlaceTrueSkeletalBodyC2SPacket(String skinName, boolean slimModel,
         List<BonePose> bones = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
             bones.add(new BonePose(buf.readString(), buf.readFloat(), buf.readFloat(), buf.readFloat(),
-                    buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat()));
+                    buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readBoolean()));
         }
         return bones;
     }
@@ -113,9 +114,13 @@ public record PlaceTrueSkeletalBodyC2SPacket(String skinName, boolean slimModel,
         return ID;
     }
 
-    public record BonePose(String name, float pitch, float yaw, float roll, float offsetX, float offsetY, float offsetZ, float scale) {
+    public record BonePose(String name, float pitch, float yaw, float roll, float offsetX, float offsetY, float offsetZ, float scale, boolean visible) {
         public BonePose(String name, float pitch, float yaw, float roll, float scale) {
-            this(name, pitch, yaw, roll, 0.0F, 0.0F, 0.0F, scale);
+            this(name, pitch, yaw, roll, 0.0F, 0.0F, 0.0F, scale, true);
+        }
+
+        public BonePose(String name, float pitch, float yaw, float roll, float offsetX, float offsetY, float offsetZ, float scale) {
+            this(name, pitch, yaw, roll, offsetX, offsetY, offsetZ, scale, true);
         }
 
         public BonePose {

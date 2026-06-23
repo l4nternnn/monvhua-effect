@@ -941,6 +941,7 @@ public class BodyPartManager {
 			entry.putFloat("offset_y", pose.offsetY());
 			entry.putFloat("offset_z", pose.offsetZ());
 			entry.putFloat("scale", Math.max(0.1F, pose.scale()));
+			entry.putBoolean("visible", pose.visible());
 			list.add(entry);
 		}
 		nbt.put("true_skeletal_bones", list);
