@@ -145,11 +145,15 @@ public class CarryEvents {
 				return;
 			}
 
-			boolean savedFlying = false, savedAllowFlying = false, savedInvulnerable = false;
 			if (target instanceof ServerPlayerEntity carriedPlayer) {
-				savedFlying = carriedPlayer.getAbilities().flying;
-				savedAllowFlying = carriedPlayer.getAbilities().allowFlying;
-				savedInvulnerable = carriedPlayer.getAbilities().invulnerable;
+				if (CarryManager.CARRIED_ENTITIES.containsKey(carriedPlayer)) {
+					carrier.sendMessage(Text.literal("§c§k1§r正在抱起其他存在，无法抱起"), false);
+					return;
+				}
+			}
+
+			CarryManager.CarriedEntityData carriedData = CarryManager.CarriedEntityData.capture(target);
+			if (target instanceof ServerPlayerEntity carriedPlayer) {
 				carriedPlayer.setNoGravity(true);
 				carriedPlayer.getAbilities().flying = true;
 				carriedPlayer.getAbilities().allowFlying = true;
@@ -158,10 +162,6 @@ public class CarryEvents {
 				Vec3d initialPos = CarryManager.findSafeCarryPosition(carrier, carriedPlayer);
 				carriedPlayer.requestTeleport(initialPos.x, initialPos.y, initialPos.z);
 
-				if (CarryManager.CARRIED_ENTITIES.containsKey(carriedPlayer)) {
-					carrier.sendMessage(Text.literal("§c§k1§r正在抱起其他存在，无法抱起"), false);
-					return;
-				}
 				carriedPlayer.sendMessage(Text.literal("§e你被 " + tag_pitch.entityDisplayName(carrier) + " 抱起来了，按潜行键挣脱"), false);
 			}
 
@@ -173,7 +173,7 @@ public class CarryEvents {
 			target.setNoGravity(true);
 			target.setSilent(true);
 
-			CarryManager.CARRIED_ENTITIES.put(carrier, new CarryManager.CarriedEntityData(target, savedFlying, savedAllowFlying, savedInvulnerable));
+			CarryManager.CARRIED_ENTITIES.put(carrier, carriedData);
 			CarryManager.CARRIED_BY.put(target, carrier);
 			CarryManager.syncCarryPose(carrier, target, true);
 			carrier.sendMessage(Text.literal("§a你抱起了 " + tag_pitch.entityDisplayName(target)), false);
@@ -182,28 +182,11 @@ public class CarryEvents {
 		// 放下被搬运实体请求
 		ServerPlayNetworking.registerGlobalReceiver(PlaceCarriedEntityPayload.ID, (payload, context) -> {
 			ServerPlayerEntity carrier = context.player();
-			CarryManager.CarriedEntityData data = CarryManager.CARRIED_ENTITIES.remove(carrier);
+			CarryManager.CarriedEntityData data = CarryManager.CARRIED_ENTITIES.get(carrier);
 			if (data == null) return;
 			Entity carried = data.entity;
-			CarryManager.syncCarryPose(carrier, carried, false);
-			CarryManager.CARRIED_BY.remove(carried);
+			CarryManager.releaseCarried(carrier, carried);
 			if (carried.isAlive()) {
-				carried.setNoGravity(false);
-				carried.setSilent(false);
-				if (carried instanceof ServerPlayerEntity carriedPlayer) {
-					carriedPlayer.getAbilities().flying = data.originalFlying;
-					carriedPlayer.getAbilities().allowFlying = data.originalAllowFlying;
-					carriedPlayer.getAbilities().invulnerable = data.originalInvulnerable;
-					carriedPlayer.sendAbilitiesUpdate();
-				}
-				if (carried instanceof MobEntity mob) {
-					mob.setAiDisabled(false);
-				}
-				Vec3d pos = CarryManager.findSafeReleasePosition(carrier, carried, 1.5D);
-				carried.refreshPositionAndAngles(pos.x, pos.y, pos.z, carried.getYaw(), carried.getPitch());
-				if (carried instanceof ServerPlayerEntity carriedPlayer) {
-					carriedPlayer.requestTeleport(pos.x, pos.y, pos.z);
-				}
 				carrier.sendMessage(Text.literal("§a放下了抱起的实体"), false);
 			} else {
 				carrier.sendMessage(Text.literal("§c实体已经死亡，无法放下"), false);

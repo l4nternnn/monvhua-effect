@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.carryentity;
 
 import com.kuilunfuzhe.monvhua.event.tag_pitch;
+import com.kuilunfuzhe.monvhua.features.floating.floating;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.Entity;
@@ -72,16 +73,64 @@ public class CarryManager {
 		public final boolean originalFlying;
 		public final boolean originalAllowFlying;
 		public final boolean originalInvulnerable;
+		public final boolean originalNoGravity;
+		public final boolean originalSilent;
+		public final boolean originalEntityInvulnerable;
+		public final boolean originalMobAiDisabled;
+		public final boolean originalServerFloating;
 
 		public CarriedEntityData(Entity entity) {
-			this(entity, false, false, false);
+			this(entity, false, false, false,
+					entity != null && entity.hasNoGravity(),
+					entity != null && entity.isSilent(),
+					entity != null && entity.isInvulnerable(),
+					entity instanceof MobEntity mob && mob.isAiDisabled(),
+					entity instanceof ServerPlayerEntity player && floating.isFloatingServer(player.getUuid()));
 		}
 
 		public CarriedEntityData(Entity entity, boolean originalFlying, boolean originalAllowFlying, boolean originalInvulnerable) {
+			this(entity, originalFlying, originalAllowFlying, originalInvulnerable,
+					entity != null && entity.hasNoGravity(),
+					entity != null && entity.isSilent(),
+					entity != null && entity.isInvulnerable(),
+					entity instanceof MobEntity mob && mob.isAiDisabled(),
+					entity instanceof ServerPlayerEntity player && floating.isFloatingServer(player.getUuid()));
+		}
+
+		public CarriedEntityData(Entity entity, boolean originalFlying, boolean originalAllowFlying, boolean originalInvulnerable,
+								 boolean originalNoGravity, boolean originalSilent, boolean originalEntityInvulnerable, boolean originalMobAiDisabled,
+								 boolean originalServerFloating) {
 			this.entity = entity;
 			this.originalFlying = originalFlying;
 			this.originalAllowFlying = originalAllowFlying;
 			this.originalInvulnerable = originalInvulnerable;
+			this.originalNoGravity = originalNoGravity;
+			this.originalSilent = originalSilent;
+			this.originalEntityInvulnerable = originalEntityInvulnerable;
+			this.originalMobAiDisabled = originalMobAiDisabled;
+			this.originalServerFloating = originalServerFloating;
+		}
+
+		public static CarriedEntityData capture(Entity entity) {
+			boolean originalFlying = false;
+			boolean originalAllowFlying = false;
+			boolean originalInvulnerable = false;
+			if (entity instanceof ServerPlayerEntity player) {
+				originalFlying = player.getAbilities().flying;
+				originalAllowFlying = player.getAbilities().allowFlying;
+				originalInvulnerable = player.getAbilities().invulnerable;
+			}
+			return new CarriedEntityData(
+					entity,
+					originalFlying,
+					originalAllowFlying,
+					originalInvulnerable,
+					entity != null && entity.hasNoGravity(),
+					entity != null && entity.isSilent(),
+					entity != null && entity.isInvulnerable(),
+					entity instanceof MobEntity mob && mob.isAiDisabled(),
+					entity instanceof ServerPlayerEntity player && floating.isFloatingServer(player.getUuid())
+			);
 		}
 	}
 
@@ -145,25 +194,47 @@ public class CarryManager {
 		syncCarryPose(carrier, carried, false);
 		CARRIED_ENTITIES.remove(carrier);
 		CARRIED_BY.remove(carried);
-		carried.setNoGravity(false);
-		carried.setInvulnerable(false);
-		carried.setSilent(false);
-		if (carried instanceof MobEntity mob) {
-			mob.setAiDisabled(false);
-		}
-		if (carried instanceof ServerPlayerEntity carriedPlayer) {
-			carriedPlayer.getAbilities().flying = data != null ? data.originalFlying : false;
-			carriedPlayer.getAbilities().allowFlying = data != null ? data.originalAllowFlying : false;
-			carriedPlayer.getAbilities().invulnerable = data != null ? data.originalInvulnerable : false;
-			carriedPlayer.sendAbilitiesUpdate();
-		}
 		STRUGGLE_COUNTER.remove(carried);
 		CARRY_STAMINA_TICK_COUNTER.remove(carrier);
 		CARRIED_COOLDOWN.put(carried, System.currentTimeMillis() + 5000);
-		Vec3d pos = findSafeReleasePosition(carrier, carried, 0.5D);
-		carried.refreshPositionAndAngles(pos.x, pos.y, pos.z, carried.getYaw(), carried.getPitch());
+		restoreCarriedState(carried, data);
+		if (carried.isAlive()) {
+			Vec3d pos = findSafeReleasePosition(carrier, carried, 0.5D);
+			carried.refreshPositionAndAngles(pos.x, pos.y, pos.z, carried.getYaw(), carried.getPitch());
+			if (carried instanceof ServerPlayerEntity carriedPlayer) {
+				carriedPlayer.requestTeleport(pos.x, pos.y, pos.z);
+			}
+		}
+	}
+
+	public static void restoreCarriedState(Entity carried, CarriedEntityData data) {
+		if (carried == null) {
+			return;
+		}
+		carried.setNoGravity(data != null && data.originalNoGravity);
+		carried.setSilent(data != null && data.originalSilent);
+		carried.setInvulnerable(data != null && data.originalEntityInvulnerable);
+		carried.setVelocity(Vec3d.ZERO);
+		carried.fallDistance = 0.0F;
+		if (carried instanceof MobEntity mob) {
+			mob.setAiDisabled(data != null && data.originalMobAiDisabled);
+			if (!mob.isAiDisabled()) {
+				mob.getNavigation().stop();
+			}
+		}
 		if (carried instanceof ServerPlayerEntity carriedPlayer) {
-			carriedPlayer.requestTeleport(pos.x, pos.y, pos.z);
+			if (data != null) {
+				floating.setServerFloating(carriedPlayer.getUuid(), data.originalServerFloating);
+				carriedPlayer.getAbilities().flying = data.originalFlying;
+				carriedPlayer.getAbilities().allowFlying = data.originalAllowFlying;
+				carriedPlayer.getAbilities().invulnerable = data.originalInvulnerable;
+			} else if (!carriedPlayer.isCreative() && !carriedPlayer.isSpectator()) {
+				floating.setServerFloating(carriedPlayer.getUuid(), false);
+				carriedPlayer.getAbilities().flying = false;
+				carriedPlayer.getAbilities().allowFlying = false;
+				carriedPlayer.getAbilities().invulnerable = false;
+			}
+			carriedPlayer.sendAbilitiesUpdate();
 		}
 	}
 
@@ -193,12 +264,9 @@ public class CarryManager {
 			syncCarryPose(carrier, carried, false);
 			CARRIED_ENTITIES.remove(carrier);
 			CARRIED_BY.remove(carried);
-			if (carried instanceof ServerPlayerEntity carriedPlayer) {
-				carriedPlayer.getAbilities().flying = data.originalFlying;
-				carriedPlayer.getAbilities().allowFlying = data.originalAllowFlying;
-				carriedPlayer.getAbilities().invulnerable = data.originalInvulnerable;
-				carriedPlayer.sendAbilitiesUpdate();
-			}
+			restoreCarriedState(carried, data);
+			STRUGGLE_COUNTER.remove(carried);
+			CARRY_STAMINA_TICK_COUNTER.remove(carrier);
 			return;
 		}
 
@@ -302,29 +370,14 @@ public class CarryManager {
 			Entity carried = carriedData.entity;
 			syncCarryPose(player, carried, false);
 			CARRIED_BY.remove(carried);
-			carried.setNoGravity(false);
-			carried.setInvulnerable(false);
-			carried.setSilent(false);
-			if (carried instanceof ServerPlayerEntity carriedPlayer) {
-				carriedPlayer.getAbilities().flying = carriedData.originalFlying;
-				carriedPlayer.getAbilities().allowFlying = carriedData.originalAllowFlying;
-				carriedPlayer.getAbilities().invulnerable = carriedData.originalInvulnerable;
-				carriedPlayer.sendAbilitiesUpdate();
-			}
-			if (carried instanceof MobEntity mob) {
-				mob.setAiDisabled(false);
-			}
+			restoreCarriedState(carried, carriedData);
 		}
 		ServerPlayerEntity theirCarrier = CARRIED_BY.remove(player);
 		if (theirCarrier != null) {
 			CarriedEntityData removedData = CARRIED_ENTITIES.remove(theirCarrier);
 			syncCarryPose(theirCarrier, player, false);
-			if (removedData != null) {
-				player.getAbilities().flying = removedData.originalFlying;
-				player.getAbilities().allowFlying = removedData.originalAllowFlying;
-				player.getAbilities().invulnerable = removedData.originalInvulnerable;
-				player.sendAbilitiesUpdate();
-			}
+			restoreCarriedState(player, removedData);
+			CARRY_STAMINA_TICK_COUNTER.remove(theirCarrier);
 		}
 		CARRIED_COOLDOWN.remove(player);
 		STRUGGLE_COUNTER.remove(player);
