@@ -126,10 +126,11 @@ public class floating {
         return result;
     }
 
-    private static boolean hasFullWitchFlight(PlayerEntity player, int score, boolean hasTag) {
+    public static boolean hasFullWitchFlight(PlayerEntity player) {
         if (player instanceof ServerPlayerEntity) {
-            return score >= FULL_WITCH_SCORE
-                    && hasTag
+            return  getMonvhuaScore(player) >= FULL_WITCH_SCORE
+                    && hasFullWitchTag(player)
+                    && hasFloatingTag(player)
                     && getEnergy(player) > 0
                     && !player.isCreative()
                     && !player.isSpectator();
@@ -137,14 +138,10 @@ public class floating {
         return clientHasFullWitchFlight && !player.isCreative() && !player.isSpectator();
     }
 
-    public static boolean hasFullWitchFlight(ServerPlayerEntity player) {
-        return hasFullWitchFlight(player, getMonvhuaScore(player), hasFullWitchTag(player));
-    }
-
-    private static void updateFullWitchFlight(PlayerEntity player, int score, boolean hasTag) {
+    private static void updateFullWitchFlight(PlayerEntity player) {
         java.util.UUID uuid = player.getUuid();
 
-        if (hasFullWitchFlight(player, score, hasTag)) {
+        if (hasFullWitchFlight(player)) {
             fullWitchFlightSnapshots.computeIfAbsent(uuid, ignored -> new AbilitySnapshot(
                     player.getAbilities().allowFlying,
                     player.getAbilities().flying,
@@ -159,6 +156,7 @@ public class floating {
                     || player.getAbilities().getFlySpeed() != CREATIVE_FLY_SPEED;
             player.getAbilities().allowFlying = true;
             player.getAbilities().setFlySpeed(CREATIVE_FLY_SPEED);
+            player.fallDistance = 0;
             if (changed) {
                 player.sendAbilitiesUpdate();
             }
@@ -247,12 +245,7 @@ public class floating {
         java.util.UUID uuid = player.getUuid();
         int score = getMonvhuaScore(player);
         boolean hasTag = hasFullWitchTag(player);
-        updateFullWitchFlight(player, score, hasTag);
-
-        // 分数 >= 90 时免疫摔落伤害
-        if (score >= FULL_WITCH_SCORE) {
-            player.fallDistance = 0;
-        }
+        updateFullWitchFlight(player);
 
         // 分数 >= 90 的缓降处理
         if (score >= FULL_WITCH_SCORE) {
@@ -274,7 +267,7 @@ public class floating {
         }
 
         boolean isServerFloating = isFloatingServer(uuid);
-        boolean fullWitchFlightActive = hasFullWitchFlight(player, score, hasTag) && player.getAbilities().flying;
+        boolean fullWitchFlightActive = hasFullWitchFlight(player) && player.getAbilities().flying;
         double currentEnergy = getEnergy(player);
 
         if (isServerFloating || fullWitchFlightActive) {
@@ -300,11 +293,7 @@ public class floating {
     public static boolean canStartFloating(ServerPlayerEntity player) {
         if (player.isCreative() || player.isSpectator()) return false;
         if (!hasFloatingTag(player)) return false;
-
-        int score = getMonvhuaScore(player);
-        boolean hasTag = hasFullWitchTag(player);
-        if (score >= FULL_WITCH_SCORE && !hasTag) return false;
-        if (hasFullWitchFlight(player, score, hasTag)) return false;
+        if (hasFullWitchFlight(player)) return false;
 
         return getEnergy(player) > 0;
     }
@@ -322,7 +311,7 @@ public class floating {
             player.getAbilities().flying = true;
             player.getAbilities().setFlySpeed(getConfiguredFlySpeed(player));
         } else {
-            boolean keepFullWitchFlight = hasFullWitchFlight(player, getMonvhuaScore(player), hasFullWitchTag(player));
+            boolean keepFullWitchFlight = hasFullWitchFlight(player);
             player.getAbilities().allowFlying = keepFullWitchFlight;
             player.getAbilities().flying = false;
             player.getAbilities().setFlySpeed(keepFullWitchFlight ? CREATIVE_FLY_SPEED : DEFAULT_FLY_SPEED);
@@ -335,12 +324,7 @@ public class floating {
     public static void tick(PlayerEntity player) {
         int score = getMonvhuaScore(player);
         boolean hasTag = hasFullWitchTag(player);
-        updateFullWitchFlight(player, score, hasTag);
-
-        // 分数 >= 90 时重置摔落距离（免疫摔落）
-        if (score >= FULL_WITCH_SCORE) {
-            player.fallDistance = 0;
-        }
+        updateFullWitchFlight(player);
 
         // 分数 >= 90 且无标签时，强制关闭飞行
         if (score >= FULL_WITCH_SCORE && !hasTag) {
@@ -360,9 +344,9 @@ public class floating {
             isFloating = false;
             player.setVelocity(player.getVelocity().x, 0, player.getVelocity().z);
             player.fallDistance = 0;
-            player.getAbilities().allowFlying = hasFullWitchFlight(player, score, hasTag);
+            player.getAbilities().allowFlying = hasFullWitchFlight(player);
             player.getAbilities().flying = false;
-            player.getAbilities().setFlySpeed(hasFullWitchFlight(player, score, hasTag) ? CREATIVE_FLY_SPEED : DEFAULT_FLY_SPEED);
+            player.getAbilities().setFlySpeed(hasFullWitchFlight(player) ? CREATIVE_FLY_SPEED : DEFAULT_FLY_SPEED);
             player.sendAbilitiesUpdate();
             player.sendMessage(Text.literal("§c[漂浮] §f已关闭"), true);
             return;
@@ -409,8 +393,7 @@ public class floating {
             return null;
         }
 
-        if (hasFullWitchFlight(player, score, hasTag)) {
-            updateFullWitchFlight(player, score, hasTag);
+        if (hasFullWitchFlight(player)) {
             lastJumpTime = 0;
             return null;
         }
@@ -482,7 +465,7 @@ public class floating {
         player.setVelocity(player.getVelocity().x, 0, player.getVelocity().z);
         player.fallDistance = 0;
 
-        boolean keepFullWitchFlight = hasFullWitchFlight(player, getMonvhuaScore(player), hasFullWitchTag(player));
+        boolean keepFullWitchFlight = hasFullWitchFlight(player);
         player.getAbilities().allowFlying = keepFullWitchFlight;
         player.getAbilities().flying = false;
         player.getAbilities().setFlySpeed(keepFullWitchFlight ? CREATIVE_FLY_SPEED : DEFAULT_FLY_SPEED);
