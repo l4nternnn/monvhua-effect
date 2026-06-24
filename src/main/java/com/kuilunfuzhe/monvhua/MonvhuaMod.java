@@ -586,6 +586,7 @@ public class MonvhuaMod implements ModInitializer {
             ServerPlayNetworking.send(player, new FloatingPackets.ConfigS2C(FloatingConfig.getInstance().toJson()));
             ServerPlayNetworking.send(player, new PlantMagicPackets.ConfigS2C(PlantMagicConfig.getInstance().toJson()));
             ServerPlayNetworking.send(player, new PaintOverlayPackets.PaintConfigS2C(PaintConfig.getInstance().toJson()));
+            GravityMagic.syncConfigTo(player);
             GravityMagic.syncAreaGravityTo(player);
             PaintBucketBlock.syncAllCarriedBucketsTo(player);
 

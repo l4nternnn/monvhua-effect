@@ -1,6 +1,8 @@
 package com.kuilunfuzhe.monvhua.features.gravity;
 
 import com.kuilunfuzhe.monvhua.entity.ModEntities;
+import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
+import com.kuilunfuzhe.monvhua.item.config.GravityConfig;
 import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.network.gravity.GravityPackets;
@@ -16,6 +18,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
+import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWScrollCallbackI;
 
@@ -76,6 +79,31 @@ public final class GravityClient {
                         scheduleAreaRerender(client, packet.center(), packet.extent());
                     }
                     GravityMagic.resetInvertedPlayerIfInactive(client.player);
+                }
+            });
+        });
+        ClientPlayNetworking.registerGlobalReceiver(GravityPackets.EntityGravityS2C.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                MinecraftClient client = MinecraftClient.getInstance();
+                if (client.world == null) {
+                    return;
+                }
+                Entity entity = client.world.getEntityById(packet.entityId());
+                if (entity == null) {
+                    return;
+                }
+                GravityMagic.setClientDirectedEntityGravity(entity,
+                        new Vec3d(packet.directionX(), packet.directionY(), packet.directionZ()),
+                        packet.force(),
+                        packet.ticks());
+            });
+        });
+        ClientPlayNetworking.registerGlobalReceiver(GravityPackets.ConfigS2C.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                GravityConfig config = GravityConfig.fromJson(packet.json());
+                GravityConfig.syncInstance(config);
+                if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
+                    screen.receiveGravityConfig(config);
                 }
             });
         });
@@ -149,22 +177,31 @@ public final class GravityClient {
         String target = describeTarget(client);
         if (target == null) return;
 
-        double gravity = currentTargetGravity(client);
+        double force = currentTargetGravity(client);
+        Entity forceTarget = currentForceTarget(client);
+        Vec3d direction = currentAppliedDirection(client);
+        Vec3d netForce = GravityMagic.previewComposedForce(forceTarget, direction, force);
         int centerX = context.getScaledWindowWidth() / 2;
         int centerY = context.getScaledWindowHeight() / 2;
         int x = centerX + 20;
         int y = centerY + 20;
         String line1 = target;
-        String line2 = "g = " + GravityMagic.format(gravity);
-        int width = Math.max(client.textRenderer.getWidth(line1), client.textRenderer.getWidth(line2)) + 10;
-        int height = 24;
+        String line2 = "F = " + GravityMagic.format(force);
+        String line3 = "Net = " + GravityMagic.format(netForce.length());
+        int width = Math.max(client.textRenderer.getWidth(line1),
+                Math.max(client.textRenderer.getWidth(line2), client.textRenderer.getWidth(line3))) + 10;
+        int height = 34;
 
         context.fill(x, y, x + width, y + height, 0x66000000);
         context.drawText(client.textRenderer, Text.literal(line1), x + 5, y + 4, 0xFFFFFFFF, false);
         context.drawText(client.textRenderer, Text.literal(line2), x + 5, y + 14, 0xFF88CCFF, false);
+        context.drawText(client.textRenderer, Text.literal(line3), x + 5, y + 24, 0xFFB6E37A, false);
     }
 
     private static String describeTarget(MinecraftClient client) {
+        if (client.player != null && client.player.isSneaking()) {
+            return "Self";
+        }
         HitResult hit = client.crosshairTarget;
         if (hit instanceof EntityHitResult entityHit) {
             Entity entity = entityHit.getEntity();
@@ -177,6 +214,24 @@ public final class GravityClient {
             }
         }
         return null;
+    }
+
+    private static Entity currentForceTarget(MinecraftClient client) {
+        if (client.player != null && client.player.isSneaking()) {
+            return client.player;
+        }
+        HitResult hit = client.crosshairTarget;
+        if (hit instanceof EntityHitResult entityHit) {
+            return entityHit.getEntity();
+        }
+        return null;
+    }
+
+    private static Vec3d currentAppliedDirection(MinecraftClient client) {
+        if (client.player == null) {
+            return new Vec3d(0.0D, 0.0D, 1.0D);
+        }
+        return client.player.getRotationVec(1.0F);
     }
 
     public static boolean isEntityInInvertedField(Entity entity) {

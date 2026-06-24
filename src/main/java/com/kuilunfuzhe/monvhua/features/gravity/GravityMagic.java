@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.kuilunfuzhe.monvhua.item.config.GravityConfig;
 import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
 import com.kuilunfuzhe.monvhua.network.gravity.GravityPackets;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
@@ -59,6 +60,7 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -93,7 +95,19 @@ public final class GravityMagic {
     private static final double INVERTED_STEP_HEIGHT = 0.6D;
     private static final int INVERTED_JUMP_DETACH_TICKS = 8;
     private static final double LIGHTEN_ENTITY_REACH = 32.0D;
-    private static final int DIRECTED_ENTITY_GRAVITY_TICKS = 200;
+    private static final double NORMAL_WORLD_GRAVITY = 0.08D;
+    private static final double DIRECTED_PLAYER_GROUND_ACCELERATION = 0.10D;
+    private static final double DIRECTED_PLAYER_AIR_ACCELERATION = 0.026D;
+    private static final double DIRECTED_PLAYER_VERTICAL_DRAG = 0.98D;
+    private static final double DIRECTED_PLAYER_AIR_XZ_DRAG = 0.94D;
+    private static final double DIRECTED_PLAYER_BASE_JUMP_SPEED = 0.42D;
+    private static final double DIRECTED_PLAYER_JUMP_FORCE_SCALE = 4.5D;
+    private static final double DIRECTED_PLAYER_MAX_UP_SPEED = 2.10D;
+    private static final double DIRECTED_PLAYER_MAX_DOWN_SPEED = -3.20D;
+    private static final double DIRECTED_PLAYER_MAX_HORIZONTAL_SPEED = 1.45D;
+    private static final double DIRECTED_GRASS_STOP_DISTANCE = 10.0D;
+    private static final double DIRECTED_STONE_STOP_DISTANCE = 6.0D;
+    private static final double DIRECTED_DEFAULT_STOP_DISTANCE = 8.0D;
     private static final Map<UUID, LaunchMode> PLAYER_MODES = new ConcurrentHashMap<>();
     private static final Map<UUID, Double> PLAYER_GRAVITY = new ConcurrentHashMap<>();
     private static final Map<UUID, DirectedEntityGravity> ENTITY_GRAVITY = new ConcurrentHashMap<>();
@@ -118,9 +132,61 @@ public final class GravityMagic {
     private record AreaEdit(List<AreaSnapshot> added, List<AreaSnapshot> removed) {
     }
 
-    private record DirectedEntityGravity(RegistryKey<World> world, Vec3d direction, double acceleration, int ticks, boolean previousNoGravity) {
+    private record DirectedForce(Vec3d direction, double acceleration, int ticks) {
+        private DirectedForce {
+            direction = normalizedDirection(direction);
+            acceleration = clampGravity(acceleration);
+            ticks = Math.max(0, ticks);
+        }
+
+        private DirectedForce ticked() {
+            return new DirectedForce(direction, acceleration, ticks - 1);
+        }
+
+        private Vec3d vector() {
+            return direction.multiply(acceleration);
+        }
+    }
+
+    private record DirectedEntityGravity(RegistryKey<World> world, List<DirectedForce> forces, boolean previousNoGravity) {
+        private DirectedEntityGravity {
+            forces = forces == null ? List.of() : List.copyOf(forces);
+        }
+
+        private DirectedEntityGravity withAdded(DirectedForce force) {
+            List<DirectedForce> nextForces = new ArrayList<>(forces.size() + 1);
+            for (DirectedForce existing : forces) {
+                if (existing.ticks() > 0) {
+                    nextForces.add(existing);
+                }
+            }
+            if (force.ticks() > 0) {
+                nextForces.add(force);
+            }
+            return new DirectedEntityGravity(world, nextForces, previousNoGravity);
+        }
+
         private DirectedEntityGravity ticked() {
-            return new DirectedEntityGravity(world, direction, acceleration, ticks - 1, previousNoGravity);
+            List<DirectedForce> nextForces = new ArrayList<>(forces.size());
+            for (DirectedForce force : forces) {
+                DirectedForce ticked = force.ticked();
+                if (ticked.ticks() > 0) {
+                    nextForces.add(ticked);
+                }
+            }
+            return new DirectedEntityGravity(world, nextForces, previousNoGravity);
+        }
+
+        private boolean expired() {
+            return forces.isEmpty();
+        }
+
+        private Vec3d directedForce() {
+            Vec3d total = Vec3d.ZERO;
+            for (DirectedForce force : forces) {
+                total = total.add(force.vector());
+            }
+            return total;
         }
     }
 
@@ -138,6 +204,23 @@ public final class GravityMagic {
         ServerPlayNetworking.registerGlobalReceiver(GravityPackets.DebugAreaActionC2S.ID, (packet, context) -> {
             context.server().execute(() -> handleDebugAreaAction(context.player(), packet));
         });
+        ServerPlayNetworking.registerGlobalReceiver(GravityPackets.RequestConfigC2S.ID, (packet, context) ->
+                context.server().execute(() -> syncConfigTo(context.player())));
+        ServerPlayNetworking.registerGlobalReceiver(GravityPackets.UpdateConfigC2S.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity player = context.player();
+                if (!player.hasPermissionLevel(2) && !player.isCreative()) {
+                    player.sendMessage(Text.literal("\u00a7cNo permission to update gravity config"), true);
+                    return;
+                }
+                GravityConfig config = GravityConfig.fromJson(packet.json());
+                GravityConfig.setInstance(config);
+                for (ServerPlayerEntity target : context.server().getPlayerManager().getPlayerList()) {
+                    syncConfigTo(target);
+                }
+                player.sendMessage(Text.literal("\u00a7aGravity config updated"), true);
+            });
+        });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             ensureServerAreasLoaded(server);
@@ -150,6 +233,10 @@ public final class GravityMagic {
 
         UseBlockCallback.EVENT.register(GravityMagic::useInvertedBlockSurface);
         UseEntityCallback.EVENT.register(GravityMagic::useGravityWandOnEntity);
+    }
+
+    public static void syncConfigTo(ServerPlayerEntity player) {
+        ServerPlayNetworking.send(player, new GravityPackets.ConfigS2C(GravityConfig.getInstance().toJson()));
     }
 
     public static LaunchMode toggleMode(ServerPlayerEntity player) {
@@ -179,10 +266,6 @@ public final class GravityMagic {
             Entity entity = player.getWorld().getEntityById(entityId);
             if (entity instanceof GravityBlockEntity gravityBlock) {
                 gravityBlock.setGravityAmount(clamped);
-            } else if (entity instanceof ServerPlayerEntity) {
-                setSelectedGravity(player, clamped);
-            } else if (entity != null) {
-                setDirectedEntityGravity(entity, new Vec3d(0.0D, -1.0D, 0.0D), clamped, DIRECTED_ENTITY_GRAVITY_TICKS);
             } else {
                 setSelectedGravity(player, clamped);
             }
@@ -193,6 +276,9 @@ public final class GravityMagic {
     }
 
     public static boolean lightenLookedAtEntity(ServerPlayerEntity player) {
+        if (player.isSneaking()) {
+            return lightenEntity(player, player, player.getRotationVec(1.0F));
+        }
         Entity target = findLookedAtEntity(player, LIGHTEN_ENTITY_REACH);
         return target != null && lightenEntity(player, target);
     }
@@ -207,30 +293,196 @@ public final class GravityMagic {
         }
 
         double gravity = getSelectedGravity(player);
-        setDirectedEntityGravity(entity, direction, gravity, DIRECTED_ENTITY_GRAVITY_TICKS);
-        player.sendMessage(Text.literal("\u00a7b[Gravity] Lightened " + entity.getName().getString()
-                + " g=" + format(gravity) + " ticks=" + DIRECTED_ENTITY_GRAVITY_TICKS), true);
+        Vec3d normalizedDirection = normalizedDirection(direction);
+        Vec3d netForce = previewComposedForce(entity, normalizedDirection, gravity);
+        int ticks = GravityConfig.getInstance().getForceDurationTicks();
+        setDirectedEntityGravity(entity, normalizedDirection, gravity, ticks);
+        player.sendMessage(Text.literal("\u00a7b[Gravity] Force -> " + entity.getName().getString()
+                + " F=" + format(gravity)
+                + " net=" + format(netForce.length())
+                + " ticks=" + ticks), true);
         return true;
     }
 
+    public static Vec3d appliedForce(Vec3d direction, double acceleration) {
+        return normalizedDirection(direction).multiply(clampGravity(acceleration));
+    }
+
+    public static Vec3d previewComposedForce(Entity target, Vec3d direction, double acceleration) {
+        if (target == null) {
+            return appliedForce(direction, acceleration);
+        }
+        DirectedEntityGravity directed = ENTITY_GRAVITY.get(target.getUuid());
+        if (directed != null && !directed.world().equals(target.getWorld().getRegistryKey())) {
+            directed = null;
+        }
+        Vec3d existing = directed == null ? Vec3d.ZERO : directed.directedForce();
+        boolean previousNoGravity = directed == null ? target.hasNoGravity() : directed.previousNoGravity();
+        return existing.add(appliedForce(direction, acceleration)).add(worldGravityForce(target, previousNoGravity));
+    }
+
+    public static double previewComposedForceMagnitude(Entity target, Vec3d direction, double acceleration) {
+        return previewComposedForce(target, direction, acceleration).length();
+    }
+
     private static void setDirectedEntityGravity(Entity entity, Vec3d direction, double acceleration, int ticks) {
-        Vec3d normalized = direction == null || direction.lengthSquared() < 1.0E-6D
-                ? new Vec3d(0.0D, -1.0D, 0.0D)
-                : direction.normalize();
-        double clamped = clampGravity(acceleration);
+        DirectedForce force = new DirectedForce(direction, acceleration, ticks);
         DirectedEntityGravity previous = ENTITY_GRAVITY.get(entity.getUuid());
         boolean previousNoGravity = previous == null ? entity.hasNoGravity() : previous.previousNoGravity();
-        ENTITY_GRAVITY.put(entity.getUuid(), new DirectedEntityGravity(
-                entity.getWorld().getRegistryKey(),
-                normalized,
-                clamped,
-                Math.max(1, ticks),
-                previousNoGravity
-        ));
+        DirectedEntityGravity next = previous != null && previous.world().equals(entity.getWorld().getRegistryKey())
+                ? previous.withAdded(force)
+                : new DirectedEntityGravity(entity.getWorld().getRegistryKey(), List.of(force), previousNoGravity);
+        ENTITY_GRAVITY.put(entity.getUuid(), next);
         entity.setNoGravity(true);
         if (entity instanceof GravityBlockEntity gravityBlock) {
             gravityBlock.setGravityY(0.0D);
         }
+        syncDirectedEntityGravity(entity, force.direction(), force.acceleration(), force.ticks());
+    }
+
+    public static void setClientDirectedEntityGravity(Entity entity, Vec3d direction, double acceleration, int ticks) {
+        if (entity == null || entity.getWorld() == null) {
+            return;
+        }
+        if (ticks <= 0) {
+            DirectedEntityGravity removed = ENTITY_GRAVITY.remove(entity.getUuid());
+            if (removed != null) {
+                finishDirectedEntityGravity(entity, removed);
+            }
+            return;
+        }
+        DirectedEntityGravity previous = ENTITY_GRAVITY.get(entity.getUuid());
+        boolean previousNoGravity = previous == null ? entity.hasNoGravity() : previous.previousNoGravity();
+        DirectedForce force = new DirectedForce(direction, acceleration, ticks);
+        DirectedEntityGravity next = previous != null && previous.world().equals(entity.getWorld().getRegistryKey())
+                ? previous.withAdded(force)
+                : new DirectedEntityGravity(entity.getWorld().getRegistryKey(), List.of(force), previousNoGravity);
+        ENTITY_GRAVITY.put(entity.getUuid(), next);
+        entity.setNoGravity(true);
+    }
+
+    private static void syncDirectedEntityGravity(Entity entity, Vec3d direction, double acceleration, int ticks) {
+        if (entity instanceof ServerPlayerEntity player) {
+            ServerPlayNetworking.send(player, new GravityPackets.EntityGravityS2C(
+                    entity.getId(), ticks, acceleration, direction.x, direction.y, direction.z));
+        }
+    }
+
+    private static void syncClearDirectedEntityGravity(Entity entity) {
+        if (entity instanceof ServerPlayerEntity player) {
+            ServerPlayNetworking.send(player, new GravityPackets.EntityGravityS2C(
+                    entity.getId(), 0, 0.0D, 0.0D, 0.0D, 0.0D));
+        }
+    }
+
+    private static Vec3d normalizedDirection(Vec3d direction) {
+        return direction == null || direction.lengthSquared() < 1.0E-6D
+                ? new Vec3d(0.0D, -1.0D, 0.0D)
+                : direction.normalize();
+    }
+
+    private static Vec3d composedForce(Entity entity, DirectedEntityGravity directed) {
+        if (directed == null) {
+            return Vec3d.ZERO;
+        }
+        return directed.directedForce().add(worldGravityForce(entity, directed.previousNoGravity()));
+    }
+
+    private static Vec3d worldGravityForce(Entity entity, boolean previousNoGravity) {
+        if (entity == null || previousNoGravity) {
+            return Vec3d.ZERO;
+        }
+        if (!shouldIgnoreInvertedPull(entity)) {
+            double inverted = getInvertedAreaGravity(entity);
+            if (inverted > 0.0D) {
+                return new Vec3d(0.0D, inverted, 0.0D);
+            }
+        }
+        return new Vec3d(0.0D, -NORMAL_WORLD_GRAVITY, 0.0D);
+    }
+
+    private static Vec3d clampHorizontal(Vec3d velocity, double maxHorizontal) {
+        double horizontalSq = velocity.x * velocity.x + velocity.z * velocity.z;
+        double maxSq = maxHorizontal * maxHorizontal;
+        if (horizontalSq <= maxSq || horizontalSq < 1.0E-8D) {
+            return velocity;
+        }
+        double scale = maxHorizontal / Math.sqrt(horizontalSq);
+        return new Vec3d(velocity.x * scale, velocity.y, velocity.z * scale);
+    }
+
+    private static Vec3d applyGroundFriction(Entity entity, Vec3d velocity) {
+        if (entity == null || !entity.isOnGround()) {
+            return velocity;
+        }
+        double horizontalSq = velocity.x * velocity.x + velocity.z * velocity.z;
+        if (horizontalSq < 1.0E-8D) {
+            return new Vec3d(0.0D, velocity.y, 0.0D);
+        }
+
+        double horizontal = Math.sqrt(horizontalSq);
+        double stopDistance = groundStopDistance(entity);
+        double nextHorizontal = horizontal * Math.max(0.0D, 1.0D - horizontal / stopDistance);
+        double scale = nextHorizontal / horizontal;
+        return new Vec3d(velocity.x * scale, velocity.y, velocity.z * scale);
+    }
+
+    private static double groundStopDistance(Entity entity) {
+        BlockPos pos = BlockPos.ofFloored(entity.getX(), entity.getBoundingBox().minY - 0.05D, entity.getZ());
+        BlockState state = entity.getWorld().getBlockState(pos);
+        if (state.isAir()) {
+            state = entity.getWorld().getBlockState(pos.down());
+        }
+        if (isGrassFrictionBlock(state)) {
+            return DIRECTED_GRASS_STOP_DISTANCE;
+        }
+        if (isStoneFrictionBlock(state)) {
+            return DIRECTED_STONE_STOP_DISTANCE;
+        }
+        return DIRECTED_DEFAULT_STOP_DISTANCE;
+    }
+
+    private static boolean isGrassFrictionBlock(BlockState state) {
+        return state.isOf(Blocks.GRASS_BLOCK)
+                || state.isOf(Blocks.DIRT)
+                || state.isOf(Blocks.PODZOL)
+                || state.isOf(Blocks.MYCELIUM)
+                || state.isOf(Blocks.MOSS_BLOCK);
+    }
+
+    private static boolean isStoneFrictionBlock(BlockState state) {
+        return state.isOf(Blocks.STONE)
+                || state.isOf(Blocks.SMOOTH_STONE)
+                || state.isOf(Blocks.COBBLESTONE)
+                || state.isOf(Blocks.MOSSY_COBBLESTONE)
+                || state.isOf(Blocks.STONE_BRICKS)
+                || state.isOf(Blocks.CRACKED_STONE_BRICKS)
+                || state.isOf(Blocks.MOSSY_STONE_BRICKS)
+                || state.isOf(Blocks.CHISELED_STONE_BRICKS)
+                || state.isOf(Blocks.GRANITE)
+                || state.isOf(Blocks.POLISHED_GRANITE)
+                || state.isOf(Blocks.DIORITE)
+                || state.isOf(Blocks.POLISHED_DIORITE)
+                || state.isOf(Blocks.ANDESITE)
+                || state.isOf(Blocks.POLISHED_ANDESITE)
+                || state.isOf(Blocks.DEEPSLATE)
+                || state.isOf(Blocks.COBBLED_DEEPSLATE)
+                || state.isOf(Blocks.POLISHED_DEEPSLATE)
+                || state.isOf(Blocks.DEEPSLATE_BRICKS)
+                || state.isOf(Blocks.CRACKED_DEEPSLATE_BRICKS)
+                || state.isOf(Blocks.DEEPSLATE_TILES)
+                || state.isOf(Blocks.CRACKED_DEEPSLATE_TILES)
+                || state.isOf(Blocks.TUFF)
+                || state.isOf(Blocks.POLISHED_TUFF)
+                || state.isOf(Blocks.TUFF_BRICKS)
+                || state.isOf(Blocks.CALCITE)
+                || state.isOf(Blocks.GRAVEL);
+    }
+
+    private static void finishDirectedEntityGravity(Entity entity, DirectedEntityGravity directed) {
+        entity.setNoGravity(directed.previousNoGravity());
+        entity.fallDistance = 0.0F;
+        syncClearDirectedEntityGravity(entity);
     }
 
     private static ActionResult useGravityWandOnEntity(PlayerEntity player, World world, Hand hand, Entity entity, net.minecraft.util.hit.EntityHitResult hitResult) {
@@ -240,7 +492,8 @@ public final class GravityMagic {
         if (world.isClient()) {
             return ActionResult.SUCCESS;
         }
-        if (player instanceof ServerPlayerEntity serverPlayer && lightenEntity(serverPlayer, entity, serverPlayer.getRotationVec(1.0F))) {
+        if (player instanceof ServerPlayerEntity serverPlayer
+                && lightenEntity(serverPlayer, serverPlayer.isSneaking() ? serverPlayer : entity, serverPlayer.getRotationVec(1.0F))) {
             return ActionResult.SUCCESS_SERVER;
         }
         return ActionResult.FAIL;
@@ -798,15 +1051,30 @@ public final class GravityMagic {
                 continue;
             }
 
-            if (gravity.ticks() <= 0) {
-                entity.setNoGravity(gravity.previousNoGravity());
+            if (entity instanceof ServerPlayerEntity) {
+                continue;
+            }
+
+            if (gravity.expired() || shouldIgnoreInvertedPull(entity)) {
                 ENTITY_GRAVITY.remove(entityId, gravity);
+                finishDirectedEntityGravity(entity, gravity);
                 continue;
             }
 
             entity.setNoGravity(true);
-            entity.setVelocity(entity.getVelocity().add(gravity.direction().multiply(gravity.acceleration())));
-            ENTITY_GRAVITY.replace(entityId, gravity, gravity.ticked());
+            Vec3d force = composedForce(entity, gravity);
+            Vec3d velocity = applyGroundFriction(entity, entity.getVelocity().add(force));
+            entity.setVelocity(velocity);
+            if (force.y > 0.0D) {
+                entity.fallDistance = 0.0F;
+            }
+            DirectedEntityGravity ticked = gravity.ticked();
+            if (ticked.expired()) {
+                ENTITY_GRAVITY.remove(entityId, gravity);
+                finishDirectedEntityGravity(entity, gravity);
+            } else {
+                ENTITY_GRAVITY.replace(entityId, gravity, ticked);
+            }
         }
     }
 
@@ -953,6 +1221,13 @@ public final class GravityMagic {
     }
 
     public static boolean tickInvertedPlayer(Entity entity, PlayerInput input) {
+        if (entity != null && input != null) {
+            DirectedEntityGravity directed = ENTITY_GRAVITY.get(entity.getUuid());
+            if (directed != null) {
+                return tickDirectedPlayer(entity, input, directed);
+            }
+        }
+
         Map<UUID, InvertedPlayerState> stateMap = invertedPlayerStates(entity);
         if (entity == null || input == null || getInvertedAreaGravity(entity) <= 0.0D || shouldIgnoreInvertedPull(entity)) {
             if (entity != null) {
@@ -1011,6 +1286,72 @@ public final class GravityMagic {
         }
 
         entity.setVelocity(velocity);
+        return true;
+    }
+
+    private static boolean tickDirectedPlayer(Entity entity, PlayerInput input, DirectedEntityGravity directed) {
+        if (directed == null) {
+            return false;
+        }
+        if (!directed.world().equals(entity.getWorld().getRegistryKey())) {
+            ENTITY_GRAVITY.remove(entity.getUuid(), directed);
+            finishDirectedEntityGravity(entity, directed);
+            return false;
+        }
+
+        if (directed.expired() || shouldIgnoreInvertedPull(entity)) {
+            ENTITY_GRAVITY.remove(entity.getUuid(), directed);
+            finishDirectedEntityGravity(entity, directed);
+            return false;
+        }
+
+        entity.setNoGravity(true);
+        entity.fallDistance = 0.0F;
+
+        Vec3d force = composedForce(entity, directed);
+        Vec3d magicForce = directed.directedForce();
+        Vec3d velocity = entity.getVelocity();
+        boolean grounded = entity.isOnGround();
+        Vec3d inputForce = inputAcceleration(entity, input,
+                grounded ? DIRECTED_PLAYER_GROUND_ACCELERATION : DIRECTED_PLAYER_AIR_ACCELERATION);
+        Vec3d horizontalForce = new Vec3d(force.x, 0.0D, force.z);
+        Vec3d next = velocity.add(force).add(inputForce);
+
+        if (input.jump() && grounded) {
+            double jumpSpeed = DIRECTED_PLAYER_BASE_JUMP_SPEED
+                    + Math.clamp(force.y * DIRECTED_PLAYER_JUMP_FORCE_SCALE, -0.32D, 0.82D);
+            next = new Vec3d(next.x, Math.max(next.y, Math.max(0.05D, jumpSpeed)), next.z);
+            entity.setOnGround(false);
+        }
+
+        if (force.y > 0.0D) {
+            Vec3d flightDirection = magicForce.lengthSquared() > 1.0E-8D ? magicForce.normalize() : normalizedDirection(force);
+            double glideStrength = Math.clamp(force.y * 1.8D + horizontalForce.length() * 0.5D, 0.02D, 0.22D);
+            Vec3d desired = flightDirection.multiply(Math.clamp(0.65D + magicForce.length() * 6.0D, 0.65D, 2.15D));
+            next = next.add(desired.subtract(next).multiply(glideStrength));
+            next = new Vec3d(next.x, Math.min(next.y, DIRECTED_PLAYER_MAX_UP_SPEED), next.z);
+        } else {
+            next = new Vec3d(next.x, Math.max(next.y, DIRECTED_PLAYER_MAX_DOWN_SPEED), next.z);
+        }
+
+        next = clampHorizontal(next, DIRECTED_PLAYER_MAX_HORIZONTAL_SPEED);
+        moveWithoutSneakEdgeClip(entity, next);
+
+        double xzDrag = grounded ? 1.0D : DIRECTED_PLAYER_AIR_XZ_DRAG;
+        Vec3d stored = new Vec3d(next.x * xzDrag, next.y * DIRECTED_PLAYER_VERTICAL_DRAG, next.z * xzDrag);
+        stored = applyGroundFriction(entity, stored);
+        if (force.y > 0.0D) {
+            stored = new Vec3d(stored.x, Math.min(stored.y, DIRECTED_PLAYER_MAX_UP_SPEED), stored.z);
+        }
+        entity.setVelocity(stored);
+
+        DirectedEntityGravity ticked = directed.ticked();
+        if (ticked.expired()) {
+            ENTITY_GRAVITY.remove(entity.getUuid(), directed);
+            finishDirectedEntityGravity(entity, directed);
+        } else {
+            ENTITY_GRAVITY.replace(entity.getUuid(), directed, ticked);
+        }
         return true;
     }
 
@@ -1292,7 +1633,9 @@ public final class GravityMagic {
     }
 
     public static boolean shouldSuppressVanillaGravity(Entity entity) {
-        return ENTITY_GRAVITY.containsKey(entity.getUuid()) || isInInvertedArea(entity) && !shouldIgnoreInvertedPull(entity);
+        DirectedEntityGravity directed = ENTITY_GRAVITY.get(entity.getUuid());
+        return directed != null && !directed.expired() && directed.world().equals(entity.getWorld().getRegistryKey())
+                || isInInvertedArea(entity) && !shouldIgnoreInvertedPull(entity);
     }
 
     public static void addClientSyncedAreaGravity(UUID id, RegistryKey<World> world, BlockPos center, GravityAreaSpec spec, int ticks, double gravity) {

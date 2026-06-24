@@ -16,12 +16,15 @@ public final class GravityPackets {
     public static void registerC2S() {
         AdjustGravityC2S.register();
         DebugAreaActionC2S.register();
+        RequestConfigC2S.register();
+        UpdateConfigC2S.register();
     }
 
     public static void registerS2C() {
         AreaGravityS2C.register();
         ClearAreaGravityS2C.register();
         EntityGravityS2C.register();
+        ConfigS2C.register();
     }
 
     public record AdjustGravityC2S(int entityId, double gravity) implements CustomPayload {
@@ -148,19 +151,22 @@ public final class GravityPackets {
         }
     }
 
-    public record EntityGravityS2C(int entityId, int ticks, double gravity) implements CustomPayload {
+    public record EntityGravityS2C(int entityId, int ticks, double force, double directionX, double directionY, double directionZ) implements CustomPayload {
         public static final Id<EntityGravityS2C> ID = new Id<>(Identifier.of("monvhua", "entity_gravity_effect"));
         public static final PacketCodec<RegistryByteBuf, EntityGravityS2C> CODEC = PacketCodec.of(EntityGravityS2C::write, EntityGravityS2C::new);
         private static boolean registered = false;
 
         private EntityGravityS2C(RegistryByteBuf buf) {
-            this(buf.readInt(), buf.readInt(), buf.readDouble());
+            this(buf.readInt(), buf.readInt(), buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble());
         }
 
         private void write(RegistryByteBuf buf) {
             buf.writeInt(entityId);
             buf.writeInt(ticks);
-            buf.writeDouble(gravity);
+            buf.writeDouble(force);
+            buf.writeDouble(directionX);
+            buf.writeDouble(directionY);
+            buf.writeDouble(directionZ);
         }
 
         @Override
@@ -171,6 +177,76 @@ public final class GravityPackets {
         public static void register() {
             if (!registered) {
                 PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record ConfigS2C(String json) implements CustomPayload {
+        public static final Id<ConfigS2C> ID = new Id<>(Identifier.of("monvhua", "gravity_config"));
+        public static final PacketCodec<RegistryByteBuf, ConfigS2C> CODEC = PacketCodec.of(ConfigS2C::write, ConfigS2C::new);
+        private static boolean registered = false;
+
+        private ConfigS2C(RegistryByteBuf buf) {
+            this(buf.readString());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(json);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record RequestConfigC2S() implements CustomPayload {
+        public static final Id<RequestConfigC2S> ID = new Id<>(Identifier.of("monvhua", "request_gravity_config"));
+        public static final PacketCodec<RegistryByteBuf, RequestConfigC2S> CODEC = PacketCodec.unit(new RequestConfigC2S());
+        private static boolean registered = false;
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record UpdateConfigC2S(String json) implements CustomPayload {
+        public static final Id<UpdateConfigC2S> ID = new Id<>(Identifier.of("monvhua", "update_gravity_config"));
+        public static final PacketCodec<RegistryByteBuf, UpdateConfigC2S> CODEC = PacketCodec.of(UpdateConfigC2S::write, UpdateConfigC2S::new);
+        private static boolean registered = false;
+
+        private UpdateConfigC2S(RegistryByteBuf buf) {
+            this(buf.readString());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(json);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
                 registered = true;
             }
         }
