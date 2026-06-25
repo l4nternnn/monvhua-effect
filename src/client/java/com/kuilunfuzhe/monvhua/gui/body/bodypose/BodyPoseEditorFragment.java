@@ -12,6 +12,7 @@ import com.kuilunfuzhe.monvhua.network.bodypose.PlaceTrueSkeletalBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.UpdateBodyPoseDefaultsC2SPacket;
 import com.kuilunfuzhe.monvhua.renderer.bodypose.skeletal.BodyPoseSkeletalPreviewRenderer;
 import icyllis.modernui.core.Context;
+import icyllis.modernui.core.Core;
 import icyllis.modernui.fragment.Fragment;
 import icyllis.modernui.R;
 import icyllis.modernui.graphics.Canvas;
@@ -231,7 +232,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private boolean draggingRightPreview;
     private boolean previewTransformDirty;
     private boolean skipNextCtrlPollToggle;
-    private boolean previewInvalidationQueued;
+    private volatile boolean previewInvalidationQueued;
     private int activePreviewButton;
     private View repeatingTransformView;
     private Runnable repeatingTransformAction;
@@ -240,7 +241,7 @@ public class BodyPoseEditorFragment extends Fragment {
         public void run() {
             if (repeatingTransformView == null || repeatingTransformAction == null) return;
             repeatingTransformAction.run();
-            if (surfaceView != null) surfaceView.invalidate();
+            invalidatePreview();
             repeatingTransformView.postDelayed(this, TRANSFORM_REPEAT_INTERVAL_MS);
         }
     };
@@ -866,7 +867,7 @@ public class BodyPoseEditorFragment extends Fragment {
             refreshButtonLabels();
             refreshNumericValueBindings();
             view.requestLayout();
-            view.invalidate();
+            invalidateView(view);
             invalidatePreview();
         });
     }
@@ -1142,8 +1143,11 @@ public class BodyPoseEditorFragment extends Fragment {
         refreshNumericValueBindings();
         invalidatePreview();
         if (rootView != null) {
-            rootView.requestLayout();
-            rootView.invalidate();
+            View view = rootView;
+            postToUiThread(() -> {
+                view.requestLayout();
+                view.invalidate();
+            });
         }
     }
 
@@ -2398,13 +2402,45 @@ public class BodyPoseEditorFragment extends Fragment {
             return;
         }
         previewInvalidationQueued = true;
-        boolean posted = view.post(() -> {
+        boolean posted = postToUiThread(() -> {
             previewInvalidationQueued = false;
+            if (surfaceView != view) {
+                return;
+            }
             view.invalidate();
         });
         if (!posted) {
             previewInvalidationQueued = false;
         }
+    }
+
+    private void invalidateView(View view) {
+        if (view == null) {
+            return;
+        }
+        postToUiThread(view::invalidate);
+    }
+
+    private boolean postToUiThread(Runnable action) {
+        if (action == null) {
+            return false;
+        }
+        if (Core.isOnUiThread()) {
+            action.run();
+            return true;
+        }
+        if (Core.getUiHandlerAsync() != null) {
+            Core.postOnUiThread(action);
+            return true;
+        }
+        View view = rootView != null ? rootView : surfaceView;
+        if (view != null && view.post(action)) {
+            return true;
+        }
+        if (surfaceView != null && surfaceView != view && surfaceView.post(action)) {
+            return true;
+        }
+        return false;
     }
 
     private void adjustActiveOffset(MoveAxis axis, float amount) {
