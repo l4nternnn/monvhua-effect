@@ -63,8 +63,8 @@ public class GravityDebugModeScreen extends Screen {
             config.addSeconds(10);
             rebuild();
         }).dimensions(x + 154, y, 48, BUTTON_HEIGHT).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("g " + GravityMagic.format(config.gravity())), button -> {
-            config.addGravity(0.01D);
+        addDrawableChild(ButtonWidget.builder(Text.literal("g " + GravityMagic.formatGravityMultiplier(config.gravity())), button -> {
+            config.addGravityMultiplier(0.1D);
             rebuild();
         }).dimensions(x + 210, y, 76, BUTTON_HEIGHT).build());
 

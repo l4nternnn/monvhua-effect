@@ -23,7 +23,7 @@ import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWScrollCallbackI;
 
 public final class GravityClient {
-    private static final double STEP = 0.01D;
+    private static final double MULTIPLIER_STEP = 0.1D;
     private static double selectedGravity = GravityMagic.DEFAULT_GRAVITY;
     private static GLFWScrollCallbackI previousScrollCallback;
     private static boolean scrollCallbackRegistered = false;
@@ -139,14 +139,42 @@ public final class GravityClient {
         if (client.player.getMainHandStack().getItem() != GravityItems.GRAVITY_WAND) return false;
         if (!isCtrlDown(client)) return false;
 
-        double base = currentTargetGravity(client);
-        selectedGravity = GravityMagic.clampGravity(base + (yOffset > 0 ? STEP : -STEP));
+        double baseMultiplier = GravityMagic.gravityMultiplier(currentTargetGravity(client));
+        selectedGravity = GravityMagic.gravityFromMultiplier(baseMultiplier + (yOffset > 0 ? MULTIPLIER_STEP : -MULTIPLIER_STEP));
         int entityId = targetEntityId(client);
         SafeClientNetworking.send(new GravityPackets.AdjustGravityC2S(entityId, selectedGravity));
         return true;
     }
 
+    public static boolean onMouseClicked(int button, int mods) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null || client.currentScreen != null) {
+            return false;
+        }
+        if (client.player.getMainHandStack().getItem() != GravityItems.GRAVITY_WAND) {
+            return false;
+        }
+        if (button != GLFW.GLFW_MOUSE_BUTTON_MIDDLE || !isCtrlDown(client, mods)) {
+            return false;
+        }
+
+        HitResult hit = client.player.raycast(64.0D, 0.0F, false);
+        if (!(hit instanceof BlockHitResult blockHit) || blockHit.getType() == HitResult.Type.MISS) {
+            client.player.sendMessage(Text.literal("\u00a7c[Gravity] No block selected"), true);
+            return true;
+        }
+        SafeClientNetworking.send(new GravityPackets.SelectBlocksC2S(blockHit.getBlockPos()));
+        return true;
+    }
+
     private static boolean isCtrlDown(MinecraftClient client) {
+        return isCtrlDown(client, 0);
+    }
+
+    private static boolean isCtrlDown(MinecraftClient client, int mods) {
+        if ((mods & GLFW.GLFW_MOD_CONTROL) != 0) {
+            return true;
+        }
         long handle = client.getWindow().getHandle();
         return GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_LEFT_CONTROL) == GLFW.GLFW_PRESS
                 || GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_RIGHT_CONTROL) == GLFW.GLFW_PRESS;
@@ -186,8 +214,8 @@ public final class GravityClient {
         int x = centerX + 20;
         int y = centerY + 20;
         String line1 = target;
-        String line2 = "F = " + GravityMagic.format(force);
-        String line3 = "Net = " + GravityMagic.format(netForce.length());
+        String line2 = "F = " + GravityMagic.formatGravityMultiplier(force);
+        String line3 = "Net = " + GravityMagic.formatGravityMultiplier(netForce.length());
         int width = Math.max(client.textRenderer.getWidth(line1),
                 Math.max(client.textRenderer.getWidth(line2), client.textRenderer.getWidth(line3))) + 10;
         int height = 34;

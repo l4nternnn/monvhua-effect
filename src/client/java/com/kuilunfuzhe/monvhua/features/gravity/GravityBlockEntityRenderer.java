@@ -27,6 +27,7 @@ public class GravityBlockEntityRenderer extends EntityRenderer<GravityBlockEntit
         super.updateRenderState(entity, state, tickDelta);
         state.blockState = entity.getBlockState();
         state.pitch = lerp(entity.prevRenderPitch, entity.renderPitch, tickDelta);
+        state.yaw = lerp(entity.prevRenderYaw, entity.renderYaw, tickDelta);
         state.roll = lerp(entity.prevRenderRoll, entity.renderRoll, tickDelta);
     }
 
@@ -36,6 +37,7 @@ public class GravityBlockEntityRenderer extends EntityRenderer<GravityBlockEntit
         matrices.translate(-0.5D, 0.0D, -0.5D);
         matrices.translate(0.5D, 0.5D, 0.5D);
         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(state.pitch));
+        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(state.yaw));
         matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(state.roll));
         matrices.translate(-0.5D, -0.5D, -0.5D);
         MinecraftClient.getInstance().getBlockRenderManager()
@@ -51,6 +53,7 @@ public class GravityBlockEntityRenderer extends EntityRenderer<GravityBlockEntit
     public static class GravityBlockRenderState extends EntityRenderState {
         public BlockState blockState = Blocks.STONE.getDefaultState();
         public float pitch;
+        public float yaw;
         public float roll;
     }
 }

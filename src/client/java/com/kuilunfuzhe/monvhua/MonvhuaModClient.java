@@ -39,6 +39,7 @@ import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
 import com.kuilunfuzhe.monvhua.register.BodyBlockModelRegister;
 import com.kuilunfuzhe.monvhua.register.ClientPacketHandler;
 import com.kuilunfuzhe.monvhua.register.imitate.ImitateClientPacketHandler;
+import com.kuilunfuzhe.monvhua.renderer.bodypose.skeletal.BodyPoseSkeletalPreviewRenderer;
 import com.kuilunfuzhe.monvhua.screen.ModScreenHandlers;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -47,13 +48,18 @@ import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
+import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
+import net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener;
 import net.minecraft.client.gui.screen.ingame.HandledScreens;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.decoration.ArmorStandEntity;
+import net.minecraft.resource.ResourceManager;
+import net.minecraft.resource.ResourceType;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
+import net.minecraft.util.Identifier;
 import com.kuilunfuzhe.monvhua.gui.hud.EnergyHud;
 import net.fabricmc.loader.api.FabricLoader;
 
@@ -84,6 +90,7 @@ public class MonvhuaModClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         BlockHoleClient.register();
+        registerSkeletalModelResourceReload();
 
         // ===== 1. 网络包接收器注册 =====
         ModNetworking.registerS2CPackets();
@@ -236,6 +243,20 @@ public class MonvhuaModClient implements ClientModInitializer {
 //            System.out.println("§e[调试] 收到标签同步 - 完全魔女化: " + packet.hasFullWitchTag() + ", 飞行: " + packet.hasFullWitchFlight() + ", Floating: " + packet.hasFloatingTag());
         });
     }  // ← onInitializeClient 方法结束
+
+    private static void registerSkeletalModelResourceReload() {
+        ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(new SimpleSynchronousResourceReloadListener() {
+            @Override
+            public Identifier getFabricId() {
+                return Identifier.of(MonvhuaMod.MOD_ID, "skeletal_model_cache");
+            }
+
+            @Override
+            public void reload(ResourceManager manager) {
+                BodyPoseSkeletalPreviewRenderer.clearCache();
+            }
+        });
+    }
 
     private static void initializeOptionalAxiomAreaTip() {
         if (!FabricLoader.getInstance().isModLoaded("axiom")) {

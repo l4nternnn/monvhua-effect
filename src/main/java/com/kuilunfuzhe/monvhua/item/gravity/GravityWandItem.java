@@ -23,9 +23,14 @@ public class GravityWandItem extends Item {
             if (isSilenced(player)) {
                 return ActionResult.FAIL;
             }
-            if (!GravityMagic.lightenLookedAtEntity(player)) {
-                player.sendMessage(Text.literal("\u00a7c[Gravity] No entity in sight"), true);
+            if (player.isSneaking()) {
+                return GravityMagic.applySelfGravityForce(player) ? ActionResult.SUCCESS_SERVER : ActionResult.FAIL;
             }
+            if (!GravityMagic.throwHeldBlocks(player)) {
+                player.sendMessage(Text.literal("\u00a7c[Gravity] Ctrl + middle click a block first"), true);
+                return ActionResult.FAIL;
+            }
+            return ActionResult.SUCCESS_SERVER;
         }
         return ActionResult.SUCCESS;
     }
@@ -38,9 +43,14 @@ public class GravityWandItem extends Item {
             if (isSilenced(player)) {
                 return ActionResult.FAIL;
             }
-            if (!GravityMagic.lightenLookedAtEntity(player)) {
-                player.sendMessage(Text.literal("\u00a7c[Gravity] No entity in sight"), true);
+            if (player.isSneaking()) {
+                return GravityMagic.applySelfGravityForce(player) ? ActionResult.SUCCESS_SERVER : ActionResult.FAIL;
             }
+            if (!GravityMagic.throwHeldBlocks(player)) {
+                player.sendMessage(Text.literal("\u00a7c[Gravity] Ctrl + middle click a block first"), true);
+                return ActionResult.FAIL;
+            }
+            return ActionResult.SUCCESS_SERVER;
         }
         return ActionResult.SUCCESS;
     }

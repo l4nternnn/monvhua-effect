@@ -7,9 +7,11 @@ import com.google.gson.JsonParser;
 import com.kuilunfuzhe.monvhua.item.config.GravityConfig;
 import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
 import com.kuilunfuzhe.monvhua.network.gravity.GravityPackets;
+import com.kuilunfuzhe.monvhua.WitchStage;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
@@ -24,6 +26,7 @@ import net.minecraft.block.enums.SlabType;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityPose;
+import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.BlockItem;
@@ -50,6 +53,8 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.scoreboard.Scoreboard;
+import net.minecraft.scoreboard.ScoreboardObjective;
 import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.world.BlockView;
 import net.minecraft.world.RaycastContext;
@@ -61,6 +66,7 @@ import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -68,7 +74,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class GravityMagic {
-    public static final double DEFAULT_GRAVITY = 0.04D;
+    public static final double WORLD_GRAVITY = 0.08D;
+    public static final double DEFAULT_GRAVITY = WORLD_GRAVITY;
     public static final double MIN_GRAVITY = 0.0D;
     public static final double MAX_GRAVITY = 0.30D;
     public static final int INFINITE_AREA_TICKS = -1;
@@ -95,7 +102,7 @@ public final class GravityMagic {
     private static final double INVERTED_STEP_HEIGHT = 0.6D;
     private static final int INVERTED_JUMP_DETACH_TICKS = 8;
     private static final double LIGHTEN_ENTITY_REACH = 32.0D;
-    private static final double NORMAL_WORLD_GRAVITY = 0.08D;
+    private static final double NORMAL_WORLD_GRAVITY = WORLD_GRAVITY;
     private static final double DIRECTED_PLAYER_GROUND_ACCELERATION = 0.10D;
     private static final double DIRECTED_PLAYER_AIR_ACCELERATION = 0.026D;
     private static final double DIRECTED_PLAYER_VERTICAL_DRAG = 0.98D;
@@ -108,9 +115,25 @@ public final class GravityMagic {
     private static final double DIRECTED_GRASS_STOP_DISTANCE = 10.0D;
     private static final double DIRECTED_STONE_STOP_DISTANCE = 6.0D;
     private static final double DIRECTED_DEFAULT_STOP_DISTANCE = 8.0D;
+    private static final int BLOCK_SELECT_RADIUS = 2;
+    private static final int MAX_SELECTED_BLOCKS = 512;
+    private static final int HELD_BLOCK_LIFETIME_TICKS = 20 * 180;
+    private static final int THROWN_BLOCK_LIFETIME_TICKS = 20 * 90;
+    private static final double HELD_BLOCK_BASE_HEIGHT_OFFSET = 3.0D;
+    private static final double THROW_BASE_SPEED = 0.95D;
+    private static final double THROW_FORCE_SPEED_SCALE = 8.0D;
+    private static final double THROW_FORCE_ACCELERATION_SCALE = 0.05D;
+    private static final double THROW_MAX_SPEED = 3.0D;
+    private static final double THROW_DAMAGE_PADDING = 0.35D;
+    private static final int THROW_DAMAGE_COOLDOWN_TICKS = 10;
+    private static final int SELF_FORCE_DAMAGE_BLOCK_COUNT = 2;
+    private static final double SELF_FORCE_DAMAGE_REFERENCE_HARDNESS = 1.5D;
     private static final Map<UUID, LaunchMode> PLAYER_MODES = new ConcurrentHashMap<>();
     private static final Map<UUID, Double> PLAYER_GRAVITY = new ConcurrentHashMap<>();
     private static final Map<UUID, DirectedEntityGravity> ENTITY_GRAVITY = new ConcurrentHashMap<>();
+    private static final Map<UUID, HeldBlockGroup> HELD_BLOCK_GROUPS = new ConcurrentHashMap<>();
+    private static final Map<UUID, ThrownBlockData> THROWN_BLOCKS = new ConcurrentHashMap<>();
+    private static final Map<String, Integer> THROWN_DAMAGE_COOLDOWNS = new ConcurrentHashMap<>();
     private static final Map<UUID, InvertedPlayerState> SERVER_INVERTED_PLAYER_STATES = new ConcurrentHashMap<>();
     private static final Map<UUID, InvertedPlayerState> CLIENT_INVERTED_PLAYER_STATES = new ConcurrentHashMap<>();
     private static final List<AreaGravityField> AREA_FIELDS = new CopyOnWriteArrayList<>();
@@ -190,6 +213,69 @@ public final class GravityMagic {
         }
     }
 
+    private record HeldBlock(GravityBlockEntity entity, Vec3d offset, double massKg, double hardness) {
+    }
+
+    private record SelectedBlock(BlockState state, double massKg, double hardness) {
+    }
+
+    private static final class HeldBlockGroup {
+        private final UUID id = UUID.randomUUID();
+        private final RegistryKey<World> world;
+        private final List<HeldBlock> blocks;
+        private final double massKg;
+        private final double averageHardness;
+        private final double sphereRadius;
+        private int age;
+        private double pitch;
+        private double yaw;
+        private double roll;
+        private final double pitchVelocity;
+        private final double yawVelocity;
+        private final double rollVelocity;
+
+        private HeldBlockGroup(RegistryKey<World> world, List<HeldBlock> blocks, double massKg, ServerWorld serverWorld) {
+            this.world = world;
+            this.blocks = new ArrayList<>(blocks);
+            this.massKg = Math.max(0.0D, massKg);
+            this.averageHardness = averageHardness(blocks);
+            this.sphereRadius = sphereRadiusForCount(blocks.size());
+            this.pitchVelocity = signedAngularVelocity(serverWorld, 0.34D, 0.82D);
+            this.yawVelocity = signedAngularVelocity(serverWorld, 0.42D, 1.05D);
+            this.rollVelocity = signedAngularVelocity(serverWorld, 0.28D, 0.76D);
+        }
+
+        private void tickAngles() {
+            this.age++;
+            this.pitch += this.pitchVelocity;
+            this.yaw += this.yawVelocity;
+            this.roll += this.rollVelocity;
+        }
+    }
+
+    private static final class ThrownBlockData {
+        private final UUID groupId;
+        private final UUID ownerUuid;
+        private final RegistryKey<World> world;
+        private final double groupMassKg;
+        private final double averageHardness;
+        private final Vec3d forceDirection;
+        private final double acceleration;
+        private int forceTicks;
+
+        private ThrownBlockData(UUID groupId, UUID ownerUuid, RegistryKey<World> world, double groupMassKg, double averageHardness,
+                                Vec3d forceDirection, double acceleration, int forceTicks) {
+            this.groupId = groupId;
+            this.ownerUuid = ownerUuid;
+            this.world = world;
+            this.groupMassKg = Math.max(0.0D, groupMassKg);
+            this.averageHardness = Math.max(0.0D, averageHardness);
+            this.forceDirection = normalizedDirection(forceDirection);
+            this.acceleration = Math.max(0.0D, acceleration);
+            this.forceTicks = Math.max(0, forceTicks);
+        }
+    }
+
     private GravityMagic() {
     }
 
@@ -198,8 +284,11 @@ public final class GravityMagic {
             context.server().execute(() -> {
                 ServerPlayerEntity player = context.player();
                 double gravity = adjustTargetGravity(player, packet.entityId(), packet.gravity());
-                player.sendMessage(Text.literal("\u00a7b[Gravity] g=" + format(gravity)), true);
+                player.sendMessage(Text.literal("\u00a7b[Gravity] g=" + formatGravityMultiplier(gravity)), true);
             });
+        });
+        ServerPlayNetworking.registerGlobalReceiver(GravityPackets.SelectBlocksC2S.ID, (packet, context) -> {
+            context.server().execute(() -> selectHeldBlocks(context.player(), packet.center()));
         });
         ServerPlayNetworking.registerGlobalReceiver(GravityPackets.DebugAreaActionC2S.ID, (packet, context) -> {
             context.server().execute(() -> handleDebugAreaAction(context.player(), packet));
@@ -224,11 +313,24 @@ public final class GravityMagic {
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             ensureServerAreasLoaded(server);
+            tickHeldBlockGroups(server);
+            tickThrownDamageCooldowns();
             for (ServerWorld world : server.getWorlds()) {
                 tickAreaGravity(world);
                 tickInvertedServerPlayerStates(world);
                 applyEntityGravity(world);
+                tickThrownBlocks(world);
             }
+        });
+
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            ServerPlayerEntity player = handler.getPlayer();
+            clearHeldBlockGroup(player.getUuid(), true);
+            DirectedEntityGravity directed = ENTITY_GRAVITY.remove(player.getUuid());
+            if (directed != null) {
+                finishDirectedEntityGravity(player, directed);
+            }
+            resetInvertedPlayerState(player);
         });
 
         UseBlockCallback.EVENT.register(GravityMagic::useInvertedBlockSurface);
@@ -275,6 +377,240 @@ public final class GravityMagic {
         return clamped;
     }
 
+    public static void selectHeldBlocks(ServerPlayerEntity player, BlockPos center) {
+        if (player == null || center == null || !(player.getWorld() instanceof ServerWorld world)) {
+            return;
+        }
+        if (!isHoldingGravityWand(player)) {
+            return;
+        }
+        if (player.getEyePos().squaredDistanceTo(center.toCenterPos()) > LIGHTEN_ENTITY_REACH * LIGHTEN_ENTITY_REACH) {
+            player.sendMessage(Text.literal("\u00a7c[Gravity] Block is too far"), true);
+            return;
+        }
+
+        GravityConfig config = GravityConfig.getInstance();
+        int stage = gravityStage(player);
+        int blockLimit = Math.min(config.getMaxPickBlocks(stage), MAX_SELECTED_BLOCKS);
+        double maxHardness = config.getMaxPickHardness(stage);
+        int searchRadius = selectionSearchRadius(blockLimit);
+        List<SelectedBlock> candidates = new ArrayList<>();
+        int radiusSq = searchRadius * searchRadius;
+        BlockPos.Mutable mutable = new BlockPos.Mutable();
+        for (int y = -searchRadius; y <= searchRadius && candidates.size() < blockLimit; y++) {
+            for (int x = -searchRadius; x <= searchRadius && candidates.size() < blockLimit; x++) {
+                for (int z = -searchRadius; z <= searchRadius && candidates.size() < blockLimit; z++) {
+                    if (x * x + y * y + z * z > radiusSq) {
+                        continue;
+                    }
+                    mutable.set(center.getX() + x, center.getY() + y, center.getZ() + z);
+                    BlockPos pos = mutable.toImmutable();
+                    BlockState state = world.getBlockState(pos);
+                    if (!canSelectBlock(world, pos, state, maxHardness)) {
+                        continue;
+                    }
+
+                    double hardness = state.getHardness(world, pos);
+                    candidates.add(new SelectedBlock(state, hardness * 10.0D, hardness));
+                }
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            player.sendMessage(Text.literal("\u00a7c[Gravity] No selectable blocks"), true);
+            return;
+        }
+
+        clearHeldBlockGroup(player.getUuid(), true);
+        List<HeldBlock> selected = new ArrayList<>(candidates.size());
+        List<Vec3d> sphereOffsets = sphereOffsets(candidates.size());
+        Vec3d anchor = heldBlockAnchor(player, sphereRadiusForCount(candidates.size()));
+        double totalMassKg = 0.0D;
+        for (int i = 0; i < candidates.size(); i++) {
+            SelectedBlock candidate = candidates.get(i);
+            Vec3d offset = sphereOffsets.get(i);
+            Vec3d spawnPos = anchor.add(offset);
+            GravityBlockEntity block = new GravityBlockEntity(
+                    world,
+                    spawnPos.x,
+                    spawnPos.y,
+                    spawnPos.z,
+                    candidate.state(),
+                    Vec3d.ZERO,
+                    0.0D
+            );
+            block.setGravityY(0.0D);
+            block.setNoGravity(true);
+            block.setTemporary(HELD_BLOCK_LIFETIME_TICKS);
+            block.setPlaceOrDropOnSettle(false);
+            block.setSlowFreeSpin(
+                    (float) signedAngularVelocity(world, 0.18D, 0.58D),
+                    (float) signedAngularVelocity(world, 0.22D, 0.66D),
+                    (float) signedAngularVelocity(world, 0.16D, 0.50D)
+            );
+            if (!world.spawnEntity(block)) {
+                continue;
+            }
+            selected.add(new HeldBlock(block, offset, candidate.massKg(), candidate.hardness()));
+            totalMassKg += candidate.massKg();
+        }
+
+        if (selected.isEmpty()) {
+            player.sendMessage(Text.literal("\u00a7c[Gravity] Could not create block group"), true);
+            return;
+        }
+
+        HeldBlockGroup group = new HeldBlockGroup(world.getRegistryKey(), selected, totalMassKg, world);
+        HELD_BLOCK_GROUPS.put(player.getUuid(), group);
+        player.sendMessage(Text.literal("\u00a7b[Gravity] Selected " + selected.size()
+                + " block(s), stage=" + stage
+                + ", avgHard=" + format(group.averageHardness)
+                + ", mass=" + format(totalMassKg) + "kg"), true);
+    }
+
+    public static boolean throwHeldBlocks(ServerPlayerEntity player) {
+        if (player == null || !(player.getWorld() instanceof ServerWorld world)) {
+            return false;
+        }
+
+        HeldBlockGroup group = HELD_BLOCK_GROUPS.remove(player.getUuid());
+        if (group == null || group.blocks.isEmpty()) {
+            return false;
+        }
+        if (!group.world.equals(world.getRegistryKey())) {
+            for (HeldBlock held : group.blocks) {
+                GravityBlockEntity block = held.entity();
+                if (block != null && block.isAlive()) {
+                    block.discard();
+                }
+            }
+            return false;
+        }
+
+        Vec3d direction = normalizedDirection(player.getRotationVec(1.0F));
+        double force = getSelectedGravity(player);
+        double initialSpeed = Math.clamp(THROW_BASE_SPEED + force * THROW_FORCE_SPEED_SCALE, THROW_BASE_SPEED, THROW_MAX_SPEED);
+        Vec3d velocity = clampSpeed(player.getVelocity().add(direction.multiply(initialSpeed)), THROW_MAX_SPEED);
+        int forceTicks = Math.min(GravityConfig.getInstance().getForceDurationTicks(), THROWN_BLOCK_LIFETIME_TICKS);
+        double acceleration = force * THROW_FORCE_ACCELERATION_SCALE;
+        int thrown = 0;
+
+        for (HeldBlock held : group.blocks) {
+            GravityBlockEntity block = held.entity();
+            if (block == null || !block.isAlive()) {
+                continue;
+            }
+            block.setTemporary(THROWN_BLOCK_LIFETIME_TICKS);
+            block.setPlaceOrDropOnSettle(false);
+            block.setMaxAgeTicks(THROWN_BLOCK_LIFETIME_TICKS);
+            block.setGravityY(-DEFAULT_GRAVITY);
+            block.setNoGravity(true);
+            block.setVelocity(velocity);
+            THROWN_BLOCKS.put(block.getUuid(), new ThrownBlockData(
+                    group.id,
+                    player.getUuid(),
+                    world.getRegistryKey(),
+                    group.massKg,
+                    group.averageHardness,
+                    direction,
+                    acceleration,
+                    forceTicks
+            ));
+            thrown++;
+        }
+
+        if (thrown <= 0) {
+            return false;
+        }
+        player.sendMessage(Text.literal("\u00a7b[Gravity] Thrown " + thrown
+                + " block(s), mass=" + format(group.massKg) + "kg"), true);
+        return true;
+    }
+
+    public static boolean applySelfGravityForce(ServerPlayerEntity player) {
+        if (player == null || !player.isAlive()) {
+            return false;
+        }
+        Vec3d direction = normalizedDirection(player.getRotationVec(1.0F));
+        if (!lightenEntity(player, player, direction)) {
+            return false;
+        }
+        damageSelfForce(player, direction);
+        return true;
+    }
+
+    private static void damageSelfForce(ServerPlayerEntity player, Vec3d direction) {
+        if (!(player.getWorld() instanceof ServerWorld world)) {
+            return;
+        }
+        double force = getSelectedGravity(player);
+        double speed = Math.clamp(THROW_BASE_SPEED + force * THROW_FORCE_SPEED_SCALE, THROW_BASE_SPEED, THROW_MAX_SPEED);
+        Vec3d projectedVelocity = clampSpeed(player.getVelocity().add(normalizedDirection(direction).multiply(speed)), THROW_MAX_SPEED);
+        double massKg = 10.0D * SELF_FORCE_DAMAGE_REFERENCE_HARDNESS * SELF_FORCE_DAMAGE_BLOCK_COUNT;
+        float damage = (float) (kineticDamage(massKg, projectedVelocity.length() * 20.0D) * SELF_FORCE_DAMAGE_REFERENCE_HARDNESS);
+        if (damage > 0.05F) {
+            player.damage(world, world.getDamageSources().magic(), damage);
+        }
+    }
+
+    private static boolean isHoldingGravityWand(ServerPlayerEntity player) {
+        return player.getMainHandStack().getItem() == GravityItems.GRAVITY_WAND
+                || player.getOffHandStack().getItem() == GravityItems.GRAVITY_WAND;
+    }
+
+    private static Vec3d heldBlockAnchor(ServerPlayerEntity player, double sphereRadius) {
+        return new Vec3d(player.getX(), player.getY() + player.getHeight() + HELD_BLOCK_BASE_HEIGHT_OFFSET + Math.max(0.0D, sphereRadius), player.getZ());
+    }
+
+    private static double blockMassKg(ServerWorld world, BlockPos pos, BlockState state) {
+        return Math.max(0.0D, state.getHardness(world, pos)) * 10.0D;
+    }
+
+    private static int gravityStage(ServerPlayerEntity player) {
+        Scoreboard scoreboard = player.getScoreboard();
+        ScoreboardObjective objective = scoreboard.getNullableObjective("monvhua");
+        if (objective == null) {
+            return 1;
+        }
+        var score = scoreboard.getScore(player, objective);
+        int value = score == null ? 0 : score.getScore();
+        return Math.clamp(WitchStage.fromScore(value).ordinal() + 1, 1, 7);
+    }
+
+    private static int selectionSearchRadius(int blockLimit) {
+        int limit = Math.max(1, blockLimit);
+        return Math.max(BLOCK_SELECT_RADIUS, Math.min(6, (int) Math.ceil(Math.cbrt(limit)) + 1));
+    }
+
+    private static boolean canSelectBlock(ServerWorld world, BlockPos pos, BlockState state, double maxHardness) {
+        if (!canMove(world, pos, state)) {
+            return false;
+        }
+        double hardness = state.getHardness(world, pos);
+        return hardness <= maxHardness;
+    }
+
+    private static double averageHardness(List<HeldBlock> blocks) {
+        if (blocks == null || blocks.isEmpty()) {
+            return 0.0D;
+        }
+        double total = 0.0D;
+        for (HeldBlock block : blocks) {
+            total += block.hardness();
+        }
+        return total / blocks.size();
+    }
+
+    private static float kineticDamage(double massKg, double speedMetersPerSecond) {
+        if (massKg <= 0.0D || speedMetersPerSecond <= 0.0D) {
+            return 0.0F;
+        }
+        double energyJoules = 0.5D * massKg * speedMetersPerSecond * speedMetersPerSecond;
+        double energyKilojoules = energyJoules / 1000.0D;
+        double kjPerHalfHeart = GravityConfig.getInstance().damageKilojoulesPerHalfHeart;
+        return (float) (energyKilojoules / Math.max(0.1D, kjPerHalfHeart));
+    }
+
     public static boolean lightenLookedAtEntity(ServerPlayerEntity player) {
         if (player.isSneaking()) {
             return lightenEntity(player, player, player.getRotationVec(1.0F));
@@ -298,8 +634,8 @@ public final class GravityMagic {
         int ticks = GravityConfig.getInstance().getForceDurationTicks();
         setDirectedEntityGravity(entity, normalizedDirection, gravity, ticks);
         player.sendMessage(Text.literal("\u00a7b[Gravity] Force -> " + entity.getName().getString()
-                + " F=" + format(gravity)
-                + " net=" + format(netForce.length())
+                + " F=" + formatGravityMultiplier(gravity)
+                + " net=" + formatGravityMultiplier(netForce.length())
                 + " ticks=" + ticks), true);
         return true;
     }
@@ -379,6 +715,80 @@ public final class GravityMagic {
         return direction == null || direction.lengthSquared() < 1.0E-6D
                 ? new Vec3d(0.0D, -1.0D, 0.0D)
                 : direction.normalize();
+    }
+
+    private static Vec3d clampSpeed(Vec3d velocity, double maxSpeed) {
+        double lengthSq = velocity.lengthSquared();
+        double maxSq = maxSpeed * maxSpeed;
+        if (lengthSq <= maxSq || lengthSq < 1.0E-8D) {
+            return velocity;
+        }
+        return velocity.multiply(maxSpeed / Math.sqrt(lengthSq));
+    }
+
+    private static double signedAngularVelocity(ServerWorld world, double min, double max) {
+        double speed = min + world.random.nextDouble() * Math.max(0.0D, max - min);
+        return world.random.nextBoolean() ? speed : -speed;
+    }
+
+    private static List<Vec3d> sphereOffsets(int count) {
+        List<Vec3d> offsets = new ArrayList<>(Math.max(0, count));
+        if (count <= 0) {
+            return offsets;
+        }
+        if (count == 1) {
+            offsets.add(Vec3d.ZERO);
+            return offsets;
+        }
+
+        double sphereRadius = sphereRadiusForCount(count);
+        double goldenAngle = Math.PI * (3.0D - Math.sqrt(5.0D));
+        for (int i = 0; i < count; i++) {
+            double t = (i + 0.5D) / count;
+            double y = 1.0D - 2.0D * t;
+            double horizontal = Math.sqrt(Math.max(0.0D, 1.0D - y * y));
+            double theta = i * goldenAngle;
+            double radius = sphereRadius * Math.cbrt(t);
+            offsets.add(new Vec3d(
+                    Math.cos(theta) * horizontal * radius,
+                    y * radius,
+                    Math.sin(theta) * horizontal * radius
+            ));
+        }
+        return offsets;
+    }
+
+    private static double sphereRadiusForCount(int count) {
+        return Math.max(1.0D, Math.cbrt(Math.max(1, count) * 0.75D / Math.PI));
+    }
+
+    private static Vec3d rotateOffset(Vec3d offset, double pitchDegrees, double yawDegrees, double rollDegrees) {
+        double x = offset.x;
+        double y = offset.y;
+        double z = offset.z;
+
+        double pitch = Math.toRadians(pitchDegrees);
+        double pitchCos = Math.cos(pitch);
+        double pitchSin = Math.sin(pitch);
+        double yAfterPitch = y * pitchCos - z * pitchSin;
+        double zAfterPitch = y * pitchSin + z * pitchCos;
+        y = yAfterPitch;
+        z = zAfterPitch;
+
+        double yaw = Math.toRadians(yawDegrees);
+        double yawCos = Math.cos(yaw);
+        double yawSin = Math.sin(yaw);
+        double xAfterYaw = x * yawCos + z * yawSin;
+        double zAfterYaw = -x * yawSin + z * yawCos;
+        x = xAfterYaw;
+        z = zAfterYaw;
+
+        double roll = Math.toRadians(rollDegrees);
+        double rollCos = Math.cos(roll);
+        double rollSin = Math.sin(roll);
+        double xAfterRoll = x * rollCos - y * rollSin;
+        double yAfterRoll = x * rollSin + y * rollCos;
+        return new Vec3d(xAfterRoll, yAfterRoll, z);
     }
 
     private static Vec3d composedForce(Entity entity, DirectedEntityGravity directed) {
@@ -492,9 +902,14 @@ public final class GravityMagic {
         if (world.isClient()) {
             return ActionResult.SUCCESS;
         }
-        if (player instanceof ServerPlayerEntity serverPlayer
-                && lightenEntity(serverPlayer, serverPlayer.isSneaking() ? serverPlayer : entity, serverPlayer.getRotationVec(1.0F))) {
-            return ActionResult.SUCCESS_SERVER;
+        if (player instanceof ServerPlayerEntity serverPlayer) {
+            if (serverPlayer.isSneaking()) {
+                return applySelfGravityForce(serverPlayer) ? ActionResult.SUCCESS_SERVER : ActionResult.FAIL;
+            }
+            if (throwHeldBlocks(serverPlayer)) {
+                return ActionResult.SUCCESS_SERVER;
+            }
+            serverPlayer.sendMessage(Text.literal("\u00a7c[Gravity] Ctrl + middle click a block first"), true);
         }
         return ActionResult.FAIL;
     }
@@ -551,7 +966,7 @@ public final class GravityMagic {
 
         if (launched > 0) {
             player.sendMessage(Text.literal("\u00a7b[Gravity] Launched " + launched + " block(s) "
-                    + displayName(mode) + " g=" + format(gravity)), true);
+                    + displayName(mode) + " g=" + formatGravityMultiplier(gravity)), true);
         } else {
             player.sendMessage(Text.literal("\u00a7c[Gravity] No movable blocks"), true);
         }
@@ -1011,7 +1426,7 @@ public final class GravityMagic {
     }
 
     private static boolean canMove(ServerWorld world, BlockPos pos, BlockState state) {
-        if (state.isAir() || isGravityImmune(state)) {
+        if (state.isAir() || !state.getFluidState().isEmpty() || isGravityImmune(state)) {
             return false;
         }
         if (state.getHardness(world, pos) < 0) {
@@ -1035,6 +1450,118 @@ public final class GravityMagic {
 
         double yawRad = Math.toRadians(player.getYaw() + 90.0F);
         return new Vec3d(Math.cos(yawRad) * RIGHT_SPEED, 0.08D, Math.sin(yawRad) * RIGHT_SPEED);
+    }
+
+    private static void tickHeldBlockGroups(MinecraftServer server) {
+        for (Map.Entry<UUID, HeldBlockGroup> entry : HELD_BLOCK_GROUPS.entrySet()) {
+            UUID ownerUuid = entry.getKey();
+            HeldBlockGroup group = entry.getValue();
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(ownerUuid);
+            if (player == null || !player.isAlive() || !isHoldingGravityWand(player)
+                    || !group.world.equals(player.getWorld().getRegistryKey())) {
+                clearHeldBlockGroup(ownerUuid, true);
+                continue;
+            }
+
+            group.tickAngles();
+            if (group.age > HELD_BLOCK_LIFETIME_TICKS) {
+                clearHeldBlockGroup(ownerUuid, true);
+                player.sendMessage(Text.literal("\u00a7c[Gravity] Held blocks faded"), true);
+                continue;
+            }
+
+            Vec3d anchor = heldBlockAnchor(player, group.sphereRadius);
+            Iterator<HeldBlock> iterator = group.blocks.iterator();
+            while (iterator.hasNext()) {
+                HeldBlock held = iterator.next();
+                GravityBlockEntity block = held.entity();
+                if (block == null || !block.isAlive()) {
+                    iterator.remove();
+                    continue;
+                }
+                Vec3d position = anchor.add(rotateOffset(held.offset(), group.pitch, group.yaw, group.roll));
+                block.refreshPositionAndAngles(position.x, position.y, position.z, block.getYaw(), block.getPitch());
+                block.setVelocity(Vec3d.ZERO);
+                block.setNoGravity(true);
+                block.setGravityY(0.0D);
+                block.fallDistance = 0.0F;
+            }
+
+            if (group.blocks.isEmpty()) {
+                HELD_BLOCK_GROUPS.remove(ownerUuid, group);
+            }
+        }
+    }
+
+    private static void clearHeldBlockGroup(UUID ownerUuid, boolean discard) {
+        HeldBlockGroup group = HELD_BLOCK_GROUPS.remove(ownerUuid);
+        if (group == null || !discard) {
+            return;
+        }
+        for (HeldBlock held : group.blocks) {
+            GravityBlockEntity block = held.entity();
+            if (block != null && block.isAlive()) {
+                block.discard();
+            }
+        }
+    }
+
+    private static void tickThrownDamageCooldowns() {
+        THROWN_DAMAGE_COOLDOWNS.entrySet().removeIf(entry -> entry.getValue() <= 1);
+        THROWN_DAMAGE_COOLDOWNS.replaceAll((key, ticks) -> ticks - 1);
+    }
+
+    private static void tickThrownBlocks(ServerWorld world) {
+        for (Map.Entry<UUID, ThrownBlockData> entry : THROWN_BLOCKS.entrySet()) {
+            UUID blockUuid = entry.getKey();
+            ThrownBlockData data = entry.getValue();
+            if (!data.world.equals(world.getRegistryKey())) {
+                continue;
+            }
+
+            Entity entity = world.getEntity(blockUuid);
+            if (!(entity instanceof GravityBlockEntity block) || !block.isAlive()) {
+                THROWN_BLOCKS.remove(blockUuid, data);
+                continue;
+            }
+
+            if (data.forceTicks > 0 && data.acceleration > 0.0D) {
+                block.setVelocity(clampSpeed(block.getVelocity().add(data.forceDirection.multiply(data.acceleration)), THROW_MAX_SPEED));
+                data.forceTicks--;
+            }
+
+            damageThrownBlockTargets(world, block, data);
+        }
+    }
+
+    private static void damageThrownBlockTargets(ServerWorld world, GravityBlockEntity block, ThrownBlockData data) {
+        Vec3d velocity = block.getVelocity();
+        double speedMetersPerSecond = velocity.length() * 20.0D;
+        if (speedMetersPerSecond < 1.0D || data.groupMassKg <= 0.0D) {
+            return;
+        }
+
+        float damage = (float) (kineticDamage(data.groupMassKg, speedMetersPerSecond) * Math.max(0.0D, data.averageHardness));
+        if (damage <= 0.0F) {
+            return;
+        }
+        damage = Math.max(1.0F, damage);
+
+        Box damageBox = block.getBoundingBox().expand(THROW_DAMAGE_PADDING);
+        List<LivingEntity> targets = world.getEntitiesByClass(LivingEntity.class, damageBox,
+                target -> target.isAlive()
+                        && !target.getUuid().equals(data.ownerUuid)
+                        && !(target instanceof PlayerEntity targetPlayer && targetPlayer.isSpectator()));
+        for (LivingEntity target : targets) {
+            String cooldownKey = data.groupId + ":" + target.getUuid();
+            if (THROWN_DAMAGE_COOLDOWNS.containsKey(cooldownKey)) {
+                continue;
+            }
+            if (target.damage(world, world.getDamageSources().fallingBlock(block), damage)) {
+                THROWN_DAMAGE_COOLDOWNS.put(cooldownKey, THROW_DAMAGE_COOLDOWN_TICKS);
+                block.setVelocity(block.getVelocity().multiply(0.65D));
+            }
+        }
     }
 
     private static void applyEntityGravity(ServerWorld world) {
@@ -1700,6 +2227,18 @@ public final class GravityMagic {
 
     public static double clampGravity(double gravity) {
         return Math.clamp(gravity, MIN_GRAVITY, MAX_GRAVITY);
+    }
+
+    public static double gravityFromMultiplier(double multiplier) {
+        return clampGravity(Math.max(0.0D, multiplier) * WORLD_GRAVITY);
+    }
+
+    public static double gravityMultiplier(double gravity) {
+        return WORLD_GRAVITY <= 0.0D ? 0.0D : clampGravity(gravity) / WORLD_GRAVITY;
+    }
+
+    public static String formatGravityMultiplier(double gravity) {
+        return String.format("%.2fxG", gravityMultiplier(gravity));
     }
 
     public static String format(double gravity) {

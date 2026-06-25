@@ -187,7 +187,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         matrices.scale(1.0F, -1.0F, 1.0F);
         applyTrueSkeletalPlacementTransform(matrices, customData);
         boolean rendered = BodyPoseSkeletalPreviewRenderer.render(matrices, vertexConsumers, data.texture(), light,
-                rotations, offsets, scales, Set.of(), "slim".equals(data.armModel()), renderLayer, hiddenMeshes);
+                rotations, offsets, scales, Set.of(), "slim".equals(data.armModel()), renderLayer, hiddenMeshes, customData);
         matrices.pop();
         return rendered;
     }

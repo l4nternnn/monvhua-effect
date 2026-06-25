@@ -375,6 +375,10 @@ public final class GravityDebugClient {
             gravity = GravityMagic.clampGravity(gravity + delta);
         }
 
+        public void addGravityMultiplier(double delta) {
+            gravity = GravityMagic.gravityFromMultiplier(GravityMagic.gravityMultiplier(gravity) + delta);
+        }
+
         private static int clamp(int value) {
             return Math.clamp(value, GravityAreaSpec.MIN_SIZE, GravityAreaSpec.MAX_SIZE);
         }

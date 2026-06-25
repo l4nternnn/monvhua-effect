@@ -118,7 +118,9 @@ public class CombinedConfigScreen extends Screen {
     private final List<TextWidget> paintLabels = new ArrayList<>();
     private static PaintConfig cachedPaintConfig = null;
 
-    private TextFieldWidget gravityDurationField;
+    private final List<ButtonWidget> gravityStageButtons = new ArrayList<>();
+    private int gravityCurrentStage = 1;
+    private TextFieldWidget gravityDurationField, gravityDamageField, gravityBlockCountField, gravityBlockHardnessField;
     private ButtonWidget saveGravityButton;
     private final List<TextWidget> gravityLabels = new ArrayList<>();
     private static GravityConfig cachedGravityConfig = null;
@@ -660,6 +662,17 @@ public class CombinedConfigScreen extends Screen {
     }
 
     private void buildGravityUI() {
+        int leftX = panelX + 5;
+        for (int i = 1; i <= 7; i++) {
+            int stage = i;
+            ButtonWidget btn = ButtonWidget.builder(Text.literal("阶段 " + i), button -> {
+                gravityCurrentStage = stage;
+                loadGravityUI();
+            }).dimensions(leftX, stageButtonY(i), leftWidth - 10, 20).build();
+            addDrawableChild(btn);
+            gravityStageButtons.add(btn);
+        }
+
         int rightX = panelX + leftWidth + 5;
         int rowY = panelY + 28;
         int labelWidth = 120;
@@ -668,10 +681,22 @@ public class CombinedConfigScreen extends Screen {
         TextWidget label = new TextWidget(rightX, rowY + 4, labelWidth, 9, Text.literal("作用时间(秒):"), textRenderer);
         addDrawableChild(label);
         gravityLabels.add(label);
+        TextWidget damageLabel = new TextWidget(rightX, rowY + 28, labelWidth, 9, Text.literal("\u6bcf\u534a\u5fc3kJ:"), textRenderer);
+        addDrawableChild(damageLabel);
+        gravityLabels.add(damageLabel);
+        TextWidget countLabel = new TextWidget(rightX, rowY + 52, labelWidth, 9, Text.literal("可拾取方块数:"), textRenderer);
+        addDrawableChild(countLabel);
+        gravityLabels.add(countLabel);
+        TextWidget hardnessLabel = new TextWidget(rightX, rowY + 76, labelWidth, 9, Text.literal("最高方块硬度:"), textRenderer);
+        addDrawableChild(hardnessLabel);
+        gravityLabels.add(hardnessLabel);
 
         gravityDurationField = createField(rightX + labelWidth, rowY, inputWidth);
+        gravityDamageField = createField(rightX + labelWidth, rowY + 24, inputWidth);
+        gravityBlockCountField = createField(rightX + labelWidth, rowY + 48, inputWidth);
+        gravityBlockHardnessField = createField(rightX + labelWidth, rowY + 72, inputWidth);
         saveGravityButton = ButtonWidget.builder(Text.literal("保存"), btn -> saveGravityConfig())
-                .dimensions(rightX, rowY + 36, 80, 20).build();
+                .dimensions(rightX, rowY + 108, 80, 20).build();
         addDrawableChild(saveGravityButton);
     }
 
@@ -830,8 +855,12 @@ public class CombinedConfigScreen extends Screen {
     }
 
     private void setGravityComponentsVisible(boolean visible) {
+        for (ButtonWidget btn : gravityStageButtons) btn.visible = visible;
         for (TextWidget label : gravityLabels) label.visible = visible;
         if (gravityDurationField != null) gravityDurationField.visible = visible;
+        if (gravityDamageField != null) gravityDamageField.visible = visible;
+        if (gravityBlockCountField != null) gravityBlockCountField.visible = visible;
+        if (gravityBlockHardnessField != null) gravityBlockHardnessField.visible = visible;
         if (saveGravityButton != null) saveGravityButton.visible = visible;
     }
 
@@ -1168,6 +1197,9 @@ public class CombinedConfigScreen extends Screen {
             cachedGravityConfig = new GravityConfig();
         }
         gravityDurationField.setText(String.valueOf(cachedGravityConfig.forceDurationSeconds));
+        gravityDamageField.setText(String.valueOf(cachedGravityConfig.damageKilojoulesPerHalfHeart));
+        gravityBlockCountField.setText(String.valueOf(cachedGravityConfig.getMaxPickBlocks(gravityCurrentStage)));
+        gravityBlockHardnessField.setText(String.valueOf(cachedGravityConfig.getMaxPickHardness(gravityCurrentStage)));
     }
 
     private void saveSecretConfig() {
@@ -1256,9 +1288,19 @@ public class CombinedConfigScreen extends Screen {
     private void saveGravityConfig() {
         try {
             int durationSeconds = Integer.parseInt(gravityDurationField.getText().trim());
+            double damageKj = Double.parseDouble(gravityDamageField.getText().trim());
+            int blockCount = Integer.parseInt(gravityBlockCountField.getText().trim());
+            double blockHardness = Double.parseDouble(gravityBlockHardnessField.getText().trim());
 
             GravityConfig config = new GravityConfig();
             config.forceDurationSeconds = durationSeconds;
+            config.damageKilojoulesPerHalfHeart = damageKj;
+            if (cachedGravityConfig != null) {
+                config.maxPickBlocksByStage = cachedGravityConfig.maxPickBlocksByStage.clone();
+                config.maxPickHardnessByStage = cachedGravityConfig.maxPickHardnessByStage.clone();
+            }
+            config.setMaxPickBlocks(gravityCurrentStage, blockCount);
+            config.setMaxPickHardness(gravityCurrentStage, blockHardness);
             cachedGravityConfig = GravityConfig.fromJson(config.toJson());
 
             ClientPlayNetworking.send(new GravityPackets.UpdateConfigC2S(cachedGravityConfig.toJson()));
@@ -1369,7 +1411,7 @@ public class CombinedConfigScreen extends Screen {
         }
         if (currentType == ConfigType.GRAVITY) {
             context.drawText(textRenderer, "重力配置", panelX + 5, panelY + 5, 0x88CCFF, false);
-            context.drawText(textRenderer, "力持续时间", panelX + leftWidth + 5, panelY + 5, 0x88CCFF, false);
+            context.drawText(textRenderer, "当前编辑: 阶段 " + gravityCurrentStage, panelX + leftWidth + 5, panelY + 5, 0x88CCFF, false);
         }
 
         super.render(context, mouseX, mouseY, delta);

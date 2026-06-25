@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.features.paint;
 import com.kuilunfuzhe.monvhua.model.CombinedBodyModelData;
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.renderer.body.special.CombinedBodySpecialModelRenderer;
+import com.kuilunfuzhe.monvhua.renderer.bodypose.skeletal.BodyPoseSkeletalPreviewRenderer;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
@@ -117,6 +118,16 @@ public final class PaintModelOverlayClient {
     private static ModelHit raycastDisplay(MinecraftClient client, ItemDisplayEntity display, Vec3d eye, Vec3d end) {
         NbtCompound data = customData(display.getItemStack());
         boolean slim = "slim".equals(data.getString("arm_model", ""));
+        if ("true_skeletal".equals(data.getString("body_pose_mode", ""))) {
+            BodyPoseSkeletalPreviewRenderer.PaintHit trueSkeletalHit = BodyPoseSkeletalPreviewRenderer.raycastModelPaint(
+                    trueSkeletalRootModelToWorld(display, data), eye, end, data, slim);
+            if (trueSkeletalHit != null) {
+                return new ModelHit(display.getId(), trueSkeletalHit.surface(), trueSkeletalHit.face(),
+                        trueSkeletalHit.x(), trueSkeletalHit.y(), trueSkeletalHit.distance());
+            }
+            return null;
+        }
+
         PlayerEntityModel model = createModel(client, slim);
         if (model == null) {
             return null;
@@ -283,19 +294,8 @@ public final class PaintModelOverlayClient {
     }
 
     private static Matrix4d rootModelToWorld(ItemDisplayEntity display, NbtCompound data) {
-        Matrix4d matrix = new Matrix4d().identity()
-                .translate(display.getX(), display.getY(), display.getZ());
-        DisplayEntity.RenderState renderState = display.getRenderState();
-        if (renderState != null) {
-            AffineTransformation transformation = renderState.transformation().interpolate(1.0F);
-            matrix.mul(new Matrix4d(transformation.getMatrix()));
-        }
-        matrix.rotateY(Math.PI);
-        applyItemModelTransform(matrix, itemDisplayContext(display));
-        matrix.translate(0.5D, 0.0D, 0.5D)
-                .rotateY(Math.PI)
-                .scale(-1.0D, -1.0D, 1.0D)
-                .translate(
+        Matrix4d matrix = bodyModelBaseToWorld(display);
+        matrix.translate(
                         data.getFloat("pose_model_offset_x", 0.0F),
                         data.getFloat("pose_model_offset_y", 0.0F),
                         data.getFloat("pose_model_offset_z", 0.0F))
@@ -305,6 +305,36 @@ public final class PaintModelOverlayClient {
         float scale = Math.max(0.1F, data.getFloat("pose_model_scale", 1.0F));
         matrix.scale(scale);
         return matrix;
+    }
+
+    private static Matrix4d trueSkeletalRootModelToWorld(ItemDisplayEntity display, NbtCompound data) {
+        Matrix4d matrix = bodyModelBaseToWorld(display);
+        matrix.scale(1.0D, -1.0D, 1.0D)
+                .translate(
+                        data.getFloat("pose_model_offset_x", 0.0F),
+                        data.getFloat("pose_model_offset_y", 0.0F),
+                        data.getFloat("pose_model_offset_z", 0.0F))
+                .rotateX(Math.toRadians(-data.getFloat("pose_model_pitch", 0.0F)))
+                .rotateY(Math.toRadians(data.getFloat("pose_model_yaw", 0.0F)))
+                .rotateZ(Math.toRadians(-data.getFloat("pose_model_roll", 0.0F)));
+        float scale = Math.max(0.1F, data.getFloat("pose_model_scale", 1.0F));
+        matrix.scale(scale);
+        return matrix;
+    }
+
+    private static Matrix4d bodyModelBaseToWorld(ItemDisplayEntity display) {
+        Matrix4d matrix = new Matrix4d().identity()
+                .translate(display.getX(), display.getY(), display.getZ());
+        DisplayEntity.RenderState renderState = display.getRenderState();
+        if (renderState != null) {
+            AffineTransformation transformation = renderState.transformation().interpolate(1.0F);
+            matrix.mul(new Matrix4d(transformation.getMatrix()));
+        }
+        matrix.rotateY(Math.PI);
+        applyItemModelTransform(matrix, itemDisplayContext(display));
+        return matrix.translate(0.5D, 0.0D, 0.5D)
+                .rotateY(Math.PI)
+                .scale(-1.0D, -1.0D, 1.0D);
     }
 
     private static ItemDisplayContext itemDisplayContext(ItemDisplayEntity display) {

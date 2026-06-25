@@ -15,6 +15,7 @@ public final class GravityPackets {
 
     public static void registerC2S() {
         AdjustGravityC2S.register();
+        SelectBlocksC2S.register();
         DebugAreaActionC2S.register();
         RequestConfigC2S.register();
         UpdateConfigC2S.register();
@@ -39,6 +40,32 @@ public final class GravityPackets {
         private void write(RegistryByteBuf buf) {
             buf.writeInt(entityId);
             buf.writeDouble(gravity);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record SelectBlocksC2S(BlockPos center) implements CustomPayload {
+        public static final Id<SelectBlocksC2S> ID = new Id<>(Identifier.of("monvhua", "select_gravity_blocks"));
+        public static final PacketCodec<RegistryByteBuf, SelectBlocksC2S> CODEC = PacketCodec.of(SelectBlocksC2S::write, SelectBlocksC2S::new);
+        private static boolean registered = false;
+
+        private SelectBlocksC2S(RegistryByteBuf buf) {
+            this(buf.readBlockPos());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeBlockPos(center);
         }
 
         @Override
