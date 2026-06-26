@@ -176,6 +176,7 @@ public final class SkinTexturePixels {
             if (textureFace == null) {
                 continue;
             }
+            TextureFace underlayFace = underlayTextureFaceFor(face.surface(), face.face(), slim);
             int paintWidth = Math.max(1, face.width());
             int paintHeight = Math.max(1, face.height());
             for (int y = 0; y < paintHeight; y++) {
@@ -185,7 +186,7 @@ public final class SkinTexturePixels {
                         continue;
                     }
                     if (paintTexturePixel(targetArgb, imageWidth, imageHeight, textureFace, x, y,
-                            paintWidth, paintHeight, color)) {
+                            paintWidth, paintHeight, color, underlayFace)) {
                         changed = true;
                     }
                 }
@@ -196,6 +197,12 @@ public final class SkinTexturePixels {
 
     private static boolean paintTexturePixel(int[] targetArgb, int imageWidth, int imageHeight, TextureFace face,
                                              int x, int y, int paintWidth, int paintHeight, int color) {
+        return paintTexturePixel(targetArgb, imageWidth, imageHeight, face, x, y, paintWidth, paintHeight, color, null);
+    }
+
+    private static boolean paintTexturePixel(int[] targetArgb, int imageWidth, int imageHeight, TextureFace face,
+                                             int x, int y, int paintWidth, int paintHeight, int color,
+                                             TextureFace underlayFace) {
         float u0 = (face.x() + x * face.width() / (float) paintWidth) / 64.0F;
         float u1 = (face.x() + (x + 1) * face.width() / (float) paintWidth) / 64.0F;
         float v0 = (face.y() + y * face.height() / (float) paintHeight) / 64.0F;
@@ -208,7 +215,8 @@ public final class SkinTexturePixels {
         for (int py = py0; py <= py1; py++) {
             for (int px = px0; px <= px1; px++) {
                 int index = py * imageWidth + px;
-                int blended = blendOver(targetArgb[index], color);
+                int base = targetArgb[index];
+                int blended = blendOver(visibleBase(base, targetArgb, imageWidth, imageHeight, face, underlayFace, px, py), color);
                 if (targetArgb[index] != blended) {
                     targetArgb[index] = blended;
                     changed = true;
@@ -218,16 +226,45 @@ public final class SkinTexturePixels {
         return changed;
     }
 
+    private static int visibleBase(int base, int[] targetArgb, int imageWidth, int imageHeight, TextureFace face,
+                                   TextureFace underlayFace, int px, int py) {
+        if (((base >>> 24) & 0xFF) != 0 || underlayFace == null) {
+            return base;
+        }
+        float textureX = (px + 0.5F) * 64.0F / imageWidth;
+        float textureY = (py + 0.5F) * 64.0F / imageHeight;
+        float localU = face.width() <= 0 ? 0.5F : (textureX - face.x()) / face.width();
+        float localV = face.height() <= 0 ? 0.5F : (textureY - face.y()) / face.height();
+        int underlayX = clamp((int) Math.floor((underlayFace.x() + localU * underlayFace.width()) * imageWidth / 64.0F),
+                0, imageWidth - 1);
+        int underlayY = clamp((int) Math.floor((underlayFace.y() + localV * underlayFace.height()) * imageHeight / 64.0F),
+                0, imageHeight - 1);
+        int underlay = targetArgb[underlayY * imageWidth + underlayX];
+        return ((underlay >>> 24) & 0xFF) == 0 ? 0xFF000000 : underlay | 0xFF000000;
+    }
+
     private static int blendOver(int base, int color) {
         int alpha = (color >>> 24) & 0xFF;
-        if (alpha >= 250) {
+        if (alpha == 0) {
+            return base;
+        }
+        if (alpha == 255) {
             return color | 0xFF000000;
         }
+        int baseAlpha = (base >>> 24) & 0xFF;
+        int outputAlpha = alpha + baseAlpha * (255 - alpha) / 255;
+        if (outputAlpha == 0) {
+            return 0;
+        }
         int inverse = 255 - alpha;
-        int red = (((color >>> 16) & 0xFF) * alpha + ((base >>> 16) & 0xFF) * inverse) / 255;
-        int green = (((color >>> 8) & 0xFF) * alpha + ((base >>> 8) & 0xFF) * inverse) / 255;
-        int blue = ((color & 0xFF) * alpha + (base & 0xFF) * inverse) / 255;
-        return (alpha << 24) | (red << 16) | (green << 8) | blue;
+        int denominator = outputAlpha * 255;
+        int red = ((((color >>> 16) & 0xFF) * alpha * 255
+                + ((base >>> 16) & 0xFF) * baseAlpha * inverse) + denominator / 2) / denominator;
+        int green = ((((color >>> 8) & 0xFF) * alpha * 255
+                + ((base >>> 8) & 0xFF) * baseAlpha * inverse) + denominator / 2) / denominator;
+        int blue = (((color & 0xFF) * alpha * 255
+                + (base & 0xFF) * baseAlpha * inverse) + denominator / 2) / denominator;
+        return (outputAlpha << 24) | (red << 16) | (green << 8) | blue;
     }
 
     private static TextureFace textureFaceFor(String surface, Direction face, boolean slim) {
@@ -236,6 +273,19 @@ public final class SkinTexturePixels {
             return null;
         }
         SurfaceTexture surfaceTexture = surfaceTexture(parsedSurface.baseSurface(), parsedSurface.outer(), slim);
+        if (surfaceTexture == null) {
+            return null;
+        }
+        Direction textureDirection = parsedSurface.sourceFace() != null ? parsedSurface.sourceFace() : face;
+        return surfaceTexture.face(textureDirection);
+    }
+
+    private static TextureFace underlayTextureFaceFor(String surface, Direction face, boolean slim) {
+        ParsedSurface parsedSurface = ParsedSurface.parse(surface);
+        if (parsedSurface == null || !parsedSurface.outer()) {
+            return null;
+        }
+        SurfaceTexture surfaceTexture = surfaceTexture(parsedSurface.baseSurface(), false, slim);
         if (surfaceTexture == null) {
             return null;
         }

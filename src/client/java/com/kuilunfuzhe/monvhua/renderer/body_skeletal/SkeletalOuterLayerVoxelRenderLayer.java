@@ -21,7 +21,7 @@ import java.util.function.BiConsumer;
 public class SkeletalOuterLayerVoxelRenderLayer<T extends SkeletalBodyPartBlockEntity>
         extends GeoRenderLayer<T, Void, GeoRenderState> {
     private static final Identifier WHITE_TEXTURE = Identifier.ofVanilla("textures/block/white_concrete.png");
-    private static final RenderLayer VOXEL_LAYER = RenderLayer.getEntityTranslucent(WHITE_TEXTURE);
+    private static final RenderLayer VOXEL_LAYER = RenderLayer.getEntityCutout(WHITE_TEXTURE);
     private static final float OUTER_THICKNESS = 0.5F;
 
     public SkeletalOuterLayerVoxelRenderLayer(GeoRenderer<T, Void, GeoRenderState> renderer) {
@@ -126,7 +126,7 @@ public class SkeletalOuterLayerVoxelRenderLayer<T extends SkeletalBodyPartBlockE
                 int pixelX = textureX + col;
                 int pixelY = textureY + row;
                 int argb = pixels.getArgb(pixelX, pixelY);
-                if (((argb >>> 24) & 0xFF) < 128) {
+                if (((argb >>> 24) & 0xFF) == 0) {
                     continue;
                 }
 
@@ -141,28 +141,28 @@ public class SkeletalOuterLayerVoxelRenderLayer<T extends SkeletalBodyPartBlockE
                 Point outer01 = inner01.add(offset);
 
                 emitQuad(matrices, vertices, outer00, outer10, outer11, outer01, normal, argb, light, overlay);
-                if (!isOpaque(pixels, textureX, textureY, width, height, col, row - 1)) {
+                if (!isVisible(pixels, textureX, textureY, width, height, col, row - 1)) {
                     emitQuad(matrices, vertices, outer00, outer10, inner10, inner00, vStep.negate(), argb, light, overlay);
                 }
-                if (!isOpaque(pixels, textureX, textureY, width, height, col + 1, row)) {
+                if (!isVisible(pixels, textureX, textureY, width, height, col + 1, row)) {
                     emitQuad(matrices, vertices, outer10, outer11, inner11, inner10, uStep, argb, light, overlay);
                 }
-                if (!isOpaque(pixels, textureX, textureY, width, height, col, row + 1)) {
+                if (!isVisible(pixels, textureX, textureY, width, height, col, row + 1)) {
                     emitQuad(matrices, vertices, outer11, outer01, inner01, inner11, vStep, argb, light, overlay);
                 }
-                if (!isOpaque(pixels, textureX, textureY, width, height, col - 1, row)) {
+                if (!isVisible(pixels, textureX, textureY, width, height, col - 1, row)) {
                     emitQuad(matrices, vertices, outer01, outer00, inner00, inner01, uStep.negate(), argb, light, overlay);
                 }
             }
         }
     }
 
-    private static boolean isOpaque(SkinTexturePixels pixels, int textureX, int textureY, int width, int height,
+    private static boolean isVisible(SkinTexturePixels pixels, int textureX, int textureY, int width, int height,
                                     int col, int row) {
         if (col < 0 || row < 0 || col >= width || row >= height) {
             return false;
         }
-        return pixels.isOpaque(textureX + col, textureY + row);
+        return ((pixels.getArgb(textureX + col, textureY + row) >>> 24) & 0xFF) != 0;
     }
 
     private static void emitQuad(MatrixStack matrices, VertexConsumer vertices,

@@ -78,6 +78,8 @@ public final class PaintOverlayFeature {
                 context.server().execute(() -> handleEditorPaperUse(context.player(), packet)));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.RestoreFaceC2S.ID, (packet, context) ->
                 context.server().execute(() -> handleRestoreFace(context.player(), packet)));
+        ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.RestoreModelFaceC2S.ID, (packet, context) ->
+                context.server().execute(() -> handleRestoreModelFace(context.player(), packet)));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.ModelPaintStrokeC2S.ID, (packet, context) ->
                 context.server().execute(() -> handleModelPaintStroke(context.player(), packet)));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.FillPaintBucketC2S.ID, (packet, context) ->
@@ -181,6 +183,31 @@ public final class PaintOverlayFeature {
             return;
         }
         setFacePixels(world, face.pos(), face.face(), face.pixels());
+    }
+
+    private static void handleRestoreModelFace(ServerPlayerEntity player, PaintOverlayPackets.RestoreModelFaceC2S packet) {
+        if (!(player.getWorld() instanceof ServerWorld world) || !hasPaintEditorAccess(player)) {
+            return;
+        }
+        Entity entity = world.getEntityById(packet.entityId());
+        if (!(entity instanceof ItemDisplayEntity display)) {
+            return;
+        }
+        if (display.getPos().squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
+            return;
+        }
+        ItemStack stack = display.getItemStack().copy();
+        if (!isCombinedBodyStack(stack)) {
+            return;
+        }
+        NbtComponent component = stack.get(DataComponentTypes.CUSTOM_DATA);
+        NbtCompound root = component == null ? new NbtCompound() : component.copyNbt();
+        boolean slim = "slim".equals(root.getString("arm_model", ""));
+        if (!ModelPaintData.setFacePixels(root, packet.surface(), packet.face(), packet.pixels(), slim)) {
+            return;
+        }
+        stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        display.setItemStack(stack);
     }
 
     private static boolean isHoldingPaintBrush(ServerPlayerEntity player) {

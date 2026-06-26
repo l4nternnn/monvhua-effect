@@ -14,6 +14,8 @@ import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.block.BlockState;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.NbtComponent;
 import net.minecraft.client.render.LightmapTextureManager;
 import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.block.entity.BlockEntity;
@@ -31,6 +33,7 @@ import net.minecraft.client.texture.Sprite;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
@@ -39,6 +42,7 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.random.Random;
 import net.minecraft.util.hit.BlockHitResult;
@@ -710,6 +714,22 @@ public final class PaintOverlayClient {
             }
             lastStrokeKey = key;
             repeatedStrokeTicks = 0;
+            Entity target = client.world.getEntityById(modelHit.entityId());
+            if (target instanceof ItemDisplayEntity display) {
+                ModelPaintFaceKey historyKey = new ModelPaintFaceKey(modelHit.entityId(), modelHit.surface(), modelHit.face());
+                NbtCompound beforeRoot = modelPaintRoot(display);
+                boolean slim = isSlimModel(beforeRoot);
+                int[] before = ModelPaintData.copyFacePixels(beforeRoot, modelHit.surface(), modelHit.face(), slim);
+                NbtCompound afterRoot = beforeRoot.copy();
+                int color = clear ? 0 : selectedColor();
+                boolean changed = ModelPaintData.paint(afterRoot, modelHit.surface(), modelHit.face(), modelHit.x(), modelHit.y(),
+                        selectedRadius(), color, clear, slim);
+                if (changed) {
+                    int[] after = ModelPaintData.copyFacePixels(afterRoot, modelHit.surface(), modelHit.face(), slim);
+                    beginEditorModelHistory(tool, clear, historyKey);
+                    recordEditorModelFaceUpdate(historyKey, before, after);
+                }
+            }
             SafeClientNetworking.send(new PaintOverlayPackets.EditorModelPaintStrokeC2S(
                     modelHit.entityId(), modelHit.surface(), modelHit.face(), modelHit.x(), modelHit.y(), tool.networkId(), clear));
             return;
@@ -734,7 +754,15 @@ public final class PaintOverlayClient {
             repeatedStrokeTicks = 0;
             Entity target = client.world.getEntityById(playerHit.entityId());
             if (target instanceof PlayerEntity targetPlayer) {
-                PlayerSkinPaintManager.paintAt(targetPlayer, playerHit.surface(), playerHit.face(), playerHit.x(), playerHit.y(), color, radius, clear);
+                PlayerPaintFaceKey historyKey = new PlayerPaintFaceKey(playerHit.entityId(), playerHit.surface(), playerHit.face());
+                int[] before = PlayerSkinPaintManager.copyFacePixels(targetPlayer, playerHit.surface(), playerHit.face());
+                beginEditorPlayerHistory(tool, clear, historyKey);
+                boolean changed = PlayerSkinPaintManager.paintAt(targetPlayer, playerHit.surface(), playerHit.face(),
+                        playerHit.x(), playerHit.y(), color, radius, clear);
+                if (changed) {
+                    int[] after = PlayerSkinPaintManager.copyFacePixels(targetPlayer, playerHit.surface(), playerHit.face());
+                    recordEditorPlayerFaceUpdate(historyKey, before, after);
+                }
             }
             return;
         }
@@ -968,7 +996,7 @@ public final class PaintOverlayClient {
     }
 
     private static void beginEditorHistory(EditorTool tool, boolean clearFace, BlockPos pos, Direction face) {
-        Set<PaintOverlayStore.FaceKey> expectedKeys = expectedEditorHistoryKeys(tool, clearFace, pos, face);
+        Set<EditorHistoryTarget> expectedKeys = expectedEditorHistoryKeys(tool, clearFace, pos, face);
         if (pendingEditorHistory == null || pendingEditorHistory.closed()) {
             finishPendingEditorHistoryIfIdle(true);
             pendingEditorHistory = new PendingEditorHistoryStep(editorHistorySequence++, editorHistoryLabel(tool, clearFace), expectedKeys);
@@ -977,19 +1005,39 @@ public final class PaintOverlayClient {
         pendingEditorHistory.touch(expectedKeys);
     }
 
-    private static Set<PaintOverlayStore.FaceKey> expectedEditorHistoryKeys(EditorTool tool, boolean clearFace, BlockPos pos, Direction face) {
-        Set<PaintOverlayStore.FaceKey> keys = new HashSet<>();
+    private static void beginEditorPlayerHistory(EditorTool tool, boolean clearFace, PlayerPaintFaceKey key) {
+        Set<EditorHistoryTarget> expectedKeys = Set.of(EditorHistoryTarget.player(key));
+        if (pendingEditorHistory == null || pendingEditorHistory.closed()) {
+            finishPendingEditorHistoryIfIdle(true);
+            pendingEditorHistory = new PendingEditorHistoryStep(editorHistorySequence++, editorHistoryLabel(tool, clearFace), expectedKeys);
+            return;
+        }
+        pendingEditorHistory.touch(expectedKeys);
+    }
+
+    private static void beginEditorModelHistory(EditorTool tool, boolean clearFace, ModelPaintFaceKey key) {
+        Set<EditorHistoryTarget> expectedKeys = Set.of(EditorHistoryTarget.model(key));
+        if (pendingEditorHistory == null || pendingEditorHistory.closed()) {
+            finishPendingEditorHistoryIfIdle(true);
+            pendingEditorHistory = new PendingEditorHistoryStep(editorHistorySequence++, editorHistoryLabel(tool, clearFace), expectedKeys);
+            return;
+        }
+        pendingEditorHistory.touch(expectedKeys);
+    }
+
+    private static Set<EditorHistoryTarget> expectedEditorHistoryKeys(EditorTool tool, boolean clearFace, BlockPos pos, Direction face) {
+        Set<EditorHistoryTarget> keys = new HashSet<>();
         if (tool == EditorTool.ERASER && clearFace) {
             int blockRadius = Math.max(0, MathHelper.clamp(selectedRadius, PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_RADIUS) - 1);
             for (int a = -blockRadius; a <= blockRadius; a++) {
                 for (int b = -blockRadius; b <= blockRadius; b++) {
                     if (a * a + b * b <= blockRadius * blockRadius) {
-                        keys.add(new PaintOverlayStore.FaceKey(offsetOnFacePlane(pos, face, a, b), face));
+                        keys.add(EditorHistoryTarget.block(new PaintOverlayStore.FaceKey(offsetOnFacePlane(pos, face, a, b), face)));
                     }
                 }
             }
         } else {
-            keys.add(new PaintOverlayStore.FaceKey(pos, face));
+            keys.add(EditorHistoryTarget.block(new PaintOverlayStore.FaceKey(pos, face)));
         }
         return keys;
     }
@@ -1046,22 +1094,76 @@ public final class PaintOverlayClient {
         if (suppressed != null) {
             return;
         }
+        recordEditorHistoryUpdate(EditorHistoryTarget.block(key), before, after);
+    }
+
+    private static void recordEditorPlayerFaceUpdate(PlayerPaintFaceKey key, int[] before, int[] after) {
+        recordEditorHistoryUpdate(EditorHistoryTarget.player(key), before, after);
+    }
+
+    private static void recordEditorModelFaceUpdate(ModelPaintFaceKey key, int[] before, int[] after) {
+        recordEditorHistoryUpdate(EditorHistoryTarget.model(key), before, after);
+    }
+
+    private static void recordEditorHistoryUpdate(EditorHistoryTarget target, int[] before, int[] after) {
         if (pendingEditorHistory == null) {
             return;
         }
-        if (!pendingEditorHistory.expects(key)) {
+        if (!pendingEditorHistory.expects(target)) {
             return;
         }
-        pendingEditorHistory.record(key, before, after);
+        pendingEditorHistory.record(target, before, after);
     }
 
     private static void restoreEditorHistoryStep(EditorHistoryStep step, boolean after) {
         for (EditorHistoryChange change : step.changes()) {
             int[] pixels = after ? change.after() : change.before();
-            PaintOverlayPackets.FaceData faceData = new PaintOverlayPackets.FaceData(change.key().pos(), change.key().face(), pixels);
-            suppressEditorHistoryUpdate(faceData);
-            SafeClientNetworking.send(new PaintOverlayPackets.RestoreFaceC2S(faceData));
+            if (change.target().blockKey() != null) {
+                PaintOverlayStore.FaceKey key = change.target().blockKey();
+                PaintOverlayPackets.FaceData faceData = new PaintOverlayPackets.FaceData(key.pos(), key.face(), pixels);
+                suppressEditorHistoryUpdate(faceData);
+                SafeClientNetworking.send(new PaintOverlayPackets.RestoreFaceC2S(faceData));
+                continue;
+            }
+            PlayerPaintFaceKey key = change.target().playerKey();
+            if (key != null) {
+                restorePlayerHistoryFace(key, pixels);
+                continue;
+            }
+            ModelPaintFaceKey modelKey = change.target().modelKey();
+            if (modelKey != null) {
+                restoreModelHistoryFace(modelKey, pixels);
+            }
         }
+    }
+
+    private static void restorePlayerHistoryFace(PlayerPaintFaceKey key, int[] pixels) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.world == null) {
+            return;
+        }
+        Entity target = client.world.getEntityById(key.entityId());
+        if (target instanceof PlayerEntity player) {
+            PlayerSkinPaintManager.setFacePixels(player, key.surface(), key.face(), pixels);
+        }
+    }
+
+    private static void restoreModelHistoryFace(ModelPaintFaceKey key, int[] pixels) {
+        SafeClientNetworking.send(new PaintOverlayPackets.RestoreModelFaceC2S(
+                key.entityId(), key.surface(), key.face(), pixels));
+    }
+
+    private static NbtCompound modelPaintRoot(ItemDisplayEntity display) {
+        if (display == null) {
+            return new NbtCompound();
+        }
+        ItemStack stack = display.getItemStack();
+        NbtComponent component = stack.get(DataComponentTypes.CUSTOM_DATA);
+        return component == null ? new NbtCompound() : component.copyNbt();
+    }
+
+    private static boolean isSlimModel(NbtCompound root) {
+        return root != null && "slim".equals(root.getString("arm_model", ""));
     }
 
     private static void suppressEditorHistoryUpdate(PaintOverlayPackets.FaceData faceData) {
@@ -1561,6 +1663,10 @@ public final class PaintOverlayClient {
         return pixels;
     }
 
+    private static int[] copyExactPixels(int[] source) {
+        return source == null ? new int[0] : Arrays.copyOf(source, source.length);
+    }
+
     private static boolean hasPixels(int[] pixels) {
         for (int pixel : pixels) {
             if (pixel != 0) {
@@ -1925,11 +2031,31 @@ public final class PaintOverlayClient {
         }
     }
 
-    private record EditorHistoryChange(PaintOverlayStore.FaceKey key, int[] before, int[] after) {
+    private record EditorHistoryChange(EditorHistoryTarget target, int[] before, int[] after) {
         private EditorHistoryChange {
-            before = copyPixels(before);
-            after = copyPixels(after);
+            before = copyExactPixels(before);
+            after = copyExactPixels(after);
         }
+    }
+
+    private record EditorHistoryTarget(PaintOverlayStore.FaceKey blockKey, PlayerPaintFaceKey playerKey, ModelPaintFaceKey modelKey) {
+        private static EditorHistoryTarget block(PaintOverlayStore.FaceKey key) {
+            return new EditorHistoryTarget(key, null, null);
+        }
+
+        private static EditorHistoryTarget player(PlayerPaintFaceKey key) {
+            return new EditorHistoryTarget(null, key, null);
+        }
+
+        private static EditorHistoryTarget model(ModelPaintFaceKey key) {
+            return new EditorHistoryTarget(null, null, key);
+        }
+    }
+
+    private record PlayerPaintFaceKey(int entityId, String surface, Direction face) {
+    }
+
+    private record ModelPaintFaceKey(int entityId, String surface, Direction face) {
     }
 
     private record SuppressedEditorHistoryUpdate(int[] pixels, long expiresAtMs) {
@@ -1941,26 +2067,26 @@ public final class PaintOverlayClient {
     private static final class PendingEditorHistoryStep {
         private final int sequence;
         private final String label;
-        private final Set<PaintOverlayStore.FaceKey> expectedKeys = new HashSet<>();
-        private final Map<PaintOverlayStore.FaceKey, PendingEditorHistoryChange> changes = new LinkedHashMap<>();
+        private final Set<EditorHistoryTarget> expectedKeys = new HashSet<>();
+        private final Map<EditorHistoryTarget, PendingEditorHistoryChange> changes = new LinkedHashMap<>();
         private long closeAtMs = -1L;
 
-        private PendingEditorHistoryStep(int sequence, String label, Set<PaintOverlayStore.FaceKey> expectedKeys) {
+        private PendingEditorHistoryStep(int sequence, String label, Set<EditorHistoryTarget> expectedKeys) {
             this.sequence = sequence;
             this.label = label;
             touch(expectedKeys);
         }
 
-        private void touch(Set<PaintOverlayStore.FaceKey> expectedKeys) {
+        private void touch(Set<EditorHistoryTarget> expectedKeys) {
             this.expectedKeys.addAll(expectedKeys);
             closeAtMs = -1L;
         }
 
-        private boolean expects(PaintOverlayStore.FaceKey key) {
+        private boolean expects(EditorHistoryTarget key) {
             return expectedKeys.contains(key);
         }
 
-        private void record(PaintOverlayStore.FaceKey key, int[] before, int[] after) {
+        private void record(EditorHistoryTarget key, int[] before, int[] after) {
             PendingEditorHistoryChange change = changes.get(key);
             if (change == null) {
                 changes.put(key, new PendingEditorHistoryChange(before, after));
@@ -1983,7 +2109,7 @@ public final class PaintOverlayClient {
 
         private EditorHistoryStep toStep() {
             List<EditorHistoryChange> finalChanges = new ArrayList<>();
-            for (Map.Entry<PaintOverlayStore.FaceKey, PendingEditorHistoryChange> entry : changes.entrySet()) {
+            for (Map.Entry<EditorHistoryTarget, PendingEditorHistoryChange> entry : changes.entrySet()) {
                 PendingEditorHistoryChange change = entry.getValue();
                 if (!Arrays.equals(change.before(), change.after())) {
                     finalChanges.add(new EditorHistoryChange(entry.getKey(), change.before(), change.after()));
@@ -1998,8 +2124,8 @@ public final class PaintOverlayClient {
         private int[] after;
 
         private PendingEditorHistoryChange(int[] before, int[] after) {
-            this.before = copyPixels(before);
-            this.after = copyPixels(after);
+            this.before = copyExactPixels(before);
+            this.after = copyExactPixels(after);
         }
 
         private int[] before() {
@@ -2011,7 +2137,7 @@ public final class PaintOverlayClient {
         }
 
         private void setAfter(int[] after) {
-            this.after = copyPixels(after);
+            this.after = copyExactPixels(after);
         }
     }
 

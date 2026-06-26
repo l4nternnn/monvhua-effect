@@ -264,6 +264,48 @@ public final class PlayerSkinPaintManager {
         return changed;
     }
 
+    public static int[] copyFacePixels(PlayerEntity player, String surface, Direction face) {
+        if (player == null) {
+            return new int[0];
+        }
+        ModelPaintData.FaceSize size = ModelPaintData.size(surface, face, isSlimPlayer(player));
+        int[] pixels = new int[Math.max(1, size.width() * size.height())];
+        PlayerPaintState state = PAINT_STATES.get(player.getUuid());
+        if (state == null) {
+            return pixels;
+        }
+        PaintFaceData data = state.paintFaces.get(new PaintKey(surface, face));
+        if (data == null) {
+            return pixels;
+        }
+        System.arraycopy(data.pixels, 0, pixels, 0, Math.min(pixels.length, data.pixels.length));
+        return pixels;
+    }
+
+    public static boolean setFacePixels(PlayerEntity player, String surface, Direction face, int[] pixels) {
+        if (player == null) {
+            return false;
+        }
+        PlayerPaintState state = getOrCreateState(player);
+        if (!state.ready()) {
+            return false;
+        }
+        ModelPaintData.FaceSize size = ModelPaintData.size(surface, face, isSlimPlayer(player));
+        int width = Math.max(1, size.width());
+        int height = Math.max(1, size.height());
+        int[] sanitized = sanitizeFacePixels(pixels, width, height);
+        PaintKey key = new PaintKey(surface, face);
+        if (isAllZero(sanitized)) {
+            state.paintFaces.remove(key);
+        } else {
+            PaintFaceData data = state.paintFaces.computeIfAbsent(key, ignored -> new PaintFaceData(width, height));
+            System.arraycopy(sanitized, 0, data.pixels, 0, data.pixels.length);
+        }
+        state.modified = !state.paintFaces.isEmpty();
+        uploadPaintedTexture(state, player);
+        return true;
+    }
+
     /** Restore the player's original skin texture, removing all paint. */
     public static void resetTexture(PlayerEntity player) {
         if (player == null) return;
@@ -581,6 +623,14 @@ public final class PlayerSkinPaintManager {
             if (pixel != 0) return false;
         }
         return true;
+    }
+
+    private static int[] sanitizeFacePixels(int[] source, int width, int height) {
+        int[] pixels = new int[Math.max(1, width * height)];
+        if (source != null) {
+            System.arraycopy(source, 0, pixels, 0, Math.min(source.length, pixels.length));
+        }
+        return pixels;
     }
 
     // ─── Records ───────────────────────────────────────────────────────────
