@@ -335,7 +335,7 @@ public class DrawingBoardScreen extends Screen {
         int selected = brush.isEmpty() ? PaintOverlayClient.selectedBrushSlot() : PaintBrushItem.getSelectedSlot(brush);
         for (int i = 0; i < PaintBrushItem.COLOR_SLOTS; i++) {
             int slotY = y + i * 19;
-            int color = brush.isEmpty() ? 0xFF202026 : 0xFF000000 | PaintBrushItem.getPaintColor(brush, i);
+            int color = brush.isEmpty() ? 0xFF202026 : PaintBrushItem.getPaintColor(brush, i);
             double remaining = brush.isEmpty() ? 0.0D : PaintBrushItem.getRemainingPaintPercent(brush, i);
             boolean hover = isInside(x, slotY, 72, 16, mouseX, mouseY);
             context.fill(x, slotY, x + 72, slotY + 16, hover ? 0xFF344454 : 0xFF202832);
@@ -743,7 +743,7 @@ public class DrawingBoardScreen extends Screen {
         if (!PaintBrushItem.hasPaint(brush, slot)) {
             return 0;
         }
-        return 0xFF000000 | PaintBrushItem.getPaintColor(brush, slot);
+        return PaintBrushItem.getPaintColor(brush, slot);
     }
 
     private boolean insideCanvas(double mouseX, double mouseY) {

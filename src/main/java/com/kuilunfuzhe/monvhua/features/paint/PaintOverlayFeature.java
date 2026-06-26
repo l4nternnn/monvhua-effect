@@ -88,6 +88,8 @@ public final class PaintOverlayFeature {
                 context.server().execute(() -> handleLoadBrushFromBucket(context.player(), packet)));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.SelectBrushSlotC2S.ID, (packet, context) ->
                 context.server().execute(() -> handleSelectBrushSlot(context.player(), packet)));
+        ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.StoreBrushPresetC2S.ID, (packet, context) ->
+                context.server().execute(() -> handleStoreBrushPreset(context.player(), packet)));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.RequestPaintConfigC2S.ID, (packet, context) ->
                 context.server().execute(() -> ServerPlayNetworking.send(context.player(), new PaintOverlayPackets.PaintConfigS2C(PaintConfig.getInstance().toJson()))));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.UpdatePaintConfigC2S.ID, (packet, context) ->
@@ -260,6 +262,14 @@ public final class PaintOverlayFeature {
         ItemStack brush = findPaintEditorItem(player, PaintItems.PAINT_BRUSH);
         if (brush != ItemStack.EMPTY) {
             PaintBrushItem.setSelectedSlot(brush, packet.slot());
+            player.getInventory().markDirty();
+        }
+    }
+
+    private static void handleStoreBrushPreset(ServerPlayerEntity player, PaintOverlayPackets.StoreBrushPresetC2S packet) {
+        ItemStack brush = findPaintEditorItem(player, PaintItems.PAINT_BRUSH);
+        if (brush != ItemStack.EMPTY) {
+            PaintBrushItem.storePresetColor(brush, packet.slot(), packet.color());
             player.getInventory().markDirty();
         }
     }
@@ -440,7 +450,7 @@ public final class PaintOverlayFeature {
             return null;
         }
         int slot = PaintBrushItem.getSelectedSlot(brush);
-        return new BrushUse(brush, new BrushSettings(0xFF000000 | PaintBrushItem.getPaintColor(brush, slot), getBrushSettings(player).radius()));
+        return new BrushUse(brush, new BrushSettings(PaintBrushItem.getPaintColor(brush, slot), getBrushSettings(player).radius()));
     }
 
     private static int paintBudget(ServerPlayerEntity player) {

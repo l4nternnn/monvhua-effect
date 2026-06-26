@@ -41,6 +41,7 @@ public final class PaintOverlayPackets {
         RefillPaintBucketC2S.register();
         LoadBrushFromBucketC2S.register();
         SelectBrushSlotC2S.register();
+        StoreBrushPresetC2S.register();
         RequestPaintConfigC2S.register();
         UpdatePaintConfigC2S.register();
     }
@@ -284,6 +285,37 @@ public final class PaintOverlayPackets {
 
         private void write(RegistryByteBuf buf) {
             buf.writeVarInt(slot);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record StoreBrushPresetC2S(int slot, int color) implements CustomPayload {
+        public static final Id<StoreBrushPresetC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "paint_brush_preset_store"));
+        public static final PacketCodec<RegistryByteBuf, StoreBrushPresetC2S> CODEC = PacketCodec.of(StoreBrushPresetC2S::write, StoreBrushPresetC2S::new);
+        private static boolean registered = false;
+
+        public StoreBrushPresetC2S {
+            slot = MathHelper.clamp(slot, 0, 8);
+        }
+
+        private StoreBrushPresetC2S(RegistryByteBuf buf) {
+            this(buf.readVarInt(), buf.readInt());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeVarInt(slot);
+            buf.writeInt(color);
         }
 
         public static void register() {

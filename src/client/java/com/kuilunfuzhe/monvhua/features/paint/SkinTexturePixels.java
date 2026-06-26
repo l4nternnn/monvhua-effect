@@ -227,7 +227,7 @@ public final class SkinTexturePixels {
         int red = (((color >>> 16) & 0xFF) * alpha + ((base >>> 16) & 0xFF) * inverse) / 255;
         int green = (((color >>> 8) & 0xFF) * alpha + ((base >>> 8) & 0xFF) * inverse) / 255;
         int blue = ((color & 0xFF) * alpha + (base & 0xFF) * inverse) / 255;
-        return 0xFF000000 | (red << 16) | (green << 8) | blue;
+        return (alpha << 24) | (red << 16) | (green << 8) | blue;
     }
 
     private static TextureFace textureFaceFor(String surface, Direction face, boolean slim) {

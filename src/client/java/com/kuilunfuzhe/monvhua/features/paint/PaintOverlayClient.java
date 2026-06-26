@@ -346,12 +346,21 @@ public final class PaintOverlayClient {
     }
 
     public static void setSelectedColor(int color) {
-        int nextColor = ensureAlpha(color);
-        if (nextColor == selectedColor) {
+        if (color == selectedColor) {
             return;
         }
-        selectedColor = nextColor;
+        selectedColor = color;
+        updateSelectedBrushColor(color);
         syncSettings();
+    }
+
+    public static void setSelectedAlpha(int alpha) {
+        alpha = MathHelper.clamp(alpha, 0, 255);
+        setSelectedColor((alpha << 24) | (selectedColor() & 0xFFFFFF));
+    }
+
+    public static int selectedAlpha() {
+        return (selectedColor() >>> 24) & 0xFF;
     }
 
     public static int selectedBrushSlot() {
@@ -366,8 +375,8 @@ public final class PaintOverlayClient {
         ItemStack brush = paintBrushStack(client);
         if (!brush.isEmpty()) {
             PaintBrushItem.setSelectedSlot(brush, slot);
-            if (PaintBrushItem.getRemainingPaintPercent(brush, slot) > 0.0D) {
-                selectedColor = 0xFF000000 | PaintBrushItem.getPaintColor(brush, slot);
+            if (PaintBrushItem.hasSlotColor(brush, slot)) {
+                selectedColor = PaintBrushItem.getPaintColor(brush, slot);
                 syncSettings();
             }
         }
@@ -375,9 +384,8 @@ public final class PaintOverlayClient {
     }
 
     public static void recordPickedColor(int color) {
-        int normalized = ensureAlpha(color);
-        RECENT_COLORS.remove(Integer.valueOf(normalized));
-        RECENT_COLORS.add(0, normalized);
+        RECENT_COLORS.remove(Integer.valueOf(color));
+        RECENT_COLORS.add(0, color);
         while (RECENT_COLORS.size() > MAX_RECENT_COLORS) {
             RECENT_COLORS.remove(RECENT_COLORS.size() - 1);
         }
@@ -391,16 +399,35 @@ public final class PaintOverlayClient {
         return List.copyOf(FAVORITE_COLORS);
     }
 
+    public static boolean presetSlotFilled(int slot) {
+        ItemStack brush = paintBrushStack(MinecraftClient.getInstance());
+        return !brush.isEmpty() && PaintBrushItem.hasSlotColor(brush, slot);
+    }
+
+    public static int presetSlotColor(int slot) {
+        ItemStack brush = paintBrushStack(MinecraftClient.getInstance());
+        return brush.isEmpty() ? 0 : PaintBrushItem.getPaintColor(brush, slot);
+    }
+
+    public static void storeSelectedColorInPresetSlot(int slot) {
+        slot = MathHelper.clamp(slot, 0, PaintBrushItem.COLOR_SLOTS - 1);
+        int color = selectedColor();
+        ItemStack brush = paintBrushStack(MinecraftClient.getInstance());
+        if (!brush.isEmpty()) {
+            PaintBrushItem.storePresetColor(brush, slot, color);
+        }
+        SafeClientNetworking.send(new PaintOverlayPackets.StoreBrushPresetC2S(slot, color));
+    }
+
     public static boolean isFavoriteColor(int color) {
-        return FAVORITE_COLORS.contains(ensureAlpha(color));
+        return FAVORITE_COLORS.contains(color);
     }
 
     public static void toggleFavoriteColor(int color) {
-        int normalized = ensureAlpha(color);
-        if (FAVORITE_COLORS.remove(Integer.valueOf(normalized))) {
+        if (FAVORITE_COLORS.remove(Integer.valueOf(color))) {
             return;
         }
-        FAVORITE_COLORS.add(normalized);
+        FAVORITE_COLORS.add(color);
     }
 
     public static void render(WorldRenderContext context) {
@@ -585,7 +612,7 @@ public final class PaintOverlayClient {
 
         setSelectedColor(color);
         recordPickedColor(color);
-        client.player.sendMessage(Text.literal("取色 " + toHex(color)), true);
+        client.player.sendMessage(Text.literal("闂備礁鎲￠悷锕傛偋閻愬鐝?" + toHex(color)), true);
     }
 
     public static void handleBrushPickInputAtScreenPoint(MinecraftClient client, double mouseX, double mouseY, int width, int height) {
@@ -925,12 +952,12 @@ public final class PaintOverlayClient {
 
     private static String editorHistoryLabel(EditorTool tool, boolean clearFace) {
         if (tool == EditorTool.ERASER) {
-            return clearFace ? "擦除整面" : "擦除像素";
+            return clearFace ? "Editor clear face" : "Editor erase";
         }
         if (tool == EditorTool.BRUSH) {
-            return "画笔绘制";
+            return "Editor paint";
         }
-        return "编辑";
+        return "Editor action";
     }
 
     private static void closePendingEditorHistory() {
@@ -1138,7 +1165,7 @@ public final class PaintOverlayClient {
         if (tintIndex >= 0 && client.world != null) {
             color = multiplyRgb(color, client.getBlockColors().getColor(state, client.world, pos, tintIndex));
         }
-        return ensureAlpha(color);
+        return color;
     }
 
     private static int multiplyRgb(int color, int tint) {
@@ -1162,14 +1189,14 @@ public final class PaintOverlayClient {
     private static void selectRecentColorSlot(MinecraftClient client, int slot) {
         if (slot < 0 || slot >= RECENT_COLORS.size()) {
             if (client.player != null) {
-                client.player.sendMessage(Text.literal("颜色槽 " + (slot + 1) + " 为空"), true);
+                client.player.sendMessage(Text.literal("Color slot " + (slot + 1) + " is empty"), true);
             }
             return;
         }
         int color = RECENT_COLORS.get(slot);
         setSelectedColor(color);
         if (client.player != null) {
-            client.player.sendMessage(Text.literal("颜色槽 " + (slot + 1) + " " + toHex(color)), true);
+            client.player.sendMessage(Text.literal("濠碘槅鍋嗘晶妤冨垝韫囨梻鐝跺┑鐘蹭迹?" + (slot + 1) + " " + toHex(color)), true);
         }
     }
 
@@ -1187,8 +1214,7 @@ public final class PaintOverlayClient {
         if (modelHit == null) {
             return 0;
         }
-        int color = PaintModelOverlayClient.colorAt(client, modelHit);
-        return color == 0 ? 0 : ensureAlpha(color);
+        return PaintModelOverlayClient.colorAt(client, modelHit);
     }
 
     private static int pickBlockColor(MinecraftClient client) {
@@ -1213,7 +1239,7 @@ public final class PaintOverlayClient {
             return 0;
         }
         int color = pixels[y * PaintOverlayStore.SIZE + x];
-        return color == 0 ? 0 : ensureAlpha(color);
+        return color;
     }
 
     private static boolean shouldToggleEraserMode(MinecraftClient client, PaintModelOverlayClient.ModelHit modelHit) {
@@ -1232,7 +1258,7 @@ public final class PaintOverlayClient {
     private static void toggleEraserMode(MinecraftClient client) {
         eraserFaceMode = !eraserFaceMode;
         if (client.player != null) {
-            client.player.sendMessage(Text.literal(eraserFaceMode ? "橡皮: 方块面擦除" : "橡皮: 像素擦除"), true);
+            client.player.sendMessage(Text.literal(eraserFaceMode ? "Eraser: face" : "Eraser: pixel"), true);
         }
     }
 
@@ -1301,7 +1327,7 @@ public final class PaintOverlayClient {
         int gap = 2;
         for (int i = 0; i < PaintBrushItem.COLOR_SLOTS; i++) {
             double remaining = PaintBrushItem.getRemainingPaintPercent(brush, i);
-            int color = 0xFF000000 | PaintBrushItem.getPaintColor(brush, i);
+            int color = PaintBrushItem.getPaintColor(brush, i);
             int slotX = x + i * (slotW + gap);
             boolean selected = i == PaintBrushItem.getSelectedSlot(brush);
             context.fill(slotX - 1, y - 1, slotX + slotW + 1, y + 15, selected ? 0xFFFFFFFF : 0xAA101015);
@@ -1382,8 +1408,8 @@ public final class PaintOverlayClient {
             return;
         }
         selectedBrushSlot = PaintBrushItem.getSelectedSlot(brush);
-        if (PaintBrushItem.getRemainingPaintPercent(brush, selectedBrushSlot) > 0.0D) {
-            selectedColor = 0xFF000000 | PaintBrushItem.getPaintColor(brush, selectedBrushSlot);
+        if (PaintBrushItem.hasSlotColor(brush, selectedBrushSlot)) {
+            selectedColor = PaintBrushItem.getPaintColor(brush, selectedBrushSlot);
         }
     }
 
@@ -1401,8 +1427,17 @@ public final class PaintOverlayClient {
         SafeClientNetworking.send(new PaintOverlayPackets.PaperSizeC2S(selectedPaperSize));
     }
 
+    private static void updateSelectedBrushColor(int color) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        ItemStack brush = paintBrushStack(client);
+        if (brush.isEmpty()) {
+            return;
+        }
+        PaintBrushItem.setSlotColor(brush, selectedBrushSlot, color);
+    }
+
     private static int ensureAlpha(int color) {
-        return (color >>> 24) == 0 ? color | 0xFF000000 : color;
+        return color;
     }
 
     private static String toHex(int color) {
@@ -1785,7 +1820,7 @@ public final class PaintOverlayClient {
 
     private static int renderAlpha(int color) {
         int alpha = (color >>> 24) & 0xFF;
-        return alpha == 0 ? 0 : Math.max(alpha, 240);
+        return alpha;
     }
 
     private record VisibleChunk(ChunkMesh mesh, double distanceSquared) {

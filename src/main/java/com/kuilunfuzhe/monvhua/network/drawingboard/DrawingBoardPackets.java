@@ -71,7 +71,7 @@ public final class DrawingBoardPackets {
             if (!player.isCreative()) {
                 ItemStack brush = findPaintBrush(player);
                 int slot = brush == ItemStack.EMPTY ? 0 : PaintBrushItem.getSelectedSlot(brush);
-                int expectedColor = brush == ItemStack.EMPTY ? 0 : (0xFF000000 | PaintBrushItem.getPaintColor(brush, slot));
+                int expectedColor = brush == ItemStack.EMPTY ? 0 : (PaintBrushItem.getPaintColor(brush, slot));
                 if (brush == ItemStack.EMPTY || PaintBrushItem.getRemainingPaintPercent(brush, slot) <= 0.0D || expectedColor != packet.color()) {
                     player.sendMessage(Text.literal("Drawing board: brush has no paint"), true);
                     return;

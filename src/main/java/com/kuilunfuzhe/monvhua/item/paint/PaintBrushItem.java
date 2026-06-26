@@ -20,6 +20,7 @@ public class PaintBrushItem extends Item {
     private static final String PAINT_REMAINING_KEY = "paint_remaining";
     private static final String PAINT_REMAINING_EXACT_KEY = "paint_remaining_percent";
     private static final String SELECTED_SLOT_KEY = "paint_selected_slot";
+    private static final String COLOR_FORMAT_KEY = "paint_color_argb";
     private static final String SLOT_COLOR_PREFIX = "paint_color_";
     private static final String SLOT_REMAINING_PREFIX = "paint_remaining_";
     private static final String SLOT_REMAINING_EXACT_PREFIX = "paint_remaining_percent_";
@@ -83,12 +84,23 @@ public class PaintBrushItem extends Item {
         NbtCompound nbt = customData(stack);
         slot = clampSlot(slot);
         if (nbt.contains(SLOT_COLOR_PREFIX + slot)) {
-            return nbt.getInt(SLOT_COLOR_PREFIX + slot, 0xFFFFFF) & 0xFFFFFF;
+            return storedColor(nbt, nbt.getInt(SLOT_COLOR_PREFIX + slot, 0xFFFFFFFF));
         }
         if (!hasAnySlotData(nbt) && slot == getSelectedSlot(stack)) {
-            return nbt.getInt(PAINT_COLOR_KEY, 0xFFFFFF) & 0xFFFFFF;
+            return storedColor(nbt, nbt.getInt(PAINT_COLOR_KEY, 0xFFFFFFFF));
         }
-        return 0xFFFFFF;
+        return 0xFFFFFFFF;
+    }
+
+    public static boolean hasSlotColor(ItemStack stack, int slot) {
+        if (!(stack.getItem() instanceof PaintBrushItem)) {
+            return false;
+        }
+        migrateLegacyPaint(stack);
+        NbtCompound nbt = customData(stack);
+        slot = clampSlot(slot);
+        return nbt.contains(SLOT_COLOR_PREFIX + slot)
+                || (!hasAnySlotData(nbt) && slot == getSelectedSlot(stack) && nbt.contains(PAINT_COLOR_KEY));
     }
 
     public static int getRemainingPaint(ItemStack stack) {
@@ -135,14 +147,14 @@ public class PaintBrushItem extends Item {
             return -1;
         }
         migrateLegacyPaint(stack);
-        color &= 0xFFFFFF;
+        int rgb = color & 0xFFFFFF;
         for (int slot = 0; slot < COLOR_SLOTS; slot++) {
             if (getRemainingPaintPercent(stack, slot) <= 0.0D) {
                 return slot;
             }
         }
         for (int slot = 0; slot < COLOR_SLOTS; slot++) {
-            if (getPaintColor(stack, slot) == color && getRemainingPaintPercent(stack, slot) < 10.0D) {
+            if ((getPaintColor(stack, slot) & 0xFFFFFF) == rgb && getRemainingPaintPercent(stack, slot) < 10.0D) {
                 return slot;
             }
         }
@@ -160,13 +172,56 @@ public class PaintBrushItem extends Item {
         migrateLegacyPaint(stack);
         NbtCompound nbt = customData(stack);
         slot = clampSlot(slot);
-        nbt.putInt(SLOT_COLOR_PREFIX + slot, color & 0xFFFFFF);
+        nbt.putBoolean(COLOR_FORMAT_KEY, true);
+        nbt.putInt(SLOT_COLOR_PREFIX + slot, color);
         nbt.putInt(SLOT_REMAINING_PREFIX + slot, MAX_PAINT_PIXELS);
         nbt.putDouble(SLOT_REMAINING_EXACT_PREFIX + slot, MAX_PAINT_PIXELS);
         nbt.putInt(SELECTED_SLOT_KEY, slot);
         nbt.remove(PAINT_COLOR_KEY);
         nbt.remove(PAINT_REMAINING_KEY);
         nbt.remove(PAINT_REMAINING_EXACT_KEY);
+        stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
+    }
+
+    public static void storePresetColor(ItemStack stack, int slot, int color) {
+        if (!(stack.getItem() instanceof PaintBrushItem)) {
+            return;
+        }
+        int selected = getSelectedSlot(stack);
+        loadPaint(stack, slot, color);
+        setSelectedSlot(stack, selected);
+    }
+
+    public static void setSlotColor(ItemStack stack, int slot, int color) {
+        if (!(stack.getItem() instanceof PaintBrushItem)) {
+            return;
+        }
+        migrateLegacyPaint(stack);
+        NbtCompound nbt = customData(stack);
+        slot = clampSlot(slot);
+        nbt.putBoolean(COLOR_FORMAT_KEY, true);
+        nbt.putInt(SLOT_COLOR_PREFIX + slot, color);
+        nbt.remove(PAINT_COLOR_KEY);
+        nbt.remove(PAINT_REMAINING_KEY);
+        nbt.remove(PAINT_REMAINING_EXACT_KEY);
+        stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
+    }
+
+    public static void swapSlots(ItemStack stack, int firstSlot, int secondSlot) {
+        if (!(stack.getItem() instanceof PaintBrushItem)) {
+            return;
+        }
+        migrateLegacyPaint(stack);
+        NbtCompound nbt = customData(stack);
+        firstSlot = clampSlot(firstSlot);
+        secondSlot = clampSlot(secondSlot);
+        if (firstSlot == secondSlot) {
+            return;
+        }
+        swapInt(nbt, SLOT_COLOR_PREFIX + firstSlot, SLOT_COLOR_PREFIX + secondSlot);
+        swapInt(nbt, SLOT_REMAINING_PREFIX + firstSlot, SLOT_REMAINING_PREFIX + secondSlot);
+        swapDouble(nbt, SLOT_REMAINING_EXACT_PREFIX + firstSlot, SLOT_REMAINING_EXACT_PREFIX + secondSlot);
+        nbt.putBoolean(COLOR_FORMAT_KEY, true);
         stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
     }
 
@@ -246,14 +301,57 @@ public class PaintBrushItem extends Item {
                 : MathHelper.clamp(nbt.getInt(PAINT_REMAINING_KEY, 0), 0, MAX_PAINT_PIXELS);
         if (remaining > 0) {
             int slot = clampSlot(nbt.getInt(SELECTED_SLOT_KEY, 0));
-            nbt.putInt(SLOT_COLOR_PREFIX + slot, nbt.getInt(PAINT_COLOR_KEY, 0xFFFFFF) & 0xFFFFFF);
+            nbt.putInt(SLOT_COLOR_PREFIX + slot, legacyOpaqueColor(nbt.getInt(PAINT_COLOR_KEY, 0xFFFFFF)));
             nbt.putInt(SLOT_REMAINING_PREFIX + slot, MathHelper.clamp((int) Math.ceil(remaining), 0, MAX_PAINT_PIXELS));
             nbt.putDouble(SLOT_REMAINING_EXACT_PREFIX + slot, remaining);
         }
+        nbt.putBoolean(COLOR_FORMAT_KEY, true);
         nbt.remove(PAINT_COLOR_KEY);
         nbt.remove(PAINT_REMAINING_KEY);
         nbt.remove(PAINT_REMAINING_EXACT_KEY);
         stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
+    }
+
+    private static int storedColor(NbtCompound nbt, int color) {
+        return nbt.getBoolean(COLOR_FORMAT_KEY, false) ? color : legacyOpaqueColor(color);
+    }
+
+    private static int legacyOpaqueColor(int color) {
+        return (color >>> 24) == 0 ? color | 0xFF000000 : color;
+    }
+
+    private static void swapInt(NbtCompound nbt, String firstKey, String secondKey) {
+        boolean hasFirst = nbt.contains(firstKey);
+        boolean hasSecond = nbt.contains(secondKey);
+        int first = nbt.getInt(firstKey, 0);
+        int second = nbt.getInt(secondKey, 0);
+        if (hasSecond) {
+            nbt.putInt(firstKey, second);
+        } else {
+            nbt.remove(firstKey);
+        }
+        if (hasFirst) {
+            nbt.putInt(secondKey, first);
+        } else {
+            nbt.remove(secondKey);
+        }
+    }
+
+    private static void swapDouble(NbtCompound nbt, String firstKey, String secondKey) {
+        boolean hasFirst = nbt.contains(firstKey);
+        boolean hasSecond = nbt.contains(secondKey);
+        double first = nbt.getDouble(firstKey, 0.0D);
+        double second = nbt.getDouble(secondKey, 0.0D);
+        if (hasSecond) {
+            nbt.putDouble(firstKey, second);
+        } else {
+            nbt.remove(firstKey);
+        }
+        if (hasFirst) {
+            nbt.putDouble(secondKey, first);
+        } else {
+            nbt.remove(secondKey);
+        }
     }
 
     private static NbtCompound customData(ItemStack stack) {
