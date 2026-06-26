@@ -38,8 +38,11 @@ import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.random.Random;
 import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.world.RaycastContext;
 import org.joml.Matrix4f;
@@ -111,6 +114,7 @@ public final class PaintOverlayClient {
             return true;
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            PlayerSkinPaintManager.tickWaterClear(client);
             if (!scrollCallbackRegistered && client.getWindow() != null) {
                 registerScrollCallback(client);
             }
@@ -564,6 +568,29 @@ public final class PaintOverlayClient {
                     + " (" + modelHit.x() + "," + modelHit.y() + ")"), true);
             return;
         }
+
+        PlayerSkinPaintManager.PlayerPaintHit playerHit = PlayerSkinPaintManager.raycastPlayer(client);
+        if (playerHit == null) {
+            playerHit = fallbackCrosshairPlayerHit(client);
+        }
+        if (playerHit != null) {
+            boolean clear = eraser && eraserFaceMode;
+            int color = clear ? 0 : selectedColor();
+            int radius = selectedRadius();
+            PlayerStrokeKey key = new PlayerStrokeKey(playerHit.entityId(), playerHit.surface(), playerHit.face(), playerHit.x(), playerHit.y(), clear);
+            repeatedStrokeTicks++;
+            if (key.equals(lastStrokeKey) && repeatedStrokeTicks < REPEATED_STROKE_SKIP_CALLS) {
+                return;
+            }
+            lastStrokeKey = key;
+            repeatedStrokeTicks = 0;
+            Entity target = client.world.getEntityById(playerHit.entityId());
+            if (target instanceof PlayerEntity targetPlayer) {
+                PlayerSkinPaintManager.paintAt(targetPlayer, playerHit.surface(), playerHit.face(), playerHit.x(), playerHit.y(), color, radius, clear);
+            }
+            return;
+        }
+
         if (!(client.crosshairTarget instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK) {
             lastStrokeKey = null;
             repeatedStrokeTicks = 0;
@@ -612,7 +639,7 @@ public final class PaintOverlayClient {
 
         setSelectedColor(color);
         recordPickedColor(color);
-        client.player.sendMessage(Text.literal("闂備礁鎲￠悷锕傛偋閻愬鐝?" + toHex(color)), true);
+        client.player.sendMessage(Text.literal("Pick " + toHex(color)), true);
     }
 
     public static void handleBrushPickInputAtScreenPoint(MinecraftClient client, double mouseX, double mouseY, int width, int height) {
@@ -687,6 +714,31 @@ public final class PaintOverlayClient {
                     modelHit.entityId(), modelHit.surface(), modelHit.face(), modelHit.x(), modelHit.y(), tool.networkId(), clear));
             return;
         }
+
+        PlayerSkinPaintManager.PlayerPaintHit playerHit = ray == null
+                ? PlayerSkinPaintManager.raycastPlayer(client)
+                : PlayerSkinPaintManager.raycastPlayer(client, ray.start(), ray.end());
+        if (playerHit == null && ray == null) {
+            playerHit = fallbackCrosshairPlayerHit(client);
+        }
+        if (playerHit != null && (tool == EditorTool.BRUSH || tool == EditorTool.ERASER)) {
+            boolean clear = tool == EditorTool.ERASER && eraserFaceMode;
+            int color = clear ? 0 : selectedColor();
+            int radius = selectedRadius();
+            PlayerStrokeKey key = new PlayerStrokeKey(playerHit.entityId(), playerHit.surface(), playerHit.face(), playerHit.x(), playerHit.y(), clear);
+            repeatedStrokeTicks++;
+            if (key.equals(lastStrokeKey) && repeatedStrokeTicks < REPEATED_STROKE_SKIP_CALLS) {
+                return;
+            }
+            lastStrokeKey = key;
+            repeatedStrokeTicks = 0;
+            Entity target = client.world.getEntityById(playerHit.entityId());
+            if (target instanceof PlayerEntity targetPlayer) {
+                PlayerSkinPaintManager.paintAt(targetPlayer, playerHit.surface(), playerHit.face(), playerHit.x(), playerHit.y(), color, radius, clear);
+            }
+            return;
+        }
+
         BlockHitResult hit = ray == null ? crosshairBlockHit(client) : raycastBlock(client, ray);
         if (hit == null || hit.getType() != HitResult.Type.BLOCK) {
             lastStrokeKey = null;
@@ -1196,13 +1248,20 @@ public final class PaintOverlayClient {
         int color = RECENT_COLORS.get(slot);
         setSelectedColor(color);
         if (client.player != null) {
-            client.player.sendMessage(Text.literal("濠碘槅鍋嗘晶妤冨垝韫囨梻鐝跺┑鐘蹭迹?" + (slot + 1) + " " + toHex(color)), true);
+            client.player.sendMessage(Text.literal("Pick " + toHex(color)), true);
         }
     }
 
     private static int pickModelColor(MinecraftClient client) {
         PaintModelOverlayClient.ModelHit modelHit = PaintModelOverlayClient.raycastCombinedBody(client);
         return pickModelColor(client, modelHit);
+    }
+
+    private static PlayerSkinPaintManager.PlayerPaintHit fallbackCrosshairPlayerHit(MinecraftClient client) {
+        if (!(client.crosshairTarget instanceof EntityHitResult hit) || !(hit.getEntity() instanceof PlayerEntity player) || player == client.player) {
+            return null;
+        }
+        return PlayerSkinPaintManager.approximateHit(player, hit.getPos(), client.player.getEyePos());
     }
 
     private static int pickModelColor(MinecraftClient client, Ray ray) {
@@ -2019,6 +2078,9 @@ public final class PaintOverlayClient {
     private record ModelStrokeKey(int entityId, String surface, Direction face, int x, int y, boolean clear) {
     }
 
+    private record PlayerStrokeKey(int entityId, String surface, Direction face, int x, int y, boolean clear) {
+    }
+
     public enum EditorTool {
         NONE(0),
         BRUSH(1),
@@ -2036,3 +2098,4 @@ public final class PaintOverlayClient {
         }
     }
 }
+

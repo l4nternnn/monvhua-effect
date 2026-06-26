@@ -18,6 +18,7 @@ import com.kuilunfuzhe.monvhua.features.gravity.GravityClient;
 import com.kuilunfuzhe.monvhua.features.imitate.ImitateHudOverlay;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorHudOverlay;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
+import com.kuilunfuzhe.monvhua.features.paint.PlayerPaintCommand;
 import com.kuilunfuzhe.monvhua.features.paint.drawingboard.DrawingBoardClient;
 import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.body.bodyback.BodyPartScreen;
@@ -116,6 +117,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         mirrorHUD.register();
         BodyBlockModelRegister.register();
         CarryTransformDebugCommand.register();
+        PlayerPaintCommand.register();
 
         // ===== 4. 摄像机追踪与镜面HUD =====
         ClientCameraWatchReceiver.register();

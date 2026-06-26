@@ -298,6 +298,33 @@ public final class SkinTexturePixels {
                 && y >= face.y() && y < face.y() + face.height();
     }
 
+    /**
+     * Composite a single model paint face onto a target ARGB pixel array.
+     * The paint data has dimensions paintWidth x paintHeight.
+     * Pixels with zero alpha are skipped. Uses blend-over compositing.
+     */
+    public static boolean compositePaintFace(int[] targetArgb, int imageWidth, int imageHeight,
+                                              String surface, Direction face, boolean slim,
+                                              int paintWidth, int paintHeight, int[] paintPixels) {
+        TextureFace texFace = textureFaceFor(surface, face, slim);
+        if (texFace == null) {
+            return false;
+        }
+        boolean changed = false;
+        for (int y = 0; y < paintHeight; y++) {
+            for (int x = 0; x < paintWidth; x++) {
+                int color = paintPixels[y * paintWidth + x];
+                if (((color >>> 24) & 0xFF) == 0) {
+                    continue;
+                }
+                if (paintTexturePixel(targetArgb, imageWidth, imageHeight, texFace, x, y, paintWidth, paintHeight, color)) {
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
     public boolean isOpaque(int x, int y) {
         if (x < 0 || y < 0 || x >= width || y >= height) {
             return false;
