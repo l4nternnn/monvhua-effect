@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.gui;
 
+import com.kuilunfuzhe.monvhua.features.textarea.TextAreaHudClient;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.FloatingConfig;
 import com.kuilunfuzhe.monvhua.item.config.GravityConfig;
@@ -299,6 +300,8 @@ public class CombinedConfigScreen extends Screen {
         addDrawableChild(btnPlant);
         addDrawableChild(btnPaint);
         addDrawableChild(btnGravity);
+        addDrawableChild(ButtonWidget.builder(Text.literal("文字区域界面"), btn -> TextAreaHudClient.openEditorAfterWorldFrame(this))
+                .dimensions(panelX + panelWidth + 12, btnY, 96, btnHeight).build());
 
         buildEvilEyesUI();
         buildGazeGuidanceUI();

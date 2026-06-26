@@ -1,6 +1,8 @@
 package com.kuilunfuzhe.monvhua.features.area_tip;
 
 import com.kuilunfuzhe.monvhua.features.gravity.GravityAreaSpec;
+import com.kuilunfuzhe.monvhua.features.textarea.TextAreaHudClient;
+import com.kuilunfuzhe.monvhua.features.textarea.TextGroupEditFragment;
 import com.kuilunfuzhe.monvhua.item.area_tip.AreaTipItems;
 import com.kuilunfuzhe.monvhua.item.config.AreaTipConfig;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
@@ -41,9 +43,11 @@ public final class AreaTipClient {
                     AreaTipConfig config = AreaTipConfig.fromJson(packet.json());
                     AreaTipConfig.syncInstance(config);
                     configRevision++;
+                    TextAreaHudClient.resetPlayback();
                     if (context.client().currentScreen instanceof AreaTipConfigScreen screen) {
                         screen.receiveConfig(config);
                     }
+                    TextGroupEditFragment.receiveActiveConfig(config);
                 }));
         ClientPlayNetworking.registerGlobalReceiver(AreaTipPackets.FullSyncS2C.ID, (packet, context) ->
                 context.client().execute(() -> {

@@ -20,6 +20,7 @@ import com.kuilunfuzhe.monvhua.features.mirror.MirrorHudOverlay;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
 import com.kuilunfuzhe.monvhua.features.paint.PlayerPaintCommand;
 import com.kuilunfuzhe.monvhua.features.paint.drawingboard.DrawingBoardClient;
+import com.kuilunfuzhe.monvhua.features.textarea.TextAreaHudClient;
 import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.body.bodyback.BodyPartScreen;
 import com.kuilunfuzhe.monvhua.gui.mirror.mirrorHUD;
@@ -103,6 +104,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         SignedEvilTooltipClient.initialize();
         GravityClient.initialize();
         AreaTipClient.initialize();
+        TextAreaHudClient.initialize();
         initializeOptionalAxiomAreaTip();
         PaintOverlayClient.initialize();
         DrawingBoardClient.initialize();
