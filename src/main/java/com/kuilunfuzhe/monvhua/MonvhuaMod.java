@@ -47,6 +47,7 @@ import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlaceTrueSkeletalBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.UpdateBodyPoseDefaultsC2SPacket;
+import com.kuilunfuzhe.monvhua.network.bodypose.UpdatePlacedBodyPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.drawingboard.DrawingBoardPackets;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.*;
@@ -400,6 +401,20 @@ public class MonvhuaMod implements ModInitializer {
                 }
                 BodyPoseDefaultsConfig.update(packet.slimModel(), packet.poseMode());
                 player.sendMessage(Text.literal("Body pose defaults saved on server"), true);
+            });
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(UpdatePlacedBodyPoseC2SPacket.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity player = context.player();
+                if (!player.isCreative() && !player.hasPermissionLevel(2)) {
+                    player.sendMessage(Text.literal("No permission to update placed body pose"), true);
+                    return;
+                }
+                BodyPartManager.updatePlacedCombinedDisplayPose(player, packet.entityId(), packet.poseMode(),
+                        packet.poseValues(), packet.bendValues(), packet.bones(),
+                        packet.offsetX(), packet.offsetY(), packet.offsetZ(),
+                        packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
             });
         });
 
