@@ -294,6 +294,7 @@ public class AreaTipConfig {
     }
 
     public static class HudTextEntry {
+        public String id = UUID.randomUUID().toString();
         public String text = "";
         public boolean useGroupColor = true;
         public int color = 0xFFFFFFFF;
@@ -314,6 +315,9 @@ public class AreaTipConfig {
         public int delayTicks = 0;
         public int displayTicks = 100;
         public int fadeTicks = 20;
+        public int passDelayCount = 0;
+        public int playLimit = 0;
+        public boolean playOncePerPlayer = false;
 
         public static HudTextEntry fromGroup(int groupColor, String groupMessage) {
             HudTextEntry entry = new HudTextEntry();
@@ -325,6 +329,7 @@ public class AreaTipConfig {
 
         public HudTextEntry copy() {
             HudTextEntry copy = new HudTextEntry();
+            copy.id = id;
             copy.text = text;
             copy.useGroupColor = useGroupColor;
             copy.color = color;
@@ -345,6 +350,9 @@ public class AreaTipConfig {
             copy.delayTicks = delayTicks;
             copy.displayTicks = displayTicks;
             copy.fadeTicks = fadeTicks;
+            copy.passDelayCount = passDelayCount;
+            copy.playLimit = playLimit;
+            copy.playOncePerPlayer = playOncePerPlayer;
             return copy;
         }
 
@@ -355,6 +363,9 @@ public class AreaTipConfig {
         private HudTextEntry sanitized(int groupColor, String groupMessage, float fallbackX, float fallbackY,
                                        float fallbackScale, float fallbackRotation, int fallbackWidth,
                                        int fallbackHeight, String fallbackBackground) {
+            if (parseUuid(id) == null) {
+                id = UUID.randomUUID().toString();
+            }
             if (text == null) {
                 text = stripLegacyCodes(groupMessage == null ? "" : groupMessage);
             }
@@ -388,6 +399,8 @@ public class AreaTipConfig {
             delayTicks = Math.clamp(delayTicks, 0, 72000);
             displayTicks = Math.clamp(displayTicks, 1, 72000);
             fadeTicks = Math.clamp(fadeTicks, 0, 72000);
+            passDelayCount = Math.clamp(passDelayCount, 0, 100000);
+            playLimit = Math.clamp(playLimit, 0, 100000);
             return this;
         }
     }

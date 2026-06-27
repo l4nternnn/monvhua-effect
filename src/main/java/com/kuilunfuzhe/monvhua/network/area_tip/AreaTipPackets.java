@@ -18,6 +18,9 @@ public final class AreaTipPackets {
     private static final int MAX_JSON_LENGTH = 1_000_000;
     private static final int MAX_AREA_UPDATES = 4096;
     private static final int MAX_REGION_BLOCKS = 24000;
+    private static final int MAX_RESOURCE_NAME_LENGTH = 160;
+    private static final int MAX_RESOURCE_BYTES = 64 * 1024 * 1024;
+    private static final int MAX_RESOURCE_CHUNK_BYTES = 16 * 1024;
 
     private AreaTipPackets() {
     }
@@ -26,6 +29,9 @@ public final class AreaTipPackets {
         ConfigS2C.register();
         FullSyncS2C.register();
         AreaUpdateS2C.register();
+        ResourceSyncStartS2C.register();
+        ResourceSyncChunkS2C.register();
+        ResourceDeleteS2C.register();
     }
 
     public static void registerC2S() {
@@ -37,6 +43,10 @@ public final class AreaTipPackets {
         DeleteBoundsC2S.register();
         PlaceSelectionC2S.register();
         DeleteSelectionC2S.register();
+        ResourceUploadStartC2S.register();
+        ResourceUploadChunkC2S.register();
+        ResourceDeleteC2S.register();
+        ResourceRequestC2S.register();
     }
 
     public record AreaData(UUID id, UUID groupId, BlockPos center, int shape, int half,
@@ -450,6 +460,246 @@ public final class AreaTipPackets {
         }
     }
 
+    public record ResourceUploadStartC2S(String filename, int totalBytes, int totalChunks) implements CustomPayload {
+        public static final Id<ResourceUploadStartC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "area_tip_resource_upload_start"));
+        public static final PacketCodec<RegistryByteBuf, ResourceUploadStartC2S> CODEC = PacketCodec.of(ResourceUploadStartC2S::write, ResourceUploadStartC2S::new);
+        private static boolean registered = false;
+
+        public ResourceUploadStartC2S {
+            filename = sanitizeResourceName(filename);
+            totalBytes = Math.clamp(totalBytes, 0, MAX_RESOURCE_BYTES);
+            totalChunks = Math.clamp(totalChunks, 0, 100000);
+        }
+
+        private ResourceUploadStartC2S(RegistryByteBuf buf) {
+            this(buf.readString(MAX_RESOURCE_NAME_LENGTH), buf.readVarInt(), buf.readVarInt());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(filename, MAX_RESOURCE_NAME_LENGTH);
+            buf.writeVarInt(totalBytes);
+            buf.writeVarInt(totalChunks);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record ResourceUploadChunkC2S(String filename, int chunkIndex, int totalChunks, byte[] bytes) implements CustomPayload {
+        public static final Id<ResourceUploadChunkC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "area_tip_resource_upload_chunk"));
+        public static final PacketCodec<RegistryByteBuf, ResourceUploadChunkC2S> CODEC = PacketCodec.of(ResourceUploadChunkC2S::write, ResourceUploadChunkC2S::new);
+        private static boolean registered = false;
+
+        public ResourceUploadChunkC2S {
+            filename = sanitizeResourceName(filename);
+            chunkIndex = Math.max(0, chunkIndex);
+            totalChunks = Math.clamp(totalChunks, 0, 100000);
+            bytes = bytes == null ? new byte[0] : bytes.clone();
+            if (bytes.length > MAX_RESOURCE_CHUNK_BYTES) {
+                byte[] limited = new byte[MAX_RESOURCE_CHUNK_BYTES];
+                System.arraycopy(bytes, 0, limited, 0, MAX_RESOURCE_CHUNK_BYTES);
+                bytes = limited;
+            }
+        }
+
+        private ResourceUploadChunkC2S(RegistryByteBuf buf) {
+            this(buf.readString(MAX_RESOURCE_NAME_LENGTH), buf.readVarInt(), buf.readVarInt(), buf.readByteArray(MAX_RESOURCE_CHUNK_BYTES));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(filename, MAX_RESOURCE_NAME_LENGTH);
+            buf.writeVarInt(chunkIndex);
+            buf.writeVarInt(totalChunks);
+            buf.writeByteArray(bytes);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record ResourceDeleteC2S(String filename) implements CustomPayload {
+        public static final Id<ResourceDeleteC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "area_tip_resource_delete"));
+        public static final PacketCodec<RegistryByteBuf, ResourceDeleteC2S> CODEC = PacketCodec.of(ResourceDeleteC2S::write, ResourceDeleteC2S::new);
+        private static boolean registered = false;
+
+        public ResourceDeleteC2S {
+            filename = sanitizeResourceName(filename);
+        }
+
+        private ResourceDeleteC2S(RegistryByteBuf buf) {
+            this(buf.readString(MAX_RESOURCE_NAME_LENGTH));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(filename, MAX_RESOURCE_NAME_LENGTH);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record ResourceRequestC2S(String filename) implements CustomPayload {
+        public static final Id<ResourceRequestC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "area_tip_resource_request"));
+        public static final PacketCodec<RegistryByteBuf, ResourceRequestC2S> CODEC = PacketCodec.of(ResourceRequestC2S::write, ResourceRequestC2S::new);
+        private static boolean registered = false;
+
+        public ResourceRequestC2S {
+            filename = sanitizeResourceName(filename);
+        }
+
+        private ResourceRequestC2S(RegistryByteBuf buf) {
+            this(buf.readString(MAX_RESOURCE_NAME_LENGTH));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(filename, MAX_RESOURCE_NAME_LENGTH);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record ResourceSyncStartS2C(String filename, int totalBytes, int totalChunks) implements CustomPayload {
+        public static final Id<ResourceSyncStartS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "area_tip_resource_sync_start"));
+        public static final PacketCodec<RegistryByteBuf, ResourceSyncStartS2C> CODEC = PacketCodec.of(ResourceSyncStartS2C::write, ResourceSyncStartS2C::new);
+        private static boolean registered = false;
+
+        public ResourceSyncStartS2C {
+            filename = sanitizeResourceName(filename);
+            totalBytes = Math.clamp(totalBytes, 0, MAX_RESOURCE_BYTES);
+            totalChunks = Math.clamp(totalChunks, 0, 100000);
+        }
+
+        private ResourceSyncStartS2C(RegistryByteBuf buf) {
+            this(buf.readString(MAX_RESOURCE_NAME_LENGTH), buf.readVarInt(), buf.readVarInt());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(filename, MAX_RESOURCE_NAME_LENGTH);
+            buf.writeVarInt(totalBytes);
+            buf.writeVarInt(totalChunks);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record ResourceSyncChunkS2C(String filename, int chunkIndex, int totalChunks, byte[] bytes) implements CustomPayload {
+        public static final Id<ResourceSyncChunkS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "area_tip_resource_sync_chunk"));
+        public static final PacketCodec<RegistryByteBuf, ResourceSyncChunkS2C> CODEC = PacketCodec.of(ResourceSyncChunkS2C::write, ResourceSyncChunkS2C::new);
+        private static boolean registered = false;
+
+        public ResourceSyncChunkS2C {
+            filename = sanitizeResourceName(filename);
+            chunkIndex = Math.max(0, chunkIndex);
+            totalChunks = Math.clamp(totalChunks, 0, 100000);
+            bytes = bytes == null ? new byte[0] : bytes.clone();
+            if (bytes.length > MAX_RESOURCE_CHUNK_BYTES) {
+                byte[] limited = new byte[MAX_RESOURCE_CHUNK_BYTES];
+                System.arraycopy(bytes, 0, limited, 0, MAX_RESOURCE_CHUNK_BYTES);
+                bytes = limited;
+            }
+        }
+
+        private ResourceSyncChunkS2C(RegistryByteBuf buf) {
+            this(buf.readString(MAX_RESOURCE_NAME_LENGTH), buf.readVarInt(), buf.readVarInt(), buf.readByteArray(MAX_RESOURCE_CHUNK_BYTES));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(filename, MAX_RESOURCE_NAME_LENGTH);
+            buf.writeVarInt(chunkIndex);
+            buf.writeVarInt(totalChunks);
+            buf.writeByteArray(bytes);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record ResourceDeleteS2C(String filename) implements CustomPayload {
+        public static final Id<ResourceDeleteS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "area_tip_resource_delete_sync"));
+        public static final PacketCodec<RegistryByteBuf, ResourceDeleteS2C> CODEC = PacketCodec.of(ResourceDeleteS2C::write, ResourceDeleteS2C::new);
+        private static boolean registered = false;
+
+        public ResourceDeleteS2C {
+            filename = sanitizeResourceName(filename);
+        }
+
+        private ResourceDeleteS2C(RegistryByteBuf buf) {
+            this(buf.readString(MAX_RESOURCE_NAME_LENGTH));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(filename, MAX_RESOURCE_NAME_LENGTH);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
     private static List<BlockPos> readBlocks(RegistryByteBuf buf) {
         int count = Math.min(buf.readVarInt(), MAX_REGION_BLOCKS);
         List<BlockPos> blocks = new ArrayList<>(count);
@@ -482,5 +732,21 @@ public final class AreaTipPackets {
             }
         }
         return List.copyOf(sanitized);
+    }
+
+    private static String sanitizeResourceName(String filename) {
+        if (filename == null || filename.isBlank()) {
+            return "background.png";
+        }
+        String clean = filename.replace('\\', '/');
+        int slash = clean.lastIndexOf('/');
+        if (slash >= 0) {
+            clean = clean.substring(slash + 1);
+        }
+        clean = clean.replaceAll("[^a-zA-Z0-9._-]+", "_");
+        if (clean.isBlank()) {
+            return "background.png";
+        }
+        return clean.length() > MAX_RESOURCE_NAME_LENGTH ? clean.substring(0, MAX_RESOURCE_NAME_LENGTH) : clean;
     }
 }

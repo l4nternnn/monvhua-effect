@@ -323,7 +323,8 @@ public class TextAreaBackgroundImportScreen extends Screen {
 
     private static boolean isImageName(String name) {
         name = name.toLowerCase(Locale.ROOT);
-        return name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".bmp");
+        return name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg")
+                || name.endsWith(".bmp") || name.endsWith(".gif");
     }
 
     private static CachedImage cachedImage(Path path) throws IOException {

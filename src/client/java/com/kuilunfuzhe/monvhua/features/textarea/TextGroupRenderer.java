@@ -13,17 +13,26 @@ import net.minecraft.text.OrderedText;
 import net.minecraft.text.Style;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.Util;
 import org.joml.Matrix3x2fStack;
+import org.w3c.dom.Node;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.metadata.IIOMetadata;
+import javax.imageio.stream.ImageInputStream;
+import java.awt.AlphaComposite;
+import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Optional;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Set;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -50,11 +59,24 @@ public final class TextGroupRenderer {
         renderGroup(context, group, editing, selected ? 0 : -1, elapsedTicks);
     }
 
+    public static void renderGroup(DrawContext context, AreaTipConfig.GroupConfig group, boolean editing, boolean selected,
+                                   long elapsedTicks, Set<String> entryIds) {
+        renderGroup(context, group, editing, selected ? 0 : -1, elapsedTicks, entryIds);
+    }
+
     public static void renderGroup(DrawContext context, AreaTipConfig.GroupConfig group, boolean editing, int selectedEntryIndex, long elapsedTicks) {
+        renderGroup(context, group, editing, selectedEntryIndex, elapsedTicks, null);
+    }
+
+    public static void renderGroup(DrawContext context, AreaTipConfig.GroupConfig group, boolean editing, int selectedEntryIndex,
+                                   long elapsedTicks, Set<String> entryIds) {
         List<AreaTipConfig.HudTextEntry> entries = group.hudTexts.stream()
                 .sorted(Comparator.comparingInt(entry -> entry.priority))
                 .toList();
         for (AreaTipConfig.HudTextEntry entry : entries) {
+            if (entryIds != null && !entryIds.contains(entry.id)) {
+                continue;
+            }
             renderEntry(context, entry, editing, group.hudTexts.indexOf(entry) == selectedEntryIndex, elapsedTicks);
         }
     }
@@ -104,6 +126,7 @@ public final class TextGroupRenderer {
         client.execute(() -> {
             for (CachedTexture cached : TEXTURES.values()) {
                 client.getTextureManager().destroyTexture(cached.id());
+                cached.close();
             }
             TEXTURES.clear();
         });
@@ -146,6 +169,13 @@ public final class TextGroupRenderer {
             return 0.0F;
         }
         return Math.clamp(1.0F - fadeOutTick / (float) entry.fadeTicks, 0.0F, 1.0F);
+    }
+
+    public static long playbackTicks(AreaTipConfig.HudTextEntry entry) {
+        if (entry == null) {
+            return 0L;
+        }
+        return Math.max(1L, (long) entry.delayTicks + entry.displayTicks + entry.fadeTicks);
     }
 
     private static int withAlpha(int argb, float alpha) {
@@ -219,6 +249,7 @@ public final class TextGroupRenderer {
     private static Identifier textureFor(String relativePath) {
         CachedTexture cached = TEXTURES.get(relativePath);
         if (cached != null) {
+            cached.update();
             return cached.id();
         }
         Identifier bundled = bundledTextureFor(relativePath);
@@ -231,11 +262,9 @@ public final class TextGroupRenderer {
             return null;
         }
         try {
-            NativeImage image = readNativeImage(path);
             Identifier id = Identifier.of(MonvhuaMod.MOD_ID, "dynamic/text_area/" + safeId(relativePath));
-            NativeImageBackedTexture texture = new NativeImageBackedTexture(() -> "monvhua text area " + relativePath, image);
-            MinecraftClient.getInstance().getTextureManager().registerTexture(id, texture);
-            TEXTURES.put(relativePath, new CachedTexture(id, texture));
+            CachedTexture texture = createTexture(id, "monvhua text area " + relativePath, path);
+            TEXTURES.put(relativePath, texture);
             return id;
         } catch (IOException ignored) {
             return null;
@@ -254,18 +283,30 @@ public final class TextGroupRenderer {
         String cacheKey = "builtin:" + relativePath;
         CachedTexture cached = TEXTURES.get(cacheKey);
         if (cached != null) {
+            cached.update();
             return cached.id();
         }
         try {
-            NativeImage image = readNativeImage(path);
             Identifier id = Identifier.of(MonvhuaMod.MOD_ID, "dynamic/text_area_builtin/" + safeId(relativePath));
-            NativeImageBackedTexture texture = new NativeImageBackedTexture(() -> "monvhua text area builtin " + relativePath, image);
-            MinecraftClient.getInstance().getTextureManager().registerTexture(id, texture);
-            TEXTURES.put(cacheKey, new CachedTexture(id, texture));
+            CachedTexture texture = createTexture(id, "monvhua text area builtin " + relativePath, path);
+            TEXTURES.put(cacheKey, texture);
             return id;
         } catch (IOException ignored) {
             return null;
         }
+    }
+
+    private static CachedTexture createTexture(Identifier id, String name, Path path) throws IOException {
+        if (isGif(path)) {
+            GifImage gif = readGif(path);
+            AnimatedCachedTexture cached = new AnimatedCachedTexture(id, gif.frames());
+            MinecraftClient.getInstance().getTextureManager().registerTexture(id, cached.texture());
+            return cached;
+        }
+        NativeImage image = readNativeImage(path);
+        NativeImageBackedTexture texture = new NativeImageBackedTexture(() -> name, image);
+        MinecraftClient.getInstance().getTextureManager().registerTexture(id, texture);
+        return new StaticCachedTexture(id, texture);
     }
 
     public static Path bundledTextUiDir() {
@@ -290,21 +331,214 @@ public final class TextGroupRenderer {
         try (InputStream stream = Files.newInputStream(path)) {
             return NativeImage.read(stream);
         } catch (IOException nativeError) {
-            BufferedImage buffered = ImageIO.read(path.toFile());
+            BufferedImage buffered;
+            try (InputStream stream = Files.newInputStream(path)) {
+                buffered = ImageIO.read(stream);
+            }
             if (buffered == null) {
                 throw nativeError;
             }
-            NativeImage image = new NativeImage(buffered.getWidth(), buffered.getHeight(), false);
-            for (int y = 0; y < buffered.getHeight(); y++) {
-                for (int x = 0; x < buffered.getWidth(); x++) {
-                    image.setColorArgb(x, y, buffered.getRGB(x, y));
-                }
-            }
-            return image;
+            return nativeImageFromBuffered(buffered);
         }
     }
 
-    private record CachedTexture(Identifier id, NativeImageBackedTexture texture) {
+    private static GifImage readGif(Path path) throws IOException {
+        try (InputStream stream = Files.newInputStream(path);
+             ImageInputStream input = ImageIO.createImageInputStream(stream)) {
+            ImageReader reader = ImageIO.getImageReadersByFormatName("gif").next();
+            try {
+                reader.setInput(input, false);
+                int frameCount = reader.getNumImages(true);
+                if (frameCount <= 0) {
+                    throw new IOException("GIF contains no frames");
+                }
+                int[] canvasSize = gifCanvasSize(reader, reader.read(0));
+                BufferedImage canvas = new BufferedImage(canvasSize[0], canvasSize[1], BufferedImage.TYPE_INT_ARGB);
+                List<GifFrame> frames = new ArrayList<>();
+                for (int i = 0; i < frameCount; i++) {
+                    BufferedImage frame = reader.read(i);
+                    IIOMetadata metadata = reader.getImageMetadata(i);
+                    GifFrameMeta meta = gifFrameMeta(metadata);
+                    Graphics2D graphics = canvas.createGraphics();
+                    graphics.setComposite(AlphaComposite.SrcOver);
+                    graphics.drawImage(frame, meta.left(), meta.top(), null);
+                    graphics.dispose();
+
+                    frames.add(new GifFrame(nativeImageFromBuffered(canvas), Math.max(20, meta.delayMillis())));
+                    if ("restoreToBackgroundColor".equals(meta.disposalMethod())) {
+                        Graphics2D clear = canvas.createGraphics();
+                        clear.setComposite(AlphaComposite.Clear);
+                        clear.fillRect(meta.left(), meta.top(), frame.getWidth(), frame.getHeight());
+                        clear.dispose();
+                    }
+                }
+                return new GifImage(frames);
+            } finally {
+                reader.dispose();
+            }
+        }
+    }
+
+    private static int[] gifCanvasSize(ImageReader reader, BufferedImage firstFrame) {
+        try {
+            Node root = reader.getStreamMetadata().getAsTree("javax_imageio_gif_stream_1.0");
+            Node screen = child(root, "LogicalScreenDescriptor");
+            int width = intAttribute(screen, "logicalScreenWidth", firstFrame.getWidth());
+            int height = intAttribute(screen, "logicalScreenHeight", firstFrame.getHeight());
+            return new int[]{Math.max(1, width), Math.max(1, height)};
+        } catch (Exception ignored) {
+            return new int[]{firstFrame.getWidth(), firstFrame.getHeight()};
+        }
+    }
+
+    private static GifFrameMeta gifFrameMeta(IIOMetadata metadata) {
+        try {
+            Node root = metadata.getAsTree("javax_imageio_gif_image_1.0");
+            Node image = child(root, "ImageDescriptor");
+            Node control = child(root, "GraphicControlExtension");
+            int left = intAttribute(image, "imageLeftPosition", 0);
+            int top = intAttribute(image, "imageTopPosition", 0);
+            int delay = intAttribute(control, "delayTime", 10) * 10;
+            String disposal = stringAttribute(control, "disposalMethod", "none");
+            return new GifFrameMeta(left, top, delay, disposal);
+        } catch (Exception ignored) {
+            return new GifFrameMeta(0, 0, 100, "none");
+        }
+    }
+
+    private static Node child(Node root, String name) {
+        if (root == null) {
+            return null;
+        }
+        for (Node child = root.getFirstChild(); child != null; child = child.getNextSibling()) {
+            if (name.equals(child.getNodeName())) {
+                return child;
+            }
+        }
+        return null;
+    }
+
+    private static int intAttribute(Node node, String name, int fallback) {
+        String value = stringAttribute(node, name, null);
+        if (value == null) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static String stringAttribute(Node node, String name, String fallback) {
+        if (node == null || node.getAttributes() == null || node.getAttributes().getNamedItem(name) == null) {
+            return fallback;
+        }
+        return node.getAttributes().getNamedItem(name).getNodeValue();
+    }
+
+    private static NativeImage nativeImageFromBuffered(BufferedImage buffered) {
+        NativeImage image = new NativeImage(buffered.getWidth(), buffered.getHeight(), false);
+        for (int y = 0; y < buffered.getHeight(); y++) {
+            for (int x = 0; x < buffered.getWidth(); x++) {
+                image.setColorArgb(x, y, buffered.getRGB(x, y));
+            }
+        }
+        return image;
+    }
+
+    private static NativeImage copyNativeImage(NativeImage source) {
+        NativeImage copy = new NativeImage(source.getWidth(), source.getHeight(), false);
+        copy.copyFrom(source);
+        return copy;
+    }
+
+    private static boolean isGif(Path path) {
+        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        return name.endsWith(".gif");
+    }
+
+    private interface CachedTexture {
+        Identifier id();
+
+        default void update() {
+        }
+
+        void close();
+    }
+
+    private record StaticCachedTexture(Identifier id, NativeImageBackedTexture texture) implements CachedTexture {
+        @Override
+        public void close() {
+        }
+    }
+
+    private static final class AnimatedCachedTexture implements CachedTexture {
+        private final Identifier id;
+        private final NativeImageBackedTexture texture;
+        private final List<GifFrame> frames;
+        private final int totalDuration;
+        private int lastFrame = -1;
+
+        AnimatedCachedTexture(Identifier id, List<GifFrame> frames) {
+            this.id = id;
+            this.frames = frames;
+            this.texture = new NativeImageBackedTexture(() -> "monvhua text area gif " + id, copyNativeImage(frames.get(0).image()));
+            int duration = 0;
+            for (GifFrame frame : frames) {
+                duration += frame.delayMillis();
+            }
+            this.totalDuration = Math.max(20, duration);
+        }
+
+        @Override
+        public Identifier id() {
+            return id;
+        }
+
+        @Override
+        public void update() {
+            updateFrame();
+        }
+
+        NativeImageBackedTexture texture() {
+            return texture;
+        }
+
+        private void updateFrame() {
+            int tick = Math.floorMod((int) Util.getMeasuringTimeMs(), totalDuration);
+            int accumulated = 0;
+            int frameIndex = 0;
+            for (int i = 0; i < frames.size(); i++) {
+                accumulated += frames.get(i).delayMillis();
+                if (tick < accumulated) {
+                    frameIndex = i;
+                    break;
+                }
+            }
+            if (frameIndex == lastFrame) {
+                return;
+            }
+            texture.setImage(copyNativeImage(frames.get(frameIndex).image()));
+            texture.upload();
+            lastFrame = frameIndex;
+        }
+
+        @Override
+        public void close() {
+            for (GifFrame frame : frames) {
+                frame.image().close();
+            }
+        }
+    }
+
+    private record GifImage(List<GifFrame> frames) {
+    }
+
+    private record GifFrame(NativeImage image, int delayMillis) {
+    }
+
+    private record GifFrameMeta(int left, int top, int delayMillis, String disposalMethod) {
     }
 
     public record ImageSize(int width, int height) {

@@ -32,10 +32,14 @@ import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
+import org.lwjgl.PointerBuffer;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.tinyfd.TinyFileDialogs;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
@@ -105,6 +109,8 @@ public class TextGroupEditFragment extends Fragment {
     private EditText delayField;
     private EditText displayField;
     private EditText fadeField;
+    private EditText passDelayField;
+    private EditText playLimitField;
     private EditText priorityField;
     private EditText widthField;
     private EditText heightField;
@@ -462,6 +468,24 @@ public class TextGroupEditFragment extends Fragment {
         timingRow.addView(fadeField, new LinearLayout.LayoutParams(0, -2, 1.0F));
         inspectorPanel.addView(timingRow, blockParams());
 
+        addSection(ctx, "\u7ecf\u8fc7\u6b21\u6570\u5ef6\u8fdf / \u64ad\u653e\u4e0a\u9650");
+        LinearLayout playRuleRow = new LinearLayout(ctx);
+        playRuleRow.setOrientation(LinearLayout.HORIZONTAL);
+        passDelayField = numeric(ctx, Integer.toString(entry.passDelayCount), value -> currentEntry().passDelayCount = clampInt(parseInt(value, currentEntry().passDelayCount), 0, 100000));
+        playRuleRow.addView(passDelayField, new LinearLayout.LayoutParams(0, -2, 1.0F));
+        playLimitField = numeric(ctx, Integer.toString(entry.playLimit), value -> currentEntry().playLimit = clampInt(parseInt(value, currentEntry().playLimit), 0, 100000));
+        playRuleRow.addView(playLimitField, new LinearLayout.LayoutParams(0, -2, 1.0F));
+        inspectorPanel.addView(playRuleRow, blockParams());
+
+        Button playMode = button(ctx, entry.playOncePerPlayer ? "\u6a21\u5f0f: \u8be5\u73a9\u5bb6\u53ea\u67091\u6b21" : "\u6a21\u5f0f: \u6bcf\u6b21\u7ecf\u8fc7\u90fd\u64ad\u653e");
+        playMode.setOnClickListener(v -> {
+            AreaTipConfig.HudTextEntry selected = currentEntry();
+            selected.playOncePerPlayer = !selected.playOncePerPlayer;
+            markDirty();
+            rebuildInspector();
+        });
+        inspectorPanel.addView(playMode, blockParams());
+
         alignButton = button(ctx, "对齐: " + alignName(entry.align));
         alignButton.setOnClickListener(v -> {
             AreaTipConfig.HudTextEntry selected = currentEntry();
@@ -514,13 +538,22 @@ public class TextGroupEditFragment extends Fragment {
         scroll.setBackground(panelShape(0xAA10141A, 0x663A4350));
         importListPanel = vertical(ctx);
         importListPanel.setPadding(4, 4, 4, 4);
+        Button chooseFile = button(ctx, "在文件中选择");
+        chooseFile.setOnClickListener(v -> chooseBackgroundFile());
+        importListPanel.addView(chooseFile, blockParams());
+        Button deleteBackground = button(ctx, "删除当前背景");
+        deleteBackground.setOnClickListener(v -> deleteCurrentBackground());
+        importListPanel.addView(deleteBackground, blockParams());
         if (imageEntries.isEmpty()) {
             TextView empty = label(ctx, "没有可导入图片。目录: " + TextGroupRenderer.textureDir(), 11, 0xFFB6C0CC);
             importListPanel.addView(empty, blockParams());
         }
         for (ImageEntry image : imageEntries) {
             Button row = button(ctx, image.name() + "  " + image.width() + "x" + image.height());
-            row.setOnClickListener(v -> applyImportedBackground(image.background(), image.width(), image.height()));
+            row.setOnClickListener(v -> {
+                enqueueExistingLocalUpload(image.background());
+                applyImportedBackground(image.background(), image.width(), image.height());
+            });
             importListPanel.addView(row, blockParams());
         }
         scroll.addView(importListPanel, new FrameLayout.LayoutParams(-1, -2));
@@ -590,6 +623,7 @@ public class TextGroupEditFragment extends Fragment {
         target.hudTexts = new ArrayList<>();
         for (AreaTipConfig.HudTextEntry entry : source.hudTexts) {
             AreaTipConfig.HudTextEntry copy = entry.copy();
+            copy.id = UUID.randomUUID().toString();
             copy.useGroupColor = true;
             copy.color = target.color;
             target.hudTexts.add(copy);
@@ -615,6 +649,114 @@ public class TextGroupEditFragment extends Fragment {
         markDirty();
         TextGroupRenderer.cleanupTextures();
         rebuildAllPanels();
+    }
+
+    private void chooseBackgroundFile() {
+        Path selected = openImageFileDialog();
+        if (selected == null || !Files.isRegularFile(selected) || !isImageFile(selected)) {
+            return;
+        }
+        try {
+            NativeImage image = TextGroupRenderer.readNativeImage(selected);
+            int imageWidth = image.getWidth();
+            int imageHeight = image.getHeight();
+            image.close();
+
+            Path targetDir = TextGroupRenderer.textureDir().normalize();
+            Files.createDirectories(targetDir);
+            Path target = uniqueTexturePath(targetDir, selected.getFileName().toString());
+            Files.copy(selected, target, StandardCopyOption.REPLACE_EXISTING);
+            TextGroupRenderer.cleanupTextures();
+            TextAreaResourceSyncClient.enqueueUpload(target.getFileName().toString(), target);
+            applyImportedBackground(target.getFileName().toString(), imageWidth, imageHeight);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void deleteCurrentBackground() {
+        AreaTipConfig.HudTextEntry entry = currentEntry();
+        String background = entry.background;
+        if (background == null || background.isBlank()) {
+            return;
+        }
+        entry.background = "";
+        Path root = TextGroupRenderer.textureDir().normalize();
+        Path path = root.resolve(background).normalize();
+        if (path.startsWith(root)) {
+            try {
+                Files.deleteIfExists(path);
+            } catch (IOException ignored) {
+            }
+        }
+        TextAreaResourceSyncClient.deleteRemote(background);
+        TextGroupRenderer.cleanupTextures();
+        markDirty();
+        rebuildAllPanels();
+    }
+
+    private void enqueueExistingLocalUpload(String background) {
+        if (background == null || background.isBlank() || background.startsWith("gui/text_ui/")) {
+            return;
+        }
+        Path root = TextGroupRenderer.textureDir().normalize();
+        Path path = root.resolve(background).normalize();
+        if (path.startsWith(root) && Files.isRegularFile(path)) {
+            TextAreaResourceSyncClient.enqueueUpload(background, path);
+        }
+    }
+
+    private Path openImageFileDialog() {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            PointerBuffer filters = stack.mallocPointer(5);
+            filters.put(stack.UTF8("*.png"));
+            filters.put(stack.UTF8("*.jpg"));
+            filters.put(stack.UTF8("*.jpeg"));
+            filters.put(stack.UTF8("*.bmp"));
+            filters.put(stack.UTF8("*.gif"));
+            filters.flip();
+            String selected = TinyFileDialogs.tinyfd_openFileDialog(
+                    "选择背景图片",
+                    null,
+                    filters,
+                    "图片文件 (*.png; *.jpg; *.jpeg; *.bmp; *.gif)",
+                    false
+            );
+            return selected == null || selected.isBlank() ? null : Path.of(selected);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static Path uniqueTexturePath(Path directory, String fileName) {
+        String safeName = safeImageFileName(fileName);
+        String base = baseName(safeName);
+        String extension = extension(safeName);
+        Path candidate = directory.resolve(safeName);
+        int index = 1;
+        while (Files.exists(candidate)) {
+            candidate = directory.resolve(base + "_" + index + extension);
+            index++;
+        }
+        return candidate;
+    }
+
+    private static String safeImageFileName(String fileName) {
+        String clean = fileName == null ? "background.png" : Path.of(fileName).getFileName().toString();
+        clean = clean.replaceAll("[\\\\/:*?\"<>|]+", "_").trim();
+        if (clean.isBlank() || !isImageName(clean)) {
+            clean = "background.png";
+        }
+        return clean;
+    }
+
+    private static String baseName(String fileName) {
+        int dot = fileName.lastIndexOf('.');
+        return dot <= 0 ? fileName : fileName.substring(0, dot);
+    }
+
+    private static String extension(String fileName) {
+        int dot = fileName.lastIndexOf('.');
+        return dot <= 0 ? ".png" : fileName.substring(dot);
     }
 
     private boolean handlePreviewTouch(View view, MotionEvent event) {
@@ -891,13 +1033,18 @@ public class TextGroupEditFragment extends Fragment {
             NativeImage image = TextGroupRenderer.readNativeImage(path);
             imageEntries.add(new ImageEntry(name, background, image.getWidth(), image.getHeight()));
             image.close();
-        } catch (IOException ignored) {
+        } catch (Exception ignored) {
         }
     }
 
     private static boolean isImageFile(Path path) {
-        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
-        return name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".bmp");
+        return isImageName(path.getFileName().toString());
+    }
+
+    private static boolean isImageName(String name) {
+        name = name.toLowerCase(Locale.ROOT);
+        return name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg")
+                || name.endsWith(".bmp") || name.endsWith(".gif");
     }
 
     private List<String> availableFonts() {

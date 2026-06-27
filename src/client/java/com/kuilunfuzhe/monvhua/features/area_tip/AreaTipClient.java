@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.features.area_tip;
 
 import com.kuilunfuzhe.monvhua.features.gravity.GravityAreaSpec;
 import com.kuilunfuzhe.monvhua.features.textarea.TextAreaHudClient;
+import com.kuilunfuzhe.monvhua.features.textarea.TextAreaResourceSyncClient;
 import com.kuilunfuzhe.monvhua.features.textarea.TextGroupEditFragment;
 import com.kuilunfuzhe.monvhua.item.area_tip.AreaTipItems;
 import com.kuilunfuzhe.monvhua.item.config.AreaTipConfig;
@@ -19,6 +20,7 @@ import org.lwjgl.glfw.GLFW;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public final class AreaTipClient {
@@ -43,6 +45,7 @@ public final class AreaTipClient {
                     AreaTipConfig config = AreaTipConfig.fromJson(packet.json());
                     AreaTipConfig.syncInstance(config);
                     configRevision++;
+                    TextAreaResourceSyncClient.requestMissingResources(backgrounds(config));
                     TextAreaHudClient.resetPlayback();
                     if (context.client().currentScreen instanceof AreaTipConfigScreen screen) {
                         screen.receiveConfig(config);
@@ -125,6 +128,24 @@ public final class AreaTipClient {
     public static void requestSync() {
         SafeClientNetworking.send(new AreaTipPackets.RequestConfigC2S());
         SafeClientNetworking.send(new AreaTipPackets.RequestAreasC2S());
+    }
+
+    private static Set<String> backgrounds(AreaTipConfig config) {
+        Set<String> backgrounds = new LinkedHashSet<>();
+        if (config == null || config.groups == null) {
+            return backgrounds;
+        }
+        for (AreaTipConfig.GroupConfig group : config.groups) {
+            if (group == null || group.hudTexts == null) {
+                continue;
+            }
+            for (AreaTipConfig.HudTextEntry entry : group.hudTexts) {
+                if (entry != null && entry.background != null && !entry.background.isBlank()) {
+                    backgrounds.add(entry.background);
+                }
+            }
+        }
+        return backgrounds;
     }
 
     public static boolean placeCurrentGroupBounds(BlockPos min, BlockPos max) {
