@@ -41,6 +41,8 @@ import com.kuilunfuzhe.monvhua.register.ClientPacketHandler;
 import com.kuilunfuzhe.monvhua.register.imitate.ImitateClientPacketHandler;
 import com.kuilunfuzhe.monvhua.renderer.bodypose.skeletal.BodyPoseSkeletalPreviewRenderer;
 import com.kuilunfuzhe.monvhua.screen.ModScreenHandlers;
+import com.kuilunfuzhe.monvhua.fantasy.FantasyClientHandler;
+import com.kuilunfuzhe.monvhua.fantasy.FantasyRenderer;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
@@ -242,6 +244,9 @@ public class MonvhuaModClient implements ClientModInitializer {
             com.kuilunfuzhe.monvhua.features.floating.floating.syncFloatingTag(packet.hasFloatingTag());
 //            System.out.println("§e[调试] 收到标签同步 - 完全魔女化: " + packet.hasFullWitchTag() + ", 飞行: " + packet.hasFullWitchFlight() + ", Floating: " + packet.hasFloatingTag());
         });
+        // 幻想系统客户端注册
+        FantasyClientHandler.register();
+        FantasyRenderer.register();
     }  // ← onInitializeClient 方法结束
 
     private static void registerSkeletalModelResourceReload() {

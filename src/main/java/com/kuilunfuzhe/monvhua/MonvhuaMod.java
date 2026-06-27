@@ -88,6 +88,7 @@ import com.kuilunfuzhe.monvhua.screen.ModScreenHandlers;
 import com.kuilunfuzhe.monvhua.screen.openback.OtherPlayerInventoryScreenHandler;
 import com.kuilunfuzhe.monvhua.screen.openback.OtherPlayerInventoryScreenHandlerFactory;
 import com.kuilunfuzhe.monvhua.sound.ModSounds;
+import com.kuilunfuzhe.monvhua.features.fantasy.FantasyManager;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
@@ -875,6 +876,8 @@ public class MonvhuaMod implements ModInitializer {
         });
         // 注册漂浮魔法能量系统
         ServerTickHandler.register();
+        // ===== 幻想系统初始化 =====
+        FantasyManager.initialize();
     }
 
     private static int clearBodyBackpackInteractions(net.minecraft.server.command.ServerCommandSource source, double radius) {

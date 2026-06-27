@@ -91,8 +91,8 @@ dependencies {
 	modImplementation "maven.modrinth:sodium:${project.sodium_version}"
 
 	// 3D Skin Layers API for voxelized skin outer-layer meshes.
-	modCompileOnly "maven.modrinth:3dskinlayers:${project.skinlayers3d_version}"
-	modLocalRuntime "maven.modrinth:3dskinlayers:${project.skinlayers3d_version}"
+//	modCompileOnly files("libs/3dskinlayers-fabric-1.12.0+1.21.8.jar")
+//	modLocalRuntime files("libs/3dskinlayers-fabric-1.12.0+1.21.8.jar")
 
 	// Iris shader mod dependency.
 	modImplementation "maven.modrinth:iris:${project.iris_version}"

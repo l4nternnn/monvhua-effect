@@ -36,6 +36,7 @@ import com.kuilunfuzhe.monvhua.network.through.RequestThroughConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughConfigUpdateC2SPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughStateS2CPacket;
+import com.kuilunfuzhe.monvhua.network.fantasy.FantasyS2CPacket;
 
 public class ModNetworking {
 
@@ -73,6 +74,8 @@ public class ModNetworking {
         ImitateSyncS2CPacket.register();
         SilenceTargetsS2CPacket.register();
         SecretPackets.registerS2C();
+        FantasyS2CPacket.register();
+
     }
 
     public static void registerC2SPackets() {
