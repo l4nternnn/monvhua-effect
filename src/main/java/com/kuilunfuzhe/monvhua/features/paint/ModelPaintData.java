@@ -43,6 +43,47 @@ public final class ModelPaintData {
         return paintLimited(root, surface, face, x, y, radius, color, clearFace, slim, Integer.MAX_VALUE).changed();
     }
 
+    public static int[] copyFacePixels(NbtCompound root, String surface, Direction face, boolean slim) {
+        if (surface == null || surface.isEmpty()) {
+            return new int[0];
+        }
+        FaceSize size = size(surface, face, slim);
+        NbtList list = root == null ? new NbtList() : root.getListOrEmpty(MODEL_PAINT_KEY);
+        int index = findFace(list, surface, face);
+        if (index < 0) {
+            return new int[size.pixelCount()];
+        }
+        return sanitizePixels(list.getCompound(index)
+                .flatMap(entry -> entry.getIntArray("pixels"))
+                .orElse(new int[0]), size.width(), size.height());
+    }
+
+    public static boolean setFacePixels(NbtCompound root, String surface, Direction face, int[] pixels, boolean slim) {
+        if (root == null || surface == null || surface.isEmpty()) {
+            return false;
+        }
+        FaceSize size = size(surface, face, slim);
+        int[] sanitized = sanitizePixels(pixels == null ? new int[0] : pixels, size.width(), size.height());
+        NbtList list = root.getListOrEmpty(MODEL_PAINT_KEY);
+        int index = findFace(list, surface, face);
+        if (!hasPixels(sanitized)) {
+            if (index < 0) {
+                return false;
+            }
+            list.remove(index);
+            writeList(root, list);
+            return true;
+        }
+        NbtCompound entry = createFace(surface, face, size, sanitized);
+        if (index >= 0) {
+            list.set(index, entry);
+        } else {
+            list.add(entry);
+        }
+        writeList(root, list);
+        return true;
+    }
+
     public static PaintResult paintLimited(NbtCompound root, String surface, Direction face, int x, int y,
                                            int radius, int color, boolean clearFace, boolean slim, int budget) {
         if (surface == null || surface.isEmpty()) {

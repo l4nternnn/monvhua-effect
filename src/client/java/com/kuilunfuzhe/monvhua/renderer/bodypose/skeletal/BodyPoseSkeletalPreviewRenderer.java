@@ -201,8 +201,9 @@ public final class BodyPoseSkeletalPreviewRenderer {
         SkinTexturePixels.PaintedSkinTexture paintedSkin = SkinTexturePixels.getWithModelPaint(texture, customData, slim);
         Identifier renderTexture = paintedSkin.textureId();
         SkinTexturePixels skinPixels = paintedSkin.pixels();
+        boolean paintedTexture = !renderTexture.equals(texture);
 
-        RenderLayer skinLayer = renderLayer != null && renderTexture.equals(texture)
+        RenderLayer skinLayer = renderLayer != null && !paintedTexture
                 ? renderLayer
                 : RenderLayer.getEntityCutoutNoCull(renderTexture);
         RenderLayer solidColorLayer = singleLayer ? skinLayer : RenderLayer.getEntityCutoutNoCull(renderTexture);
@@ -328,7 +329,7 @@ public final class BodyPoseSkeletalPreviewRenderer {
         for (int y = y0; y <= y1; y++) {
             for (int x = x0; x <= x1; x++) {
                 int argb = pixels.getArgb(x, y);
-                if (((argb >>> 24) & 0xFF) < 128) {
+                if (((argb >>> 24) & 0xFF) == 0) {
                     continue;
                 }
                 float u = (x + 0.5F) / pixels.width();

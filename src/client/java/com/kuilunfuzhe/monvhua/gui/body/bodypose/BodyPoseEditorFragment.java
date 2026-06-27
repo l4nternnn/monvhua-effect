@@ -10,6 +10,7 @@ import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlaceTrueSkeletalBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.UpdateBodyPoseDefaultsC2SPacket;
+import com.kuilunfuzhe.monvhua.network.bodypose.UpdatePlacedBodyPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.renderer.bodypose.skeletal.BodyPoseSkeletalPreviewRenderer;
 import icyllis.modernui.core.Context;
 import icyllis.modernui.core.Core;
@@ -191,6 +192,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final Map<String, PartPose> SKELETAL_POSES = createPartPoses();
     private static final Map<String, PartPose> TRUE_SKELETAL_POSES = new HashMap<>();
     private static BodyPosePresetStore.StoreData presetStore = BodyPosePresetStore.load();
+    private static int reeditTargetEntityId = -1;
 
     private static boolean worldPreviewEnabled = true;
     private static PreviewMode worldPreviewMode = PreviewMode.FOLLOW_PLAYER;
@@ -336,6 +338,7 @@ public class BodyPoseEditorFragment extends Fragment {
     // ═══════════════════════════════════════════════════════
 
     public static void open() {
+        reeditTargetEntityId = -1;
         loadPresetStore();
         applyActivePageState();
         openEditorScreen();
@@ -346,14 +349,15 @@ public class BodyPoseEditorFragment extends Fragment {
         if (client == null || client.player == null || client.world == null) {
             return false;
         }
-        ItemStack stack = findTargetedCombinedBodyStack(client);
-        if (stack == null || stack.isEmpty()) {
+        ReeditTarget target = findTargetedCombinedBodyStack(client);
+        if (target == null || target.stack().isEmpty()) {
             return false;
         }
 
         loadPresetStore();
         resetEditorOpenState();
-        loadEditorStateFromCombinedBodyStack(stack);
+        reeditTargetEntityId = target.entityId();
+        loadEditorStateFromCombinedBodyStack(target.stack());
         saveCurrentPageStateStatic();
         openEditorScreen();
         client.player.sendMessage(Text.literal("已载入已放置躯体姿态"), true);
@@ -367,6 +371,7 @@ public class BodyPoseEditorFragment extends Fragment {
         showWholePreview = true;
         worldPreviewEnabled = true;
         EDITOR_ITEMS.clear();
+        reeditTargetEntityId = -1;
     }
 
     private static void openEditorScreen() {
@@ -376,7 +381,7 @@ public class BodyPoseEditorFragment extends Fragment {
         client.setScreen(screen);
     }
 
-    private static ItemStack findTargetedCombinedBodyStack(MinecraftClient client) {
+    private static ReeditTarget findTargetedCombinedBodyStack(MinecraftClient client) {
         Vec3d eye = client.player.getEyePos();
         Vec3d look = client.player.getRotationVec(1.0F);
         Vec3d end = eye.add(look.multiply(REEDIT_TARGET_DISTANCE));
@@ -404,11 +409,11 @@ public class BodyPoseEditorFragment extends Fragment {
         }
 
         if (targetedEntity instanceof ItemDisplayEntity display && isCombinedBodyDisplay(display)) {
-            return display.getItemStack().copy();
+            return new ReeditTarget(display.getId(), display.getItemStack().copy());
         }
         if (targetedEntity instanceof InteractionEntity interaction) {
             ItemDisplayEntity display = findNearestCombinedBodyDisplay(client, interaction.getPos());
-            return display != null ? display.getItemStack().copy() : null;
+            return display != null ? new ReeditTarget(display.getId(), display.getItemStack().copy()) : null;
         }
         return null;
     }
@@ -4577,10 +4582,18 @@ public class BodyPoseEditorFragment extends Fragment {
         }
         if (placeButton != null) {
             placeButton.setText("放置模型");
-            placeButton.setOnClickListener(v -> placePosedBody(false));
+            placeButton.setText(reeditTargetEntityId >= 0 ? "更新姿态" : "放置模型");
+            placeButton.setOnClickListener(v -> {
+                if (reeditTargetEntityId >= 0) {
+                    updatePlacedBodyPose();
+                } else {
+                    placePosedBody(false);
+                }
+            });
         }
         if (placeBackpackButton != null) {
             placeBackpackButton.setText("\u653e\u7f6e\u6a21\u578b(\u80cc\u5305)");
+            placeBackpackButton.setEnabled(reeditTargetEntityId < 0);
             placeBackpackButton.setOnClickListener(v -> placePosedBody(true));
         }
         if (applySkeletalButton != null) {
@@ -4757,6 +4770,25 @@ public class BodyPoseEditorFragment extends Fragment {
         ClientPlayNetworking.send(new ApplySkeletalPoseC2SPacket(
                 createSkeletalPoseValueArray(),
                 createSkeletalBendValueArray()));
+    }
+
+    private void updatePlacedBodyPose() {
+        if (reeditTargetEntityId < 0) {
+            return;
+        }
+        saveCurrentPageState();
+        boolean trueSkeletal = poseEditMode == PoseEditMode.TRUE_SKELETAL;
+        float[] poseValues = poseEditMode == PoseEditMode.STATIC_PART
+                ? createStaticPoseValueArray()
+                : createSkeletalPoseValueArray();
+        float[] bendValues = poseEditMode == PoseEditMode.SKELETAL ? createSkeletalBendValueArray() : null;
+        List<PlaceTrueSkeletalBodyC2SPacket.BonePose> bones = trueSkeletal ? createTrueSkeletalBonePoseList() : List.of();
+        ClientPlayNetworking.send(new UpdatePlacedBodyPoseC2SPacket(reeditTargetEntityId,
+                trueSkeletal ? "true_skeletal" : "skeletal",
+                poseValues, bendValues, bones,
+                modelOffsetX, modelOffsetY, modelOffsetZ,
+                modelPitch, modelYaw, modelRoll, wholeBodyScale));
+        closeEditorScreen();
     }
 
     private void placeEditorItems() {
@@ -5992,6 +6024,9 @@ public class BodyPoseEditorFragment extends Fragment {
             this.stack = stack;
             this.displayMode = defaultItemDisplayMode;
         }
+    }
+
+    private record ReeditTarget(int entityId, ItemStack stack) {
     }
 
     private static final class ScreenPoint {

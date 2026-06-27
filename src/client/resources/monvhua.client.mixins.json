@@ -47,7 +47,10 @@
 		"ThroughPhaseInputMixin",
 		"ThroughStalledMotionMixin",
 		"SpriteContentsAccessor",
-		"MouseMixin"
+		"MouseMixin",
+		"PlayerEntityRenderStateAccessor",
+		"PlayerEntityRendererInvoker",
+		"PlayerEntityRendererMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

@@ -98,81 +98,88 @@ ema, cero, nnk, mago, leiya, milya, sherry, yalisa, noa, anan, yuki, mll, coco, 
 
 ## 命令速查
 
-### 千里眼
+下表覆盖 `src/main/java/com/kuilunfuzhe/monvhua/command` 中注册的指令。`OP` 表示需要 2 级权限；未标注 `OP` 的指令普通玩家可执行，但多数仍要求执行者是玩家实体。
 
-```mcfunction
-/clairvoyance clearanchors_清除千里眼锚点 <玩家>
-/clairvoyance clearanchors_清除千里眼锚点 all
-/clairvoyance viewmode_切换相机系统 legacy——旧版客户端
-/clairvoyance viewmode_切换相机系统 modern——新版服务端
-/watch
-/watch <实体名>
-/watch angle <偏航> <俯仰> <距离>
-/watch angle reset
-```
+### 千里眼与观看
 
-### 身体部件
+| 指令 | 权限 | 效果 |
+| --- | --- | --- |
+| `/clairvoyance clearanchors_清除千里眼锚点` | 玩家 | 清除执行者自己的千里眼锚点。 |
+| `/clairvoyance clearanchors_清除千里眼锚点 <player>` | OP | 清除指定在线玩家的千里眼锚点。 |
+| `/clairvoyance clearanchors_清除千里眼锚点 all` | OP | 清除所有千里眼锚点，移除对应盔甲架并触发清除效果。 |
+| `/clairvoyance viewmode_切换相机系统` | 玩家 | 查看当前千里眼观看模式。 |
+| `/clairvoyance viewmode_切换相机系统 legacy——旧版客户端` | 玩家 | 切换到旧版客户端盔甲架观看模式，并停止当前观看。 |
+| `/clairvoyance viewmode_切换相机系统 modern——新版服务端` | 玩家 | 切换到新版服务端 CameraWatch 观看模式，并停止当前观看。 |
+| `/clairvoyance viewmode_切换相机系统 viewport` | 玩家 | 切换到 Viewport 界面预览观看模式，并停止当前观看。 |
+| `/clairvoyance viewmode` | 玩家 | 查看当前千里眼观看模式。 |
+| `/clairvoyance viewmode <legacy\|modern\|viewport>` | 玩家 | 使用英文短参数切换千里眼观看模式。 |
+| `/watch` | 玩家 | 未观看时观看准星 50 格内命中的实体；已观看时停止观看。 |
+| `/watch <target>` | 玩家 | 按玩家名或实体自定义名查找并开始观看目标实体。 |
+| `/watch angle <yaw> <pitch> <distance>` | 玩家 | 设置服务端观看相机偏移，`distance` 范围为 0.5 到 10。 |
+| `/watch angle <yaw> <pitch> reset` | 玩家 | 重置观看相机偏移；当前注册路径仍需要 `yaw`、`pitch` 两个占位参数。 |
 
-```mcfunction
-/clairvoyance-肢体|获取 player-玩家 <玩家> all
-/clairvoyance-肢体|获取 player-玩家 <玩家> torso
-/clairvoyance-肢体|获取 localskin <皮肤名> all
-/clairvoyance-肢体|替换 localskin-内置 <皮肤名>
-/clairvoyance-肢体|替换 player-玩家 <玩家>
-/clairvoyance-肢体|替换 split-分离
-/monvhua-skeletal-pose <pitch> <yaw> <roll>
-```
+### 身体部件与骨骼
+
+| 指令 | 权限 | 效果 |
+| --- | --- | --- |
+| `/clairvoyance-肢体\|获取 <target> <source> all [slim]` | OP | 将来源玩家的头、躯干、四肢物品给予目标玩家；`all` 还会额外给予原版玩家头颅。 |
+| `/clairvoyance-肢体\|获取 <target> <source> <part> [slim]` | OP | 将来源玩家的指定肢体物品给予目标玩家。`part` 可为 `head`、`torso`、`left_arm`、`right_arm`、`left_leg`、`right_leg`；玩家来源的 `head` 不带 `slim` 分支。 |
+| `/clairvoyance-肢体\|获取 <target> localskin <skinName> all [slim]` | OP | 使用内置皮肤生成全套肢体物品并给予目标玩家。 |
+| `/clairvoyance-肢体\|获取 <target> localskin <skinName> <part> [slim]` | OP | 使用内置皮肤生成指定肢体物品并给予目标玩家，`skinName` 会从内置皮肤列表补全。 |
+| `/clairvoyance-肢体\|替换 localskin-内置 <skinName> [slim]` | OP | 将执行者周围 3 格内的肢体展示实体替换为指定内置皮肤。 |
+| `/clairvoyance-肢体\|替换 player-玩家 <playerName> [slim]` | OP | 将执行者周围 3 格内的肢体展示实体替换为指定在线玩家皮肤。 |
+| `/clairvoyance-肢体\|替换 split-分离` | OP | 将执行者附近的整体肢体展示实体拆分成单独的头、躯干和四肢展示实体。 |
+| `/monvhua-skeletal-pose <pos> <pitch> <yaw> <roll>` | OP | 设置指定骨骼肢体方块的关节姿态，三个角度范围均为 -180 到 180。 |
 
 ### 镜像
 
-```mcfunction
-/clairvoyance-mirror set <1|2> hsPos-设定点 <坐标>
-/clairvoyance-mirror set <1|2> mapPos-映射点 <坐标>
-/clairvoyance-mirror set <1|2> radius-半径 <半径>
-/clairvoyance-mirror remove-移除 <1|2>
-/clairvoyance-mirror list-列出所有
-/clairvoyance-mirror clear-清除
-```
+| 指令 | 权限 | 效果 |
+| --- | --- | --- |
+| `/clairvoyance-mirror set <slot> hsPos-设定点 <pos>` | OP | 为执行者设置镜面槽位 `1` 或 `2` 的触发点。 |
+| `/clairvoyance-mirror set <slot> mapPos-映射点 <pos>` | OP | 为执行者设置镜面槽位 `1` 或 `2` 的映射点。 |
+| `/clairvoyance-mirror set <slot> radius-半径 <radius>` | OP | 设置镜面触发半径，范围为 1 到 200。 |
+| `/clairvoyance-mirror remove-移除 <slot>` | OP | 清除执行者指定镜面槽位。 |
+| `/clairvoyance-mirror list-列出所有` | OP | 列出执行者两个镜面槽位、镜像视图状态和剩余使用次数。 |
+| `/clairvoyance-mirror clear-清除` | OP | 清除执行者的所有镜面配置。 |
 
-### 动作
+### 动作（已废弃，但代码未注释）
 
-```mcfunction
-/monvhua-action|动作 reload|重载
-/monvhua-action|动作 list|列表
-/monvhua-action|动作 trigger|触发 <动作 ID> [玩家]
-/monvhua-action|动作 enable|启用 <动作 ID>
-/monvhua-action|动作 disable|禁用 <动作 ID>
-```
+| 指令 | 权限 | 效果 |
+| --- | --- | --- |
+| `/monvhua-action\|动作 reload\|重载` | OP | 重新加载动作 JSON 配置。 |
+| `/monvhua-action\|动作 list\|列表` | OP | 列出已注册动作、启用状态和动作类型。 |
+| `/monvhua-action\|动作 trigger\|触发 <id>` | OP | 对执行者手动触发指定动作；控制台执行时需要显式指定玩家。 |
+| `/monvhua-action\|动作 trigger\|触发 <id> <player>` | OP | 对指定玩家手动触发指定动作。 |
+| `/monvhua-action\|动作 enable\|启用 <id>` | OP | 在配置中启用指定动作。 |
+| `/monvhua-action\|动作 disable\|禁用 <id>` | OP | 在配置中禁用指定动作。 |
 
 ### 重力
 
-```mcfunction
-/monvhua-gravity area create <radius> <time>
-/monvhua-gravity area create <radius> <height> <time>
-/monvhua-gravity area clear nearest
-/monvhua-gravity area clear all
-```
+| 指令 | 权限 | 效果 |
+| --- | --- | --- |
+| `/monvhua-gravity area create <radius> <time>` | OP | 以执行者脚下方块为中心创建区域重力，半径范围 1 到 256，高度使用默认值。 |
+| `/monvhua-gravity area create <radius> <height> <time>` | OP | 创建指定半径和高度的区域重力，高度范围 1 到 256。 |
+| `/monvhua-gravity area clear nearest` | OP | 清除当前维度中距离执行者最近的区域重力。 |
+| `/monvhua-gravity area clear all` | OP | 清除当前维度中的所有区域重力。 |
 
 `time` 使用秒数，或使用 `wuxian` 表示无限时间。
 
 ### 绘画与涂鸦
 
-```mcfunction
-/monvhua-graffiti folder
-/monvhua-graffiti import <文件名>
-/monvhua-graffiti import_scaled <缩放倍率> <文件名>
-/monvhua-graffiti clear grid <半径> [中心坐标]
-/monvhua-graffiti clear block-方块 <半径> [中心坐标]
-/monvhua-graffiti clear chunk <半径> [中心坐标]
-```
-
-图片导入文件夹位于游戏目录下的 `graffiti/`。导入图片会按画纸网格拆分，生成一个或多个画纸物品。
+| 指令 | 权限 | 效果 |
+| --- | --- | --- |
+| `/monvhua-graffiti folder` | OP | 创建并显示游戏目录下的 `graffiti/` 图片导入文件夹。 |
+| `/monvhua-graffiti import <file>` | OP | 从 `graffiti/` 文件夹异步导入图片，按画纸网格拆分后给予执行者一个或多个画纸物品。 |
+| `/monvhua-graffiti import_scaled <scale> <file>` | OP | 按指定倍率导入图片，`scale` 范围为 0.05 到 8.0；最多生成 25x25 张画纸。 |
+| `/monvhua-graffiti clear grid <radius-半径> [center]` | OP | 按方块坐标立方体半径清除绘画面，半径范围 0 到 2048；未指定中心时使用执行者位置。 |
+| `/monvhua-graffiti clear block-方块 <radius-半径> [center]` | OP | 与 `grid` 相同，是方块清除路径的中文别名。 |
+| `/monvhua-graffiti clear chunk <radius> [center]` | OP | 按区块半径清除绘画面，半径范围 0 到 128；未指定中心时使用执行者位置所在区块。 |
 
 ### 其他
 
-```mcfunction
-/placemannequin
-```
+| 指令 | 权限 | 效果 |
+| --- | --- | --- |
+| `/placemannequin` | 玩家 | 在执行者当前位置生成一个测试模型实体，用于验证模型渲染效果。 |
 
 ## 配置与数据
 

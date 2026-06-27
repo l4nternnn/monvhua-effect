@@ -171,6 +171,15 @@ public class AreaTipConfig {
         public int sizeX = 3;
         public int sizeY = 3;
         public int sizeZ = 3;
+        public boolean hudVisible = true;
+        public float hudX = 24.0F;
+        public float hudY = 24.0F;
+        public float hudScale = 1.0F;
+        public float hudRotation = 0.0F;
+        public int hudWidth = 220;
+        public int hudHeight = 72;
+        public String hudBackground = "";
+        public List<HudTextEntry> hudTexts = new ArrayList<>();
 
         public UUID uuid() {
             UUID uuid = parseUuid(id);
@@ -201,6 +210,22 @@ public class AreaTipConfig {
             copy.sizeX = sizeX;
             copy.sizeY = sizeY;
             copy.sizeZ = sizeZ;
+            copy.hudVisible = hudVisible;
+            copy.hudX = hudX;
+            copy.hudY = hudY;
+            copy.hudScale = hudScale;
+            copy.hudRotation = hudRotation;
+            copy.hudWidth = hudWidth;
+            copy.hudHeight = hudHeight;
+            copy.hudBackground = hudBackground;
+            copy.hudTexts = new ArrayList<>();
+            if (hudTexts != null) {
+                for (HudTextEntry entry : hudTexts) {
+                    if (entry != null) {
+                        copy.hudTexts.add(entry.copy());
+                    }
+                }
+            }
             return copy;
         }
 
@@ -233,7 +258,175 @@ public class AreaTipConfig {
                 copy.sizeY = size;
                 copy.sizeZ = size;
             }
+            copy.hudX = finite(copy.hudX, 24.0F);
+            copy.hudY = finite(copy.hudY, 24.0F);
+            copy.hudScale = Math.clamp(finite(copy.hudScale, 1.0F), 0.2F, 8.0F);
+            copy.hudRotation = normalizeRotation(finite(copy.hudRotation, 0.0F));
+            copy.hudWidth = Math.clamp(copy.hudWidth, 32, 4096);
+            copy.hudHeight = Math.clamp(copy.hudHeight, 16, 4096);
+            if (copy.hudBackground == null) {
+                copy.hudBackground = "";
+            }
+            List<HudTextEntry> entries = new ArrayList<>();
+            if (copy.hudTexts != null) {
+                for (HudTextEntry entry : copy.hudTexts) {
+                    if (entry != null) {
+                        entries.add(entry.sanitized(copy.color, copy.message, copy.hudX, copy.hudY,
+                                copy.hudScale, copy.hudRotation, copy.hudWidth, copy.hudHeight, copy.hudBackground));
+                    }
+                }
+            }
+            if (entries.isEmpty()) {
+                HudTextEntry entry = HudTextEntry.fromGroup(copy.color, copy.message);
+                entry.x = copy.hudX;
+                entry.y = copy.hudY;
+                entry.scale = copy.hudScale;
+                entry.rotation = copy.hudRotation;
+                entry.width = copy.hudWidth;
+                entry.height = copy.hudHeight;
+                entry.background = copy.hudBackground;
+                entries.add(entry.sanitized(copy.color, copy.message, copy.hudX, copy.hudY,
+                        copy.hudScale, copy.hudRotation, copy.hudWidth, copy.hudHeight, copy.hudBackground));
+            }
+            copy.hudTexts = entries;
             return copy;
         }
+    }
+
+    public static class HudTextEntry {
+        public String id = UUID.randomUUID().toString();
+        public String text = "";
+        public boolean useGroupColor = true;
+        public int color = 0xFFFFFFFF;
+        public float fontSize = 1.0F;
+        public String align = "left";
+        public String font = "minecraft:default";
+        public int offsetX = 8;
+        public int offsetY = 8;
+        public float x = Float.NaN;
+        public float y = Float.NaN;
+        public float scale = 1.0F;
+        public float rotation = 0.0F;
+        public int width = 220;
+        public int height = 72;
+        public String background = "";
+        public int priority = 0;
+        public int wrapWidth = 204;
+        public int delayTicks = 0;
+        public int displayTicks = 100;
+        public int fadeTicks = 20;
+        public int passDelayCount = 0;
+        public int playLimit = 0;
+        public boolean playOncePerPlayer = false;
+
+        public static HudTextEntry fromGroup(int groupColor, String groupMessage) {
+            HudTextEntry entry = new HudTextEntry();
+            entry.text = stripLegacyCodes(groupMessage == null || groupMessage.isBlank() ? "Area tip" : groupMessage);
+            entry.useGroupColor = true;
+            entry.color = 0xFF000000 | (groupColor & 0xFFFFFF);
+            return entry.sanitized(groupColor, groupMessage);
+        }
+
+        public HudTextEntry copy() {
+            HudTextEntry copy = new HudTextEntry();
+            copy.id = id;
+            copy.text = text;
+            copy.useGroupColor = useGroupColor;
+            copy.color = color;
+            copy.fontSize = fontSize;
+            copy.align = align;
+            copy.font = font;
+            copy.offsetX = offsetX;
+            copy.offsetY = offsetY;
+            copy.x = x;
+            copy.y = y;
+            copy.scale = scale;
+            copy.rotation = rotation;
+            copy.width = width;
+            copy.height = height;
+            copy.background = background;
+            copy.priority = priority;
+            copy.wrapWidth = wrapWidth;
+            copy.delayTicks = delayTicks;
+            copy.displayTicks = displayTicks;
+            copy.fadeTicks = fadeTicks;
+            copy.passDelayCount = passDelayCount;
+            copy.playLimit = playLimit;
+            copy.playOncePerPlayer = playOncePerPlayer;
+            return copy;
+        }
+
+        private HudTextEntry sanitized(int groupColor, String groupMessage) {
+            return sanitized(groupColor, groupMessage, 24.0F, 24.0F, 1.0F, 0.0F, 220, 72, "");
+        }
+
+        private HudTextEntry sanitized(int groupColor, String groupMessage, float fallbackX, float fallbackY,
+                                       float fallbackScale, float fallbackRotation, int fallbackWidth,
+                                       int fallbackHeight, String fallbackBackground) {
+            if (parseUuid(id) == null) {
+                id = UUID.randomUUID().toString();
+            }
+            if (text == null) {
+                text = stripLegacyCodes(groupMessage == null ? "" : groupMessage);
+            }
+            if (text.length() > MAX_MESSAGE_LENGTH) {
+                text = text.substring(0, MAX_MESSAGE_LENGTH);
+            }
+            color = 0xFF000000 | (color & 0xFFFFFF);
+            if (useGroupColor) {
+                color = 0xFF000000 | (groupColor & 0xFFFFFF);
+            }
+            fontSize = Math.clamp(finite(fontSize, 1.0F), 0.25F, 8.0F);
+            if (align == null || (!align.equals("center") && !align.equals("right"))) {
+                align = "left";
+            }
+            if (font == null || font.isBlank()) {
+                font = "minecraft:default";
+            }
+            x = finite(x, fallbackX);
+            y = finite(y, fallbackY);
+            scale = Math.clamp(finite(scale, fallbackScale), 0.2F, 8.0F);
+            rotation = normalizeRotation(finite(rotation, fallbackRotation));
+            width = Math.clamp(width <= 0 ? fallbackWidth : width, 32, 4096);
+            height = Math.clamp(height <= 0 ? fallbackHeight : height, 16, 4096);
+            if (background == null || background.isBlank()) {
+                background = fallbackBackground == null ? "" : fallbackBackground;
+            }
+            priority = Math.clamp(priority, -100000, 100000);
+            offsetX = Math.clamp(offsetX, -4096, 4096);
+            offsetY = Math.clamp(offsetY, -4096, 4096);
+            wrapWidth = Math.clamp(wrapWidth, 16, 4096);
+            delayTicks = Math.clamp(delayTicks, 0, 72000);
+            displayTicks = Math.clamp(displayTicks, 1, 72000);
+            fadeTicks = Math.clamp(fadeTicks, 0, 72000);
+            passDelayCount = Math.clamp(passDelayCount, 0, 100000);
+            playLimit = Math.clamp(playLimit, 0, 100000);
+            return this;
+        }
+    }
+
+    private static float finite(float value, float fallback) {
+        return Float.isFinite(value) ? value : fallback;
+    }
+
+    private static float normalizeRotation(float value) {
+        while (value <= -180.0F) value += 360.0F;
+        while (value > 180.0F) value -= 360.0F;
+        return value;
+    }
+
+    private static String stripLegacyCodes(String value) {
+        if (value == null || value.indexOf('\u00a7') < 0) {
+            return value == null ? "" : value;
+        }
+        StringBuilder result = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            if (value.charAt(i) == '\u00a7' && i + 1 < value.length()) {
+                i++;
+                continue;
+            }
+            result.append(value.charAt(i));
+        }
+        return result.toString();
     }
 }

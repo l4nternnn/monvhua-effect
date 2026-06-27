@@ -881,7 +881,49 @@ public class BodyPartManager {
 		return player.getPos().add(forward.x, 1.5D, forward.z);
 	}
 
-	private static void writePoseValues(NbtCompound nbt, float[] poseValues) {
+	public static boolean updatePlacedCombinedDisplayPose(ServerPlayerEntity player, int entityId, String poseMode,
+			float[] poseValues, float[] bendValues, List<PlaceTrueSkeletalBodyC2SPacket.BonePose> trueSkeletalBones,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
+		if (!(player.getWorld().getEntityById(entityId) instanceof ItemDisplayEntity display)) {
+			player.sendMessage(Text.literal("Target body model was not found"), true);
+			return false;
+		}
+		ItemStack stack = display.getItemStack().copy();
+		if (!Identifier.of("monvhua", "combined_body").equals(stack.get(DataComponentTypes.ITEM_MODEL))) {
+			player.sendMessage(Text.literal("Target is not a combined body model"), true);
+			return false;
+		}
+		NbtComponent component = stack.get(DataComponentTypes.CUSTOM_DATA);
+		NbtCompound nbt = component != null ? component.copyNbt() : new NbtCompound();
+		clearPoseData(nbt);
+		if ("true_skeletal".equals(poseMode)) {
+			writeTrueSkeletalPoseValues(nbt, trueSkeletalBones);
+		} else {
+			writePoseValues(nbt, poseValues);
+			writeBendValues(nbt, bendValues);
+		}
+		writePlacementTransform(nbt, offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
+		stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
+		display.setItemStack(stack);
+		player.sendMessage(Text.literal("Updated placed body model pose"), true);
+		return true;
+	}
+
+	private static void clearPoseData(NbtCompound nbt) {
+		nbt.remove("body_pose_mode");
+		nbt.remove("true_skeletal_bones");
+		for (String part : new String[]{"head", "torso", "left_arm", "right_arm", "left_leg", "right_leg"}) {
+			nbt.remove("pose_" + part + "_pitch");
+			nbt.remove("pose_" + part + "_yaw");
+			nbt.remove("pose_" + part + "_roll");
+			nbt.remove("pose_" + part + "_scale");
+			nbt.remove("bend_" + part + "_pitch");
+			nbt.remove("bend_" + part + "_yaw");
+			nbt.remove("bend_" + part + "_roll");
+		}
+	}
+
+	public static void writePoseValues(NbtCompound nbt, float[] poseValues) {
 		if (poseValues == null || poseValues.length < PlacePosedBodyC2SPacket.ROTATION_VALUE_COUNT) {
 			return;
 		}
@@ -904,7 +946,7 @@ public class BodyPartManager {
 		}
 	}
 
-	private static void writeBendValues(NbtCompound nbt, float[] bendValues) {
+	public static void writeBendValues(NbtCompound nbt, float[] bendValues) {
 		if (bendValues == null || bendValues.length < PlacePosedBodyC2SPacket.BEND_VALUE_COUNT) {
 			return;
 		}
@@ -922,7 +964,7 @@ public class BodyPartManager {
 		nbt.putFloat("bend_" + part + "_roll", values[offset + 2]);
 	}
 
-	private static void writeTrueSkeletalPoseValues(NbtCompound nbt, List<PlaceTrueSkeletalBodyC2SPacket.BonePose> bones) {
+	public static void writeTrueSkeletalPoseValues(NbtCompound nbt, List<PlaceTrueSkeletalBodyC2SPacket.BonePose> bones) {
 		if (bones == null) {
 			return;
 		}
@@ -954,7 +996,7 @@ public class BodyPartManager {
 				|| modelScale != 1.0F;
 	}
 
-	private static void writePlacementTransform(NbtCompound nbt,
+	public static void writePlacementTransform(NbtCompound nbt,
 			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
 		nbt.putFloat("pose_model_offset_x", offsetX);
 		nbt.putFloat("pose_model_offset_y", offsetY);

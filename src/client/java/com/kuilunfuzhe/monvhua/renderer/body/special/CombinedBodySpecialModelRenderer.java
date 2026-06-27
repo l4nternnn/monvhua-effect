@@ -648,7 +648,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
                                float normalX, float normalY, float normalZ, int light) {
         int alpha = (color >>> 24) & 0xFF;
         vertices.vertex(matrix, x, y, z)
-                .color((color >>> 16) & 0xFF, (color >>> 8) & 0xFF, color & 0xFF, alpha == 0 ? 0 : Math.max(alpha, 240))
+                .color((color >>> 16) & 0xFF, (color >>> 8) & 0xFF, color & 0xFF, alpha)
                 .texture(0.0F, 0.0F)
                 .overlay(OverlayTexture.DEFAULT_UV)
                 .light(light == 0 ? LightmapTextureManager.MAX_LIGHT_COORDINATE : light)

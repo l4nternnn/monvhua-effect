@@ -12,6 +12,7 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public final class PaintOverlayPackets {
@@ -36,6 +37,7 @@ public final class PaintOverlayPackets {
         EditorModelPaintStrokeC2S.register();
         EditorPaperUseC2S.register();
         RestoreFaceC2S.register();
+        RestoreModelFaceC2S.register();
         ModelPaintStrokeC2S.register();
         FillPaintBucketC2S.register();
         RefillPaintBucketC2S.register();
@@ -578,6 +580,61 @@ public final class PaintOverlayPackets {
 
         private void write(RegistryByteBuf buf) {
             faceData.write(buf);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record RestoreModelFaceC2S(int entityId, String surface, Direction face, int[] pixels) implements CustomPayload {
+        public static final Id<RestoreModelFaceC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "restore_model_paint_face"));
+        public static final PacketCodec<RegistryByteBuf, RestoreModelFaceC2S> CODEC = PacketCodec.of(RestoreModelFaceC2S::write, RestoreModelFaceC2S::new);
+        private static final int MAX_MODEL_FACE_PIXELS = 4096;
+        private static boolean registered = false;
+
+        public RestoreModelFaceC2S {
+            surface = surface == null ? "" : surface;
+            pixels = pixels == null ? new int[0] : Arrays.copyOf(pixels, pixels.length);
+            if (pixels.length > MAX_MODEL_FACE_PIXELS) {
+                int[] clipped = new int[MAX_MODEL_FACE_PIXELS];
+                System.arraycopy(pixels, 0, clipped, 0, clipped.length);
+                pixels = clipped;
+            }
+        }
+
+        private RestoreModelFaceC2S(RegistryByteBuf buf) {
+            this(buf.readVarInt(), buf.readString(64), Direction.byIndex(buf.readVarInt()), readModelPixels(buf));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeVarInt(entityId);
+            buf.writeString(surface);
+            buf.writeVarInt(face.getIndex());
+            buf.writeVarInt(Math.min(pixels.length, MAX_MODEL_FACE_PIXELS));
+            for (int i = 0; i < Math.min(pixels.length, MAX_MODEL_FACE_PIXELS); i++) {
+                buf.writeInt(pixels[i]);
+            }
+        }
+
+        private static int[] readModelPixels(RegistryByteBuf buf) {
+            int length = Math.max(0, buf.readVarInt());
+            int[] pixels = new int[Math.min(length, MAX_MODEL_FACE_PIXELS)];
+            for (int i = 0; i < length; i++) {
+                int pixel = buf.readInt();
+                if (i < pixels.length) {
+                    pixels[i] = pixel;
+                }
+            }
+            return pixels;
         }
 
         public static void register() {
