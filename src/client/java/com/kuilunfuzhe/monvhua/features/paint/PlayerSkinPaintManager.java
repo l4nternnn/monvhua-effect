@@ -30,7 +30,9 @@ import org.joml.Vector3d;
 import org.joml.Vector4d;
 
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -77,9 +79,10 @@ public final class PlayerSkinPaintManager {
         return state != null && state.hasModifications();
     }
 
-    public static void tickWaterClear(MinecraftClient client) {
+    public static List<Integer> tickWaterClear(MinecraftClient client) {
+        List<Integer> cleared = new ArrayList<>();
         if (client == null || client.world == null || PAINT_STATES.isEmpty()) {
-            return;
+            return cleared;
         }
         for (AbstractClientPlayerEntity player : client.world.getPlayers()) {
             if (!isPlayerPainted(player.getUuid())) {
@@ -87,8 +90,10 @@ public final class PlayerSkinPaintManager {
             }
             if (player.isTouchingWater() || player.isSubmergedInWater()) {
                 resetTexture(player);
+                cleared.add(player.getId());
             }
         }
+        return cleared;
     }
 
     // ─── Raycasting ────────────────────────────────────────────────────────

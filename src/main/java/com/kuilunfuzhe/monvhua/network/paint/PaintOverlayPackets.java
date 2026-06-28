@@ -24,6 +24,9 @@ public final class PaintOverlayPackets {
     public static void registerS2C() {
         FullSyncS2C.register();
         FaceUpdateS2C.register();
+        PlayerPaintStrokeS2C.register();
+        PlayerPaintDataS2C.register();
+        ClearPlayerPaintS2C.register();
         PaintBucketCarryS2C.register();
         PaintConfigS2C.register();
     }
@@ -39,6 +42,8 @@ public final class PaintOverlayPackets {
         RestoreFaceC2S.register();
         RestoreModelFaceC2S.register();
         ModelPaintStrokeC2S.register();
+        PlayerPaintStrokeC2S.register();
+        ClearPlayerPaintC2S.register();
         FillPaintBucketC2S.register();
         RefillPaintBucketC2S.register();
         LoadBrushFromBucketC2S.register();
@@ -292,6 +297,118 @@ public final class PaintOverlayPackets {
         public static void register() {
             if (!registered) {
                 PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record PlayerPaintStrokeS2C(int entityId, String surface, Direction face, int x, int y,
+                                       int color, int radius, boolean clearFace) implements CustomPayload {
+        public static final Id<PlayerPaintStrokeS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "player_paint_stroke_sync"));
+        public static final PacketCodec<RegistryByteBuf, PlayerPaintStrokeS2C> CODEC = PacketCodec.of(PlayerPaintStrokeS2C::write, PlayerPaintStrokeS2C::new);
+        private static boolean registered = false;
+
+        public PlayerPaintStrokeS2C {
+            surface = surface == null ? "" : surface;
+            radius = MathHelper.clamp(radius, 1, 8);
+        }
+
+        private PlayerPaintStrokeS2C(RegistryByteBuf buf) {
+            this(buf.readVarInt(), buf.readString(64), Direction.byIndex(buf.readVarInt()),
+                    buf.readVarInt(), buf.readVarInt(), buf.readInt(), buf.readVarInt(), buf.readBoolean());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeVarInt(entityId);
+            buf.writeString(surface);
+            buf.writeVarInt(face.getIndex());
+            buf.writeVarInt(x);
+            buf.writeVarInt(y);
+            buf.writeInt(color);
+            buf.writeVarInt(radius);
+            buf.writeBoolean(clearFace);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record PlayerPaintDataS2C(int entityId, List<PlayerPaintStrokeS2C> strokes) implements CustomPayload {
+        private static final int MAX_PLAYER_PAINT_STROKES = 2048;
+        public static final Id<PlayerPaintDataS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "player_paint_data_sync"));
+        public static final PacketCodec<RegistryByteBuf, PlayerPaintDataS2C> CODEC = PacketCodec.of(PlayerPaintDataS2C::write, PlayerPaintDataS2C::new);
+        private static boolean registered = false;
+
+        public PlayerPaintDataS2C {
+            strokes = List.copyOf(strokes.size() > MAX_PLAYER_PAINT_STROKES
+                    ? strokes.subList(strokes.size() - MAX_PLAYER_PAINT_STROKES, strokes.size())
+                    : strokes);
+        }
+
+        private PlayerPaintDataS2C(RegistryByteBuf buf) {
+            this(buf.readVarInt(), readPlayerPaintStrokes(buf));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeVarInt(entityId);
+            buf.writeVarInt(Math.min(strokes.size(), MAX_PLAYER_PAINT_STROKES));
+            for (int i = 0; i < Math.min(strokes.size(), MAX_PLAYER_PAINT_STROKES); i++) {
+                strokes.get(i).write(buf);
+            }
+        }
+
+        private static List<PlayerPaintStrokeS2C> readPlayerPaintStrokes(RegistryByteBuf buf) {
+            int count = Math.min(buf.readVarInt(), MAX_PLAYER_PAINT_STROKES);
+            List<PlayerPaintStrokeS2C> strokes = new ArrayList<>(count);
+            for (int i = 0; i < count; i++) {
+                strokes.add(new PlayerPaintStrokeS2C(buf));
+            }
+            return strokes;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record ClearPlayerPaintS2C(int entityId) implements CustomPayload {
+        public static final Id<ClearPlayerPaintS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "clear_player_paint_sync"));
+        public static final PacketCodec<RegistryByteBuf, ClearPlayerPaintS2C> CODEC = PacketCodec.of(ClearPlayerPaintS2C::write, ClearPlayerPaintS2C::new);
+        private static boolean registered = false;
+
+        private ClearPlayerPaintS2C(RegistryByteBuf buf) {
+            this(buf.readVarInt());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeVarInt(entityId);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
                 registered = true;
             }
         }
@@ -670,6 +787,68 @@ public final class PaintOverlayPackets {
             buf.writeVarInt(x);
             buf.writeVarInt(y);
             buf.writeBoolean(clearFace);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record PlayerPaintStrokeC2S(int entityId, String surface, Direction face, int x, int y, boolean clearFace) implements CustomPayload {
+        public static final Id<PlayerPaintStrokeC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "player_paint_stroke"));
+        public static final PacketCodec<RegistryByteBuf, PlayerPaintStrokeC2S> CODEC = PacketCodec.of(PlayerPaintStrokeC2S::write, PlayerPaintStrokeC2S::new);
+        private static boolean registered = false;
+
+        public PlayerPaintStrokeC2S {
+            surface = surface == null ? "" : surface;
+        }
+
+        private PlayerPaintStrokeC2S(RegistryByteBuf buf) {
+            this(buf.readVarInt(), buf.readString(64), Direction.byIndex(buf.readVarInt()),
+                    buf.readVarInt(), buf.readVarInt(), buf.readBoolean());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeVarInt(entityId);
+            buf.writeString(surface);
+            buf.writeVarInt(face.getIndex());
+            buf.writeVarInt(x);
+            buf.writeVarInt(y);
+            buf.writeBoolean(clearFace);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record ClearPlayerPaintC2S(int entityId) implements CustomPayload {
+        public static final Id<ClearPlayerPaintC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "clear_player_paint"));
+        public static final PacketCodec<RegistryByteBuf, ClearPlayerPaintC2S> CODEC = PacketCodec.of(ClearPlayerPaintC2S::write, ClearPlayerPaintC2S::new);
+        private static boolean registered = false;
+
+        private ClearPlayerPaintC2S(RegistryByteBuf buf) {
+            this(buf.readVarInt());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeVarInt(entityId);
         }
 
         public static void register() {

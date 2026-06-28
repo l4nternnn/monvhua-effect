@@ -5,6 +5,8 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
+import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
@@ -60,6 +62,7 @@ public final class PlayerPaintCommand {
                 continue;
             }
             PlayerSkinPaintManager.resetTexture(target);
+            SafeClientNetworking.send(new PaintOverlayPackets.ClearPlayerPaintC2S(target.getId()));
             cleared++;
         }
 

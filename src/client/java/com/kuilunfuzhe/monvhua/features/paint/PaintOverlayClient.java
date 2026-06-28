@@ -118,7 +118,9 @@ public final class PaintOverlayClient {
             return true;
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            PlayerSkinPaintManager.tickWaterClear(client);
+            for (int entityId : PlayerSkinPaintManager.tickWaterClear(client)) {
+                SafeClientNetworking.send(new PaintOverlayPackets.ClearPlayerPaintC2S(entityId));
+            }
             if (!scrollCallbackRegistered && client.getWindow() != null) {
                 registerScrollCallback(client);
             }
@@ -162,6 +164,12 @@ public final class PaintOverlayClient {
                 context.client().execute(() -> applyFullSync(packet.faces())));
         ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.FaceUpdateS2C.ID, (packet, context) ->
                 context.client().execute(() -> applyFace(packet.faceData())));
+        ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PlayerPaintStrokeS2C.ID, (packet, context) ->
+                context.client().execute(() -> applyPlayerPaint(packet)));
+        ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PlayerPaintDataS2C.ID, (packet, context) ->
+                context.client().execute(() -> applyPlayerPaintData(packet)));
+        ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.ClearPlayerPaintS2C.ID, (packet, context) ->
+                context.client().execute(() -> clearPlayerPaint(packet.entityId())));
         ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PaintConfigS2C.ID, (packet, context) ->
                 context.client().execute(() -> {
                     PaintConfig config = PaintConfig.fromJson(packet.json());
@@ -590,7 +598,12 @@ public final class PaintOverlayClient {
             repeatedStrokeTicks = 0;
             Entity target = client.world.getEntityById(playerHit.entityId());
             if (target instanceof PlayerEntity targetPlayer) {
-                PlayerSkinPaintManager.paintAt(targetPlayer, playerHit.surface(), playerHit.face(), playerHit.x(), playerHit.y(), color, radius, clear);
+                boolean changed = PlayerSkinPaintManager.paintAt(targetPlayer, playerHit.surface(), playerHit.face(),
+                        playerHit.x(), playerHit.y(), color, radius, clear);
+                if (changed) {
+                    SafeClientNetworking.send(new PaintOverlayPackets.PlayerPaintStrokeC2S(
+                            playerHit.entityId(), playerHit.surface(), playerHit.face(), playerHit.x(), playerHit.y(), clear));
+                }
             }
             return;
         }
@@ -762,6 +775,8 @@ public final class PaintOverlayClient {
                 if (changed) {
                     int[] after = PlayerSkinPaintManager.copyFacePixels(targetPlayer, playerHit.surface(), playerHit.face());
                     recordEditorPlayerFaceUpdate(historyKey, before, after);
+                    SafeClientNetworking.send(new PaintOverlayPackets.PlayerPaintStrokeC2S(
+                            playerHit.entityId(), playerHit.surface(), playerHit.face(), playerHit.x(), playerHit.y(), clear));
                 }
             }
             return;
@@ -1623,6 +1638,45 @@ public final class PaintOverlayClient {
         }
         for (ChunkPos chunkPos : dirtyChunks) {
             rebuildChunkMesh(chunkPos);
+        }
+    }
+
+    private static void applyPlayerPaint(PaintOverlayPackets.PlayerPaintStrokeS2C packet) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.world == null) {
+            return;
+        }
+        Entity target = client.world.getEntityById(packet.entityId());
+        if (target instanceof PlayerEntity player) {
+            PlayerSkinPaintManager.paintAt(player, packet.surface(), packet.face(), packet.x(), packet.y(),
+                    packet.color(), packet.radius(), packet.clearFace());
+        }
+    }
+
+    private static void applyPlayerPaintData(PaintOverlayPackets.PlayerPaintDataS2C packet) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.world == null) {
+            return;
+        }
+        Entity target = client.world.getEntityById(packet.entityId());
+        if (!(target instanceof PlayerEntity player)) {
+            return;
+        }
+        PlayerSkinPaintManager.resetTexture(player);
+        for (PaintOverlayPackets.PlayerPaintStrokeS2C stroke : packet.strokes()) {
+            PlayerSkinPaintManager.paintAt(player, stroke.surface(), stroke.face(), stroke.x(), stroke.y(),
+                    stroke.color(), stroke.radius(), stroke.clearFace());
+        }
+    }
+
+    private static void clearPlayerPaint(int entityId) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.world == null) {
+            return;
+        }
+        Entity target = client.world.getEntityById(entityId);
+        if (target instanceof PlayerEntity player) {
+            PlayerSkinPaintManager.resetTexture(player);
         }
     }
 
