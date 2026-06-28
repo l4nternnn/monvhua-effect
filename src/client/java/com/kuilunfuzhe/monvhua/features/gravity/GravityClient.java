@@ -25,6 +25,8 @@ import org.lwjgl.glfw.GLFWScrollCallbackI;
 public final class GravityClient {
     private static final double MULTIPLIER_STEP = 0.1D;
     private static double selectedGravity = GravityMagic.DEFAULT_GRAVITY;
+    private static double energy = 100.0D;
+    private static double maxEnergy = 100.0D;
     private static GLFWScrollCallbackI previousScrollCallback;
     private static boolean scrollCallbackRegistered = false;
 
@@ -39,6 +41,7 @@ public final class GravityClient {
             }
             GravityMagic.tickClientSyncedAreaGravity();
             GravityMagic.resetInvertedPlayerIfInactive(client.player);
+            GravityExtractPoseClientState.tick();
             GravityDebugClient.tick(client);
         });
         HudRenderCallback.EVENT.register(GravityClient::renderHud);
@@ -107,6 +110,13 @@ public final class GravityClient {
                 }
             });
         });
+        ClientPlayNetworking.registerGlobalReceiver(GravityPackets.EnergyS2C.ID, (packet, context) ->
+                context.client().execute(() -> {
+                    energy = packet.energy();
+                    maxEnergy = Math.max(1.0D, packet.maxEnergy());
+                }));
+        ClientPlayNetworking.registerGlobalReceiver(GravityPackets.ExtractPoseS2C.ID, (packet, context) ->
+                context.client().execute(() -> GravityExtractPoseClientState.set(packet.entityId(), packet.ticks())));
     }
 
     private static void scheduleAreaRerender(MinecraftClient client, net.minecraft.util.math.BlockPos center, int extent) {
@@ -218,12 +228,18 @@ public final class GravityClient {
         String line3 = "Net = " + GravityMagic.formatGravityMultiplier(netForce.length());
         int width = Math.max(client.textRenderer.getWidth(line1),
                 Math.max(client.textRenderer.getWidth(line2), client.textRenderer.getWidth(line3))) + 10;
-        int height = 34;
+        int height = 46;
 
         context.fill(x, y, x + width, y + height, 0x66000000);
         context.drawText(client.textRenderer, Text.literal(line1), x + 5, y + 4, 0xFFFFFFFF, false);
         context.drawText(client.textRenderer, Text.literal(line2), x + 5, y + 14, 0xFF88CCFF, false);
         context.drawText(client.textRenderer, Text.literal(line3), x + 5, y + 24, 0xFFB6E37A, false);
+        int barX = x + 5;
+        int barY = y + 36;
+        int barW = width - 10;
+        int fillW = (int) Math.round(barW * Math.clamp(energy / maxEnergy, 0.0D, 1.0D));
+        context.fill(barX, barY, barX + barW, barY + 5, 0xAA1A2028);
+        context.fill(barX, barY, barX + fillW, barY + 5, 0xFF66CCFF);
     }
 
     private static String describeTarget(MinecraftClient client) {

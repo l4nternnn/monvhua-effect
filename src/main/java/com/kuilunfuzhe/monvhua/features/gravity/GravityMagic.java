@@ -33,6 +33,7 @@ import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.particle.ParticleTypes;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.MinecraftServer;
@@ -70,6 +71,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -128,8 +131,19 @@ public final class GravityMagic {
     private static final int THROW_DAMAGE_COOLDOWN_TICKS = 10;
     private static final int SELF_FORCE_DAMAGE_BLOCK_COUNT = 2;
     private static final double SELF_FORCE_DAMAGE_REFERENCE_HARDNESS = 1.5D;
+    private static final double SELF_FORCE_MAX_SPEED = 1.85D;
+    private static final double SELF_FORCE_HORIZONTAL_DAMPING = 0.985D;
+    private static final double MAX_GRAVITY_ENERGY = 100.0D;
+    private static final int ENERGY_SYNC_INTERVAL_TICKS = 10;
     private static final Map<UUID, LaunchMode> PLAYER_MODES = new ConcurrentHashMap<>();
     private static final Map<UUID, Double> PLAYER_GRAVITY = new ConcurrentHashMap<>();
+    private static final Map<UUID, Double> PLAYER_ENERGY = new ConcurrentHashMap<>();
+    private static final Map<UUID, Integer> ENERGY_SYNC_TICKS = new ConcurrentHashMap<>();
+    private static final Map<UUID, ExtractingBlockGroup> EXTRACTING_BLOCK_GROUPS = new ConcurrentHashMap<>();
+    private static final Map<UUID, SelfForceMotion> SELF_FORCE_MOTIONS = new ConcurrentHashMap<>();
+    private static final Map<UUID, Integer> SELF_FORCE_RECOVERY_TICKS = new ConcurrentHashMap<>();
+    private static final Map<UUID, Integer> CLIENT_DIRECTED_RECOVERY_TICKS = new ConcurrentHashMap<>();
+    private static final Set<UUID> THROWN_GROUP_IMPACTS = ConcurrentHashMap.newKeySet();
     private static final Map<UUID, DirectedEntityGravity> ENTITY_GRAVITY = new ConcurrentHashMap<>();
     private static final Map<UUID, HeldBlockGroup> HELD_BLOCK_GROUPS = new ConcurrentHashMap<>();
     private static final Map<UUID, ThrownBlockData> THROWN_BLOCKS = new ConcurrentHashMap<>();
@@ -213,10 +227,46 @@ public final class GravityMagic {
         }
     }
 
+    private record SelfForceMotion(RegistryKey<World> world, Vec3d direction, double acceleration, int ticks) {
+        private SelfForceMotion {
+            direction = normalizedDirection(direction);
+            acceleration = Math.max(0.0D, acceleration);
+            ticks = Math.max(0, ticks);
+        }
+
+        private SelfForceMotion ticked() {
+            return new SelfForceMotion(world, direction, acceleration, ticks - 1);
+        }
+    }
+
     private record HeldBlock(GravityBlockEntity entity, Vec3d offset, double massKg, double hardness) {
     }
 
-    private record SelectedBlock(BlockState state, double massKg, double hardness) {
+    private record SelectedBlock(BlockPos pos, BlockState state, double massKg, double hardness) {
+    }
+
+    private record ExtractingBlockPlan(BlockPos sourcePos, BlockState sourceState, Vec3d animationStart, BlockState animationState, Vec3d offset, Vec3d target,
+                                       double massKg, double hardness, int spawnTick) {
+    }
+
+    private static final class ExtractingBlockGroup {
+        private final RegistryKey<World> world;
+        private final List<HeldBlock> blocks;
+        private final List<ExtractingBlockPlan> pendingBlocks;
+        private final double massKg;
+        private final int totalTicks;
+        private final int flyTicks;
+        private int age;
+
+        private ExtractingBlockGroup(RegistryKey<World> world, List<ExtractingBlockPlan> pendingBlocks,
+                                     double massKg, int totalTicks) {
+            this.world = world;
+            this.blocks = new ArrayList<>();
+            this.pendingBlocks = new ArrayList<>(pendingBlocks);
+            this.massKg = Math.max(0.0D, massKg);
+            this.totalTicks = Math.max(1, totalTicks);
+            this.flyTicks = Math.max(1, this.totalTicks / 5);
+        }
     }
 
     private static final class HeldBlockGroup {
@@ -313,6 +363,10 @@ public final class GravityMagic {
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             ensureServerAreasLoaded(server);
+            tickSelfForceMotions(server);
+            tickSelfForceRecovery(server);
+            tickPlayerGravityEnergy(server);
+            tickExtractingBlockGroups(server);
             tickHeldBlockGroups(server);
             tickThrownDamageCooldowns();
             for (ServerWorld world : server.getWorlds()) {
@@ -325,7 +379,7 @@ public final class GravityMagic {
 
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
-            clearHeldBlockGroup(player.getUuid(), true);
+            cleanupPlayerGravity(player, true);
             DirectedEntityGravity directed = ENTITY_GRAVITY.remove(player.getUuid());
             if (directed != null) {
                 finishDirectedEntityGravity(player, directed);
@@ -339,6 +393,7 @@ public final class GravityMagic {
 
     public static void syncConfigTo(ServerPlayerEntity player) {
         ServerPlayNetworking.send(player, new GravityPackets.ConfigS2C(GravityConfig.getInstance().toJson()));
+        syncEnergyTo(player);
     }
 
     public static LaunchMode toggleMode(ServerPlayerEntity player) {
@@ -385,7 +440,7 @@ public final class GravityMagic {
             return;
         }
         if (player.getEyePos().squaredDistanceTo(center.toCenterPos()) > LIGHTEN_ENTITY_REACH * LIGHTEN_ENTITY_REACH) {
-            player.sendMessage(Text.literal("\u00a7c[Gravity] Block is too far"), true);
+            player.sendMessage(Text.literal("\u00a7c距离 地面太远了"), true);
             return;
         }
 
@@ -411,7 +466,7 @@ public final class GravityMagic {
                     }
 
                     double hardness = state.getHardness(world, pos);
-                    candidates.add(new SelectedBlock(state, hardness * 10.0D, hardness));
+                    candidates.add(new SelectedBlock(pos, state, hardness * 10.0D, hardness));
                 }
             }
         }
@@ -421,50 +476,39 @@ public final class GravityMagic {
             return;
         }
 
-        clearHeldBlockGroup(player.getUuid(), true);
-        List<HeldBlock> selected = new ArrayList<>(candidates.size());
+        int extractTicks = config.getBlockExtractTicks(stage);
+        if (!hasEnergy(player)) {
+            player.sendMessage(Text.literal("\u00a7c[重力魔法] 没有足够的能量"), true);
+            return;
+        }
+
+        cleanupPlayerGravity(player, true);
         List<Vec3d> sphereOffsets = sphereOffsets(candidates.size());
+        List<Integer> extractionDelays = stagedExtractionDelays(candidates.size(), extractTicks);
         Vec3d anchor = heldBlockAnchor(player, sphereRadiusForCount(candidates.size()));
+        List<SelectedBlock> animationSources = animationSurfaceSources(world, center, candidates, 30);
         double totalMassKg = 0.0D;
+        List<ExtractingBlockPlan> plans = new ArrayList<>(candidates.size());
         for (int i = 0; i < candidates.size(); i++) {
             SelectedBlock candidate = candidates.get(i);
+            SelectedBlock animationSource = animationSources.get(i % animationSources.size());
             Vec3d offset = sphereOffsets.get(i);
-            Vec3d spawnPos = anchor.add(offset);
-            GravityBlockEntity block = new GravityBlockEntity(
-                    world,
-                    spawnPos.x,
-                    spawnPos.y,
-                    spawnPos.z,
-                    candidate.state(),
-                    Vec3d.ZERO,
-                    0.0D
-            );
-            block.setGravityY(0.0D);
-            block.setNoGravity(true);
-            block.setTemporary(HELD_BLOCK_LIFETIME_TICKS);
-            block.setPlaceOrDropOnSettle(false);
-            block.setSlowFreeSpin(
-                    (float) signedAngularVelocity(world, 0.18D, 0.58D),
-                    (float) signedAngularVelocity(world, 0.22D, 0.66D),
-                    (float) signedAngularVelocity(world, 0.16D, 0.50D)
-            );
-            if (!world.spawnEntity(block)) {
-                continue;
-            }
-            selected.add(new HeldBlock(block, offset, candidate.massKg(), candidate.hardness()));
+            Vec3d targetPos = anchor.add(offset);
+            plans.add(new ExtractingBlockPlan(candidate.pos(), candidate.state(),
+                    Vec3d.ofCenter(animationSource.pos()), animationSource.state(), offset, targetPos,
+                    candidate.massKg(), candidate.hardness(), extractionDelays.get(i)));
             totalMassKg += candidate.massKg();
         }
 
-        if (selected.isEmpty()) {
+        if (plans.isEmpty()) {
             player.sendMessage(Text.literal("\u00a7c[Gravity] Could not create block group"), true);
             return;
         }
 
-        HeldBlockGroup group = new HeldBlockGroup(world.getRegistryKey(), selected, totalMassKg, world);
-        HELD_BLOCK_GROUPS.put(player.getUuid(), group);
-        player.sendMessage(Text.literal("\u00a7b[Gravity] Selected " + selected.size()
+        EXTRACTING_BLOCK_GROUPS.put(player.getUuid(), new ExtractingBlockGroup(world.getRegistryKey(), plans, totalMassKg, extractTicks));
+        syncExtractPose(player, extractTicks);
+        player.sendMessage(Text.literal("\u00a7b[Gravity] Gathering " + plans.size()
                 + " block(s), stage=" + stage
-                + ", avgHard=" + format(group.averageHardness)
                 + ", mass=" + format(totalMassKg) + "kg"), true);
     }
 
@@ -532,10 +576,11 @@ public final class GravityMagic {
             return false;
         }
         Vec3d direction = normalizedDirection(player.getRotationVec(1.0F));
-        if (!lightenEntity(player, player, direction)) {
+        if (!hasEnergy(player)) {
+            player.sendMessage(Text.literal("\u00a7c[Gravity] 没有足够能量"), true);
             return false;
         }
-        damageSelfForce(player, direction);
+        startSelfForceMotion(player, direction);
         return true;
     }
 
@@ -560,6 +605,69 @@ public final class GravityMagic {
 
     private static Vec3d heldBlockAnchor(ServerPlayerEntity player, double sphereRadius) {
         return new Vec3d(player.getX(), player.getY() + player.getHeight() + HELD_BLOCK_BASE_HEIGHT_OFFSET + Math.max(0.0D, sphereRadius), player.getZ());
+    }
+
+    private static List<SelectedBlock> animationSurfaceSources(ServerWorld world, BlockPos center, List<SelectedBlock> selected, int radius) {
+        List<SelectedBlock> pool = new ArrayList<>(selected.size());
+        Set<BlockPos> usedPositions = new HashSet<>();
+        for (SelectedBlock block : selected) {
+            if (isWorldLitSurface(world, block.pos(), block.state()) && usedPositions.add(block.pos())) {
+                pool.add(block);
+            }
+        }
+
+        List<SelectedBlock> surfaceCandidates = new ArrayList<>();
+        int radiusSq = radius * radius;
+        BlockPos.Mutable mutable = new BlockPos.Mutable();
+        for (int x = -radius; x <= radius; x++) {
+            for (int z = -radius; z <= radius; z++) {
+                if (x * x + z * z > radiusSq) {
+                    continue;
+                }
+                int worldX = center.getX() + x;
+                int worldZ = center.getZ() + z;
+                int topY = world.getTopY(net.minecraft.world.Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, worldX, worldZ) - 1;
+                if (topY < world.getBottomY()) {
+                    continue;
+                }
+                mutable.set(worldX, topY, worldZ);
+                BlockPos pos = mutable.toImmutable();
+                BlockState state = world.getBlockState(pos);
+                if (state.isAir() || !isWorldLitSurface(world, pos, state) || !canMove(world, pos, state)) {
+                    continue;
+                }
+                if (!usedPositions.add(pos)) {
+                    continue;
+                }
+                double hardness = Math.max(0.1D, state.getHardness(world, pos));
+                surfaceCandidates.add(new SelectedBlock(pos, state, hardness * 10.0D, hardness));
+            }
+        }
+        for (int i = surfaceCandidates.size() - 1; i > 0; i--) {
+            int j = world.random.nextInt(i + 1);
+            SelectedBlock swap = surfaceCandidates.get(i);
+            surfaceCandidates.set(i, surfaceCandidates.get(j));
+            surfaceCandidates.set(j, swap);
+        }
+        pool.addAll(surfaceCandidates);
+
+        if (pool.isEmpty()) {
+            return selected;
+        }
+
+        List<SelectedBlock> result = new ArrayList<>(selected.size());
+        for (int i = 0; i < selected.size(); i++) {
+            result.add(pool.get(i % pool.size()));
+        }
+        return result;
+    }
+
+    private static boolean isWorldLitSurface(ServerWorld world, BlockPos pos, BlockState state) {
+        if (state.isAir()) {
+            return false;
+        }
+        BlockPos above = pos.up();
+        return world.isSkyVisible(above) || world.getLightLevel(above) >= 12;
     }
 
     private static double blockMassKg(ServerWorld world, BlockPos pos, BlockState state) {
@@ -613,7 +721,7 @@ public final class GravityMagic {
 
     public static boolean lightenLookedAtEntity(ServerPlayerEntity player) {
         if (player.isSneaking()) {
-            return lightenEntity(player, player, player.getRotationVec(1.0F));
+            return applySelfGravityForce(player);
         }
         Entity target = findLookedAtEntity(player, LIGHTEN_ENTITY_REACH);
         return target != null && lightenEntity(player, target);
@@ -633,7 +741,7 @@ public final class GravityMagic {
         Vec3d netForce = previewComposedForce(entity, normalizedDirection, gravity);
         int ticks = GravityConfig.getInstance().getForceDurationTicks();
         setDirectedEntityGravity(entity, normalizedDirection, gravity, ticks);
-        player.sendMessage(Text.literal("\u00a7b[Gravity] Force -> " + entity.getName().getString()
+        player.sendMessage(Text.literal("\u00a7b[Gravity] 方向 -> " + entity.getName().getString()
                 + " F=" + formatGravityMultiplier(gravity)
                 + " net=" + formatGravityMultiplier(netForce.length())
                 + " ticks=" + ticks), true);
@@ -685,8 +793,16 @@ public final class GravityMagic {
             if (removed != null) {
                 finishDirectedEntityGravity(entity, removed);
             }
+            CLIENT_DIRECTED_RECOVERY_TICKS.put(entity.getUuid(), 20);
+            CLIENT_INVERTED_PLAYER_STATES.remove(entity.getUuid());
+            entity.setNoGravity(false);
+            Vec3d velocity = entity.getVelocity();
+            if (velocity.y > -0.04D) {
+                entity.setVelocity(velocity.x * 0.35D, -0.04D, velocity.z * 0.35D);
+            }
             return;
         }
+        CLIENT_DIRECTED_RECOVERY_TICKS.remove(entity.getUuid());
         DirectedEntityGravity previous = ENTITY_GRAVITY.get(entity.getUuid());
         boolean previousNoGravity = previous == null ? entity.hasNoGravity() : previous.previousNoGravity();
         DirectedForce force = new DirectedForce(direction, acceleration, ticks);
@@ -892,6 +1008,11 @@ public final class GravityMagic {
     private static void finishDirectedEntityGravity(Entity entity, DirectedEntityGravity directed) {
         entity.setNoGravity(directed.previousNoGravity());
         entity.fallDistance = 0.0F;
+        if (entity instanceof ServerPlayerEntity player) {
+            if (!directed.previousNoGravity()) {
+                beginSelfForceRecovery(player);
+            }
+        }
         syncClearDirectedEntityGravity(entity);
     }
 
@@ -909,7 +1030,7 @@ public final class GravityMagic {
             if (throwHeldBlocks(serverPlayer)) {
                 return ActionResult.SUCCESS_SERVER;
             }
-            serverPlayer.sendMessage(Text.literal("\u00a7c[Gravity] Ctrl + middle click a block first"), true);
+            serverPlayer.sendMessage(Text.literal("\u00a7c[Gravity] Ctrl + 中键选中方块"), true);
         }
         return ActionResult.FAIL;
     }
@@ -968,7 +1089,7 @@ public final class GravityMagic {
             player.sendMessage(Text.literal("\u00a7b[Gravity] Launched " + launched + " block(s) "
                     + displayName(mode) + " g=" + formatGravityMultiplier(gravity)), true);
         } else {
-            player.sendMessage(Text.literal("\u00a7c[Gravity] No movable blocks"), true);
+            player.sendMessage(Text.literal("\u00a7c[Gravity]无可挪动方块"), true);
         }
         return launched;
     }
@@ -1452,6 +1573,210 @@ public final class GravityMagic {
         return new Vec3d(Math.cos(yawRad) * RIGHT_SPEED, 0.08D, Math.sin(yawRad) * RIGHT_SPEED);
     }
 
+    private static void startSelfForceMotion(ServerPlayerEntity player, Vec3d direction) {
+        UUID uuid = player.getUuid();
+        DirectedEntityGravity directed = ENTITY_GRAVITY.remove(uuid);
+        if (directed != null) {
+            finishDirectedEntityGravity(player, directed);
+        }
+        SELF_FORCE_RECOVERY_TICKS.remove(uuid);
+        SERVER_INVERTED_PLAYER_STATES.remove(uuid);
+        player.setNoGravity(false);
+        double force = getSelectedGravity(player);
+        int ticks = GravityConfig.getInstance().getForceDurationTicks();
+        SELF_FORCE_MOTIONS.put(uuid, new SelfForceMotion(player.getWorld().getRegistryKey(), direction, force, ticks));
+        syncClearDirectedEntityGravity(player);
+        player.sendMessage(Text.literal("\u00a7b[Gravity] Self force F=" + formatGravityMultiplier(force)), true);
+    }
+
+    private static void tickSelfForceMotions(MinecraftServer server) {
+        for (Map.Entry<UUID, SelfForceMotion> entry : SELF_FORCE_MOTIONS.entrySet()) {
+            UUID uuid = entry.getKey();
+            SelfForceMotion motion = entry.getValue();
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+            if (player == null || !player.isAlive() || motion.ticks() <= 0
+                    || !motion.world().equals(player.getWorld().getRegistryKey()) || !hasEnergy(player)) {
+                SELF_FORCE_MOTIONS.remove(uuid, motion);
+                continue;
+            }
+
+            player.setNoGravity(false);
+            Vec3d velocity = player.getVelocity().add(motion.direction().multiply(motion.acceleration()));
+            velocity = clampSpeed(velocity, SELF_FORCE_MAX_SPEED);
+            velocity = new Vec3d(velocity.x * SELF_FORCE_HORIZONTAL_DAMPING, velocity.y, velocity.z * SELF_FORCE_HORIZONTAL_DAMPING);
+            player.setVelocity(velocity);
+            player.velocityModified = true;
+            player.fallDistance = 0.0F;
+
+            SelfForceMotion ticked = motion.ticked();
+            if (ticked.ticks() <= 0) {
+                SELF_FORCE_MOTIONS.remove(uuid, motion);
+            } else {
+                SELF_FORCE_MOTIONS.replace(uuid, motion, ticked);
+            }
+        }
+    }
+
+    private static void tickPlayerGravityEnergy(MinecraftServer server) {
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            UUID uuid = player.getUuid();
+            double energy = getEnergy(player);
+            int stage = gravityStage(player);
+            GravityConfig config = GravityConfig.getInstance();
+            boolean selfForceActive = SELF_FORCE_MOTIONS.containsKey(uuid);
+            boolean extractingActive = EXTRACTING_BLOCK_GROUPS.containsKey(uuid);
+            boolean heldActive = HELD_BLOCK_GROUPS.containsKey(uuid);
+            double drain = 0.0D;
+            if (selfForceActive) {
+                drain += config.getSelfForceDrain(stage) / 20.0D;
+            }
+            if (extractingActive) {
+                drain += config.getBlockExtractDrain(stage) / 20.0D;
+            }
+            if (heldActive) {
+                drain += config.getBlockHoldDrain(stage) / 20.0D;
+            }
+            double regen = drain > 0.0D ? 0.0D : GravityConfig.getInstance().getEnergyRegen(stage) / 20.0D;
+            double next = Math.clamp(energy + regen - drain, 0.0D, MAX_GRAVITY_ENERGY);
+            PLAYER_ENERGY.put(uuid, next);
+            if (drain > 0.0D && next <= 0.0D) {
+                DirectedEntityGravity directed = ENTITY_GRAVITY.remove(uuid);
+                if (directed != null) {
+                    finishDirectedEntityGravity(player, directed);
+                }
+                SELF_FORCE_MOTIONS.remove(uuid);
+                clearExtractingBlockGroup(uuid, true);
+                clearHeldBlockGroup(uuid, true);
+                syncExtractPose(player, 0);
+                player.sendMessage(Text.literal("\u00a7c[Gravity] Energy depleted"), true);
+            }
+            int syncTicks = ENERGY_SYNC_TICKS.merge(uuid, 1, Integer::sum);
+            if (syncTicks >= ENERGY_SYNC_INTERVAL_TICKS || Math.abs(next - energy) > 0.5D) {
+                ENERGY_SYNC_TICKS.put(uuid, 0);
+                syncEnergyTo(player);
+            }
+        }
+    }
+
+    private static void beginSelfForceRecovery(ServerPlayerEntity player) {
+        if (player == null) {
+            return;
+        }
+        UUID uuid = player.getUuid();
+        SELF_FORCE_RECOVERY_TICKS.put(uuid, 80);
+        SERVER_INVERTED_PLAYER_STATES.remove(uuid);
+        player.setNoGravity(false);
+        player.fallDistance = 0.0F;
+        Vec3d velocity = player.getVelocity();
+        player.setVelocity(velocity.x * 0.35D, Math.min(velocity.y, -0.04D), velocity.z * 0.35D);
+        player.velocityModified = true;
+        syncClearDirectedEntityGravity(player);
+    }
+
+    private static void tickSelfForceRecovery(MinecraftServer server) {
+        for (Map.Entry<UUID, Integer> entry : SELF_FORCE_RECOVERY_TICKS.entrySet()) {
+            UUID uuid = entry.getKey();
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+            if (player == null || !player.isAlive()) {
+                SELF_FORCE_RECOVERY_TICKS.remove(uuid, entry.getValue());
+                continue;
+            }
+            ENTITY_GRAVITY.remove(uuid);
+            SERVER_INVERTED_PLAYER_STATES.remove(uuid);
+            player.setNoGravity(false);
+            player.fallDistance = 0.0F;
+            Vec3d velocity = player.getVelocity();
+            if (velocity.y > -0.08D) {
+                player.setVelocity(velocity.x * 0.75D, -0.08D, velocity.z * 0.75D);
+                player.velocityModified = true;
+            }
+            syncClearDirectedEntityGravity(player);
+            int next = entry.getValue() - 1;
+            if (player.isOnGround() || next <= 0) {
+                SELF_FORCE_RECOVERY_TICKS.remove(uuid, entry.getValue());
+            } else {
+                SELF_FORCE_RECOVERY_TICKS.replace(uuid, entry.getValue(), next);
+            }
+        }
+    }
+
+    private static void tickExtractingBlockGroups(MinecraftServer server) {
+        for (Map.Entry<UUID, ExtractingBlockGroup> entry : EXTRACTING_BLOCK_GROUPS.entrySet()) {
+            UUID ownerUuid = entry.getKey();
+            ExtractingBlockGroup group = entry.getValue();
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(ownerUuid);
+            if (player == null || !player.isAlive() || !isHoldingGravityWand(player)
+                    || !group.world.equals(player.getWorld().getRegistryKey())) {
+                clearExtractingBlockGroup(ownerUuid, true);
+                continue;
+            }
+            group.age++;
+            spawnDueExtractingBlocks(worldFor(server, group.world), player, group);
+            group.blocks.removeIf(held -> held.entity() == null || !held.entity().isAlive());
+            if (group.blocks.isEmpty() && group.pendingBlocks.isEmpty()) {
+                EXTRACTING_BLOCK_GROUPS.remove(ownerUuid, group);
+                continue;
+            }
+            boolean complete = group.age >= group.totalTicks && group.pendingBlocks.isEmpty();
+            for (HeldBlock held : group.blocks) {
+                if (held.entity().isExtracting()) {
+                    complete = false;
+                    break;
+                }
+            }
+            if (!complete) {
+                continue;
+            }
+            EXTRACTING_BLOCK_GROUPS.remove(ownerUuid, group);
+            HeldBlockGroup heldGroup = new HeldBlockGroup(group.world, group.blocks, group.massKg, player.getWorld());
+            HELD_BLOCK_GROUPS.put(ownerUuid, heldGroup);
+            syncExtractPose(player, 0);
+            player.sendMessage(Text.literal("\u00a7b[Gravity] Blocks gathered"), true);
+        }
+    }
+
+    private static ServerWorld worldFor(MinecraftServer server, RegistryKey<World> key) {
+        return server.getWorld(key);
+    }
+
+    private static void spawnDueExtractingBlocks(ServerWorld world, ServerPlayerEntity player, ExtractingBlockGroup group) {
+        if (world == null || player == null || group.pendingBlocks.isEmpty()) {
+            return;
+        }
+        int flyTicks = group.flyTicks;
+        Iterator<ExtractingBlockPlan> iterator = group.pendingBlocks.iterator();
+        while (iterator.hasNext()) {
+            ExtractingBlockPlan plan = iterator.next();
+            if (plan.spawnTick() > group.age) {
+                continue;
+            }
+            GravityBlockEntity block = new GravityBlockEntity(
+                    world,
+                    plan.animationStart().x,
+                    plan.animationStart().y,
+                    plan.animationStart().z,
+                    plan.animationState(),
+                    Vec3d.ZERO,
+                    0.0D
+            );
+            block.setOwnerUuid(player.getUuid());
+            block.setGravityY(0.0D);
+            block.setNoGravity(true);
+            block.setTemporary(group.totalTicks + HELD_BLOCK_LIFETIME_TICKS);
+            block.setPlaceOrDropOnSettle(false);
+            block.setExtractionTarget(plan.target(), 0, flyTicks);
+            block.setSlowFreeSpin(
+                    (float) signedAngularVelocity(world, 0.18D, 0.58D),
+                    (float) signedAngularVelocity(world, 0.22D, 0.66D),
+                    (float) signedAngularVelocity(world, 0.16D, 0.50D)
+            );
+            if (world.spawnEntity(block)) {
+                group.blocks.add(new HeldBlock(block, plan.offset(), plan.massKg(), plan.hardness()));
+            }
+            iterator.remove();
+        }
+    }
+
     private static void tickHeldBlockGroups(MinecraftServer server) {
         for (Map.Entry<UUID, HeldBlockGroup> entry : HELD_BLOCK_GROUPS.entrySet()) {
             UUID ownerUuid = entry.getKey();
@@ -1506,6 +1831,114 @@ public final class GravityMagic {
         }
     }
 
+    private static void clearExtractingBlockGroup(UUID ownerUuid, boolean discard) {
+        ExtractingBlockGroup group = EXTRACTING_BLOCK_GROUPS.remove(ownerUuid);
+        if (group == null || !discard) {
+            return;
+        }
+        for (HeldBlock held : group.blocks) {
+            GravityBlockEntity block = held.entity();
+            if (block != null && block.isAlive()) {
+                block.discard();
+            }
+        }
+    }
+
+    private static void cleanupPlayerGravity(ServerPlayerEntity player, boolean discardBlocks) {
+        if (player == null) {
+            return;
+        }
+        UUID ownerUuid = player.getUuid();
+        SELF_FORCE_MOTIONS.remove(ownerUuid);
+        SELF_FORCE_RECOVERY_TICKS.remove(ownerUuid);
+        clearExtractingBlockGroup(ownerUuid, discardBlocks);
+        clearHeldBlockGroup(ownerUuid, discardBlocks);
+        for (ServerWorld world : player.getServer().getWorlds()) {
+            for (GravityBlockEntity block : world.getEntitiesByClass(GravityBlockEntity.class, new Box(-30000000, -2048, -30000000, 30000000, 4096, 30000000),
+                    block -> ownerUuid.equals(block.getOwnerUuid()))) {
+                if (discardBlocks) {
+                    block.discard();
+                }
+            }
+        }
+        syncExtractPose(player, 0);
+    }
+
+    private static List<Integer> stagedExtractionDelays(int count, int totalTicks) {
+        List<Integer> delays = new ArrayList<>(Math.max(0, count));
+        if (count <= 0) {
+            return delays;
+        }
+        if (count == 1 || totalTicks <= 1) {
+            delays.add(0);
+            return delays;
+        }
+        int flyTicks = Math.max(1, totalTicks / 2);
+        int maxDelay = Math.max(0, totalTicks - flyTicks);
+        int[] weights = {1, 3, 5, 3, 1};
+        int assigned = 0;
+        for (int stage = 0; stage < weights.length; stage++) {
+            int stageCount;
+            if (stage == weights.length - 1) {
+                stageCount = count - assigned;
+            } else {
+                stageCount = (int) Math.round(count * (weights[stage] / 13.0D));
+                stageCount = Math.clamp(stageCount, 0, count - assigned);
+            }
+            int stageStart = Math.round(maxDelay * (stage / 5.0F));
+            int stageEnd = Math.round(maxDelay * ((stage + 1) / 5.0F));
+            for (int i = 0; i < stageCount; i++) {
+                double local = stageCount <= 1 ? 0.5D : (i + 0.5D) / stageCount;
+                delays.add(Math.clamp((int) Math.round(stageStart + (stageEnd - stageStart) * local), 0, maxDelay));
+            }
+            assigned += stageCount;
+        }
+        delays.sort(Integer::compareTo);
+        return delays;
+    }
+
+    public static double getEnergy(ServerPlayerEntity player) {
+        if (player == null) {
+            return MAX_GRAVITY_ENERGY;
+        }
+        return PLAYER_ENERGY.computeIfAbsent(player.getUuid(), ignored -> MAX_GRAVITY_ENERGY);
+    }
+
+    private static boolean consumeEnergy(ServerPlayerEntity player, double amount) {
+        if (player == null || amount <= 0.0D || player.isCreative()) {
+            syncEnergyTo(player);
+            return true;
+        }
+        double energy = getEnergy(player);
+        if (energy + 1.0E-6D < amount) {
+            syncEnergyTo(player);
+            return false;
+        }
+        PLAYER_ENERGY.put(player.getUuid(), Math.max(0.0D, energy - amount));
+        syncEnergyTo(player);
+        return true;
+    }
+
+    private static boolean hasEnergy(ServerPlayerEntity player) {
+        return player == null || player.isCreative() || getEnergy(player) > 0.0D;
+    }
+
+    private static void syncEnergyTo(ServerPlayerEntity player) {
+        if (player != null) {
+            ServerPlayNetworking.send(player, new GravityPackets.EnergyS2C(getEnergy(player), MAX_GRAVITY_ENERGY));
+        }
+    }
+
+    private static void syncExtractPose(ServerPlayerEntity player, int ticks) {
+        if (player == null || player.getServer() == null) {
+            return;
+        }
+        GravityPackets.ExtractPoseS2C packet = new GravityPackets.ExtractPoseS2C(player.getId(), Math.max(0, ticks));
+        for (ServerPlayerEntity target : player.getServer().getPlayerManager().getPlayerList()) {
+            ServerPlayNetworking.send(target, packet);
+        }
+    }
+
     private static void tickThrownDamageCooldowns() {
         THROWN_DAMAGE_COOLDOWNS.entrySet().removeIf(entry -> entry.getValue() <= 1);
         THROWN_DAMAGE_COOLDOWNS.replaceAll((key, ticks) -> ticks - 1);
@@ -1522,6 +1955,9 @@ public final class GravityMagic {
             Entity entity = world.getEntity(blockUuid);
             if (!(entity instanceof GravityBlockEntity block) || !block.isAlive()) {
                 THROWN_BLOCKS.remove(blockUuid, data);
+                if (THROWN_BLOCKS.values().stream().noneMatch(other -> other.groupId.equals(data.groupId))) {
+                    THROWN_GROUP_IMPACTS.remove(data.groupId);
+                }
                 continue;
             }
 
@@ -1530,7 +1966,24 @@ public final class GravityMagic {
                 data.forceTicks--;
             }
 
+            if ((block.isOnGround() || block.verticalCollision) && THROWN_GROUP_IMPACTS.add(data.groupId)) {
+                spawnThrownBlockImpactParticles(world, block.getPos(), data);
+            }
             damageThrownBlockTargets(world, block, data);
+        }
+    }
+
+    private static void spawnThrownBlockImpactParticles(ServerWorld world, Vec3d pos, ThrownBlockData data) {
+        double radius = Math.clamp(1.5D + Math.sqrt(Math.max(1.0D, data.groupMassKg)) * 0.12D, 2.0D, 8.0D);
+        world.spawnParticles(ParticleTypes.EXPLOSION, pos.x, pos.y + 0.15D, pos.z, 4, radius * 0.16D, 0.08D, radius * 0.16D, 0.02D);
+        world.spawnParticles(ParticleTypes.POOF, pos.x, pos.y + 0.1D, pos.z, 80, radius * 0.55D, 0.18D, radius * 0.55D, 0.08D);
+        world.spawnParticles(ParticleTypes.CLOUD, pos.x, pos.y + 0.08D, pos.z, 48, radius * 0.45D, 0.04D, radius * 0.45D, 0.05D);
+        for (int i = 0; i < 64; i++) {
+            double angle = Math.PI * 2.0D * i / 64.0D;
+            double r = radius * (0.35D + 0.65D * ((i % 8) / 7.0D));
+            double x = pos.x + Math.cos(angle) * r;
+            double z = pos.z + Math.sin(angle) * r;
+            world.spawnParticles(ParticleTypes.SWEEP_ATTACK, x, pos.y + 0.08D, z, 1, 0.0D, 0.0D, 0.0D, 0.0D);
         }
     }
 
@@ -1734,6 +2187,15 @@ public final class GravityMagic {
     }
 
     public static boolean cancelServerInvertedTravel(Entity entity) {
+        if (entity != null && SELF_FORCE_MOTIONS.containsKey(entity.getUuid())) {
+            entity.setNoGravity(false);
+            return false;
+        }
+        if (isRecoveringDirectedPlayer(entity)) {
+            tickClientDirectedRecovery(entity);
+            entity.setNoGravity(false);
+            return false;
+        }
         if (shouldIgnoreInvertedPull(entity)) {
             resetInvertedPlayerState(entity);
             return false;
@@ -1748,6 +2210,17 @@ public final class GravityMagic {
     }
 
     public static boolean tickInvertedPlayer(Entity entity, PlayerInput input) {
+        if (entity != null && SELF_FORCE_MOTIONS.containsKey(entity.getUuid())) {
+            entity.setNoGravity(false);
+            return false;
+        }
+        if (isRecoveringDirectedPlayer(entity)) {
+            tickClientDirectedRecovery(entity);
+            ENTITY_GRAVITY.remove(entity.getUuid());
+            invertedPlayerStates(entity).remove(entity.getUuid());
+            entity.setNoGravity(false);
+            return false;
+        }
         if (entity != null && input != null) {
             DirectedEntityGravity directed = ENTITY_GRAVITY.get(entity.getUuid());
             if (directed != null) {
@@ -1969,8 +2442,40 @@ public final class GravityMagic {
     }
 
     public static void resetInvertedPlayerIfInactive(Entity entity) {
+        tickClientDirectedRecovery(entity);
         if (entity != null && !isInInvertedArea(entity)) {
             resetInvertedPlayerState(entity);
+        }
+    }
+
+    private static boolean isRecoveringDirectedPlayer(Entity entity) {
+        if (entity == null) {
+            return false;
+        }
+        UUID uuid = entity.getUuid();
+        return SELF_FORCE_RECOVERY_TICKS.containsKey(uuid) || CLIENT_DIRECTED_RECOVERY_TICKS.containsKey(uuid);
+    }
+
+    private static void tickClientDirectedRecovery(Entity entity) {
+        if (entity == null || !entity.getWorld().isClient()) {
+            return;
+        }
+        UUID uuid = entity.getUuid();
+        Integer ticks = CLIENT_DIRECTED_RECOVERY_TICKS.get(uuid);
+        if (ticks == null) {
+            return;
+        }
+        ENTITY_GRAVITY.remove(uuid);
+        CLIENT_INVERTED_PLAYER_STATES.remove(uuid);
+        entity.setNoGravity(false);
+        Vec3d velocity = entity.getVelocity();
+        if (velocity.y > -0.04D) {
+            entity.setVelocity(velocity.x * 0.65D, -0.04D, velocity.z * 0.65D);
+        }
+        if (ticks <= 1 || entity.isOnGround()) {
+            CLIENT_DIRECTED_RECOVERY_TICKS.remove(uuid);
+        } else {
+            CLIENT_DIRECTED_RECOVERY_TICKS.put(uuid, ticks - 1);
         }
     }
 

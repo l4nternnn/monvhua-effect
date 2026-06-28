@@ -19,6 +19,9 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
+import java.util.Optional;
+import java.util.UUID;
+
 public class GravityBlockEntity extends Entity {
     private static final TrackedData<Integer> BLOCK_STATE_ID = DataTracker.registerData(GravityBlockEntity.class, TrackedDataHandlerRegistry.INTEGER);
     private static final TrackedData<Float> GRAVITY_Y = DataTracker.registerData(GravityBlockEntity.class, TrackedDataHandlerRegistry.FLOAT);
@@ -40,6 +43,12 @@ public class GravityBlockEntity extends Entity {
     private double maxRiseDistance;
     private boolean temporary;
     private boolean placeOrDropOnSettle = true;
+    private UUID ownerUuid;
+    private Vec3d extractStart;
+    private Vec3d extractTarget;
+    private int extractDelay;
+    private int extractAge;
+    private int extractTicks;
 
     public GravityBlockEntity(EntityType<? extends GravityBlockEntity> type, World world) {
         super(type, world);
@@ -121,6 +130,30 @@ public class GravityBlockEntity extends Entity {
         this.placeOrDropOnSettle = placeOrDropOnSettle;
     }
 
+    public void setOwnerUuid(UUID ownerUuid) {
+        this.ownerUuid = ownerUuid;
+    }
+
+    public UUID getOwnerUuid() {
+        return ownerUuid;
+    }
+
+    public void setExtractionTarget(Vec3d target, int ticks) {
+        setExtractionTarget(target, 0, ticks);
+    }
+
+    public void setExtractionTarget(Vec3d target, int delayTicks, int ticks) {
+        this.extractStart = this.getPos();
+        this.extractTarget = target;
+        this.extractDelay = Math.max(0, delayTicks);
+        this.extractTicks = Math.max(1, ticks);
+        this.extractAge = 0;
+    }
+
+    public boolean isExtracting() {
+        return extractTarget != null && extractAge < extractDelay + extractTicks;
+    }
+
     public void setMaxAgeTicks(int maxAgeTicks) {
         this.maxAgeTicks = Math.max(1, maxAgeTicks);
     }
@@ -142,6 +175,11 @@ public class GravityBlockEntity extends Entity {
         this.renderPitch += this.pitchVelocity;
         this.renderYaw += this.yawVelocity;
         this.renderRoll += this.rollVelocity;
+
+        if (isExtracting()) {
+            tickExtraction();
+            return;
+        }
 
         Vec3d velocity = this.getVelocity().add(0.0D, getGravityY(), 0.0D);
         this.setVelocity(velocity);
@@ -172,6 +210,53 @@ public class GravityBlockEntity extends Entity {
         if (!this.getWorld().isClient && (this.age > this.maxAgeTicks || ((this.isOnGround() || this.verticalCollision) && velocity.length() < SETTLE_SPEED))) {
             settleOrDrop();
         }
+    }
+
+    private void tickExtraction() {
+        this.extractAge++;
+        if (this.extractAge <= this.extractDelay) {
+            this.setVelocity(Vec3d.ZERO);
+            return;
+        }
+
+        Vec3d start = this.extractStart == null ? this.getPos() : this.extractStart;
+        int flyAge = this.extractAge - this.extractDelay;
+        double t = Math.clamp(flyAge / (double) this.extractTicks, 0.0D, 1.0D);
+        double eased = 1.0D - Math.pow(1.0D - t, 3.0D);
+        Vec3d current = this.getPos();
+        Vec3d control = extractionBezierControl(start, extractTarget);
+        Vec3d next = quadraticBezier(start, control, extractTarget, eased);
+        Vec3d delta = next.subtract(current);
+        this.setVelocity(delta);
+        this.move(MovementType.SELF, delta);
+        if (flyAge >= this.extractTicks || this.getPos().squaredDistanceTo(extractTarget) < 0.04D) {
+            this.setPosition(extractTarget.x, extractTarget.y, extractTarget.z);
+            this.setVelocity(Vec3d.ZERO);
+            this.extractStart = null;
+            this.extractTarget = null;
+            this.extractDelay = 0;
+        }
+    }
+
+    private static Vec3d extractionBezierControl(Vec3d start, Vec3d target) {
+        double dx = target.x - start.x;
+        double dz = target.z - start.z;
+        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+        double heightOffset = 0.4D * horizontalDistance;
+        double tangentOffset = 0.3D * heightOffset;
+        Vec3d tangent = horizontalDistance < 1.0E-4D
+                ? Vec3d.ZERO
+                : new Vec3d(-dz / horizontalDistance, 0.0D, dx / horizontalDistance);
+        return start.add(target).multiply(0.5D)
+                .add(0.0D, heightOffset, 0.0D)
+                .add(tangent.multiply(tangentOffset));
+    }
+
+    private static Vec3d quadraticBezier(Vec3d p0, Vec3d p1, Vec3d p2, double t) {
+        double inv = 1.0D - t;
+        return p0.multiply(inv * inv)
+                .add(p1.multiply(2.0D * inv * t))
+                .add(p2.multiply(t * t));
     }
 
     private void settleOrDrop() {
@@ -215,6 +300,14 @@ public class GravityBlockEntity extends Entity {
         this.maxRiseDistance = view.read("MaxRiseDistance", Codec.DOUBLE).orElse(0.0D);
         this.temporary = view.read("Temporary", Codec.BOOL).orElse(false);
         this.placeOrDropOnSettle = view.read("PlaceOrDropOnSettle", Codec.BOOL).orElse(true);
+        Optional<String> owner = view.read("OwnerUuid", Codec.STRING);
+        owner.ifPresent(value -> {
+            try {
+                this.ownerUuid = UUID.fromString(value);
+            } catch (IllegalArgumentException ignored) {
+                this.ownerUuid = null;
+            }
+        });
     }
 
     @Override
@@ -227,5 +320,8 @@ public class GravityBlockEntity extends Entity {
         view.put("MaxRiseDistance", Codec.DOUBLE, this.maxRiseDistance);
         view.put("Temporary", Codec.BOOL, this.temporary);
         view.put("PlaceOrDropOnSettle", Codec.BOOL, this.placeOrDropOnSettle);
+        if (ownerUuid != null) {
+            view.put("OwnerUuid", Codec.STRING, ownerUuid.toString());
+        }
     }
 }

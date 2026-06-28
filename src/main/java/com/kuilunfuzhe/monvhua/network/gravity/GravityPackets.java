@@ -26,6 +26,8 @@ public final class GravityPackets {
         ClearAreaGravityS2C.register();
         EntityGravityS2C.register();
         ConfigS2C.register();
+        EnergyS2C.register();
+        ExtractPoseS2C.register();
     }
 
     public record AdjustGravityC2S(int entityId, double gravity) implements CustomPayload {
@@ -220,6 +222,60 @@ public final class GravityPackets {
 
         private void write(RegistryByteBuf buf) {
             buf.writeString(json);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record EnergyS2C(double energy, double maxEnergy) implements CustomPayload {
+        public static final Id<EnergyS2C> ID = new Id<>(Identifier.of("monvhua", "gravity_energy"));
+        public static final PacketCodec<RegistryByteBuf, EnergyS2C> CODEC = PacketCodec.of(EnergyS2C::write, EnergyS2C::new);
+        private static boolean registered = false;
+
+        private EnergyS2C(RegistryByteBuf buf) {
+            this(buf.readDouble(), buf.readDouble());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeDouble(energy);
+            buf.writeDouble(maxEnergy);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record ExtractPoseS2C(int entityId, int ticks) implements CustomPayload {
+        public static final Id<ExtractPoseS2C> ID = new Id<>(Identifier.of("monvhua", "gravity_extract_pose"));
+        public static final PacketCodec<RegistryByteBuf, ExtractPoseS2C> CODEC = PacketCodec.of(ExtractPoseS2C::write, ExtractPoseS2C::new);
+        private static boolean registered = false;
+
+        private ExtractPoseS2C(RegistryByteBuf buf) {
+            this(buf.readInt(), buf.readInt());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeInt(entityId);
+            buf.writeInt(ticks);
         }
 
         @Override

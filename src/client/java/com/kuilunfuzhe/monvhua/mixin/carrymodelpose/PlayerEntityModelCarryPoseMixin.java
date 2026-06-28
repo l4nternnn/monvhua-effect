@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.mixin.carrymodelpose;
 
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseModelApplier;
+import com.kuilunfuzhe.monvhua.features.gravity.GravityExtractPoseClientState;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import org.spongepowered.asm.mixin.Mixin;
@@ -12,6 +13,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class PlayerEntityModelCarryPoseMixin {
 	@Inject(method = "setAngles(Lnet/minecraft/client/render/entity/state/PlayerEntityRenderState;)V", at = @At("TAIL"))
 	private void monvhua$applyCarryPose(PlayerEntityRenderState state, CallbackInfo ci) {
-		CarryPoseModelApplier.apply((PlayerEntityModel) (Object) this, state);
+		PlayerEntityModel model = (PlayerEntityModel) (Object) this;
+		CarryPoseModelApplier.apply(model, state);
+		if (GravityExtractPoseClientState.isActive(state.id)) {
+			model.rightArm.pitch = (float) Math.toRadians(-165.0D);
+			model.rightArm.yaw = (float) Math.toRadians(8.0D);
+			model.rightArm.roll = (float) Math.toRadians(8.0D);
+			model.rightSleeve.copyTransform(model.rightArm);
+		}
 	}
 }

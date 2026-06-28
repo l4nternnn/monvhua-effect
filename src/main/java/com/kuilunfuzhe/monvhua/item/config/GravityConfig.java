@@ -17,6 +17,11 @@ public class GravityConfig {
     private static final int STAGE_COUNT = 7;
     private static final int[] DEFAULT_MAX_PICK_BLOCKS = {0, 8, 12, 18, 24, 32, 48, 64};
     private static final double[] DEFAULT_MAX_PICK_HARDNESS = {0.0D, 1.0D, 1.5D, 2.0D, 3.0D, 5.0D, 10.0D, 50.0D};
+    private static final double[] DEFAULT_SELF_FORCE_DRAIN = {0.0D, 18.0D, 16.0D, 14.0D, 12.0D, 10.0D, 8.0D, 6.0D};
+    private static final double[] DEFAULT_ENERGY_REGEN = {0.0D, 5.0D, 6.0D, 7.0D, 8.0D, 10.0D, 12.0D, 14.0D};
+    private static final double[] DEFAULT_EXTRACT_DRAIN = {0.0D, 8.0D, 7.0D, 6.0D, 5.0D, 4.0D, 3.0D, 2.0D};
+    private static final double[] DEFAULT_HOLD_DRAIN = {0.0D, 3.0D, 2.7D, 2.4D, 2.0D, 1.6D, 1.2D, 1.0D};
+    private static final int[] DEFAULT_EXTRACT_TICKS = {0, 60, 56, 52, 48, 44, 40, 36};
     private static final double DEFAULT_DAMAGE_KILOJOULES_PER_HALF_HEART = 3.0D;
     private static GravityConfig instance;
 
@@ -24,6 +29,11 @@ public class GravityConfig {
     public double damageKilojoulesPerHalfHeart = DEFAULT_DAMAGE_KILOJOULES_PER_HALF_HEART;
     public int[] maxPickBlocksByStage = DEFAULT_MAX_PICK_BLOCKS.clone();
     public double[] maxPickHardnessByStage = DEFAULT_MAX_PICK_HARDNESS.clone();
+    public double[] selfForceDrainByStage = DEFAULT_SELF_FORCE_DRAIN.clone();
+    public double[] energyRegenByStage = DEFAULT_ENERGY_REGEN.clone();
+    public double[] blockExtractDrainByStage = DEFAULT_EXTRACT_DRAIN.clone();
+    public double[] blockHoldDrainByStage = DEFAULT_HOLD_DRAIN.clone();
+    public int[] blockExtractTicksByStage = DEFAULT_EXTRACT_TICKS.clone();
 
     public static GravityConfig getInstance() {
         if (instance == null) {
@@ -62,6 +72,11 @@ public class GravityConfig {
         config.damageKilojoulesPerHalfHeart = Math.clamp(config.damageKilojoulesPerHalfHeart, 0.1D, 10000.0D);
         config.maxPickBlocksByStage = sanitizeIntStages(config.maxPickBlocksByStage, DEFAULT_MAX_PICK_BLOCKS, 1, 512);
         config.maxPickHardnessByStage = sanitizeDoubleStages(config.maxPickHardnessByStage, DEFAULT_MAX_PICK_HARDNESS, 0.0D, 100.0D);
+        config.selfForceDrainByStage = sanitizeDoubleStages(config.selfForceDrainByStage, DEFAULT_SELF_FORCE_DRAIN, 0.0D, 1000.0D);
+        config.energyRegenByStage = sanitizeDoubleStages(config.energyRegenByStage, DEFAULT_ENERGY_REGEN, 0.0D, 1000.0D);
+        config.blockExtractDrainByStage = sanitizeDoubleStages(config.blockExtractDrainByStage, DEFAULT_EXTRACT_DRAIN, 0.0D, 1000.0D);
+        config.blockHoldDrainByStage = sanitizeDoubleStages(config.blockHoldDrainByStage, DEFAULT_HOLD_DRAIN, 0.0D, 1000.0D);
+        config.blockExtractTicksByStage = sanitizeIntStages(config.blockExtractTicksByStage, DEFAULT_EXTRACT_TICKS, 1, 20 * 60);
         return config;
     }
 
@@ -122,6 +137,46 @@ public class GravityConfig {
 
     public void setMaxPickHardness(int stage, double value) {
         maxPickHardnessByStage[stageIndex(stage)] = Math.clamp(value, 0.0D, 100.0D);
+    }
+
+    public double getSelfForceDrain(int stage) {
+        return selfForceDrainByStage[stageIndex(stage)];
+    }
+
+    public void setSelfForceDrain(int stage, double value) {
+        selfForceDrainByStage[stageIndex(stage)] = Math.clamp(value, 0.0D, 1000.0D);
+    }
+
+    public double getEnergyRegen(int stage) {
+        return energyRegenByStage[stageIndex(stage)];
+    }
+
+    public void setEnergyRegen(int stage, double value) {
+        energyRegenByStage[stageIndex(stage)] = Math.clamp(value, 0.0D, 1000.0D);
+    }
+
+    public double getBlockExtractDrain(int stage) {
+        return blockExtractDrainByStage[stageIndex(stage)];
+    }
+
+    public void setBlockExtractDrain(int stage, double value) {
+        blockExtractDrainByStage[stageIndex(stage)] = Math.clamp(value, 0.0D, 1000.0D);
+    }
+
+    public double getBlockHoldDrain(int stage) {
+        return blockHoldDrainByStage[stageIndex(stage)];
+    }
+
+    public void setBlockHoldDrain(int stage, double value) {
+        blockHoldDrainByStage[stageIndex(stage)] = Math.clamp(value, 0.0D, 1000.0D);
+    }
+
+    public int getBlockExtractTicks(int stage) {
+        return blockExtractTicksByStage[stageIndex(stage)];
+    }
+
+    public void setBlockExtractTicks(int stage, int value) {
+        blockExtractTicksByStage[stageIndex(stage)] = Math.clamp(value, 1, 20 * 60);
     }
 
     private static int stageIndex(int stage) {
