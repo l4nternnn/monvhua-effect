@@ -120,6 +120,7 @@ public final class GravityMagic {
     private static final double DIRECTED_DEFAULT_STOP_DISTANCE = 8.0D;
     private static final int BLOCK_SELECT_RADIUS = 2;
     private static final int MAX_SELECTED_BLOCKS = 512;
+    private static final int MAX_BLOCK_GROUP_SPAWNS_PER_TICK = 48;
     private static final int HELD_BLOCK_LIFETIME_TICKS = 20 * 180;
     private static final int THROWN_BLOCK_LIFETIME_TICKS = 20 * 90;
     private static final double HELD_BLOCK_BASE_HEIGHT_OFFSET = 3.0D;
@@ -256,6 +257,7 @@ public final class GravityMagic {
         private final double massKg;
         private final int totalTicks;
         private final int flyTicks;
+        private final double sphereRadius;
         private int age;
 
         private ExtractingBlockGroup(RegistryKey<World> world, List<ExtractingBlockPlan> pendingBlocks,
@@ -266,6 +268,7 @@ public final class GravityMagic {
             this.massKg = Math.max(0.0D, massKg);
             this.totalTicks = Math.max(1, totalTicks);
             this.flyTicks = Math.max(1, this.totalTicks / 5);
+            this.sphereRadius = sphereRadiusForCount(pendingBlocks.size());
         }
     }
 
@@ -485,7 +488,8 @@ public final class GravityMagic {
         cleanupPlayerGravity(player, true);
         List<Vec3d> sphereOffsets = sphereOffsets(candidates.size());
         List<Integer> extractionDelays = stagedExtractionDelays(candidates.size(), extractTicks);
-        Vec3d anchor = heldBlockAnchor(player, sphereRadiusForCount(candidates.size()));
+        double sphereRadius = sphereRadiusForCount(candidates.size());
+        Vec3d anchor = heldBlockAnchor(player, sphereRadius);
         List<SelectedBlock> animationSources = animationSurfaceSources(world, center, candidates, 30);
         double totalMassKg = 0.0D;
         List<ExtractingBlockPlan> plans = new ArrayList<>(candidates.size());
@@ -549,6 +553,7 @@ public final class GravityMagic {
             block.setMaxAgeTicks(THROWN_BLOCK_LIFETIME_TICKS);
             block.setGravityY(-DEFAULT_GRAVITY);
             block.setNoGravity(true);
+            block.clearRenderGroup();
             block.setVelocity(velocity);
             THROWN_BLOCKS.put(block.getUuid(), new ThrownBlockData(
                     group.id,
@@ -1744,11 +1749,15 @@ public final class GravityMagic {
             return;
         }
         int flyTicks = group.flyTicks;
+        int spawned = 0;
         Iterator<ExtractingBlockPlan> iterator = group.pendingBlocks.iterator();
         while (iterator.hasNext()) {
             ExtractingBlockPlan plan = iterator.next();
             if (plan.spawnTick() > group.age) {
                 continue;
+            }
+            if (spawned >= MAX_BLOCK_GROUP_SPAWNS_PER_TICK) {
+                break;
             }
             GravityBlockEntity block = new GravityBlockEntity(
                     world,
@@ -1765,6 +1774,8 @@ public final class GravityMagic {
             block.setTemporary(group.totalTicks + HELD_BLOCK_LIFETIME_TICKS);
             block.setPlaceOrDropOnSettle(false);
             block.setExtractionTarget(plan.target(), 0, flyTicks);
+            block.setRenderGroup(heldBlockAnchor(player, group.sphereRadius), Math.max(1.0D, group.sphereRadius + 0.75D));
+            block.setRenderGroupOwnerId(player.getId());
             block.setSlowFreeSpin(
                     (float) signedAngularVelocity(world, 0.18D, 0.58D),
                     (float) signedAngularVelocity(world, 0.22D, 0.66D),
@@ -1772,6 +1783,7 @@ public final class GravityMagic {
             );
             if (world.spawnEntity(block)) {
                 group.blocks.add(new HeldBlock(block, plan.offset(), plan.massKg(), plan.hardness()));
+                spawned++;
             }
             iterator.remove();
         }

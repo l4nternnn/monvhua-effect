@@ -18,6 +18,7 @@ import net.minecraft.storage.WriteView;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
+import org.joml.Vector3f;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -25,6 +26,9 @@ import java.util.UUID;
 public class GravityBlockEntity extends Entity {
     private static final TrackedData<Integer> BLOCK_STATE_ID = DataTracker.registerData(GravityBlockEntity.class, TrackedDataHandlerRegistry.INTEGER);
     private static final TrackedData<Float> GRAVITY_Y = DataTracker.registerData(GravityBlockEntity.class, TrackedDataHandlerRegistry.FLOAT);
+    private static final TrackedData<Vector3f> RENDER_GROUP_CENTER = DataTracker.registerData(GravityBlockEntity.class, TrackedDataHandlerRegistry.VECTOR_3F);
+    private static final TrackedData<Float> RENDER_GROUP_RADIUS = DataTracker.registerData(GravityBlockEntity.class, TrackedDataHandlerRegistry.FLOAT);
+    private static final TrackedData<Integer> RENDER_GROUP_OWNER_ID = DataTracker.registerData(GravityBlockEntity.class, TrackedDataHandlerRegistry.INTEGER);
     private static final int MAX_AGE = 600;
     private static final double SETTLE_SPEED = 0.08D;
 
@@ -82,6 +86,9 @@ public class GravityBlockEntity extends Entity {
     protected void initDataTracker(DataTracker.Builder builder) {
         builder.add(BLOCK_STATE_ID, Block.getRawIdFromState(Blocks.STONE.getDefaultState()));
         builder.add(GRAVITY_Y, (float) -GravityMagic.WORLD_GRAVITY);
+        builder.add(RENDER_GROUP_CENTER, new Vector3f());
+        builder.add(RENDER_GROUP_RADIUS, 0.0F);
+        builder.add(RENDER_GROUP_OWNER_ID, -1);
     }
 
     public BlockState getBlockState() {
@@ -136,6 +143,42 @@ public class GravityBlockEntity extends Entity {
 
     public UUID getOwnerUuid() {
         return ownerUuid;
+    }
+
+    public void setRenderGroup(Vec3d center, double radius) {
+        if (center == null || radius <= 0.0D) {
+            clearRenderGroup();
+            return;
+        }
+        this.dataTracker.set(RENDER_GROUP_CENTER, new Vector3f((float) center.x, (float) center.y, (float) center.z));
+        this.dataTracker.set(RENDER_GROUP_RADIUS, (float) Math.min(radius, 1024.0D));
+    }
+
+    public void setRenderGroupOwnerId(int ownerId) {
+        this.dataTracker.set(RENDER_GROUP_OWNER_ID, ownerId);
+    }
+
+    public void clearRenderGroup() {
+        this.dataTracker.set(RENDER_GROUP_CENTER, new Vector3f());
+        this.dataTracker.set(RENDER_GROUP_RADIUS, 0.0F);
+        this.dataTracker.set(RENDER_GROUP_OWNER_ID, -1);
+    }
+
+    public boolean hasRenderGroup() {
+        return this.dataTracker.get(RENDER_GROUP_RADIUS) > 0.0F;
+    }
+
+    public Vec3d getRenderGroupCenter() {
+        Vector3f center = this.dataTracker.get(RENDER_GROUP_CENTER);
+        return new Vec3d(center.x(), center.y(), center.z());
+    }
+
+    public double getRenderGroupRadius() {
+        return this.dataTracker.get(RENDER_GROUP_RADIUS);
+    }
+
+    public int getRenderGroupOwnerId() {
+        return this.dataTracker.get(RENDER_GROUP_OWNER_ID);
     }
 
     public void setExtractionTarget(Vec3d target, int ticks) {
@@ -300,6 +343,16 @@ public class GravityBlockEntity extends Entity {
         this.maxRiseDistance = view.read("MaxRiseDistance", Codec.DOUBLE).orElse(0.0D);
         this.temporary = view.read("Temporary", Codec.BOOL).orElse(false);
         this.placeOrDropOnSettle = view.read("PlaceOrDropOnSettle", Codec.BOOL).orElse(true);
+        double groupRadius = view.read("RenderGroupRadius", Codec.DOUBLE).orElse(0.0D);
+        if (groupRadius > 0.0D) {
+            setRenderGroup(new Vec3d(
+                    view.read("RenderGroupX", Codec.DOUBLE).orElse(0.0D),
+                    view.read("RenderGroupY", Codec.DOUBLE).orElse(0.0D),
+                    view.read("RenderGroupZ", Codec.DOUBLE).orElse(0.0D)
+            ), groupRadius);
+        } else {
+            clearRenderGroup();
+        }
         Optional<String> owner = view.read("OwnerUuid", Codec.STRING);
         owner.ifPresent(value -> {
             try {
@@ -320,6 +373,13 @@ public class GravityBlockEntity extends Entity {
         view.put("MaxRiseDistance", Codec.DOUBLE, this.maxRiseDistance);
         view.put("Temporary", Codec.BOOL, this.temporary);
         view.put("PlaceOrDropOnSettle", Codec.BOOL, this.placeOrDropOnSettle);
+        if (hasRenderGroup()) {
+            Vec3d center = getRenderGroupCenter();
+            view.put("RenderGroupX", Codec.DOUBLE, center.x);
+            view.put("RenderGroupY", Codec.DOUBLE, center.y);
+            view.put("RenderGroupZ", Codec.DOUBLE, center.z);
+            view.put("RenderGroupRadius", Codec.DOUBLE, getRenderGroupRadius());
+        }
         if (ownerUuid != null) {
             view.put("OwnerUuid", Codec.STRING, ownerUuid.toString());
         }
