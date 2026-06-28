@@ -163,12 +163,11 @@ public final class CarryAttachedRenderMath {
 
 	public static CarriedCameraOrientation getCarriedLocalViewCameraOrientation(Entity carrier, Entity carried, float tickProgress, float localYawDegrees, float localPitchDegrees) {
 		MatrixStack matrices = createConfiguredCarriedViewMatrix(carrier, carried, tickProgress, localYawDegrees, localPitchDegrees);
-		Vector3f modelForward = transformLocalDirection(matrices, 0.0F, 0.0F, 1.0F);
+		Vector3f modelForward = transformLocalDirection(matrices, 0.0F, 0.0F, -1.0F);
 
 		Quaternionf rotation = new Matrix4f(matrices.peek().getPositionMatrix())
 				.getUnnormalizedRotation(new Quaternionf())
 				.normalize();
-		rotation.rotateY((float) Math.PI);
 
 		float yaw = (float) Math.toDegrees(Math.atan2(-modelForward.x, modelForward.z));
 		float horizontalLength = MathHelper.sqrt(modelForward.x * modelForward.x + modelForward.z * modelForward.z);
@@ -239,10 +238,8 @@ public final class CarryAttachedRenderMath {
 
 	public static CarriedHeadWorldRotation getCarriedHeadWorldRotation(Entity carrier, Entity carried, float tickProgress, float headYawRadians, float headPitchRadians, float headRollRadians) {
 		MatrixStack matrices = createCarriedHeadParentMatrix(carrier, carried, tickProgress);
-		matrices.multiply(RotationAxis.POSITIVE_Y.rotation(headYawRadians));
-		matrices.multiply(RotationAxis.POSITIVE_X.rotation(headPitchRadians));
-		matrices.multiply(RotationAxis.POSITIVE_Z.rotation(headRollRadians));
-		Vector3f forward = transformLocalDirection(matrices, 0.0F, 0.0F, 1.0F);
+		applyModelPartRotation(matrices, headPitchRadians, headYawRadians, headRollRadians);
+		Vector3f forward = transformLocalDirection(matrices, 0.0F, 0.0F, -1.0F);
 		float yaw = (float) Math.toDegrees(Math.atan2(-forward.x, forward.z));
 		float horizontalLength = MathHelper.sqrt(forward.x * forward.x + forward.z * forward.z);
 		float pitch = (float) Math.toDegrees(Math.atan2(-forward.y, horizontalLength));
@@ -322,9 +319,10 @@ public final class CarryAttachedRenderMath {
 		Matrix4f inverseHeadParentMatrix = new Matrix4f(createCarriedHeadParentMatrix(carrier, carried, tickProgress).peek().getPositionMatrix()).invert();
 		Vector4f localForward4 = inverseHeadParentMatrix.transform(worldForward);
 		Vector3f localForward = new Vector3f(localForward4.x, localForward4.y, localForward4.z).normalize();
-		float headYawRadians = (float) Math.atan2(localForward.x, localForward.z);
+		localForward.rotateZ(-getCarriedBaseHeadRoll(carried));
+		float headYawRadians = (float) Math.atan2(-localForward.x, -localForward.z);
 		float localHorizontalLength = MathHelper.sqrt(localForward.x * localForward.x + localForward.z * localForward.z);
-		float headPitchRadians = (float) Math.atan2(-localForward.y, localHorizontalLength);
+		float headPitchRadians = (float) Math.atan2(localForward.y, localHorizontalLength);
 		return new HeadModelRotation(headYawRadians, headPitchRadians);
 	}
 
@@ -356,10 +354,15 @@ public final class CarryAttachedRenderMath {
 
 	private static MatrixStack createCarriedBaseHeadMatrix(Entity carrier, Entity carried, float tickProgress, float headYawRadians, float headPitchRadians, float headRollRadians) {
 		MatrixStack matrices = createCarriedHeadParentMatrix(carrier, carried, tickProgress);
-		matrices.multiply(RotationAxis.POSITIVE_Y.rotation(headYawRadians));
-		matrices.multiply(RotationAxis.POSITIVE_X.rotation(headPitchRadians));
-		matrices.multiply(RotationAxis.POSITIVE_Z.rotation(headRollRadians));
+		applyModelPartRotation(matrices, headPitchRadians, headYawRadians, headRollRadians);
 		return matrices;
+	}
+
+	private static void applyModelPartRotation(MatrixStack matrices, float pitchRadians, float yawRadians, float rollRadians) {
+		if (pitchRadians == 0.0F && yawRadians == 0.0F && rollRadians == 0.0F) {
+			return;
+		}
+		matrices.multiply(new Quaternionf().rotationZYX(rollRadians, yawRadians, pitchRadians));
 	}
 
 	private static MatrixStack createCarriedHeadParentMatrix(Entity carrier, float tickProgress) {
@@ -523,9 +526,9 @@ public final class CarryAttachedRenderMath {
 		float pitchRadians = (float) Math.toRadians(pitchDegrees);
 		float horizontalLength = MathHelper.cos(pitchRadians);
 		return new Vector4f(
-				MathHelper.sin(yawRadians) * horizontalLength,
-				MathHelper.sin(pitchRadians),
-				MathHelper.cos(yawRadians) * horizontalLength,
+				-MathHelper.sin(yawRadians) * horizontalLength,
+				-MathHelper.sin(pitchRadians),
+				-MathHelper.cos(yawRadians) * horizontalLength,
 				0.0F
 		);
 	}

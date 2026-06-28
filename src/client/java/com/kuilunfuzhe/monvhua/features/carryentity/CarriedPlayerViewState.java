@@ -22,8 +22,8 @@ public final class CarriedPlayerViewState {
 	 * Updates the carried player's local view offsets and writes the equivalent world yaw/pitch back to the entity.
 	 *
 	 * <p>The camera starts from the carried model's full base head orientation, including roll, then applies the
-	 * configured view center and finally these local yaw/pitch offsets. The model head synchronizes only the local
-	 * offsets, avoiding absolute look-at solutions such as 180-degree head twists.</p>
+	 * configured view center and finally these local yaw/pitch offsets. The stored local offsets are kept in the same
+	 * domain for both the model head and the carried camera path, so the visual head and actual ray stay synchronized.</p>
 	 */
 	public static void updateLocalViewRotation(Entity carried, Entity carrier, float tickProgress) {
 		ensureLocalInitialized(carried, carrier);
@@ -60,7 +60,7 @@ public final class CarriedPlayerViewState {
 				CarryPoseTuning.CARRIED_VIEW_YAW_LIMIT_DEGREES
 		);
 		localViewPitchDegrees = MathHelper.clamp(
-				localViewPitchDegrees + pitchDeltaDegrees,
+				localViewPitchDegrees - pitchDeltaDegrees,
 				-CarryPoseTuning.CARRIED_VIEW_PITCH_UP_LIMIT_DEGREES,
 				CarryPoseTuning.CARRIED_VIEW_PITCH_DOWN_LIMIT_DEGREES
 		);
@@ -72,30 +72,11 @@ public final class CarriedPlayerViewState {
 			clearHeadViewRotation(carried.getId());
 			return;
 		}
-		float baseHeadYaw = CarryAttachedRenderMath.getCarriedBaseHeadYaw(carried);
-		float baseHeadPitch = CarryAttachedRenderMath.getCarriedBaseHeadPitch(carried);
-		float baseHeadRoll = CarryAttachedRenderMath.getCarriedBaseHeadRoll(carried);
-		CarryAttachedRenderMath.HeadViewOffset viewOffset = CarryAttachedRenderMath.getCarriedHeadViewOffsetForWorldView(
-				carrier,
-				carried,
-				tickProgress,
-				carried.getYaw(),
-				carried.getPitch(),
-				baseHeadYaw,
-				baseHeadPitch,
-				baseHeadRoll
-		);
-		float headLocalYawDegrees = MathHelper.clamp(
-				MathHelper.wrapDegrees(viewOffset.yawDegrees() - CarryPoseTuning.CARRIED_VIEW_CENTER_YAW_OFFSET_DEGREES),
-				-CarryPoseTuning.CARRIED_VIEW_YAW_LIMIT_DEGREES,
-				CarryPoseTuning.CARRIED_VIEW_YAW_LIMIT_DEGREES
-		);
-		float headLocalPitchDegrees = MathHelper.clamp(
-				viewOffset.pitchDegrees() - CarryPoseTuning.CARRIED_VIEW_CENTER_PITCH_OFFSET_DEGREES,
-				-CarryPoseTuning.CARRIED_VIEW_PITCH_UP_LIMIT_DEGREES,
-				CarryPoseTuning.CARRIED_VIEW_PITCH_DOWN_LIMIT_DEGREES
-		);
-		updateHeadViewRotation(carried.getId(), headLocalYawDegrees, headLocalPitchDegrees);
+		if (localInitialized && localCarriedEntityId == carried.getId() && localCarrierEntityId == carrier.getId()) {
+			updateHeadViewRotation(carried.getId(), localViewYawDegrees, localViewPitchDegrees);
+			return;
+		}
+		updateHeadViewRotationFromWorldView(carried.getId(), carrier, carried, tickProgress, carried.getYaw(), carried.getPitch());
 	}
 
 	private static void ensureLocalInitialized(Entity carried, Entity carrier) {
@@ -140,6 +121,20 @@ public final class CarriedPlayerViewState {
 		carried.setPitch(pitchDegrees);
 		carried.lastYaw = yawDegrees;
 		carried.lastPitch = pitchDegrees;
+	}
+
+	private static void updateHeadViewRotationFromWorldView(int entityId, Entity carrier, Entity carried, float tickProgress, float yawDegrees, float pitchDegrees) {
+		CarryAttachedRenderMath.HeadModelRotation headRotation = CarryAttachedRenderMath.getCarriedHeadModelRotationForWorldView(
+				carrier,
+				carried,
+				tickProgress,
+				yawDegrees,
+				pitchDegrees
+		);
+		headInitialized = true;
+		headCarriedEntityId = entityId;
+		headYawRadians = headRotation.yawRadians();
+		headPitchRadians = headRotation.pitchRadians();
 	}
 
 	private static void updateHeadViewRotation(int entityId, float headLocalYawDegrees, float headLocalPitchDegrees) {
