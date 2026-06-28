@@ -357,7 +357,6 @@ public final class PaintOverlayClient {
     }
 
     public static int selectedColor() {
-        syncSelectedColorFromBrush();
         return selectedColor;
     }
 
@@ -366,7 +365,6 @@ public final class PaintOverlayClient {
             return;
         }
         selectedColor = color;
-        updateSelectedBrushColor(color);
         syncSettings();
     }
 
@@ -380,7 +378,7 @@ public final class PaintOverlayClient {
     }
 
     public static int selectedBrushSlot() {
-        syncSelectedColorFromBrush();
+        syncSelectedSlotFromBrush();
         return selectedBrushSlot;
     }
 
@@ -505,7 +503,7 @@ public final class PaintOverlayClient {
             return false;
         }
         int delta = yOffset > 0 ? 1 : -1;
-        if (isHoldingPaintBrush(client) && !isCtrlDown(client)) {
+        if (isHoldingPaintBrush(client) && client.player.isSneaking() && !isCtrlDown(client)) {
             selectBrushSlot(selectedBrushSlot + delta);
             return true;
         }
@@ -1577,16 +1575,13 @@ public final class PaintOverlayClient {
         return stack.getItem() == PaintItems.PAINT_PAPER;
     }
 
-    private static void syncSelectedColorFromBrush() {
+    private static void syncSelectedSlotFromBrush() {
         MinecraftClient client = MinecraftClient.getInstance();
         ItemStack brush = paintBrushStack(client);
         if (brush.isEmpty()) {
             return;
         }
         selectedBrushSlot = PaintBrushItem.getSelectedSlot(brush);
-        if (PaintBrushItem.hasSlotColor(brush, selectedBrushSlot)) {
-            selectedColor = PaintBrushItem.getPaintColor(brush, selectedBrushSlot);
-        }
     }
 
     private static boolean isCtrlDown(MinecraftClient client) {
@@ -1601,15 +1596,6 @@ public final class PaintOverlayClient {
 
     private static void syncPaperSize() {
         SafeClientNetworking.send(new PaintOverlayPackets.PaperSizeC2S(selectedPaperSize));
-    }
-
-    private static void updateSelectedBrushColor(int color) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        ItemStack brush = paintBrushStack(client);
-        if (brush.isEmpty()) {
-            return;
-        }
-        PaintBrushItem.setSlotColor(brush, selectedBrushSlot, color);
     }
 
     private static int ensureAlpha(int color) {
