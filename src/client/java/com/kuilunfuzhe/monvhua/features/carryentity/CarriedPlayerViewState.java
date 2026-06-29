@@ -72,10 +72,6 @@ public final class CarriedPlayerViewState {
 			clearHeadViewRotation(carried.getId());
 			return;
 		}
-		if (localInitialized && localCarriedEntityId == carried.getId() && localCarrierEntityId == carrier.getId()) {
-			updateHeadViewRotation(carried.getId(), localViewYawDegrees, localViewPitchDegrees);
-			return;
-		}
 		updateHeadViewRotationFromWorldView(carried.getId(), carrier, carried, tickProgress, carried.getYaw(), carried.getPitch());
 	}
 

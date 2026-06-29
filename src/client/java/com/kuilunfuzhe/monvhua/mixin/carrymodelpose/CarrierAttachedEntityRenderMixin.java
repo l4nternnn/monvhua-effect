@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.mixin.carrymodelpose;
 
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryAttachedRenderMath;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryAttachmentRenderState;
+import com.kuilunfuzhe.monvhua.features.carryentity.CarriedPlayerPoseRenderer;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryDragSkeletalRenderer;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import net.minecraft.client.MinecraftClient;
@@ -55,7 +56,8 @@ public abstract class CarrierAttachedEntityRenderMixin {
 
 		CarryAttachmentRenderState.beginAttachedCarriedEntityRender(carried.getId());
 		try {
-			if (!CarryDragSkeletalRenderer.renderIfDragCarried(carried, matrices, vertexConsumers, light, false)) {
+			if (!CarryDragSkeletalRenderer.renderIfDragCarried(carried, matrices, vertexConsumers, light, false)
+					&& !CarriedPlayerPoseRenderer.render(carried, matrices, vertexConsumers, light, false)) {
 				dispatcher.render(carried, 0.0D, 0.0D, 0.0D, tickProgress, matrices, vertexConsumers, light);
 			}
 		} finally {
