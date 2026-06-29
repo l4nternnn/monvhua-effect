@@ -316,7 +316,7 @@ public final class CarryAttachedRenderMath {
 	public static HeadModelRotation getCarriedHeadModelRotationForWorldView(Entity carrier, Entity carried, float tickProgress, float viewYawDegrees, float viewPitchDegrees) {
 		Vector4f worldForward = getWorldForwardVector(viewYawDegrees, viewPitchDegrees);
 
-		Matrix4f inverseHeadParentMatrix = new Matrix4f(createCarriedHeadParentMatrix(carrier, carried, tickProgress).peek().getPositionMatrix()).invert();
+		Matrix4f inverseHeadParentMatrix = new Matrix4f(createCarriedRenderedHeadParentMatrix(carrier, carried, tickProgress).peek().getPositionMatrix()).invert();
 		Vector4f localForward4 = inverseHeadParentMatrix.transform(worldForward);
 		Vector3f localForward = new Vector3f(localForward4.x, localForward4.y, localForward4.z).normalize();
 		localForward.rotateZ(-getCarriedBaseHeadRoll(carried));
@@ -374,6 +374,29 @@ public final class CarryAttachedRenderMath {
 		applyAttachedTransform(matrices, carrier, carried);
 		applyCarriedModelHorizontalTransform(matrices, 1.0F, isDragCarried(carried));
 		return matrices;
+	}
+
+	private static MatrixStack createCarriedRenderedHeadParentMatrix(Entity carrier, Entity carried, float tickProgress) {
+		MatrixStack matrices = createCarrierWorldMatrix(carrier, tickProgress);
+		applyAttachedTransform(matrices, carrier, carried);
+		float baseScale = getEntityRenderBaseScale(carried);
+		applyCarriedPlayerRenderModelTransform(matrices, baseScale);
+		applyCarriedModelHorizontalTransform(matrices, baseScale, isDragCarried(carried));
+		return matrices;
+	}
+
+	public static void applyCarriedPlayerRenderModelTransform(MatrixStack matrices, float baseScale) {
+		matrices.scale(baseScale, baseScale, baseScale);
+		matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0F));
+		matrices.scale(-1.0F, -1.0F, 1.0F);
+		matrices.translate(0.0F, -1.501F, 0.0F);
+	}
+
+	private static float getEntityRenderBaseScale(Entity entity) {
+		if (entity instanceof LivingEntity living) {
+			return living.getScale();
+		}
+		return 1.0F;
 	}
 
 	public static MatrixStack createAttachedViewMatrix(Entity carrier, float tickProgress, Vec3d cameraPos, Matrix4f positionMatrix) {
