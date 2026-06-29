@@ -13,7 +13,7 @@ import com.kuilunfuzhe.monvhua.MonvhuaMod;
 public class floating {
 
     private static final String FULL_WITCH_TAG = "MonvhuaFull";
-    private static final String FLOATING_TAG = "Floating";  // ← 新增
+    private static final String FLOATING_TAG = "Floating";
 
     // 双击相关
     private static long lastJumpTime = 0;

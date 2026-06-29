@@ -46,6 +46,7 @@
 		"ThroughLookLockMixin",
 		"ThroughPhaseInputMixin",
 		"ThroughStalledMotionMixin",
+		"ThroughItemUsePriorityMixin",
 		"SpriteContentsAccessor",
 		"MouseMixin",
 		"PlayerEntityRenderStateAccessor",
