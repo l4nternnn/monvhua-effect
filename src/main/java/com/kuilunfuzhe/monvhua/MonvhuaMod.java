@@ -27,6 +27,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
 import com.kuilunfuzhe.monvhua.features.guidance.Gazeguidance;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import com.kuilunfuzhe.monvhua.features.imitate.ImitateManager;
+import com.kuilunfuzhe.monvhua.features.injured_and_bleeding.InjuredBleedingFeature;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayFeature;
 import com.kuilunfuzhe.monvhua.features.paint.PaintBucketBlock;
 import com.kuilunfuzhe.monvhua.features.plant.PlantMagic;
@@ -654,6 +655,7 @@ public class MonvhuaMod implements ModInitializer {
         BlockHoleItems.initialize();
         PaintItems.initialize();
         PaintOverlayFeature.initialize();
+        InjuredBleedingFeature.initialize();
         ThroughItem.initialize(configManager);
         ModBlocks.initialize();
         Assembly_ModItems.initialize();
@@ -886,6 +888,9 @@ public class MonvhuaMod implements ModInitializer {
                     || com.kuilunfuzhe.monvhua.features.floating.floating.shouldPreventFallDamage(player))) {
                 player.fallDistance = 0;
                 return false;
+            }
+            if (entity instanceof net.minecraft.entity.LivingEntity living) {
+                InjuredBleedingFeature.handleDamage(living, amount);
             }
             return true;
         });

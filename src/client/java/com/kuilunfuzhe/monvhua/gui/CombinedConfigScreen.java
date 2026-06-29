@@ -5,6 +5,7 @@ import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.item.config.FloatingConfig;
 import com.kuilunfuzhe.monvhua.item.config.GravityConfig;
 import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
+import com.kuilunfuzhe.monvhua.item.config.InjuredBleedingConfig;
 import com.kuilunfuzhe.monvhua.item.config.MirrorConfig;
 import com.kuilunfuzhe.monvhua.item.config.PlantMagicConfig;
 import com.kuilunfuzhe.monvhua.item.config.PaintConfig;
@@ -20,6 +21,7 @@ import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
 import com.kuilunfuzhe.monvhua.network.gravity.GravityPackets;
 import com.kuilunfuzhe.monvhua.network.imitate.RequestImitateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.UpdateImitateConfigC2SPacket;
+import com.kuilunfuzhe.monvhua.network.injured_and_bleeding.InjuredBleedingPackets;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets.ConfigUpdateC2S;
 import com.kuilunfuzhe.monvhua.network.plant.PlantMagicPackets;
 import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
@@ -45,10 +47,10 @@ import java.util.List;
  */
 public class CombinedConfigScreen extends Screen {
     /** 配置类型枚举，对应顶部五个标签页 */
-    private enum ConfigType { EVIL_EYES, GAZE_GUIDANCE, MIRROR, THROUGH, STAGE_RANGE, IMITATE, FLOATING, SECRET, PLANT, PAINT, GRAVITY }
+    private enum ConfigType { EVIL_EYES, GAZE_GUIDANCE, MIRROR, THROUGH, STAGE_RANGE, IMITATE, FLOATING, SECRET, PLANT, PAINT, GRAVITY, INJURED_BLEEDING }
     private ConfigType currentType = ConfigType.EVIL_EYES;
 
-    private ButtonWidget btnEvilEyes, btnGaze, btnMirror, btnThrough, btnStageRange, btnImitate, btnFloating, btnSecret, btnPlant, btnPaint, btnGravity;
+    private ButtonWidget btnEvilEyes, btnGaze, btnMirror, btnThrough, btnStageRange, btnImitate, btnFloating, btnSecret, btnPlant, btnPaint, btnGravity, btnInjuredBleeding;
     private int panelX, panelY, panelWidth, panelHeight;
     private int leftWidth, rightWidth;
 
@@ -127,6 +129,11 @@ public class CombinedConfigScreen extends Screen {
     private final List<TextWidget> gravityLabels = new ArrayList<>();
     private static GravityConfig cachedGravityConfig = null;
 
+    private TextFieldWidget injuredBleedingSprayTicksField;
+    private ButtonWidget saveInjuredBleedingButton;
+    private final List<TextWidget> injuredBleedingLabels = new ArrayList<>();
+    private static InjuredBleedingConfig cachedInjuredBleedingConfig = null;
+
     // ===== 窃密配置组件 =====
     private final List<ButtonWidget> secretStageButtons = new ArrayList<>();
     private int secretCurrentStage = 1;
@@ -151,6 +158,7 @@ public class CombinedConfigScreen extends Screen {
         ClientPlayNetworking.send(new PlantMagicPackets.RequestConfigC2S());
         ClientPlayNetworking.send(new PaintOverlayPackets.RequestPaintConfigC2S());
         ClientPlayNetworking.send(new GravityPackets.RequestConfigC2S());
+        ClientPlayNetworking.send(new InjuredBleedingPackets.RequestConfigC2S());
         if (cachedGazeConfig == null) {
             cachedGazeConfig = createDefaultGazeConfig();
         }
@@ -177,6 +185,9 @@ public class CombinedConfigScreen extends Screen {
         }
         if (cachedGravityConfig == null) {
             cachedGravityConfig = new GravityConfig();
+        }
+        if (cachedInjuredBleedingConfig == null) {
+            cachedInjuredBleedingConfig = new InjuredBleedingConfig();
         }
     }
 
@@ -264,7 +275,7 @@ public class CombinedConfigScreen extends Screen {
         int btnY = panelY - btnHeight - 5;
         int centerX = panelX + panelWidth / 2;
         int tabGap = 4;
-        int tabCount = 11;
+        int tabCount = 12;
         int tabStartX = centerX - (btnWidth * tabCount + tabGap * (tabCount - 1)) / 2;
 
         btnEvilEyes = ButtonWidget.builder(Text.literal("千里眼"), btn -> switchTo(ConfigType.EVIL_EYES))
@@ -290,6 +301,8 @@ public class CombinedConfigScreen extends Screen {
                 .dimensions(tabStartX + (btnWidth + tabGap) * 9, btnY, btnWidth, btnHeight).build();
         btnGravity = ButtonWidget.builder(Text.literal("重力"), btn -> switchTo(ConfigType.GRAVITY))
                 .dimensions(tabStartX + (btnWidth + tabGap) * 10, btnY, btnWidth, btnHeight).build();
+        btnInjuredBleeding = ButtonWidget.builder(Text.literal("\u8840\u8ff9"), btn -> switchTo(ConfigType.INJURED_BLEEDING))
+                .dimensions(tabStartX + (btnWidth + tabGap) * 11, btnY, btnWidth, btnHeight).build();
         addDrawableChild(btnEvilEyes);
         addDrawableChild(btnGaze);
         addDrawableChild(btnMirror);
@@ -301,6 +314,7 @@ public class CombinedConfigScreen extends Screen {
         addDrawableChild(btnPlant);
         addDrawableChild(btnPaint);
         addDrawableChild(btnGravity);
+        addDrawableChild(btnInjuredBleeding);
         addDrawableChild(ButtonWidget.builder(Text.literal("文字区域界面"), btn -> TextAreaHudClient.openEditorAfterWorldFrame(this))
                 .dimensions(panelX + panelWidth + 12, btnY, 96, btnHeight).build());
 
@@ -315,6 +329,7 @@ public class CombinedConfigScreen extends Screen {
         buildSecretUI();
         buildPaintUI();
         buildGravityUI();
+        buildInjuredBleedingUI();
         switchTo(ConfigType.EVIL_EYES);
     }
 
@@ -717,6 +732,23 @@ public class CombinedConfigScreen extends Screen {
     /**
      * 创建一个限制最大输入长度为6的文本输入框。
      */
+    private void buildInjuredBleedingUI() {
+        int rightX = panelX + leftWidth + 5;
+        int rowY = panelY + 28;
+        int rowHeight = 24;
+        int labelWidth = 130;
+        int inputWidth = 80;
+
+        TextWidget label = new TextWidget(rightX, rowY + 4, labelWidth, 9, Text.literal("\u55b7\u6d12\u65f6\u95f4(tick):"), textRenderer);
+        addDrawableChild(label);
+        injuredBleedingLabels.add(label);
+
+        injuredBleedingSprayTicksField = createField(rightX + labelWidth, rowY, inputWidth);
+        saveInjuredBleedingButton = ButtonWidget.builder(Text.literal("\u4fdd\u5b58"), btn -> saveInjuredBleedingConfig())
+                .dimensions(rightX, rowY + rowHeight + 12, 80, 20).build();
+        addDrawableChild(saveInjuredBleedingButton);
+    }
+
     private TextFieldWidget createField(int x, int y, int width) {
         TextFieldWidget field = new TextFieldWidget(textRenderer, x, y, width, 18, Text.empty());
         field.setMaxLength(6);
@@ -742,6 +774,7 @@ public class CombinedConfigScreen extends Screen {
         btnPlant.setMessage(currentType == ConfigType.PLANT ? Text.literal("\u00a7l\u00a7a\u690d\u7269") : Text.literal("\u690d\u7269"));
         btnPaint.setMessage(currentType == ConfigType.PAINT ? Text.literal("\u00a7l\u00a7a绘制") : Text.literal("绘制"));
         btnGravity.setMessage(currentType == ConfigType.GRAVITY ? Text.literal("\u00a7l\u00a7a重力") : Text.literal("重力"));
+        btnInjuredBleeding.setMessage(currentType == ConfigType.INJURED_BLEEDING ? Text.literal("\u00a7l\u00a7a\u8840\u8ff9") : Text.literal("\u8840\u8ff9"));
 
         setEvilComponentsVisible(currentType == ConfigType.EVIL_EYES);
         setGazeComponentsVisible(currentType == ConfigType.GAZE_GUIDANCE);
@@ -754,6 +787,7 @@ public class CombinedConfigScreen extends Screen {
         setSecretComponentsVisible(currentType == ConfigType.SECRET);
         setPaintComponentsVisible(currentType == ConfigType.PAINT);
         setGravityComponentsVisible(currentType == ConfigType.GRAVITY);
+        setInjuredBleedingComponentsVisible(currentType == ConfigType.INJURED_BLEEDING);
 
         switch (currentType) {
             case EVIL_EYES -> loadEvilStageUI();
@@ -767,6 +801,7 @@ public class CombinedConfigScreen extends Screen {
             case PLANT -> loadPlantMagicStageUI();
             case PAINT -> loadPaintUI();
             case GRAVITY -> loadGravityUI();
+            case INJURED_BLEEDING -> loadInjuredBleedingUI();
         }
     }
 
@@ -881,6 +916,12 @@ public class CombinedConfigScreen extends Screen {
         if (gravityHoldDrainField != null) gravityHoldDrainField.visible = visible;
         if (gravityExtractTicksField != null) gravityExtractTicksField.visible = visible;
         if (saveGravityButton != null) saveGravityButton.visible = visible;
+    }
+
+    private void setInjuredBleedingComponentsVisible(boolean visible) {
+        for (TextWidget label : injuredBleedingLabels) label.visible = visible;
+        if (injuredBleedingSprayTicksField != null) injuredBleedingSprayTicksField.visible = visible;
+        if (saveInjuredBleedingButton != null) saveInjuredBleedingButton.visible = visible;
     }
 
     private void loadEvilStageUI() {
@@ -1226,6 +1267,13 @@ public class CombinedConfigScreen extends Screen {
         gravityExtractTicksField.setText(String.valueOf(cachedGravityConfig.getBlockExtractTicks(gravityCurrentStage)));
     }
 
+    private void loadInjuredBleedingUI() {
+        if (cachedInjuredBleedingConfig == null) {
+            cachedInjuredBleedingConfig = new InjuredBleedingConfig();
+        }
+        injuredBleedingSprayTicksField.setText(String.valueOf(cachedInjuredBleedingConfig.sprayTicks));
+    }
+
     private void saveSecretConfig() {
         try {
             int range = Integer.parseInt(secretRangeField.getText().trim());
@@ -1353,6 +1401,25 @@ public class CombinedConfigScreen extends Screen {
         }
     }
 
+    private void saveInjuredBleedingConfig() {
+        try {
+            int sprayTicks = Integer.parseInt(injuredBleedingSprayTicksField.getText().trim());
+
+            InjuredBleedingConfig config = new InjuredBleedingConfig();
+            config.sprayTicks = sprayTicks;
+            cachedInjuredBleedingConfig = InjuredBleedingConfig.fromJson(config.toJson());
+
+            ClientPlayNetworking.send(new InjuredBleedingPackets.UpdateConfigC2S(cachedInjuredBleedingConfig.toJson()));
+            if (client != null && client.player != null) {
+                client.player.sendMessage(Text.literal("\u00a7aInjured bleeding config submitted"), true);
+            }
+        } catch (NumberFormatException e) {
+            if (client != null && client.player != null) {
+                client.player.sendMessage(Text.literal("\u00a7cInvalid number"), true);
+            }
+        }
+    }
+
     public void receiveSecretConfig(SecretConfig config) {
         if (config == null) return;
         cachedSecretConfig = config;
@@ -1390,6 +1457,14 @@ public class CombinedConfigScreen extends Screen {
         cachedGravityConfig = config;
         if (currentType == ConfigType.GRAVITY) {
             loadGravityUI();
+        }
+    }
+
+    public void receiveInjuredBleedingConfig(InjuredBleedingConfig config) {
+        if (config == null) return;
+        cachedInjuredBleedingConfig = config;
+        if (currentType == ConfigType.INJURED_BLEEDING) {
+            loadInjuredBleedingUI();
         }
     }
 
@@ -1451,6 +1526,11 @@ public class CombinedConfigScreen extends Screen {
         if (currentType == ConfigType.GRAVITY) {
             context.drawText(textRenderer, "重力配置", panelX + 5, panelY + 5, 0x88CCFF, false);
             context.drawText(textRenderer, "当前编辑: 阶段 " + gravityCurrentStage, panelX + leftWidth + 5, panelY + 5, 0x88CCFF, false);
+        }
+
+        if (currentType == ConfigType.INJURED_BLEEDING) {
+            context.drawText(textRenderer, "\u53d7\u4f24\u8840\u8ff9\u914d\u7f6e", panelX + 5, panelY + 5, 0xFF5555, false);
+            context.drawText(textRenderer, "\u7c92\u5b50\u55b7\u6d12", panelX + leftWidth + 5, panelY + 5, 0xFF5555, false);
         }
 
         super.render(context, mouseX, mouseY, delta);

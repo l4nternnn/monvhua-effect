@@ -29,6 +29,7 @@ import com.kuilunfuzhe.monvhua.network.imitate.SoundWavePacket;
 import com.kuilunfuzhe.monvhua.network.imitate.SoundWaveStartS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.UpdateImitateConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.mirror.MirrorPackets;
+import com.kuilunfuzhe.monvhua.network.injured_and_bleeding.InjuredBleedingPackets;
 import com.kuilunfuzhe.monvhua.network.openback.*;
 import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
 import com.kuilunfuzhe.monvhua.network.plant.PlantMagicPackets;
@@ -69,6 +70,7 @@ public class ModNetworking {
         DrawingBoardPackets.registerS2C();
         PlantMagicPackets.registerS2C();
         AreaTipPackets.registerS2C();
+        InjuredBleedingPackets.registerS2C();
         ImitateOpenUIPacket.register();
         SoundWaveStartS2CPacket.register();
         ImitateConfigS2CPacket.register();
@@ -107,6 +109,7 @@ public class ModNetworking {
         DrawingBoardPackets.registerC2S();
         PlantMagicPackets.registerC2S();
         AreaTipPackets.registerC2S();
+        InjuredBleedingPackets.registerC2S();
         SoundWavePacket.register();
         RequestImitateConfigC2SPacket.register();
         UpdateImitateConfigC2SPacket.register();
