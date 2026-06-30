@@ -1,9 +1,15 @@
 package com.kuilunfuzhe.monvhua.features.injured_and_bleeding;
 
+import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.item.config.InjuredBleedingConfig;
 import com.kuilunfuzhe.monvhua.network.injured_and_bleeding.InjuredBleedingPackets;
+import com.mojang.brigadier.StringReader;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.command.EntitySelector;
+import net.minecraft.command.EntitySelectorReader;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
@@ -28,8 +34,26 @@ public final class InjuredBleedingFeature {
     }
 
     public static void handleDamage(LivingEntity entity, float amount) {
-        if (amount > 0.0F && entity.getWorld() instanceof ServerWorld world && entity.getMaxHealth() > 0.0F) {
+        if (amount > 0.0F && entity.getWorld() instanceof ServerWorld world && entity.getMaxHealth() > 0.0F && matchesConfiguredSelector(world, entity)) {
             spawnBloodEffect(world, entity, amount);
+        }
+    }
+
+    private static boolean matchesConfiguredSelector(ServerWorld world, LivingEntity entity) {
+        String selectorText = InjuredBleedingConfig.normalizeEntitySelector(InjuredBleedingConfig.getInstance().entitySelector);
+        if (selectorText == null || selectorText.isBlank()) {
+            return true;
+        }
+        try {
+            EntitySelector selector = new EntitySelectorReader(new StringReader(selectorText), true).read();
+            ServerCommandSource source = world.getServer().getCommandSource()
+                    .withWorld(world)
+                    .withPosition(entity.getPos())
+                    .withLevel(4);
+            return selector.getEntities(source).contains(entity);
+        } catch (CommandSyntaxException e) {
+            MonvhuaMod.LOGGER.warn("[Monvhua] Ignoring invalid injured bleeding entity selector: {}", selectorText, e);
+            return false;
         }
     }
 
@@ -70,6 +94,8 @@ public final class InjuredBleedingFeature {
                 emitterOffset.z,
                 scale.networkId(),
                 fadeTicks,
+                config.bloodSpotButterflyChancePercent,
+                config.bloodButterflyLifetimeSeconds,
                 drops
         );
         for (ServerPlayerEntity player : world.getPlayers()) {
@@ -132,12 +158,30 @@ public final class InjuredBleedingFeature {
             return;
         }
         InjuredBleedingConfig config = InjuredBleedingConfig.fromJson(json);
+        if (!isValidEntitySelector(config.entitySelector)) {
+            player.sendMessage(Text.literal("\u00a7cInvalid injured bleeding entity selector"), true);
+            syncConfigTo(player);
+            return;
+        }
         InjuredBleedingConfig.setInstance(config);
         InjuredBleedingPackets.ConfigS2C sync = new InjuredBleedingPackets.ConfigS2C(config.toJson());
         for (ServerPlayerEntity target : player.getServer().getPlayerManager().getPlayerList()) {
             ServerPlayNetworking.send(target, sync);
         }
         player.sendMessage(Text.literal("\u00a7aInjured bleeding config updated"), true);
+    }
+
+    private static boolean isValidEntitySelector(String selectorText) {
+        selectorText = InjuredBleedingConfig.normalizeEntitySelector(selectorText);
+        if (selectorText == null || selectorText.isBlank()) {
+            return true;
+        }
+        try {
+            new EntitySelectorReader(new StringReader(selectorText), true).read();
+            return true;
+        } catch (CommandSyntaxException e) {
+            return false;
+        }
     }
 
     private record Scale(int networkId) {

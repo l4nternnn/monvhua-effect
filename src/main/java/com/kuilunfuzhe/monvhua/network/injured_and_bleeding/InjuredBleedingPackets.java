@@ -51,7 +51,8 @@ public final class InjuredBleedingPackets {
 
     public record BloodEffectS2C(int entityId, double originX, double originY, double originZ,
                                  double emitterOffsetX, double emitterOffsetY, double emitterOffsetZ,
-                                 int scale, int fadeTicks, List<BloodDropData> drops) implements CustomPayload {
+                                 int scale, int fadeTicks, double butterflyChancePercent, double butterflyLifetimeSeconds,
+                                 List<BloodDropData> drops) implements CustomPayload {
         public static final Id<BloodEffectS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "injured_bleeding_effect"));
         public static final PacketCodec<RegistryByteBuf, BloodEffectS2C> CODEC = PacketCodec.of(BloodEffectS2C::write, BloodEffectS2C::new);
         private static boolean registered = false;
@@ -71,6 +72,8 @@ public final class InjuredBleedingPackets {
                     buf.readDouble(),
                     buf.readVarInt(),
                     buf.readVarInt(),
+                    buf.readDouble(),
+                    buf.readDouble(),
                     readDrops(buf)
             );
         }
@@ -85,6 +88,8 @@ public final class InjuredBleedingPackets {
             buf.writeDouble(emitterOffsetZ);
             buf.writeVarInt(scale);
             buf.writeVarInt(fadeTicks);
+            buf.writeDouble(butterflyChancePercent);
+            buf.writeDouble(butterflyLifetimeSeconds);
             buf.writeVarInt(Math.min(drops.size(), MAX_DROPS));
             for (int i = 0; i < Math.min(drops.size(), MAX_DROPS); i++) {
                 drops.get(i).write(buf);

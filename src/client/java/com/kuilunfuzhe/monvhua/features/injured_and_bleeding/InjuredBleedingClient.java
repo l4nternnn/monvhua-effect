@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.injured_and_bleeding;
 
+import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.features.paint.PaintRenderLayers;
 import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 import com.kuilunfuzhe.monvhua.item.config.InjuredBleedingConfig;
@@ -13,6 +14,7 @@ import net.minecraft.client.render.LightmapTextureManager;
 import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.entity.Entity;
+import net.minecraft.particle.ParticleEffect;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -22,6 +24,7 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.RaycastContext;
 import org.joml.Matrix4f;
 
+import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -32,8 +35,13 @@ public final class InjuredBleedingClient {
     private static final double BALLISTIC_GRAVITY_PER_TICK = -0.04D;
     private static final float DECAL_Y_OFFSET = 0.004F;
     private static final float PIXEL_SIZE = 1.0F / 16.0F;
+    private static final float BLOOD_BUTTERFLY_SCALE = 1.0F;
+    private static final double BLOOD_BUTTERFLY_BASE_LIFETIME_SECONDS = 8.0D;
+    private static final int MAX_TRAIL_PARTICLES_PER_DROP = 2;
     private static final List<BloodDecal> DECALS = new ArrayList<>();
     private static final List<SprayDrop> SPRAY_DROPS = new ArrayList<>();
+    private static Constructor<?> bloodButterflyOptionsConstructor;
+    private static boolean bloodButterflyOptionsUnavailable;
 
     private InjuredBleedingClient() {
     }
@@ -51,6 +59,9 @@ public final class InjuredBleedingClient {
     }
 
     private static void applyEffect(InjuredBleedingPackets.BloodEffectS2C packet) {
+        if (isSourceEntityGone(MinecraftClient.getInstance(), packet.entityId())) {
+            return;
+        }
         Vec3d origin = packet.origin();
         Vec3d emitterOffset = packet.emitterOffset();
         int fadeTicks = Math.max(20, packet.fadeTicks());
@@ -65,9 +76,19 @@ public final class InjuredBleedingClient {
                     drop.delayTicks(),
                     Math.max(4, drop.flightTicks()),
                     drop.shapeSeed(),
-                    fadeTicks
+                    fadeTicks,
+                    Math.clamp(packet.butterflyChancePercent(), 0.0D, 100.0D),
+                    Math.clamp(packet.butterflyLifetimeSeconds(), 0.1D, 32.0D)
             ));
         }
+    }
+
+    private static boolean isSourceEntityGone(MinecraftClient client, int entityId) {
+        if (client.world == null) {
+            return true;
+        }
+        Entity entity = client.world.getEntityById(entityId);
+        return entity == null || !entity.isAlive() || entity.isRemoved();
     }
 
     private static void tick(MinecraftClient client) {
@@ -136,6 +157,51 @@ public final class InjuredBleedingClient {
 
     private static void addImpactDecal(Vec3d pos, Vec3d normal, float rotationDegrees, int shapeSeed, int fadeTicks) {
         DECALS.add(new BloodDecal(pos, normal, rotationDegrees, shapeSeed, fadeTicks));
+    }
+
+    private static boolean addBloodButterflyParticle(MinecraftClient client, Vec3d pos, int seed, double lifetimeSeconds) {
+        if (client.particleManager == null) {
+            return false;
+        }
+        ParticleEffect effect = createBloodButterflyEffect(lifetimeSeconds);
+        if (effect == null) {
+            return false;
+        }
+        Vec3d velocity = randomButterflyVelocity(seed);
+        return client.particleManager.addParticle(effect, pos.x, pos.y, pos.z, velocity.x, velocity.y, velocity.z) != null;
+    }
+
+    private static ParticleEffect createBloodButterflyEffect(double lifetimeSeconds) {
+        try {
+            Constructor<?> constructor = bloodButterflyOptionsConstructor;
+            if (constructor == null) {
+                if (bloodButterflyOptionsUnavailable) {
+                    return null;
+                }
+                Class<?> optionsClass = Class.forName("com.example.manosaba_ice_expand.particle.BloodButterflyParticleOptions");
+                constructor = optionsClass.getConstructor(float.class, float.class);
+                bloodButterflyOptionsConstructor = constructor;
+            }
+            float lifeScale = (float) Math.clamp(lifetimeSeconds / BLOOD_BUTTERFLY_BASE_LIFETIME_SECONDS, 0.01D, 4.0D);
+            Object effect = constructor.newInstance(BLOOD_BUTTERFLY_SCALE, lifeScale);
+            return effect instanceof ParticleEffect particleEffect ? particleEffect : null;
+        } catch (ReflectiveOperationException | LinkageError e) {
+            bloodButterflyOptionsUnavailable = true;
+            MonvhuaMod.LOGGER.warn("[Monvhua] Failed to create manosaba blood butterfly particle options", e);
+            return null;
+        }
+    }
+
+    private static Vec3d randomButterflyVelocity(int seed) {
+        Random random = new Random(seed ^ 0x6B8B4567L);
+        double angle = random.nextDouble() * Math.PI * 2.0D;
+        double horizontalSpeed = 0.035D + random.nextDouble() * 0.075D;
+        double upwardSpeed = 0.005D + random.nextDouble() * 0.035D;
+        return new Vec3d(
+                Math.cos(angle) * horizontalSpeed,
+                upwardSpeed,
+                Math.sin(angle) * horizontalSpeed
+        );
     }
 
     private static final class BloodDecal {
@@ -207,15 +273,20 @@ public final class InjuredBleedingClient {
         private int flightTicks;
         private final int shapeSeed;
         private final int fadeTicks;
+        private final double butterflyChancePercent;
+        private final double butterflyLifetimeSeconds;
+        private final boolean replaceWithButterfly;
         private Vec3d start;
         private Vec3d end;
         private Vec3d normal;
         private Vec3d velocity;
         private int age;
         private boolean launched;
+        private final List<Particle> trailParticles = new ArrayList<>(MAX_TRAIL_PARTICLES_PER_DROP);
 
         private SprayDrop(int entityId, Vec3d origin, Vec3d emitterOffset, float angleRadians, float radius, float rotationDegrees,
-                          int delayTicks, int flightTicks, int shapeSeed, int fadeTicks) {
+                          int delayTicks, int flightTicks, int shapeSeed, int fadeTicks, double butterflyChancePercent,
+                          double butterflyLifetimeSeconds) {
             this.entityId = entityId;
             this.origin = origin;
             this.emitterOffset = emitterOffset;
@@ -226,14 +297,22 @@ public final class InjuredBleedingClient {
             this.flightTicks = flightTicks;
             this.shapeSeed = shapeSeed;
             this.fadeTicks = fadeTicks;
+            this.butterflyChancePercent = butterflyChancePercent;
+            this.butterflyLifetimeSeconds = butterflyLifetimeSeconds;
+            this.replaceWithButterfly = shouldReplaceDecalWithButterfly(shapeSeed, butterflyChancePercent);
         }
 
         private static SprayDrop create(int entityId, Vec3d origin, Vec3d emitterOffset, float angleRadians, float radius,
-                                        float rotationDegrees, int delayTicks, int flightTicks, int shapeSeed, int fadeTicks) {
-            return new SprayDrop(entityId, origin, emitterOffset, angleRadians, radius, rotationDegrees, delayTicks, flightTicks, shapeSeed, fadeTicks);
+                                        float rotationDegrees, int delayTicks, int flightTicks, int shapeSeed, int fadeTicks,
+                                        double butterflyChancePercent, double butterflyLifetimeSeconds) {
+            return new SprayDrop(entityId, origin, emitterOffset, angleRadians, radius, rotationDegrees, delayTicks, flightTicks, shapeSeed, fadeTicks, butterflyChancePercent, butterflyLifetimeSeconds);
         }
 
         private boolean tickAndExpired(MinecraftClient client) {
+            if (isSourceEntityGone(client, entityId)) {
+                clearTrailParticles();
+                return true;
+            }
             age++;
             if (age <= delayTicks) {
                 return false;
@@ -243,13 +322,20 @@ public final class InjuredBleedingClient {
             }
             int flightAge = age - delayTicks;
             if (flightAge >= flightTicks) {
-                spawn(client, end, 0.0D, 0.0D, 0.0D);
-                addImpactDecal(end, normal, rotationDegrees, shapeSeed, fadeTicks);
+                if (!replaceWithButterfly) {
+                    spawn(client, end, 0.0D, 0.0D, 0.0D);
+                    addImpactDecal(end, normal, rotationDegrees, shapeSeed, fadeTicks);
+                } else if (!addBloodButterflyParticle(client, end, shapeSeed, butterflyLifetimeSeconds)) {
+                    addImpactDecal(end, normal, rotationDegrees, shapeSeed, fadeTicks);
+                }
                 return true;
+            }
+            if (replaceWithButterfly) {
+                return false;
             }
             Vec3d pos = ballisticPos(flightAge);
             Vec3d particleVelocity = velocity.add(0.0D, BALLISTIC_GRAVITY_PER_TICK * flightAge, 0.0D);
-            spawn(client, pos, particleVelocity.x, particleVelocity.y, particleVelocity.z);
+            trackTrailParticle(spawn(client, pos, particleVelocity.x, particleVelocity.y, particleVelocity.z));
             return false;
         }
 
@@ -313,13 +399,39 @@ public final class InjuredBleedingClient {
                     .add(0.0D, 0.5D * BALLISTIC_GRAVITY_PER_TICK * ticks * ticks, 0.0D);
         }
 
-        private static void spawn(MinecraftClient client, Vec3d pos, double vx, double vy, double vz) {
-            if (client.particleManager != null) {
-                Particle particle = client.particleManager.addParticle(ParticleTypes.DRIPPING_DRIPSTONE_LAVA, pos.x, pos.y, pos.z, vx, vy, vz);
-                if (particle != null) {
-                    particle.setMaxAge(4);
-                }
+        private static boolean shouldReplaceDecalWithButterfly(int shapeSeed, double butterflyChancePercent) {
+            double chance = Math.clamp(butterflyChancePercent, 0.0D, 100.0D);
+            if (chance <= 0.0D) {
+                return false;
             }
+            if (chance >= 100.0D) {
+                return true;
+            }
+            return Math.floorMod(shapeSeed, 10_000) < chance * 100.0D;
+        }
+
+        private void trackTrailParticle(Particle particle) {
+            if (particle == null) {
+                return;
+            }
+            trailParticles.add(particle);
+            while (trailParticles.size() > MAX_TRAIL_PARTICLES_PER_DROP) {
+                trailParticles.remove(0).markDead();
+            }
+        }
+
+        private void clearTrailParticles() {
+            for (Particle particle : trailParticles) {
+                particle.markDead();
+            }
+            trailParticles.clear();
+        }
+
+        private static Particle spawn(MinecraftClient client, Vec3d pos, double vx, double vy, double vz) {
+            if (client.particleManager != null) {
+                return client.particleManager.addParticle(ParticleTypes.FALLING_DRIPSTONE_LAVA, pos.x, pos.y, pos.z, vx, vy, vz);
+            }
+            return null;
         }
     }
 

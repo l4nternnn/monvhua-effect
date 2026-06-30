@@ -20,6 +20,9 @@ public class InjuredBleedingConfig {
     public double spraySeconds = 1.0D;
     public int particlesPerSecond = 28;
     public double bloodSpotFadeSeconds = 6.0D;
+    public double bloodSpotButterflyChancePercent = 0.0D;
+    public double bloodButterflyLifetimeSeconds = 8.0D;
+    public String entitySelector = "";
 
     public static InjuredBleedingConfig getInstance() {
         if (instance == null) {
@@ -40,7 +43,9 @@ public class InjuredBleedingConfig {
     private static InjuredBleedingConfig load() {
         if (Files.isRegularFile(CONFIG_PATH)) {
             try (Reader reader = Files.newBufferedReader(CONFIG_PATH, StandardCharsets.UTF_8)) {
-                return sanitize(GSON.fromJson(reader, InjuredBleedingConfig.class));
+                InjuredBleedingConfig config = sanitize(GSON.fromJson(reader, InjuredBleedingConfig.class));
+                config.save();
+                return config;
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -61,7 +66,79 @@ public class InjuredBleedingConfig {
         config.sprayTicks = Math.clamp((int) Math.round(config.spraySeconds * 20.0D), 1, 400);
         config.particlesPerSecond = Math.clamp(config.particlesPerSecond, 1, 240);
         config.bloodSpotFadeSeconds = Math.clamp(config.bloodSpotFadeSeconds, 0.5D, 120.0D);
+        config.bloodSpotButterflyChancePercent = Math.clamp(config.bloodSpotButterflyChancePercent, 0.0D, 100.0D);
+        config.bloodButterflyLifetimeSeconds = Math.clamp(config.bloodButterflyLifetimeSeconds, 0.1D, 32.0D);
+        config.entitySelector = normalizeEntitySelector(config.entitySelector);
         return config;
+    }
+
+    public static String normalizeEntitySelector(String selector) {
+        if (selector == null) {
+            return "";
+        }
+        String input = selector.trim();
+        if (input.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder result = new StringBuilder(input.length());
+        boolean inQuote = false;
+        char quote = 0;
+        boolean escaped = false;
+        boolean skipWhitespace = false;
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if (inQuote) {
+                result.append(c);
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == quote) {
+                    inQuote = false;
+                }
+                continue;
+            }
+            if (c == '\'' || c == '"') {
+                inQuote = true;
+                quote = c;
+                result.append(c);
+                skipWhitespace = false;
+                continue;
+            }
+            if (Character.isWhitespace(c)) {
+                if (skipWhitespace || nextNonWhitespace(input, i + 1) == ']') {
+                    continue;
+                }
+                result.append(c);
+                continue;
+            }
+            if (c == '[' || c == ',' || c == '=') {
+                removeTrailingWhitespace(result);
+                result.append(c);
+                skipWhitespace = true;
+                continue;
+            }
+            result.append(c);
+            skipWhitespace = false;
+        }
+        return result.toString();
+    }
+
+    private static void removeTrailingWhitespace(StringBuilder builder) {
+        while (!builder.isEmpty() && Character.isWhitespace(builder.charAt(builder.length() - 1))) {
+            builder.deleteCharAt(builder.length() - 1);
+        }
+    }
+
+    private static char nextNonWhitespace(String text, int start) {
+        for (int i = start; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (!Character.isWhitespace(c)) {
+                return c;
+            }
+        }
+        return 0;
     }
 
     public void save() {

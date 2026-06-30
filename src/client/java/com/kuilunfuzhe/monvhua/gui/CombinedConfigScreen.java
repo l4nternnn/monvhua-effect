@@ -30,6 +30,7 @@ import com.kuilunfuzhe.monvhua.network.secret.SecretPackets;
 import com.kuilunfuzhe.monvhua.network.through.RequestThroughConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughConfigUpdateC2SPacket;
 import icyllis.modernui.core.Context;
+import icyllis.modernui.core.Core;
 import icyllis.modernui.fragment.Fragment;
 import icyllis.modernui.graphics.drawable.ColorDrawable;
 import icyllis.modernui.graphics.drawable.ShapeDrawable;
@@ -39,6 +40,7 @@ import icyllis.modernui.text.Editable;
 import icyllis.modernui.text.TextWatcher;
 import icyllis.modernui.util.DataSet;
 import icyllis.modernui.view.Gravity;
+import icyllis.modernui.view.KeyEvent;
 import icyllis.modernui.view.LayoutInflater;
 import icyllis.modernui.view.View;
 import icyllis.modernui.view.ViewGroup;
@@ -52,7 +54,10 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
+import org.lwjgl.glfw.GLFW;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -60,9 +65,13 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 public final class CombinedConfigScreen {
     private static final int STAGES = 7;
@@ -97,72 +106,95 @@ public final class CombinedConfigScreen {
         return activeFragment != null;
     }
 
+    private static void refreshActiveFragment() {
+        CombinedConfigFragment fragment = activeFragment;
+        if (fragment == null) {
+            return;
+        }
+        Runnable refresh = () -> {
+            if (activeFragment == fragment) {
+                fragment.refreshFromExternalConfig();
+            }
+        };
+        if (Core.isOnUiThread()) {
+            refresh.run();
+            return;
+        }
+        if (Core.getUiHandlerAsync() != null) {
+            Core.postOnUiThread(refresh);
+            return;
+        }
+        if (fragment.rootLayout != null) {
+            fragment.rootLayout.post(refresh);
+        }
+    }
+
     public static void receiveEvilConfigs(GlobalConfigS2C.StageConfig[] configsArray) {
         if (configsArray == null) return;
         for (int i = 0; i < configsArray.length && i + 1 < CACHED_EVIL_CONFIGS.length; i++) {
             CACHED_EVIL_CONFIGS[i + 1] = configsArray[i];
         }
-        if (activeFragment != null) activeFragment.refreshFromExternalConfig();
+        refreshActiveFragment();
     }
 
     public static void receiveGazeConfig(GazeConfig config) {
         if (config == null) return;
         cachedGazeConfig = config;
-        if (activeFragment != null) activeFragment.refreshFromExternalConfig();
+        refreshActiveFragment();
     }
 
     public static void receiveMirrorConfig(MirrorConfig config) {
         if (config == null) return;
         cachedMirrorConfig = config;
-        if (activeFragment != null) activeFragment.refreshFromExternalConfig();
+        refreshActiveFragment();
     }
 
     public static void receiveThroughConfig(ThroughConfig config) {
         if (config == null) return;
         cachedThroughConfig = config;
-        if (activeFragment != null) activeFragment.refreshFromExternalConfig();
+        refreshActiveFragment();
     }
 
     public static void receiveImitateConfig(ImitateConfig config) {
         if (config == null) return;
         cachedImitateConfig = config;
-        if (activeFragment != null) activeFragment.refreshFromExternalConfig();
+        refreshActiveFragment();
     }
 
     public static void receiveFloatingConfig(FloatingConfig config) {
         if (config == null) return;
         cachedFloatingConfig = config;
-        if (activeFragment != null) activeFragment.refreshFromExternalConfig();
+        refreshActiveFragment();
     }
 
     public static void receivePlantMagicConfig(PlantMagicConfig config) {
         if (config == null) return;
         cachedPlantMagicConfig = config;
-        if (activeFragment != null) activeFragment.refreshFromExternalConfig();
+        refreshActiveFragment();
     }
 
     public static void receiveSecretConfig(SecretConfig config) {
         if (config == null) return;
         cachedSecretConfig = config;
-        if (activeFragment != null) activeFragment.refreshFromExternalConfig();
+        refreshActiveFragment();
     }
 
     public static void receivePaintConfig(PaintConfig config) {
         if (config == null) return;
         cachedPaintConfig = config;
-        if (activeFragment != null) activeFragment.refreshFromExternalConfig();
+        refreshActiveFragment();
     }
 
     public static void receiveGravityConfig(GravityConfig config) {
         if (config == null) return;
         cachedGravityConfig = config;
-        if (activeFragment != null) activeFragment.refreshFromExternalConfig();
+        refreshActiveFragment();
     }
 
     public static void receiveInjuredBleedingConfig(InjuredBleedingConfig config) {
         if (config == null) return;
         cachedInjuredBleedingConfig = config;
-        if (activeFragment != null) activeFragment.refreshFromExternalConfig();
+        refreshActiveFragment();
     }
 
     private static void ensureDefaults() {
@@ -238,6 +270,8 @@ public final class CombinedConfigScreen {
         private LinearLayout rightPanel;
         private LinearLayout rootLayout;
         private EditText uiScaleField;
+        private TextView entitySelectorHint;
+        private List<String> entitySelectorSuggestions = List.of();
         private final Map<String, EditText> fields = new LinkedHashMap<>();
         private final Map<String, EditText> sideFields = new LinkedHashMap<>();
         private boolean rebuilding;
@@ -352,8 +386,7 @@ public final class CombinedConfigScreen {
                 if (!isLeftNavType(type)) continue;
                 Button button = button(getContext(), type.label);
                 boolean selected = type == currentType && !injuredPage;
-                button.setTextColor(selected ? 0xFFFFD36A : 0xFFE8EDF4);
-                button.setBackground(panelShape(selected ? 0xAA3A5268 : 0x55313A4A, 0x663A4350));
+                selectedButton(button, selected);
                 button.setOnClickListener(v -> {
                     currentType = type;
                     injuredPage = false;
@@ -412,8 +445,7 @@ public final class CombinedConfigScreen {
         private void addRightConfigButton(String label, ConfigType type, boolean injured) {
             Button button = button(getContext(), label);
             boolean selected = injured ? injuredPage : currentType == type && !injuredPage;
-            button.setTextColor(selected ? 0xFFFFD36A : 0xFFE8EDF4);
-            button.setBackground(panelShape(selected ? 0xAA3A5268 : 0x55313A4A, 0x663A4350));
+            selectedButton(button, selected);
             button.setOnClickListener(v -> {
                 currentType = type;
                 injuredPage = injured;
@@ -530,6 +562,9 @@ public final class CombinedConfigScreen {
                 addField(parent, "spraySeconds", "喷洒时间/s", cachedInjuredBleedingConfig.spraySeconds);
                 addField(parent, "particlesPerSecond", "每秒喷洒粒子数量", cachedInjuredBleedingConfig.particlesPerSecond);
                 addField(parent, "bloodSpotFadeSeconds", "落地血点消失时间/s", cachedInjuredBleedingConfig.bloodSpotFadeSeconds);
+                addField(parent, "bloodSpotButterflyChancePercent", "Blood butterfly chance/%", cachedInjuredBleedingConfig.bloodSpotButterflyChancePercent);
+                addField(parent, "bloodButterflyLifetimeSeconds", "Blood butterfly lifetime/s", cachedInjuredBleedingConfig.bloodButterflyLifetimeSeconds);
+                addEntitySelectorField(parent);
                 Button save = button(getContext(), "保存受伤配置");
                 save.setOnClickListener(v -> saveInjuredBleeding());
                 parent.addView(save, blockParams());
@@ -541,7 +576,6 @@ public final class CombinedConfigScreen {
             save.setOnClickListener(v -> saveInjuredBleeding());
             parent.addView(save, blockParams());
         }
-
         private void addStageSelector(LinearLayout parent, boolean side) {
             LinearLayout row = new LinearLayout(getContext());
             row.setOrientation(LinearLayout.HORIZONTAL);
@@ -550,7 +584,7 @@ public final class CombinedConfigScreen {
                 int selected = side ? rangeStage : stage;
                 int next = i;
                 Button b = button(getContext(), String.valueOf(i));
-                b.setTextColor(next == selected ? 0xFFFFD36A : 0xFFE8EDF4);
+                selectedButton(b, next == selected);
                 b.setOnClickListener(v -> {
                     if (side) {
                         rangeStage = next;
@@ -575,17 +609,196 @@ public final class CombinedConfigScreen {
             sideFields.put(key, addFieldView(parent, label, value));
         }
 
+        private void addEntitySelectorField(LinearLayout parent) {
+            EditText field = addFieldView(parent, "Entity selector", cachedInjuredBleedingConfig.entitySelector);
+            fields.put("entitySelector", field);
+            entitySelectorHint = label(getContext(), "", 11, 0xFF9FB2C8);
+            entitySelectorHint.setPadding(s(136), 0, s(4), s(6));
+            parent.addView(entitySelectorHint, new LinearLayout.LayoutParams(-1, -2));
+            field.addTextChangedListener(new TextWatcher() {
+                @Override
+                public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                }
+
+                @Override
+                public void onTextChanged(CharSequence s, int start, int before, int count) {
+                }
+
+                @Override
+                public void afterTextChanged(Editable s) {
+                    updateEntitySelectorPreview(s.toString());
+                }
+            });
+            field.setOnKeyListener((view, keyCode, event) -> {
+                if (keyCode == GLFW.GLFW_KEY_TAB && event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                    applyEntitySelectorSuggestion(field);
+                    return true;
+                }
+                return false;
+            });
+            updateEntitySelectorPreview(text(field));
+        }
+
+        private void updateEntitySelectorPreview(String input) {
+            entitySelectorSuggestions = entitySelectorSuggestions(input);
+            if (entitySelectorHint == null) {
+                return;
+            }
+            String text = InjuredBleedingConfig.normalizeEntitySelector(input);
+            if (text.isEmpty()) {
+                entitySelectorHint.setText("Preview: all living entities | Tab: @e[type=]");
+                entitySelectorHint.setTextColor(0xFF9FB2C8);
+                return;
+            }
+            SelectorPreview preview = previewEntitySelector(text);
+            if (preview.error() != null) {
+                entitySelectorHint.setText("Error: " + preview.error());
+                entitySelectorHint.setTextColor(0xFFFF8A8A);
+                return;
+            }
+            String suggestionText = entitySelectorSuggestions.isEmpty()
+                    ? ""
+                    : " | Tab: " + String.join("  ", entitySelectorSuggestions.subList(0, Math.min(4, entitySelectorSuggestions.size())));
+            entitySelectorHint.setText("Preview: " + preview.summary() + suggestionText);
+            entitySelectorHint.setTextColor(0xFF9FE3A7);
+        }
+
+        private void applyEntitySelectorSuggestion(EditText field) {
+            if (entitySelectorSuggestions.isEmpty()) {
+                updateEntitySelectorPreview(text(field));
+                return;
+            }
+            String current = text(field);
+            String completed = applySuggestion(current, entitySelectorSuggestions.get(0));
+            field.setText(completed);
+            field.setSelection(completed.length());
+            updateEntitySelectorPreview(completed);
+        }
+
+        private static String applySuggestion(String input, String suggestion) {
+            String text = input == null ? "" : input;
+            int start = completionStart(text);
+            return text.substring(0, start) + suggestion;
+        }
+
+        private static int completionStart(String input) {
+            if (input == null || input.isEmpty()) {
+                return 0;
+            }
+            int comma = input.lastIndexOf(',');
+            int bracket = input.lastIndexOf('[');
+            int equals = input.lastIndexOf('=');
+            int start = Math.max(comma + 1, bracket + 1);
+            if (equals >= start) {
+                start = equals + 1;
+            }
+            while (start < input.length() && input.charAt(start) == ' ') {
+                start++;
+            }
+            return start;
+        }
+
+        private static SelectorPreview previewEntitySelector(String input) {
+            if (!input.startsWith("@")) {
+                return new SelectorPreview(null, "Selector must start with @");
+            }
+            int open = input.indexOf('[');
+            int close = input.lastIndexOf(']');
+            String root = open >= 0 ? input.substring(0, open) : input;
+            if (!List.of("@p", "@a", "@r", "@s", "@e", "@n").contains(root)) {
+                return new SelectorPreview(null, "Unknown selector root " + root);
+            }
+            if (open >= 0 && close < open) {
+                return new SelectorPreview(null, "Missing closing ]");
+            }
+            String args = open >= 0 && close > open ? input.substring(open + 1, close) : "";
+            String type = optionValue(args, "type");
+            String name = optionValue(args, "name");
+            String tag = optionValue(args, "tag");
+            List<String> parts = new ArrayList<>();
+            parts.add(root);
+            if (!type.isBlank()) parts.add("type=" + type);
+            if (!name.isBlank()) parts.add("name=" + name);
+            if (!tag.isBlank()) parts.add("tag=" + tag);
+            return new SelectorPreview(String.join(" ", parts), null);
+        }
+
+        private static String optionValue(String args, String key) {
+            if (args == null || args.isBlank()) {
+                return "";
+            }
+            for (String part : args.split(",")) {
+                String trimmed = part.trim();
+                if (trimmed.startsWith(key + "=")) {
+                    return trimmed.substring(key.length() + 1);
+                }
+            }
+            return "";
+        }
+
+        private static List<String> entitySelectorSuggestions(String input) {
+            String text = input == null ? "" : input;
+            int start = completionStart(text);
+            String prefix = text.substring(start).trim();
+            if (!text.startsWith("@")) {
+                return filter(List.of("@e[type=", "@p", "@a", "@s"), prefix);
+            }
+            int open = text.lastIndexOf('[');
+            int equals = text.lastIndexOf('=');
+            if (open >= 0 && equals >= open && equals >= text.lastIndexOf(',')) {
+                String key = selectorKeyBeforeEquals(text, equals);
+                if ("type".equals(key)) {
+                    return Registries.ENTITY_TYPE.getIds().stream()
+                            .map(Identifier::toString)
+                            .filter(id -> id.startsWith(prefix) || id.startsWith("minecraft:" + prefix))
+                            .sorted(Comparator.naturalOrder())
+                            .limit(16)
+                            .collect(Collectors.toList());
+                }
+                if ("sort".equals(key)) {
+                    return filter(List.of("nearest", "furthest", "random", "arbitrary"), prefix);
+                }
+                return List.of();
+            }
+            if (open >= 0) {
+                return filter(List.of("type=", "name=", "tag=", "distance=", "sort=", "limit="), prefix);
+            }
+            return filter(List.of("@e[type=", "@p", "@a", "@r", "@s"), prefix);
+        }
+
+        private static String selectorKeyBeforeEquals(String text, int equals) {
+            int comma = text.lastIndexOf(',', equals);
+            int bracket = text.lastIndexOf('[', equals);
+            int start = Math.max(comma, bracket) + 1;
+            return text.substring(start, equals).trim();
+        }
+
+        private static List<String> filter(List<String> values, String prefix) {
+            if (prefix == null || prefix.isBlank()) {
+                return values;
+            }
+            return values.stream().filter(value -> value.startsWith(prefix)).collect(Collectors.toList());
+        }
         private EditText addFieldView(LinearLayout parent, String labelText, Object value) {
             LinearLayout row = new LinearLayout(getContext());
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setPadding(s(2), s(2), s(2), s(2));
+            row.setMinimumHeight(s(28));
             row.setBackground(panelShape(0x332A3038, 0x223A4350));
             TextView label = label(getContext(), labelText, 12, 0xFFB6C0CC);
-            label.setGravity(Gravity.CENTER_VERTICAL);
-            row.addView(label, new LinearLayout.LayoutParams(s(132), s(28)));
+            label.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+            label.setSingleLine(false);
+            label.setMinLines(1);
+            LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(s(132), -2);
+            labelParams.setMargins(0, 0, s(8), 0);
+            row.addView(label, labelParams);
             EditText field = edit(getContext(), String.valueOf(value), ignored -> {});
-            field.setSingleLine(true);
-            row.addView(field, new LinearLayout.LayoutParams(0, s(28), 1.0F));
+            field.setSingleLine(false);
+            field.setMinLines(1);
+            field.setMaxLines(4);
+            field.setMinHeight(s(28));
+            row.addView(field, new LinearLayout.LayoutParams(0, -2, 0.6F));
+            row.addView(new View(getContext()), new LinearLayout.LayoutParams(0, s(1), 0.4F));
             parent.addView(row, blockParams());
             return field;
         }
@@ -765,6 +978,9 @@ public final class CombinedConfigScreen {
                 config.spraySeconds = doubleField("spraySeconds");
                 config.particlesPerSecond = intField("particlesPerSecond");
                 config.bloodSpotFadeSeconds = doubleField("bloodSpotFadeSeconds");
+                config.bloodSpotButterflyChancePercent = doubleField("bloodSpotButterflyChancePercent");
+                config.bloodButterflyLifetimeSeconds = doubleField("bloodButterflyLifetimeSeconds");
+                config.entitySelector = text(fields.get("entitySelector"));
                 cachedInjuredBleedingConfig = InjuredBleedingConfig.fromJson(config.toJson());
                 ClientPlayNetworking.send(new InjuredBleedingPackets.UpdateConfigC2S(cachedInjuredBleedingConfig.toJson()));
                 message("受伤血迹配置已提交");
@@ -833,6 +1049,9 @@ public final class CombinedConfigScreen {
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player != null) client.player.sendMessage(Text.literal("§c请输入有效数字"), true);
         }
+
+        private record SelectorPreview(String summary, String error) {
+        }
     }
 
     private static LinearLayout panel(Context ctx) {
@@ -857,6 +1076,11 @@ public final class CombinedConfigScreen {
         button.setMinHeight(s(26));
         button.setBackground(panelShape(0x55313A4A, 0xB4AAB7C8));
         return button;
+    }
+
+    private static void selectedButton(Button button, boolean selected) {
+        button.setTextColor(selected ? 0xFFB8FAFF : 0xFFE8EDF4);
+        button.setBackground(panelShape(selected ? 0xCC155A66 : 0x55313A4A, selected ? 0xFF3FE9F4 : 0x663A4350));
     }
 
     private static EditText edit(Context ctx, String value, Consumer<String> consumer) {
