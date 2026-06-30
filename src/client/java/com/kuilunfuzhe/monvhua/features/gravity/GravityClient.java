@@ -105,9 +105,7 @@ public final class GravityClient {
             context.client().execute(() -> {
                 GravityConfig config = GravityConfig.fromJson(packet.json());
                 GravityConfig.syncInstance(config);
-                if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
-                    screen.receiveGravityConfig(config);
-                }
+                CombinedConfigScreen.receiveGravityConfig(config);
             });
         });
         ClientPlayNetworking.registerGlobalReceiver(GravityPackets.EnergyS2C.ID, (packet, context) ->

@@ -7,12 +7,11 @@ import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
-
 import java.util.ArrayList;
 import java.util.List;
 
 public final class InjuredBleedingPackets {
-    public static final int MAX_DROPS = 48;
+    public static final int MAX_DROPS = 8192;
 
     private InjuredBleedingPackets() {
     }
@@ -27,15 +26,10 @@ public final class InjuredBleedingPackets {
         UpdateConfigC2S.register();
     }
 
-    public record BloodDropData(double endX, double endY, double endZ,
-                                float normalX, float normalY, float normalZ,
+    public record BloodDropData(float angleRadians, float radius,
                                 float rotationDegrees, int delayTicks, int flightTicks, int shapeSeed) {
         private BloodDropData(RegistryByteBuf buf) {
             this(
-                    buf.readDouble(),
-                    buf.readDouble(),
-                    buf.readDouble(),
-                    buf.readFloat(),
                     buf.readFloat(),
                     buf.readFloat(),
                     buf.readFloat(),
@@ -46,24 +40,12 @@ public final class InjuredBleedingPackets {
         }
 
         private void write(RegistryByteBuf buf) {
-            buf.writeDouble(endX);
-            buf.writeDouble(endY);
-            buf.writeDouble(endZ);
-            buf.writeFloat(normalX);
-            buf.writeFloat(normalY);
-            buf.writeFloat(normalZ);
+            buf.writeFloat(angleRadians);
+            buf.writeFloat(radius);
             buf.writeFloat(rotationDegrees);
             buf.writeVarInt(delayTicks);
             buf.writeVarInt(flightTicks);
             buf.writeInt(shapeSeed);
-        }
-
-        public Vec3d end() {
-            return new Vec3d(endX, endY, endZ);
-        }
-
-        public Vec3d normal() {
-            return new Vec3d(normalX, normalY, normalZ);
         }
     }
 

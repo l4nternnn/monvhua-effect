@@ -237,9 +237,7 @@ public class MonvhuaModClient implements ClientModInitializer {
                 SecretConfig config = SecretConfig.fromJson(packet.json());
                 if (config != null) {
                     CombinedConfigScreen.cachedSecretConfig = config;
-                    if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
-                        screen.receiveSecretConfig(config);
-                    }
+                    CombinedConfigScreen.receiveSecretConfig(config);
                 }
             });
         });

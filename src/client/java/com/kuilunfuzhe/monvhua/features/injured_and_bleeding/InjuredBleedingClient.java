@@ -8,13 +8,18 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.particle.Particle;
 import net.minecraft.client.render.LightmapTextureManager;
 import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.entity.Entity;
 import net.minecraft.particle.ParticleTypes;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.RaycastContext;
 import org.joml.Matrix4f;
 
 import java.util.ArrayList;
@@ -40,9 +45,7 @@ public final class InjuredBleedingClient {
                 context.client().execute(() -> {
                     InjuredBleedingConfig config = InjuredBleedingConfig.fromJson(packet.json());
                     InjuredBleedingConfig.syncInstance(config);
-                    if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
-                        screen.receiveInjuredBleedingConfig(config);
-                    }
+                    CombinedConfigScreen.receiveInjuredBleedingConfig(config);
                 }));
         ClientTickEvents.END_CLIENT_TICK.register(InjuredBleedingClient::tick);
     }
@@ -56,8 +59,8 @@ public final class InjuredBleedingClient {
                     packet.entityId(),
                     origin,
                     emitterOffset,
-                    drop.end(),
-                    drop.normal().normalize(),
+                    drop.angleRadians(),
+                    drop.radius(),
                     drop.rotationDegrees(),
                     drop.delayTicks(),
                     Math.max(4, drop.flightTicks()),
@@ -197,8 +200,8 @@ public final class InjuredBleedingClient {
         private final int entityId;
         private final Vec3d origin;
         private final Vec3d emitterOffset;
-        private final Vec3d packetEnd;
-        private final Vec3d packetNormal;
+        private final float angleRadians;
+        private final float radius;
         private final float rotationDegrees;
         private final int delayTicks;
         private int flightTicks;
@@ -211,13 +214,13 @@ public final class InjuredBleedingClient {
         private int age;
         private boolean launched;
 
-        private SprayDrop(int entityId, Vec3d origin, Vec3d emitterOffset, Vec3d packetEnd, Vec3d packetNormal, float rotationDegrees,
+        private SprayDrop(int entityId, Vec3d origin, Vec3d emitterOffset, float angleRadians, float radius, float rotationDegrees,
                           int delayTicks, int flightTicks, int shapeSeed, int fadeTicks) {
             this.entityId = entityId;
             this.origin = origin;
             this.emitterOffset = emitterOffset;
-            this.packetEnd = packetEnd;
-            this.packetNormal = packetNormal;
+            this.angleRadians = angleRadians;
+            this.radius = radius;
             this.rotationDegrees = rotationDegrees;
             this.delayTicks = delayTicks;
             this.flightTicks = flightTicks;
@@ -225,9 +228,9 @@ public final class InjuredBleedingClient {
             this.fadeTicks = fadeTicks;
         }
 
-        private static SprayDrop create(int entityId, Vec3d origin, Vec3d emitterOffset, Vec3d packetEnd, Vec3d packetNormal,
+        private static SprayDrop create(int entityId, Vec3d origin, Vec3d emitterOffset, float angleRadians, float radius,
                                         float rotationDegrees, int delayTicks, int flightTicks, int shapeSeed, int fadeTicks) {
-            return new SprayDrop(entityId, origin, emitterOffset, packetEnd, packetNormal, rotationDegrees, delayTicks, flightTicks, shapeSeed, fadeTicks);
+            return new SprayDrop(entityId, origin, emitterOffset, angleRadians, radius, rotationDegrees, delayTicks, flightTicks, shapeSeed, fadeTicks);
         }
 
         private boolean tickAndExpired(MinecraftClient client) {
@@ -244,7 +247,6 @@ public final class InjuredBleedingClient {
                 addImpactDecal(end, normal, rotationDegrees, shapeSeed, fadeTicks);
                 return true;
             }
-            double progress = flightAge / (double) flightTicks;
             Vec3d pos = ballisticPos(flightAge);
             Vec3d particleVelocity = velocity.add(0.0D, BALLISTIC_GRAVITY_PER_TICK * flightAge, 0.0D);
             spawn(client, pos, particleVelocity.x, particleVelocity.y, particleVelocity.z);
@@ -255,8 +257,9 @@ public final class InjuredBleedingClient {
             Entity entity = client.world == null ? null : client.world.getEntityById(entityId);
             Vec3d currentOrigin = entity == null ? origin : entity.getPos();
             start = currentOrigin.add(emitterOffset);
-            end = packetEnd;
-            normal = packetNormal.lengthSquared() < 1.0E-6D ? new Vec3d(0.0D, 1.0D, 0.0D) : packetNormal.normalize();
+            SurfaceHit landing = randomGroundLanding(client, entity, currentOrigin, start);
+            end = landing.pos();
+            normal = landing.normal();
             double ticks = Math.max(1.0D, flightTicks);
             if (end.y < start.y) {
                 double maxDownwardTicks = Math.sqrt(Math.max(0.0D, 2.0D * (end.y - start.y) / BALLISTIC_GRAVITY_PER_TICK));
@@ -275,6 +278,34 @@ public final class InjuredBleedingClient {
             return true;
         }
 
+        private SurfaceHit randomGroundLanding(MinecraftClient client, Entity entity, Vec3d currentOrigin, Vec3d emitter) {
+            if (client.world != null) {
+                Entity raycastEntity = entity == null ? client.player : entity;
+                if (raycastEntity == null) {
+                    return new SurfaceHit(new Vec3d(currentOrigin.x, Math.min(currentOrigin.y + 0.006D, emitter.y), currentOrigin.z), new Vec3d(0.0D, 1.0D, 0.0D));
+                }
+                double x = currentOrigin.x + Math.cos(angleRadians) * radius;
+                double z = currentOrigin.z + Math.sin(angleRadians) * radius;
+                double height = entity == null ? 2.0D : entity.getHeight();
+                Vec3d top = new Vec3d(x, currentOrigin.y + height + 2.0D, z);
+                Vec3d bottom = new Vec3d(x, currentOrigin.y - 4.0D, z);
+                HitResult hit = client.world.raycast(new RaycastContext(
+                        top,
+                        bottom,
+                        RaycastContext.ShapeType.COLLIDER,
+                        RaycastContext.FluidHandling.NONE,
+                        raycastEntity
+                ));
+                if (hit instanceof BlockHitResult blockHit && hit.getType() == HitResult.Type.BLOCK && blockHit.getSide() == Direction.UP) {
+                    Vec3d pos = blockHit.getPos().add(0.0D, 0.006D, 0.0D);
+                    if (pos.y <= emitter.y) {
+                        return new SurfaceHit(pos, new Vec3d(0.0D, 1.0D, 0.0D));
+                    }
+                }
+            }
+            return new SurfaceHit(new Vec3d(currentOrigin.x, Math.min(currentOrigin.y + 0.006D, emitter.y), currentOrigin.z), new Vec3d(0.0D, 1.0D, 0.0D));
+        }
+
         private Vec3d ballisticPos(int flightAge) {
             double ticks = Math.min(flightAge, flightTicks);
             return start
@@ -284,7 +315,10 @@ public final class InjuredBleedingClient {
 
         private static void spawn(MinecraftClient client, Vec3d pos, double vx, double vy, double vz) {
             if (client.particleManager != null) {
-                client.particleManager.addParticle(ParticleTypes.DRIPPING_DRIPSTONE_LAVA, pos.x, pos.y, pos.z, vx, vy, vz);
+                Particle particle = client.particleManager.addParticle(ParticleTypes.DRIPPING_DRIPSTONE_LAVA, pos.x, pos.y, pos.z, vx, vy, vz);
+                if (particle != null) {
+                    particle.setMaxAge(4);
+                }
             }
         }
     }

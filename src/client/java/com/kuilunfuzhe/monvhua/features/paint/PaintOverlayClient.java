@@ -174,9 +174,7 @@ public final class PaintOverlayClient {
                 context.client().execute(() -> {
                     PaintConfig config = PaintConfig.fromJson(packet.json());
                     PaintConfig.syncInstance(config);
-                    if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
-                        screen.receivePaintConfig(config);
-                    }
+                    CombinedConfigScreen.receivePaintConfig(config);
                 }));
         PaintBucketCarryClientState.initialize();
     }

@@ -17,6 +17,9 @@ public class InjuredBleedingConfig {
     private static InjuredBleedingConfig instance;
 
     public int sprayTicks = 20;
+    public double spraySeconds = 1.0D;
+    public int particlesPerSecond = 28;
+    public double bloodSpotFadeSeconds = 6.0D;
 
     public static InjuredBleedingConfig getInstance() {
         if (instance == null) {
@@ -51,7 +54,13 @@ public class InjuredBleedingConfig {
         if (config == null) {
             config = new InjuredBleedingConfig();
         }
-        config.sprayTicks = Math.clamp(config.sprayTicks, 1, 200);
+        if (config.spraySeconds <= 0.0D && config.sprayTicks > 0) {
+            config.spraySeconds = config.sprayTicks / 20.0D;
+        }
+        config.spraySeconds = Math.clamp(config.spraySeconds, 0.05D, 20.0D);
+        config.sprayTicks = Math.clamp((int) Math.round(config.spraySeconds * 20.0D), 1, 400);
+        config.particlesPerSecond = Math.clamp(config.particlesPerSecond, 1, 240);
+        config.bloodSpotFadeSeconds = Math.clamp(config.bloodSpotFadeSeconds, 0.5D, 120.0D);
         return config;
     }
 
