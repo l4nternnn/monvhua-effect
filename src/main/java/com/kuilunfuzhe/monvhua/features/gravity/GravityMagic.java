@@ -136,7 +136,7 @@ public final class GravityMagic {
     private static final int BLOCK_GROUP_MIN_STAGE = 6;
     private static final int SELF_FORCE_DAMAGE_BLOCK_COUNT = 2;
     private static final double SELF_FORCE_DAMAGE_REFERENCE_HARDNESS = 1.5D;
-    private static final double SELF_FORCE_IMPACT_MIN_SPEED = 0.45D;
+    private static final double SELF_FORCE_GLIDE_COLLISION_MIN_SPEED_LOSS = 0.3D;
     private static final int SELF_FORCE_IMPACT_COOLDOWN_TICKS = 10;
     private static final double EXTRACT_SPEED_MULTIPLIER = 0.8D;
     private static final Identifier EXTRACT_SPEED_MODIFIER_ID = Identifier.of("monvhua", "gravity_extract_speed_multiplier");
@@ -1656,7 +1656,7 @@ public final class GravityMagic {
     }
 
     private static void damageSelfForceImpact(ServerPlayerEntity player, SelfForceMotion motion) {
-        if (!(player.getWorld() instanceof ServerWorld world) || !hasSelfForceImpact(player)) {
+        if (!(player.getWorld() instanceof ServerWorld world) || !player.horizontalCollision) {
             return;
         }
 
@@ -1665,14 +1665,17 @@ public final class GravityMagic {
             return;
         }
 
-        double impactSpeed = motion.previousVelocity().length();
-        if (impactSpeed < SELF_FORCE_IMPACT_MIN_SPEED) {
+        Vec3d previousVelocity = motion.previousVelocity();
+        Vec3d currentVelocity = player.getVelocity();
+        double previousHorizontalSpeed = Math.sqrt(previousVelocity.x * previousVelocity.x + previousVelocity.z * previousVelocity.z);
+        double currentHorizontalSpeed = Math.sqrt(currentVelocity.x * currentVelocity.x + currentVelocity.z * currentVelocity.z);
+        double speedLoss = previousHorizontalSpeed - currentHorizontalSpeed;
+        if (speedLoss <= SELF_FORCE_GLIDE_COLLISION_MIN_SPEED_LOSS) {
             return;
         }
 
-        double massKg = 10.0D * SELF_FORCE_DAMAGE_REFERENCE_HARDNESS * SELF_FORCE_DAMAGE_BLOCK_COUNT;
-        float damage = (float) (kineticDamage(massKg, impactSpeed * 20.0D) * SELF_FORCE_DAMAGE_REFERENCE_HARDNESS);
-        if (damage <= 0.05F) {
+        float damage = (float) (speedLoss * 10.0D - 3.0D);
+        if (damage <= 0.0F) {
             return;
         }
 
@@ -1682,10 +1685,6 @@ public final class GravityMagic {
             player.setVelocity(velocity.multiply(0.35D));
             player.velocityModified = true;
         }
-    }
-
-    private static boolean hasSelfForceImpact(ServerPlayerEntity player) {
-        return player.horizontalCollision || player.verticalCollision || player.isOnGround();
     }
 
     private static void tickPlayerGravityEnergy(MinecraftServer server) {
