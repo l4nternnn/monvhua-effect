@@ -28,6 +28,7 @@ public final class GravityPackets {
         ConfigS2C.register();
         EnergyS2C.register();
         ExtractPoseS2C.register();
+        QuakeHintS2C.register();
     }
 
     public record AdjustGravityC2S(int entityId, double gravity) implements CustomPayload {
@@ -275,6 +276,33 @@ public final class GravityPackets {
 
         private void write(RegistryByteBuf buf) {
             buf.writeInt(entityId);
+            buf.writeInt(ticks);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record QuakeHintS2C(String direction, int ticks) implements CustomPayload {
+        public static final Id<QuakeHintS2C> ID = new Id<>(Identifier.of("monvhua", "gravity_quake_hint"));
+        public static final PacketCodec<RegistryByteBuf, QuakeHintS2C> CODEC = PacketCodec.of(QuakeHintS2C::write, QuakeHintS2C::new);
+        private static boolean registered = false;
+
+        private QuakeHintS2C(RegistryByteBuf buf) {
+            this(buf.readString(), buf.readInt());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(direction);
             buf.writeInt(ticks);
         }
 

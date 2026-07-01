@@ -19,6 +19,7 @@ import com.kuilunfuzhe.monvhua.features.action.ActionEngine;
 import com.kuilunfuzhe.monvhua.features.action.ActionExecutor;
 import com.kuilunfuzhe.monvhua.features.action.TimelineScheduler;
 import com.kuilunfuzhe.monvhua.features.area_tip.AreaTipFeature;
+import com.kuilunfuzhe.monvhua.features.binding.PlayerBindingFeature;
 import com.kuilunfuzhe.monvhua.features.block.body.BodyPartManager;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryEvents;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
@@ -656,6 +657,7 @@ public class MonvhuaMod implements ModInitializer {
         PaintItems.initialize();
         PaintOverlayFeature.initialize();
         InjuredBleedingFeature.initialize();
+        PlayerBindingFeature.initialize();
         ThroughItem.initialize(configManager);
         ModBlocks.initialize();
         Assembly_ModItems.initialize();

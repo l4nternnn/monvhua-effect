@@ -9,6 +9,7 @@ import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlaceTrueSkeletalBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.UpdateBodyPoseDefaultsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.UpdatePlacedBodyPoseC2SPacket;
+import com.kuilunfuzhe.monvhua.network.binding.BindingPackets;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryTransformPackets;
 import com.kuilunfuzhe.monvhua.network.drawingboard.DrawingBoardPackets;
@@ -71,6 +72,7 @@ public class ModNetworking {
         PlantMagicPackets.registerS2C();
         AreaTipPackets.registerS2C();
         InjuredBleedingPackets.registerS2C();
+        BindingPackets.registerS2C();
         ImitateOpenUIPacket.register();
         SoundWaveStartS2CPacket.register();
         ImitateConfigS2CPacket.register();
@@ -110,6 +112,7 @@ public class ModNetworking {
         PlantMagicPackets.registerC2S();
         AreaTipPackets.registerC2S();
         InjuredBleedingPackets.registerC2S();
+        BindingPackets.registerC2S();
         SoundWavePacket.register();
         RequestImitateConfigC2SPacket.register();
         UpdateImitateConfigC2SPacket.register();

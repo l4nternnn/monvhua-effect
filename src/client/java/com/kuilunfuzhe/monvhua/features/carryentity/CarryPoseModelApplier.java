@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.carryentity;
 
+import com.kuilunfuzhe.monvhua.features.gravity.GravityExtractPoseClientState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
@@ -47,10 +48,11 @@ public final class CarryPoseModelApplier {
 		}
 		if (CarryPoseClientState.isAnyCarrier(state.id)) {
 			applyCarrierPartPose(model, part);
-			return;
-		}
-		if (CarryPoseClientState.isCarried(state.id)) {
+		} else if (CarryPoseClientState.isCarried(state.id)) {
 			applyCarriedPose(model, state.id);
+		}
+		if (GravityExtractPoseClientState.isActive(state.id)) {
+			applyGravityExtractPartPose(model, part);
 		}
 	}
 
@@ -59,11 +61,11 @@ public final class CarryPoseModelApplier {
 	}
 
 	public static boolean isCurrentRightArmPart(ModelPart part) {
-		return currentRenderModel != null && (part == currentRenderModel.rightArm || part == currentRenderModel.rightSleeve);
+		return currentRenderModel != null && part == currentRenderModel.rightArm;
 	}
 
 	public static boolean isCurrentLeftArmPart(ModelPart part) {
-		return currentRenderModel != null && (part == currentRenderModel.leftArm || part == currentRenderModel.leftSleeve);
+		return currentRenderModel != null && part == currentRenderModel.leftArm;
 	}
 
 	public static void applyCarrierRightArmPose(ModelPart part) {
@@ -105,19 +107,38 @@ public final class CarryPoseModelApplier {
 	public static void apply(PlayerEntityModel model, PlayerEntityRenderState state) {
 		if (CarryPoseClientState.isAnyCarrier(state.id)) {
 			applyCarrierPose(model);
+		} else if (CarryPoseClientState.isCarried(state.id)) {
+			applyCarriedPose(model, state.id);
+		}
+		if (GravityExtractPoseClientState.isActive(state.id)) {
+			applyGravityExtractPose(model);
+		}
+	}
+
+	public static void applyGravityExtractPose(PlayerEntityModel model) {
+		applyGravityExtractRightArmPose(model.rightArm);
+	}
+
+	public static void applyGravityExtractRightArmPose(ModelPart part) {
+		if (part == null) {
 			return;
 		}
-		if (CarryPoseClientState.isCarried(state.id)) {
-			applyCarriedPose(model, state.id);
+		part.pitch = (float) Math.toRadians(-165.0D);
+		part.yaw = (float) Math.toRadians(8.0D);
+		part.roll = (float) Math.toRadians(8.0D);
+	}
+
+	private static void applyGravityExtractPartPose(PlayerEntityModel model, ModelPart part) {
+		if (part == model.rightArm) {
+			applyGravityExtractRightArmPose(part);
+			return;
 		}
 	}
 
 	private static void applyCarrierPose(PlayerEntityModel model) {
 		model.body.pitch = CarryPoseTuning.CARRIER_BODY_PITCH;
 		applyCarrierRightArmPose(model.rightArm);
-		applyCarrierRightArmPose(model.rightSleeve);
 		applyCarrierLeftArmPose(model.leftArm);
-		applyCarrierLeftArmPose(model.leftSleeve);
 	}
 
 	private static void applyCarrierPartPose(PlayerEntityModel model, ModelPart part) {
@@ -125,11 +146,11 @@ public final class CarryPoseModelApplier {
 			model.body.pitch = CarryPoseTuning.CARRIER_BODY_PITCH;
 			return;
 		}
-		if (part == model.rightArm || part == model.rightSleeve) {
+		if (part == model.rightArm) {
 			applyCarrierRightArmPose(part);
 			return;
 		}
-		if (part == model.leftArm || part == model.leftSleeve) {
+		if (part == model.leftArm) {
 			applyCarrierLeftArmPose(part);
 		}
 	}

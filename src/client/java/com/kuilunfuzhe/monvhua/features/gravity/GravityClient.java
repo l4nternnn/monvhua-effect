@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.gravity;
 
 import com.kuilunfuzhe.monvhua.entity.ModEntities;
+import com.kuilunfuzhe.monvhua.features.binding.PlayerBindingClient;
 import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 import com.kuilunfuzhe.monvhua.item.config.GravityConfig;
 import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
@@ -29,6 +30,10 @@ public final class GravityClient {
     private static double energy = 100.0D;
     private static double maxEnergy = 100.0D;
     private static int currentStage = 1;
+    private static String quakeDirection = "";
+    private static int quakeTicks = 0;
+    private static int quakeMaxTicks = 0;
+    private static int quakeAge = 0;
     private static GLFWScrollCallbackI previousScrollCallback;
     private static boolean scrollCallbackRegistered = false;
 
@@ -44,6 +49,7 @@ public final class GravityClient {
             GravityMagic.tickClientSyncedAreaGravity();
             GravityMagic.resetInvertedPlayerIfInactive(client.player);
             GravityExtractPoseClientState.tick();
+            tickQuakeHint();
             GravityDebugClient.tick(client);
         });
         HudRenderCallback.EVENT.register(GravityClient::renderHud);
@@ -117,6 +123,8 @@ public final class GravityClient {
                 }));
         ClientPlayNetworking.registerGlobalReceiver(GravityPackets.ExtractPoseS2C.ID, (packet, context) ->
                 context.client().execute(() -> GravityExtractPoseClientState.set(packet.entityId(), packet.ticks())));
+        ClientPlayNetworking.registerGlobalReceiver(GravityPackets.QuakeHintS2C.ID, (packet, context) ->
+                context.client().execute(() -> showQuakeHint(packet.direction(), packet.ticks())));
     }
 
     private static void scheduleAreaRerender(MinecraftClient client, net.minecraft.util.math.BlockPos center, int extent) {
@@ -133,6 +141,9 @@ public final class GravityClient {
     private static void registerScrollCallback(MinecraftClient client) {
         long window = client.getWindow().getHandle();
         previousScrollCallback = GLFW.glfwSetScrollCallback(window, (handle, xOffset, yOffset) -> {
+            if (isCtrlDown(client) && PlayerBindingClient.handleScroll(yOffset)) {
+                return;
+            }
             if (handleGravityScroll(yOffset)) {
                 return;
             }
@@ -222,6 +233,7 @@ public final class GravityClient {
 
     private static void renderHud(DrawContext context, net.minecraft.client.render.RenderTickCounter tickCounter) {
         MinecraftClient client = MinecraftClient.getInstance();
+        renderQuakeHint(context, client);
         if (client.player == null || client.player.getMainHandStack().getItem() != GravityItems.GRAVITY_WAND) {
             return;
         }
@@ -254,6 +266,41 @@ public final class GravityClient {
         int fillW = (int) Math.round(barW * Math.clamp(energy / maxEnergy, 0.0D, 1.0D));
         context.fill(barX, barY, barX + barW, barY + 5, 0xAA1A2028);
         context.fill(barX, barY, barX + fillW, barY + 5, 0xFF66CCFF);
+    }
+
+    private static void showQuakeHint(String direction, int ticks) {
+        quakeDirection = direction == null || direction.isBlank() ? "附近" : direction;
+        quakeTicks = Math.max(1, ticks);
+        quakeMaxTicks = quakeTicks;
+        quakeAge = 0;
+    }
+
+    private static void tickQuakeHint() {
+        if (quakeTicks <= 0) {
+            return;
+        }
+        quakeTicks--;
+        quakeAge++;
+        if (quakeTicks <= 0) {
+            quakeDirection = "";
+            quakeMaxTicks = 0;
+        }
+    }
+
+    private static void renderQuakeHint(DrawContext context, MinecraftClient client) {
+        if (client.player == null || quakeTicks <= 0) {
+            return;
+        }
+        String message = "地面传来一阵颤动，似乎在" + quakeDirection + "方向";
+        int width = client.textRenderer.getWidth(message);
+        int baseX = (context.getScaledWindowWidth() - width) / 2;
+        int baseY = context.getScaledWindowHeight() - 72;
+        int shakeX = Math.round((float) Math.sin(quakeAge * 1.7D) * 2.0F);
+        int shakeY = Math.round((float) Math.cos(quakeAge * 2.3D) * 1.0F);
+        float fade = Math.clamp(quakeTicks / (float) Math.max(1, quakeMaxTicks), 0.0F, 1.0F);
+        int alpha = Math.max(80, Math.round(255.0F * Math.min(1.0F, fade * 1.6F)));
+        int color = (alpha << 24) | 0xE8D6A6;
+        context.drawText(client.textRenderer, Text.literal(message), baseX + shakeX, baseY + shakeY, color, true);
     }
 
     private static String describeTarget(MinecraftClient client) {

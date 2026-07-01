@@ -28,6 +28,9 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityPose;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.MovementType;
+import net.minecraft.entity.attribute.EntityAttributeInstance;
+import net.minecraft.entity.attribute.EntityAttributeModifier;
+import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
@@ -135,6 +138,9 @@ public final class GravityMagic {
     private static final double SELF_FORCE_DAMAGE_REFERENCE_HARDNESS = 1.5D;
     private static final double SELF_FORCE_IMPACT_MIN_SPEED = 0.45D;
     private static final int SELF_FORCE_IMPACT_COOLDOWN_TICKS = 10;
+    private static final double EXTRACT_SPEED_MULTIPLIER = 0.8D;
+    private static final Identifier EXTRACT_SPEED_MODIFIER_ID = Identifier.of("monvhua", "gravity_extract_speed_multiplier");
+    private static final int QUAKE_HINT_TICKS = 60;
     private static final double SELF_FORCE_MAX_SPEED = 1.85D;
     private static final double SELF_FORCE_HORIZONTAL_DAMPING = 0.985D;
     private static final double MAX_GRAVITY_ENERGY = 100.0D;
@@ -520,6 +526,11 @@ public final class GravityMagic {
 
         EXTRACTING_BLOCK_GROUPS.put(player.getUuid(), new ExtractingBlockGroup(world.getRegistryKey(), plans, totalMassKg, extractTicks));
         syncExtractPose(player, extractTicks);
+        applyExtractingSpeedPenalty(player);
+        if (plans.size() >= blockLimit) {
+            broadcastQuakeHint(player);
+        }
+        player.sendMessage(Text.literal("§e我需要专心汇聚...，这会使我无暇顾及其它"), true);
         player.sendMessage(Text.literal("\u00a7b[重力] 正在汇聚 " + plans.size()
                 + " 个方块，阶段=" + stage
                 + "，质量=" + format(totalMassKg) + "kg"), true);
@@ -1709,6 +1720,7 @@ public final class GravityMagic {
                 clearExtractingBlockGroup(uuid, true);
                 clearHeldBlockGroup(uuid, true);
                 syncExtractPose(player, 0);
+                removeExtractingSpeedPenalty(player);
                 player.sendMessage(Text.literal("\u00a7c[重力] 能量已耗尽"), true);
             }
             int syncTicks = ENERGY_SYNC_TICKS.merge(uuid, 1, Integer::sum);
@@ -1770,13 +1782,20 @@ public final class GravityMagic {
             if (player == null || !player.isAlive() || !isHoldingGravityWand(player)
                     || !group.world.equals(player.getWorld().getRegistryKey())) {
                 clearExtractingBlockGroup(ownerUuid, true);
+                if (player != null) {
+                    syncExtractPose(player, 0);
+                    removeExtractingSpeedPenalty(player);
+                }
                 continue;
             }
+            applyExtractingSpeedPenalty(player);
             group.age++;
             spawnDueExtractingBlocks(worldFor(server, group.world), player, group);
             group.blocks.removeIf(held -> held.entity() == null || !held.entity().isAlive());
             if (group.blocks.isEmpty() && group.pendingBlocks.isEmpty()) {
                 EXTRACTING_BLOCK_GROUPS.remove(ownerUuid, group);
+                syncExtractPose(player, 0);
+                removeExtractingSpeedPenalty(player);
                 continue;
             }
             boolean complete = group.age >= group.totalTicks && group.pendingBlocks.isEmpty();
@@ -1793,6 +1812,7 @@ public final class GravityMagic {
             HeldBlockGroup heldGroup = new HeldBlockGroup(group.world, group.blocks, group.massKg, player.getWorld());
             HELD_BLOCK_GROUPS.put(ownerUuid, heldGroup);
             syncExtractPose(player, 0);
+            removeExtractingSpeedPenalty(player);
             player.sendMessage(Text.literal("\u00a7b[重力] 方块汇聚完成"), true);
         }
     }
@@ -1900,6 +1920,68 @@ public final class GravityMagic {
         }
     }
 
+    private static void applyExtractingSpeedPenalty(ServerPlayerEntity player) {
+        EntityAttributeInstance speed = player.getAttributeInstance(EntityAttributes.MOVEMENT_SPEED);
+        if (speed == null) {
+            return;
+        }
+        speed.removeModifier(EXTRACT_SPEED_MODIFIER_ID);
+        speed.addTemporaryModifier(new EntityAttributeModifier(
+                EXTRACT_SPEED_MODIFIER_ID,
+                EXTRACT_SPEED_MULTIPLIER - 1.0D,
+                EntityAttributeModifier.Operation.ADD_MULTIPLIED_TOTAL
+        ));
+    }
+
+    private static void removeExtractingSpeedPenalty(ServerPlayerEntity player) {
+        EntityAttributeInstance speed = player.getAttributeInstance(EntityAttributes.MOVEMENT_SPEED);
+        if (speed != null) {
+            speed.removeModifier(EXTRACT_SPEED_MODIFIER_ID);
+        }
+    }
+
+    private static void broadcastQuakeHint(ServerPlayerEntity caster) {
+        MinecraftServer server = caster.getServer();
+        if (server == null) {
+            return;
+        }
+        for (ServerPlayerEntity target : server.getPlayerManager().getPlayerList()) {
+            if (target.getWorld() != caster.getWorld()) {
+                continue;
+            }
+            ServerPlayNetworking.send(target, new GravityPackets.QuakeHintS2C(quakeDirection(caster, target), QUAKE_HINT_TICKS));
+        }
+    }
+
+    private static String quakeDirection(ServerPlayerEntity caster, ServerPlayerEntity target) {
+        Vec3d toCaster = caster.getPos().subtract(target.getPos());
+        Vec3d flat = new Vec3d(toCaster.x, 0.0D, toCaster.z);
+        if (flat.lengthSquared() < 1.0E-6D) {
+            return "脚下";
+        }
+        Vec3d look = target.getRotationVec(1.0F);
+        Vec3d forward = new Vec3d(look.x, 0.0D, look.z);
+        if (forward.lengthSquared() < 1.0E-6D) {
+            forward = Vec3d.fromPolar(0.0F, target.getYaw());
+            forward = new Vec3d(forward.x, 0.0D, forward.z);
+        }
+        forward = forward.normalize();
+        Vec3d right = new Vec3d(-forward.z, 0.0D, forward.x);
+        Vec3d dir = flat.normalize();
+        double angle = Math.atan2(dir.dotProduct(right), dir.dotProduct(forward));
+        int sector = Math.floorMod((int) Math.round(angle / (Math.PI / 4.0D)), 8);
+        return switch (sector) {
+            case 0 -> "正前方";
+            case 1 -> "右前方";
+            case 2 -> "右方";
+            case 3 -> "右后方";
+            case 4 -> "正后方";
+            case 5 -> "左后方";
+            case 6 -> "左方";
+            default -> "左前方";
+        };
+    }
+
     private static void clearExtractingBlockGroup(UUID ownerUuid, boolean discard) {
         ExtractingBlockGroup group = EXTRACTING_BLOCK_GROUPS.remove(ownerUuid);
         if (group == null || !discard) {
@@ -1932,6 +2014,7 @@ public final class GravityMagic {
             }
         }
         syncExtractPose(player, 0);
+        removeExtractingSpeedPenalty(player);
     }
 
     private static List<Integer> stagedExtractionDelays(int count, int totalTicks) {

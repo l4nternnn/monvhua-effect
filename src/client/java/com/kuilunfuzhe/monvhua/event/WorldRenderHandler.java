@@ -4,6 +4,7 @@ import com.kuilunfuzhe.monvhua.MonvhuaModClient;
 import com.kuilunfuzhe.monvhua.client.imitate.AreaSelectRenderer;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.area_tip.AreaTipAreaRenderer;
+import com.kuilunfuzhe.monvhua.features.binding.PlayerBindingClient;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityAreaBoundaryRenderer;
 import com.kuilunfuzhe.monvhua.features.injured_and_bleeding.InjuredBleedingClient;
 import com.kuilunfuzhe.monvhua.features.paint.PaintBucketCarryClientState;
@@ -43,6 +44,7 @@ public class WorldRenderHandler {
             AreaTipAreaRenderer.render(context);
             PaintOverlayClient.render(context);
             InjuredBleedingClient.render(context);
+            PlayerBindingClient.render(context);
             PaintBucketCarryClientState.render(context);
             AreaSelectRenderer.render(context);
         });

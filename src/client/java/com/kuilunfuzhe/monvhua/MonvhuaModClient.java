@@ -9,6 +9,7 @@ import com.kuilunfuzhe.monvhua.compat.DhCompat;
 import com.kuilunfuzhe.monvhua.compat.EmfCompat;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryTransformDebugCommand;
 import com.kuilunfuzhe.monvhua.features.area_tip.AreaTipClient;
+import com.kuilunfuzhe.monvhua.features.binding.PlayerBindingClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceEnergyClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.SignedEvilTooltipClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
@@ -109,6 +110,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         AreaTipClient.initialize();
         TextAreaHudClient.initialize();
         InjuredBleedingClient.initialize();
+        PlayerBindingClient.initialize();
         initializeOptionalAxiomAreaTip();
         PaintOverlayClient.initialize();
         DrawingBoardClient.initialize();
