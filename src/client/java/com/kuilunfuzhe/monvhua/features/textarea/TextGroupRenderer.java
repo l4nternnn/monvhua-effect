@@ -11,7 +11,9 @@ import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.text.OrderedText;
 import net.minecraft.text.Style;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
+import net.minecraft.text.TextColor;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.Util;
 import org.joml.Matrix3x2fStack;
@@ -141,7 +143,7 @@ public final class TextGroupRenderer {
         matrices.translate(entry.offsetX, entry.offsetY);
         matrices.scale(entry.fontSize, entry.fontSize);
         int wrapWidth = Math.max(8, Math.round(entry.wrapWidth / entry.fontSize));
-        Text text = Text.literal(entry.text).setStyle(Style.EMPTY.withFont(fontId(entry.font)));
+        Text text = styledText(entry, alpha);
         List<OrderedText> lines = textRenderer.wrapLines(text, wrapWidth);
         int color = withAlpha(entry.color, alpha);
         int y = 0;
@@ -193,6 +195,47 @@ public final class TextGroupRenderer {
             return Math.max(0, wrapWidth - width);
         }
         return 0;
+    }
+
+    private static Text styledText(AreaTipConfig.HudTextEntry entry, float alpha) {
+        String text = entry.text == null ? "" : entry.text;
+        if (text.isEmpty() || entry.fontSpans == null || entry.fontSpans.isEmpty()) {
+            return Text.literal(text).setStyle(Style.EMPTY.withFont(fontId(entry.font)));
+        }
+        MutableText root = Text.empty();
+        int index = 0;
+        int length = text.length();
+        for (AreaTipConfig.FontSpan span : entry.fontSpans) {
+            if (span == null) {
+                continue;
+            }
+            int start = Math.clamp(Math.min(span.start, span.end), 0, length);
+            int end = Math.clamp(Math.max(span.start, span.end), 0, length);
+            if (end <= index) {
+                continue;
+            }
+            if (start > index) {
+                appendRun(root, text, index, start, entry.font, null, alpha);
+            }
+            int runStart = Math.max(start, index);
+            appendRun(root, text, runStart, end, span.font == null ? entry.font : span.font, span.color, alpha);
+            index = end;
+        }
+        if (index < length) {
+            appendRun(root, text, index, length, entry.font, null, alpha);
+        }
+        return root;
+    }
+
+    private static void appendRun(MutableText root, String text, int start, int end, String font, Integer color, float alpha) {
+        if (end <= start) {
+            return;
+        }
+        Style style = Style.EMPTY.withFont(fontId(font));
+        if (color != null) {
+            style = style.withColor(TextColor.fromRgb(color & 0xFFFFFF));
+        }
+        root.append(Text.literal(text.substring(start, end)).setStyle(style));
     }
 
     private static Identifier fontId(String value) {

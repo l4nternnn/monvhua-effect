@@ -11,7 +11,9 @@ import icyllis.modernui.mc.MinecraftSurfaceView;
 import icyllis.modernui.mc.MuiModApi;
 import icyllis.modernui.mc.ScreenCallback;
 import icyllis.modernui.text.Editable;
+import icyllis.modernui.text.Spanned;
 import icyllis.modernui.text.TextWatcher;
+import icyllis.modernui.text.style.BackgroundColorSpan;
 import icyllis.modernui.view.Gravity;
 import icyllis.modernui.view.LayoutInflater;
 import icyllis.modernui.view.MotionEvent;
@@ -87,6 +89,9 @@ public class TextGroupEditFragment extends Fragment {
     private float value = 1.0F;
     private float uploadedHue = -1.0F;
     private int pendingColor = 0xFFFFFFFF;
+    private int savedTextSelectionStart = -1;
+    private int savedTextSelectionEnd = -1;
+    private Object selectionHighlightSpan;
     private int surfaceWidth = 854;
     private int surfaceHeight = 480;
 
@@ -383,24 +388,34 @@ public class TextGroupEditFragment extends Fragment {
 
         addSection(ctx, "文本内容");
         textField = edit(ctx, entry.text, s -> {
-            currentEntry().text = s.toString();
+            AreaTipConfig.HudTextEntry selected = currentEntry();
+            selected.text = s.toString();
+            selected.sanitizeFontSpans();
+            clearSavedTextSelection();
             markDirty();
             rebuildTextList();
         });
         textField.setMinLines(2);
         textField.setMaxLines(6);
+        restoreTextSelection();
         inspectorPanel.addView(textField, blockParams());
 
         addSection(ctx, "字体");
         LinearLayout fontRow = new LinearLayout(ctx);
         fontRow.setOrientation(LinearLayout.HORIZONTAL);
         fontField = edit(ctx, entry.font, s -> {
-            currentEntry().font = s.toString();
+            applySelectedFont(s.toString());
             markDirty();
+        });
+        fontField.setOnFocusChangeListener((view, hasFocus) -> {
+            if (hasFocus) {
+                rememberTextSelection();
+            }
         });
         fontRow.addView(fontField, new LinearLayout.LayoutParams(0, -2, 1.0F));
         fontToggleButton = button(ctx, fontListOpen ? "▲" : "▼");
         fontToggleButton.setOnClickListener(v -> {
+            rememberTextSelection();
             fontListOpen = !fontListOpen;
             rebuildInspector();
         });
@@ -416,15 +431,21 @@ public class TextGroupEditFragment extends Fragment {
         colorField = edit(ctx, String.format(Locale.ROOT, "#%06X", entry.color & 0xFFFFFF), s -> {
             Integer parsed = parseColor(s.toString());
             if (parsed != null) {
-                AreaTipConfig.HudTextEntry selected = currentEntry();
-                selected.color = 0xFF000000 | parsed;
-                selected.useGroupColor = false;
+                applySelectedColor(0xFF000000 | parsed);
                 markDirty();
+            }
+        });
+        colorField.setOnFocusChangeListener((view, hasFocus) -> {
+            if (hasFocus) {
+                rememberTextSelection();
             }
         });
         colorRow.addView(colorField, new LinearLayout.LayoutParams(0, -2, 1.0F));
         Button picker = button(ctx, "取色");
-        picker.setOnClickListener(v -> openColorPicker());
+        picker.setOnClickListener(v -> {
+            rememberTextSelection();
+            openColorPicker();
+        });
         colorRow.addView(picker, new LinearLayout.LayoutParams(82, -2));
         inspectorPanel.addView(colorRow, blockParams());
 
@@ -522,7 +543,7 @@ public class TextGroupEditFragment extends Fragment {
             Button row = button(ctx, font);
             row.setTextColor(font.equals(currentEntry().font) ? 0xFFFFD36A : 0xFFE8EDF4);
             row.setOnClickListener(v -> {
-                currentEntry().font = font;
+                applySelectedFont(font);
                 markDirty();
                 fontListOpen = false;
                 rebuildInspector();
@@ -531,6 +552,98 @@ public class TextGroupEditFragment extends Fragment {
         }
         scroll.addView(fontListPanel, new FrameLayout.LayoutParams(-1, -2));
         inspectorPanel.addView(scroll, new LinearLayout.LayoutParams(-1, 150));
+    }
+
+    private void applySelectedFont(String font) {
+        AreaTipConfig.HudTextEntry entry = currentEntry();
+        int[] range = selectedTextRange();
+        if (range == null) {
+            entry.font = font;
+            return;
+        }
+        entry.applyFontToRange(range[0], range[1], font);
+    }
+
+    private void applySelectedColor(int color) {
+        AreaTipConfig.HudTextEntry entry = currentEntry();
+        int[] range = selectedTextRange();
+        if (range == null) {
+            entry.color = color;
+            entry.useGroupColor = false;
+            return;
+        }
+        entry.applyColorToRange(range[0], range[1], color);
+    }
+
+    private int[] selectedTextRange() {
+        rememberTextSelection();
+        if (!hasSavedTextSelection()) {
+            return null;
+        }
+        int length = currentEntry().text == null ? 0 : currentEntry().text.length();
+        int start = Math.clamp(Math.min(savedTextSelectionStart, savedTextSelectionEnd), 0, length);
+        int end = Math.clamp(Math.max(savedTextSelectionStart, savedTextSelectionEnd), 0, length);
+        return end > start ? new int[]{start, end} : null;
+    }
+
+    private void rememberTextSelection() {
+        if (textField == null) {
+            return;
+        }
+        int start = textField.getSelectionStart();
+        int end = textField.getSelectionEnd();
+        if (start < 0 || end < 0 || start == end) {
+            return;
+        }
+        savedTextSelectionStart = Math.min(start, end);
+        savedTextSelectionEnd = Math.max(start, end);
+        applyTextSelectionHighlight();
+    }
+
+    private void restoreTextSelection() {
+        if (textField == null || !hasSavedTextSelection()) {
+            return;
+        }
+        int length = textField.getText().length();
+        int start = Math.clamp(savedTextSelectionStart, 0, length);
+        int end = Math.clamp(savedTextSelectionEnd, 0, length);
+        if (end > start) {
+            textField.setSelection(start, end);
+            applyTextSelectionHighlight();
+        }
+    }
+
+    private boolean hasSavedTextSelection() {
+        return savedTextSelectionEnd > savedTextSelectionStart && savedTextSelectionStart >= 0;
+    }
+
+    private void clearSavedTextSelection() {
+        clearTextSelectionHighlight();
+        savedTextSelectionStart = -1;
+        savedTextSelectionEnd = -1;
+    }
+
+    private void applyTextSelectionHighlight() {
+        if (textField == null || !hasSavedTextSelection()) {
+            return;
+        }
+        Editable editable = textField.getText();
+        clearTextSelectionHighlight();
+        int length = editable.length();
+        int start = Math.clamp(savedTextSelectionStart, 0, length);
+        int end = Math.clamp(savedTextSelectionEnd, 0, length);
+        if (end <= start) {
+            return;
+        }
+        selectionHighlightSpan = new BackgroundColorSpan(0x6649D7FF);
+        editable.setSpan(selectionHighlightSpan, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
+    private void clearTextSelectionHighlight() {
+        if (textField != null && selectionHighlightSpan != null) {
+            textField.getText().removeSpan(selectionHighlightSpan);
+        }
+        selectionHighlightSpan = null;
     }
 
     private void addImportList(Context ctx) {
@@ -573,6 +686,7 @@ public class TextGroupEditFragment extends Fragment {
         fontListOpen = false;
         importListOpen = false;
         colorPickerOpen = false;
+        clearSavedTextSelection();
         rebuildAllPanels();
     }
 
@@ -581,6 +695,7 @@ public class TextGroupEditFragment extends Fragment {
         fontListOpen = false;
         importListOpen = false;
         colorPickerOpen = false;
+        clearSavedTextSelection();
         rebuildAllPanels();
     }
 
@@ -859,9 +974,7 @@ public class TextGroupEditFragment extends Fragment {
             return true;
         }
         if (inside(bounds.applyX(), bounds.applyY(), 58, 22, mouseX, mouseY)) {
-            AreaTipConfig.HudTextEntry entry = currentEntry();
-            entry.color = pendingColor;
-            entry.useGroupColor = false;
+            applySelectedColor(pendingColor);
             colorPickerOpen = false;
             markDirty();
             rebuildInspector();
@@ -1215,6 +1328,7 @@ public class TextGroupEditFragment extends Fragment {
         field.setText(value == null ? "" : value);
         field.setTextColor(0xFFE8EDF4);
         field.setTextSize(12);
+        field.setHighlightColor(0x8849D7FF);
         field.setSingleLine(false);
         field.setPadding(5, 2, 5, 2);
         field.setBackground(panelShape(0xDD151920, 0xFF3A4350));

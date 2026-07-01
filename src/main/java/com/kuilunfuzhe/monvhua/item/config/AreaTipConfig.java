@@ -301,6 +301,7 @@ public class AreaTipConfig {
         public float fontSize = 1.0F;
         public String align = "left";
         public String font = "minecraft:default";
+        public List<FontSpan> fontSpans = new ArrayList<>();
         public int offsetX = 8;
         public int offsetY = 8;
         public float x = Float.NaN;
@@ -336,6 +337,14 @@ public class AreaTipConfig {
             copy.fontSize = fontSize;
             copy.align = align;
             copy.font = font;
+            copy.fontSpans = new ArrayList<>();
+            if (fontSpans != null) {
+                for (FontSpan span : fontSpans) {
+                    if (span != null) {
+                        copy.fontSpans.add(span.copy());
+                    }
+                }
+            }
             copy.offsetX = offsetX;
             copy.offsetY = offsetY;
             copy.x = x;
@@ -383,6 +392,7 @@ public class AreaTipConfig {
             if (font == null || font.isBlank()) {
                 font = "minecraft:default";
             }
+            sanitizeFontSpans();
             x = finite(x, fallbackX);
             y = finite(y, fallbackY);
             scale = Math.clamp(finite(scale, fallbackScale), 0.2F, 8.0F);
@@ -402,6 +412,153 @@ public class AreaTipConfig {
             passDelayCount = Math.clamp(passDelayCount, 0, 100000);
             playLimit = Math.clamp(playLimit, 0, 100000);
             return this;
+        }
+
+        public void applyFontToRange(int start, int end, String font) {
+            applyStyleToRange(start, end, cleanFont(font), null, true, false);
+        }
+
+        public void applyColorToRange(int start, int end, int color) {
+            applyStyleToRange(start, end, null, 0xFF000000 | (color & 0xFFFFFF), false, true);
+        }
+
+        private void applyStyleToRange(int start, int end, String font, Integer color, boolean setFont, boolean setColor) {
+            if (text == null) {
+                text = "";
+            }
+            int length = text.length();
+            int rangeStart = Math.clamp(Math.min(start, end), 0, length);
+            int rangeEnd = Math.clamp(Math.max(start, end), 0, length);
+            if (rangeEnd <= rangeStart) {
+                return;
+            }
+            String defaultFont = cleanFont(this.font);
+            int defaultColor = 0xFF000000 | (this.color & 0xFFFFFF);
+            List<FontSpan> existing = sanitizeFontSpans(fontSpans, length);
+            List<Integer> boundaries = new ArrayList<>();
+            boundaries.add(0);
+            boundaries.add(length);
+            boundaries.add(rangeStart);
+            boundaries.add(rangeEnd);
+            for (FontSpan span : existing) {
+                boundaries.add(span.start);
+                boundaries.add(span.end);
+            }
+            boundaries = boundaries.stream().distinct().sorted().toList();
+            List<FontSpan> nextSpans = new ArrayList<>();
+            for (int i = 0; i < boundaries.size() - 1; i++) {
+                int segmentStart = boundaries.get(i);
+                int segmentEnd = boundaries.get(i + 1);
+                if (segmentEnd <= segmentStart) {
+                    continue;
+                }
+                FontSpan style = styleAt(existing, segmentStart);
+                boolean inRange = segmentStart >= rangeStart && segmentEnd <= rangeEnd;
+                if (inRange) {
+                    if (setFont) {
+                        style.font = defaultFont.equals(font) ? null : font;
+                    }
+                    if (setColor) {
+                        style.color = defaultColor == color ? null : color;
+                    }
+                }
+                if (style.hasOverrides()) {
+                    nextSpans.add(new FontSpan(segmentStart, segmentEnd, style.font, style.color));
+                }
+            }
+            fontSpans = sanitizeFontSpans(nextSpans, length);
+        }
+
+        public void sanitizeFontSpans() {
+            fontSpans = sanitizeFontSpans(fontSpans, text == null ? 0 : text.length());
+        }
+
+        private static List<FontSpan> sanitizeFontSpans(List<FontSpan> spans, int textLength) {
+            List<FontSpan> sanitized = new ArrayList<>();
+            if (spans == null || textLength <= 0) {
+                return sanitized;
+            }
+            for (FontSpan span : spans) {
+                if (span == null) {
+                    continue;
+                }
+                int start = Math.clamp(Math.min(span.start, span.end), 0, textLength);
+                int end = Math.clamp(Math.max(span.start, span.end), 0, textLength);
+                if (end <= start) {
+                    continue;
+                }
+                String font = cleanOptionalFont(span.font);
+                Integer color = span.color == null ? null : 0xFF000000 | (span.color & 0xFFFFFF);
+                if (font == null && color == null) {
+                    continue;
+                }
+                addMergedSpan(sanitized, new FontSpan(start, end, font, color));
+            }
+            return sanitized;
+        }
+
+        private static String cleanFont(String value) {
+            return value == null || value.isBlank() ? "minecraft:default" : value.trim();
+        }
+
+        private static String cleanOptionalFont(String value) {
+            return value == null || value.isBlank() ? null : value.trim();
+        }
+
+        private static FontSpan styleAt(List<FontSpan> spans, int position) {
+            FontSpan style = new FontSpan();
+            for (FontSpan span : spans) {
+                if (position >= span.start && position < span.end) {
+                    style.font = span.font;
+                    style.color = span.color;
+                }
+            }
+            return style;
+        }
+
+        private static void addMergedSpan(List<FontSpan> spans, FontSpan span) {
+            if (!spans.isEmpty()) {
+                FontSpan previous = spans.get(spans.size() - 1);
+                if (previous.end == span.start && previous.sameStyle(span)) {
+                    previous.end = span.end;
+                    return;
+                }
+            }
+            spans.add(span);
+        }
+    }
+
+    public static class FontSpan {
+        public int start;
+        public int end;
+        public String font;
+        public Integer color;
+
+        public FontSpan() {
+        }
+
+        public FontSpan(int start, int end, String font) {
+            this(start, end, font, null);
+        }
+
+        public FontSpan(int start, int end, String font, Integer color) {
+            this.start = start;
+            this.end = end;
+            this.font = font;
+            this.color = color;
+        }
+
+        public FontSpan copy() {
+            return new FontSpan(start, end, font, color);
+        }
+
+        private boolean hasOverrides() {
+            return font != null || color != null;
+        }
+
+        private boolean sameStyle(FontSpan other) {
+            return java.util.Objects.equals(font, other.font)
+                    && java.util.Objects.equals(color, other.color);
         }
     }
 
