@@ -132,6 +132,8 @@ public final class GravityMagic {
     private static final int THROW_DAMAGE_COOLDOWN_TICKS = 10;
     private static final int SELF_FORCE_DAMAGE_BLOCK_COUNT = 2;
     private static final double SELF_FORCE_DAMAGE_REFERENCE_HARDNESS = 1.5D;
+    private static final double SELF_FORCE_IMPACT_MIN_SPEED = 0.45D;
+    private static final int SELF_FORCE_IMPACT_COOLDOWN_TICKS = 10;
     private static final double SELF_FORCE_MAX_SPEED = 1.85D;
     private static final double SELF_FORCE_HORIZONTAL_DAMPING = 0.985D;
     private static final double MAX_GRAVITY_ENERGY = 100.0D;
@@ -143,6 +145,7 @@ public final class GravityMagic {
     private static final Map<UUID, ExtractingBlockGroup> EXTRACTING_BLOCK_GROUPS = new ConcurrentHashMap<>();
     private static final Map<UUID, SelfForceMotion> SELF_FORCE_MOTIONS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> SELF_FORCE_RECOVERY_TICKS = new ConcurrentHashMap<>();
+    private static final Map<UUID, Integer> SELF_FORCE_IMPACT_COOLDOWNS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> CLIENT_DIRECTED_RECOVERY_TICKS = new ConcurrentHashMap<>();
     private static final Set<UUID> THROWN_GROUP_IMPACTS = ConcurrentHashMap.newKeySet();
     private static final Map<UUID, DirectedEntityGravity> ENTITY_GRAVITY = new ConcurrentHashMap<>();
@@ -228,15 +231,20 @@ public final class GravityMagic {
         }
     }
 
-    private record SelfForceMotion(RegistryKey<World> world, Vec3d direction, double acceleration, int ticks) {
+    private record SelfForceMotion(RegistryKey<World> world, Vec3d direction, double acceleration, int ticks, Vec3d previousVelocity) {
         private SelfForceMotion {
             direction = normalizedDirection(direction);
             acceleration = Math.max(0.0D, acceleration);
             ticks = Math.max(0, ticks);
+            previousVelocity = previousVelocity == null ? Vec3d.ZERO : previousVelocity;
         }
 
         private SelfForceMotion ticked() {
-            return new SelfForceMotion(world, direction, acceleration, ticks - 1);
+            return new SelfForceMotion(world, direction, acceleration, ticks - 1, previousVelocity);
+        }
+
+        private SelfForceMotion withPreviousVelocity(Vec3d velocity) {
+            return new SelfForceMotion(world, direction, acceleration, ticks, velocity);
         }
     }
 
@@ -371,6 +379,7 @@ public final class GravityMagic {
             tickPlayerGravityEnergy(server);
             tickExtractingBlockGroups(server);
             tickHeldBlockGroups(server);
+            tickSelfForceImpactCooldowns();
             tickThrownDamageCooldowns();
             for (ServerWorld world : server.getWorlds()) {
                 tickAreaGravity(world);
@@ -1585,11 +1594,12 @@ public final class GravityMagic {
             finishDirectedEntityGravity(player, directed);
         }
         SELF_FORCE_RECOVERY_TICKS.remove(uuid);
+        SELF_FORCE_IMPACT_COOLDOWNS.remove(uuid);
         SERVER_INVERTED_PLAYER_STATES.remove(uuid);
         player.setNoGravity(false);
         double force = getSelectedGravity(player);
         int ticks = GravityConfig.getInstance().getForceDurationTicks();
-        SELF_FORCE_MOTIONS.put(uuid, new SelfForceMotion(player.getWorld().getRegistryKey(), direction, force, ticks));
+        SELF_FORCE_MOTIONS.put(uuid, new SelfForceMotion(player.getWorld().getRegistryKey(), direction, force, ticks, player.getVelocity()));
         syncClearDirectedEntityGravity(player);
         player.sendMessage(Text.literal("\u00a7b[Gravity] Self force F=" + formatGravityMultiplier(force)), true);
     }
@@ -1602,9 +1612,11 @@ public final class GravityMagic {
             if (player == null || !player.isAlive() || motion.ticks() <= 0
                     || !motion.world().equals(player.getWorld().getRegistryKey()) || !hasEnergy(player)) {
                 SELF_FORCE_MOTIONS.remove(uuid, motion);
+                SELF_FORCE_IMPACT_COOLDOWNS.remove(uuid);
                 continue;
             }
 
+            damageSelfForceImpact(player, motion);
             player.setNoGravity(false);
             Vec3d velocity = player.getVelocity().add(motion.direction().multiply(motion.acceleration()));
             velocity = clampSpeed(velocity, SELF_FORCE_MAX_SPEED);
@@ -1613,13 +1625,47 @@ public final class GravityMagic {
             player.velocityModified = true;
             player.fallDistance = 0.0F;
 
-            SelfForceMotion ticked = motion.ticked();
+            SelfForceMotion ticked = motion.withPreviousVelocity(velocity).ticked();
             if (ticked.ticks() <= 0) {
                 SELF_FORCE_MOTIONS.remove(uuid, motion);
+                SELF_FORCE_IMPACT_COOLDOWNS.remove(uuid);
             } else {
                 SELF_FORCE_MOTIONS.replace(uuid, motion, ticked);
             }
         }
+    }
+
+    private static void damageSelfForceImpact(ServerPlayerEntity player, SelfForceMotion motion) {
+        if (!(player.getWorld() instanceof ServerWorld world) || !hasSelfForceImpact(player)) {
+            return;
+        }
+
+        UUID uuid = player.getUuid();
+        if (SELF_FORCE_IMPACT_COOLDOWNS.containsKey(uuid)) {
+            return;
+        }
+
+        double impactSpeed = motion.previousVelocity().length();
+        if (impactSpeed < SELF_FORCE_IMPACT_MIN_SPEED) {
+            return;
+        }
+
+        double massKg = 10.0D * SELF_FORCE_DAMAGE_REFERENCE_HARDNESS * SELF_FORCE_DAMAGE_BLOCK_COUNT;
+        float damage = (float) (kineticDamage(massKg, impactSpeed * 20.0D) * SELF_FORCE_DAMAGE_REFERENCE_HARDNESS);
+        if (damage <= 0.05F) {
+            return;
+        }
+
+        if (player.damage(world, world.getDamageSources().flyIntoWall(), damage)) {
+            SELF_FORCE_IMPACT_COOLDOWNS.put(uuid, SELF_FORCE_IMPACT_COOLDOWN_TICKS);
+            Vec3d velocity = player.getVelocity();
+            player.setVelocity(velocity.multiply(0.35D));
+            player.velocityModified = true;
+        }
+    }
+
+    private static boolean hasSelfForceImpact(ServerPlayerEntity player) {
+        return player.horizontalCollision || player.verticalCollision || player.isOnGround();
     }
 
     private static void tickPlayerGravityEnergy(MinecraftServer server) {
@@ -1650,6 +1696,7 @@ public final class GravityMagic {
                     finishDirectedEntityGravity(player, directed);
                 }
                 SELF_FORCE_MOTIONS.remove(uuid);
+                SELF_FORCE_IMPACT_COOLDOWNS.remove(uuid);
                 clearExtractingBlockGroup(uuid, true);
                 clearHeldBlockGroup(uuid, true);
                 syncExtractPose(player, 0);
@@ -1669,6 +1716,7 @@ public final class GravityMagic {
         }
         UUID uuid = player.getUuid();
         SELF_FORCE_RECOVERY_TICKS.put(uuid, 80);
+        SELF_FORCE_IMPACT_COOLDOWNS.remove(uuid);
         SERVER_INVERTED_PLAYER_STATES.remove(uuid);
         player.setNoGravity(false);
         player.fallDistance = 0.0F;
@@ -1863,6 +1911,7 @@ public final class GravityMagic {
         UUID ownerUuid = player.getUuid();
         SELF_FORCE_MOTIONS.remove(ownerUuid);
         SELF_FORCE_RECOVERY_TICKS.remove(ownerUuid);
+        SELF_FORCE_IMPACT_COOLDOWNS.remove(ownerUuid);
         clearExtractingBlockGroup(ownerUuid, discardBlocks);
         clearHeldBlockGroup(ownerUuid, discardBlocks);
         for (ServerWorld world : player.getServer().getWorlds()) {
@@ -1954,6 +2003,11 @@ public final class GravityMagic {
     private static void tickThrownDamageCooldowns() {
         THROWN_DAMAGE_COOLDOWNS.entrySet().removeIf(entry -> entry.getValue() <= 1);
         THROWN_DAMAGE_COOLDOWNS.replaceAll((key, ticks) -> ticks - 1);
+    }
+
+    private static void tickSelfForceImpactCooldowns() {
+        SELF_FORCE_IMPACT_COOLDOWNS.entrySet().removeIf(entry -> entry.getValue() <= 1);
+        SELF_FORCE_IMPACT_COOLDOWNS.replaceAll((key, ticks) -> ticks - 1);
     }
 
     private static void tickThrownBlocks(ServerWorld world) {
