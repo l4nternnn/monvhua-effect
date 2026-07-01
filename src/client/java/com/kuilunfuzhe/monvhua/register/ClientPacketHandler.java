@@ -9,6 +9,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
 import com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient;
+import com.kuilunfuzhe.monvhua.features.gravity.GravityClient;
 import com.kuilunfuzhe.monvhua.features.through.ThroughClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseTuning;
@@ -321,6 +322,7 @@ public class ClientPacketHandler {
             context.client().execute(() -> {
                 int newStage = packet.stage();
                 MonvhuaModClient.currentPlayerStage = newStage;
+                GravityClient.setCurrentStage(newStage);
                 MinecraftClient client = context.client();
                 if (client.player != null) {
                     String magicName = currentStageToastMagicName(client);

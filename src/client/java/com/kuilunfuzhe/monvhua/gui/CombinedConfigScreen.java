@@ -534,6 +534,7 @@ public final class CombinedConfigScreen {
         }
 
         private void buildGravity(LinearLayout parent) {
+            addField(parent, "maxForce", "力上限/xG", cachedGravityConfig.getMaxForce(stage));
             addField(parent, "duration", "作用时间/s", cachedGravityConfig.forceDurationSeconds);
             addField(parent, "damage", "每半心kJ", cachedGravityConfig.damageKilojoulesPerHalfHeart);
             addField(parent, "blockCount", "可抓取方块数", cachedGravityConfig.getMaxPickBlocks(stage));
@@ -602,7 +603,22 @@ public final class CombinedConfigScreen {
         }
 
         private void addField(LinearLayout parent, String key, String label, Object value) {
+            if (currentType == ConfigType.GRAVITY && !canConfigureGravityBlockGroup() && isGravityBlockGroupField(key)) {
+                return;
+            }
             fields.put(key, addFieldView(parent, label, value));
+        }
+
+        private boolean canConfigureGravityBlockGroup() {
+            return stage >= 6;
+        }
+
+        private static boolean isGravityBlockGroupField(String key) {
+            return "blockCount".equals(key)
+                    || "hardness".equals(key)
+                    || "extractDrain".equals(key)
+                    || "holdDrain".equals(key)
+                    || "extractTicks".equals(key);
         }
 
         private void addSideField(LinearLayout parent, String key, String label, Object value) {
@@ -938,18 +954,22 @@ public final class CombinedConfigScreen {
                 config.damageKilojoulesPerHalfHeart = doubleField("damage");
                 config.maxPickBlocksByStage = cachedGravityConfig.maxPickBlocksByStage.clone();
                 config.maxPickHardnessByStage = cachedGravityConfig.maxPickHardnessByStage.clone();
+                config.maxForceByStage = cachedGravityConfig.maxForceByStage.clone();
                 config.selfForceDrainByStage = cachedGravityConfig.selfForceDrainByStage.clone();
                 config.energyRegenByStage = cachedGravityConfig.energyRegenByStage.clone();
                 config.blockExtractDrainByStage = cachedGravityConfig.blockExtractDrainByStage.clone();
                 config.blockHoldDrainByStage = cachedGravityConfig.blockHoldDrainByStage.clone();
                 config.blockExtractTicksByStage = cachedGravityConfig.blockExtractTicksByStage.clone();
-                config.setMaxPickBlocks(stage, intField("blockCount"));
-                config.setMaxPickHardness(stage, doubleField("hardness"));
+                config.setMaxForce(stage, doubleField("maxForce"));
                 config.setSelfForceDrain(stage, doubleField("selfDrain"));
                 config.setEnergyRegen(stage, doubleField("regen"));
-                config.setBlockExtractDrain(stage, doubleField("extractDrain"));
-                config.setBlockHoldDrain(stage, doubleField("holdDrain"));
-                config.setBlockExtractTicks(stage, intField("extractTicks"));
+                if (canConfigureGravityBlockGroup()) {
+                    config.setMaxPickBlocks(stage, intField("blockCount"));
+                    config.setMaxPickHardness(stage, doubleField("hardness"));
+                    config.setBlockExtractDrain(stage, doubleField("extractDrain"));
+                    config.setBlockHoldDrain(stage, doubleField("holdDrain"));
+                    config.setBlockExtractTicks(stage, intField("extractTicks"));
+                }
                 cachedGravityConfig = GravityConfig.fromJson(config.toJson());
                 ClientPlayNetworking.send(new GravityPackets.UpdateConfigC2S(cachedGravityConfig.toJson()));
                 message("重力配置已提交");

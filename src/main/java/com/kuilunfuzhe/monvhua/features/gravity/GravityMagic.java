@@ -130,6 +130,7 @@ public final class GravityMagic {
     private static final double THROW_MAX_SPEED = 3.0D;
     private static final double THROW_DAMAGE_PADDING = 0.35D;
     private static final int THROW_DAMAGE_COOLDOWN_TICKS = 10;
+    private static final int BLOCK_GROUP_MIN_STAGE = 6;
     private static final int SELF_FORCE_DAMAGE_BLOCK_COUNT = 2;
     private static final double SELF_FORCE_DAMAGE_REFERENCE_HARDNESS = 1.5D;
     private static final double SELF_FORCE_IMPACT_MIN_SPEED = 0.45D;
@@ -345,7 +346,7 @@ public final class GravityMagic {
             context.server().execute(() -> {
                 ServerPlayerEntity player = context.player();
                 double gravity = adjustTargetGravity(player, packet.entityId(), packet.gravity());
-                player.sendMessage(Text.literal("\u00a7b[Gravity] g=" + formatGravityMultiplier(gravity)), true);
+                player.sendMessage(Text.literal("\u00a7b[重力] 力=" + formatGravityMultiplier(gravity)), true);
             });
         });
         ServerPlayNetworking.registerGlobalReceiver(GravityPackets.SelectBlocksC2S.ID, (packet, context) -> {
@@ -360,7 +361,7 @@ public final class GravityMagic {
             context.server().execute(() -> {
                 ServerPlayerEntity player = context.player();
                 if (!player.hasPermissionLevel(2) && !player.isCreative()) {
-                    player.sendMessage(Text.literal("\u00a7cNo permission to update gravity config"), true);
+                    player.sendMessage(Text.literal("\u00a7c没有权限修改重力配置"), true);
                     return;
                 }
                 GravityConfig config = GravityConfig.fromJson(packet.json());
@@ -368,7 +369,7 @@ public final class GravityMagic {
                 for (ServerPlayerEntity target : context.server().getPlayerManager().getPlayerList()) {
                     syncConfigTo(target);
                 }
-                player.sendMessage(Text.literal("\u00a7aGravity config updated"), true);
+                player.sendMessage(Text.literal("\u00a7a重力配置已更新"), true);
             });
         });
 
@@ -408,29 +409,24 @@ public final class GravityMagic {
         syncEnergyTo(player);
     }
 
-    public static LaunchMode toggleMode(ServerPlayerEntity player) {
-        LaunchMode next = getMode(player) == LaunchMode.UP ? LaunchMode.RIGHT : LaunchMode.UP;
-        PLAYER_MODES.put(player.getUuid(), next);
-        player.sendMessage(Text.literal("\u00a7b[Gravity] Mode: " + displayName(next)), true);
-        return next;
-    }
+
 
     public static LaunchMode getMode(ServerPlayerEntity player) {
         return PLAYER_MODES.getOrDefault(player.getUuid(), LaunchMode.UP);
     }
 
     public static double getSelectedGravity(ServerPlayerEntity player) {
-        return PLAYER_GRAVITY.getOrDefault(player.getUuid(), DEFAULT_GRAVITY);
+        return clampGravityForStage(player, PLAYER_GRAVITY.getOrDefault(player.getUuid(), DEFAULT_GRAVITY));
     }
 
     public static double setSelectedGravity(ServerPlayerEntity player, double gravity) {
-        double clamped = clampGravity(gravity);
+        double clamped = clampGravityForStage(player, gravity);
         PLAYER_GRAVITY.put(player.getUuid(), clamped);
         return clamped;
     }
 
     public static double adjustTargetGravity(ServerPlayerEntity player, int entityId, double gravity) {
-        double clamped = clampGravity(gravity);
+        double clamped = clampGravityForStage(player, gravity);
         if (entityId >= 0) {
             Entity entity = player.getWorld().getEntityById(entityId);
             if (entity instanceof GravityBlockEntity gravityBlock) {
@@ -458,6 +454,10 @@ public final class GravityMagic {
 
         GravityConfig config = GravityConfig.getInstance();
         int stage = gravityStage(player);
+        if (!canUseBlockGroup(stage)) {
+            player.sendMessage(Text.literal("\u00a7c[重力] 方块汇聚需要达到阶段6"), true);
+            return;
+        }
         int blockLimit = Math.min(config.getMaxPickBlocks(stage), MAX_SELECTED_BLOCKS);
         double maxHardness = config.getMaxPickHardness(stage);
         int searchRadius = selectionSearchRadius(blockLimit);
@@ -484,7 +484,7 @@ public final class GravityMagic {
         }
 
         if (candidates.isEmpty()) {
-            player.sendMessage(Text.literal("\u00a7c[Gravity] No selectable blocks"), true);
+            player.sendMessage(Text.literal("\u00a7c[重力] 没有可选择的方块"), true);
             return;
         }
 
@@ -514,19 +514,24 @@ public final class GravityMagic {
         }
 
         if (plans.isEmpty()) {
-            player.sendMessage(Text.literal("\u00a7c[Gravity] Could not create block group"), true);
+            player.sendMessage(Text.literal("\u00a7c[重力] 无法汇聚方块群"), true);
             return;
         }
 
         EXTRACTING_BLOCK_GROUPS.put(player.getUuid(), new ExtractingBlockGroup(world.getRegistryKey(), plans, totalMassKg, extractTicks));
         syncExtractPose(player, extractTicks);
-        player.sendMessage(Text.literal("\u00a7b[Gravity] Gathering " + plans.size()
-                + " block(s), stage=" + stage
-                + ", mass=" + format(totalMassKg) + "kg"), true);
+        player.sendMessage(Text.literal("\u00a7b[重力] 正在汇聚 " + plans.size()
+                + " 个方块，阶段=" + stage
+                + "，质量=" + format(totalMassKg) + "kg"), true);
     }
 
     public static boolean throwHeldBlocks(ServerPlayerEntity player) {
         if (player == null || !(player.getWorld() instanceof ServerWorld world)) {
+            return false;
+        }
+        if (!canUseBlockGroup(gravityStage(player))) {
+            clearHeldBlockGroup(player.getUuid(), true);
+            player.sendMessage(Text.literal("\u00a7c[重力] 方块汇聚需要达到阶段6"), true);
             return false;
         }
 
@@ -580,8 +585,8 @@ public final class GravityMagic {
         if (thrown <= 0) {
             return false;
         }
-        player.sendMessage(Text.literal("\u00a7b[Gravity] Thrown " + thrown
-                + " block(s), mass=" + format(group.massKg) + "kg"), true);
+        player.sendMessage(Text.literal("\u00a7b[重力] 已投掷 " + thrown
+                + " 个方块，质量=" + format(group.massKg) + "kg"), true);
         return true;
     }
 
@@ -591,7 +596,7 @@ public final class GravityMagic {
         }
         Vec3d direction = normalizedDirection(player.getRotationVec(1.0F));
         if (!hasEnergy(player)) {
-            player.sendMessage(Text.literal("\u00a7c[Gravity] 没有足够能量"), true);
+            player.sendMessage(Text.literal("\u00a7c[重力] 没有足够能量"), true);
             return false;
         }
         startSelfForceMotion(player, direction);
@@ -699,6 +704,10 @@ public final class GravityMagic {
         return Math.clamp(WitchStage.fromScore(value).ordinal() + 1, 1, 7);
     }
 
+    private static boolean canUseBlockGroup(int stage) {
+        return stage >= BLOCK_GROUP_MIN_STAGE;
+    }
+
     private static int selectionSearchRadius(int blockLimit) {
         int limit = Math.max(1, blockLimit);
         return Math.max(BLOCK_SELECT_RADIUS, Math.min(6, (int) Math.ceil(Math.cbrt(limit)) + 1));
@@ -755,10 +764,10 @@ public final class GravityMagic {
         Vec3d netForce = previewComposedForce(entity, normalizedDirection, gravity);
         int ticks = GravityConfig.getInstance().getForceDurationTicks();
         setDirectedEntityGravity(entity, normalizedDirection, gravity, ticks);
-        player.sendMessage(Text.literal("\u00a7b[Gravity] 方向 -> " + entity.getName().getString()
-                + " F=" + formatGravityMultiplier(gravity)
-                + " net=" + formatGravityMultiplier(netForce.length())
-                + " ticks=" + ticks), true);
+        player.sendMessage(Text.literal("\u00a7b[重力] 施力目标 -> " + entity.getName().getString()
+                + " 力=" + formatGravityMultiplier(gravity)
+                + " 合力=" + formatGravityMultiplier(netForce.length())
+                + " 持续=" + ticks + "tick"), true);
         return true;
     }
 
@@ -1044,7 +1053,7 @@ public final class GravityMagic {
             if (throwHeldBlocks(serverPlayer)) {
                 return ActionResult.SUCCESS_SERVER;
             }
-            serverPlayer.sendMessage(Text.literal("\u00a7c[Gravity] Ctrl + 中键选中方块"), true);
+            serverPlayer.sendMessage(Text.literal("\u00a7c[重力] Ctrl + 中键选中方块"), true);
         }
         return ActionResult.FAIL;
     }
@@ -1100,10 +1109,10 @@ public final class GravityMagic {
         }
 
         if (launched > 0) {
-            player.sendMessage(Text.literal("\u00a7b[Gravity] Launched " + launched + " block(s) "
-                    + displayName(mode) + " g=" + formatGravityMultiplier(gravity)), true);
+            player.sendMessage(Text.literal("\u00a7b[重力] 已发射 " + launched + " 个方块，模式="
+                    + displayName(mode) + "，力=" + formatGravityMultiplier(gravity)), true);
         } else {
-            player.sendMessage(Text.literal("\u00a7c[Gravity]无可挪动方块"), true);
+            player.sendMessage(Text.literal("\u00a7c[重力] 无可挪动方块"), true);
         }
         return launched;
     }
@@ -1111,8 +1120,8 @@ public final class GravityMagic {
     public static int activateAreaGravity(ServerWorld world, ServerPlayerEntity player, BlockPos origin) {
         double gravity = getSelectedGravity(player);
         addAreaGravity(world, origin, AREA_RADIUS, DEFAULT_AREA_HEIGHT, AREA_DURATION_TICKS, gravity);
-        player.sendMessage(Text.literal("\u00a7b[Gravity] Inverted walk area r=" + AREA_RADIUS
-                + " h=" + DEFAULT_AREA_HEIGHT + " ticks=" + AREA_DURATION_TICKS), true);
+        player.sendMessage(Text.literal("\u00a7b[重力] 已创建反转行走区域，半径=" + AREA_RADIUS
+                + " 高度=" + DEFAULT_AREA_HEIGHT + " 持续=" + AREA_DURATION_TICKS + "tick"), true);
         return 1;
     }
 
@@ -1170,14 +1179,14 @@ public final class GravityMagic {
         broadcastAreaGravity(world, field);
         saveServerAreas(world.getServer());
         pushDebugEdit(player, new AreaEdit(List.of(snapshot(field)), List.of()));
-        player.sendMessage(Text.literal("\u00a7e[Gravity Debug] Placed " + describeSpec(spec) + " at " + center.toShortString()), true);
+        player.sendMessage(Text.literal("\u00a7e[重力调试] 已放置 " + describeSpec(spec) + " 于 " + center.toShortString()), true);
     }
 
     private static void moveNearestDebugArea(ServerPlayerEntity player, ServerWorld world, BlockPos center) {
         ensureServerAreasLoaded(world.getServer());
         AreaGravityField field = nearestArea(world, player.getPos());
         if (field == null) {
-            player.sendMessage(Text.literal("\u00a7c[Gravity Debug] No area to move"), true);
+            player.sendMessage(Text.literal("\u00a7c[重力调试] 没有可移动的区域"), true);
             return;
         }
 
@@ -1189,7 +1198,7 @@ public final class GravityMagic {
         broadcastAreaGravity(world, moved);
         saveServerAreas(world.getServer());
         pushDebugEdit(player, new AreaEdit(List.of(snapshot(moved)), List.of(removed)));
-        player.sendMessage(Text.literal("\u00a7e[Gravity Debug] Moved nearest area"), true);
+        player.sendMessage(Text.literal("\u00a7e[重力调试] 已移动最近的区域"), true);
     }
 
     private static void deleteDebugAreas(ServerPlayerEntity player, ServerWorld world, BlockPos center, GravityAreaSpec spec) {
@@ -1209,35 +1218,35 @@ public final class GravityMagic {
         }
 
         if (removed.isEmpty()) {
-            player.sendMessage(Text.literal("\u00a7c[Gravity Debug] No area in selection"), true);
+            player.sendMessage(Text.literal("\u00a7c[重力调试] 选区内没有区域"), true);
             return;
         }
 
         saveServerAreas(world.getServer());
         pushDebugEdit(player, new AreaEdit(List.of(), removed));
-        player.sendMessage(Text.literal("\u00a7e[Gravity Debug] Deleted " + removed.size() + " area(s)"), true);
+        player.sendMessage(Text.literal("\u00a7e[重力调试] 已删除 " + removed.size() + " 个区域"), true);
     }
 
     private static void undoDebugAreaEdit(ServerPlayerEntity player, ServerWorld world) {
         AreaEdit edit = popEdit(DEBUG_UNDO, player.getUuid());
         if (edit == null) {
-            player.sendMessage(Text.literal("\u00a7c[Gravity Debug] Nothing to undo"), true);
+            player.sendMessage(Text.literal("\u00a7c[重力调试] 没有可撤销的操作"), true);
             return;
         }
         applyInverseEdit(world, edit);
         pushEdit(DEBUG_REDO, player.getUuid(), edit);
-        player.sendMessage(Text.literal("\u00a7e[Gravity Debug] Undo"), true);
+        player.sendMessage(Text.literal("\u00a7e[重力调试] 已撤销"), true);
     }
 
     private static void redoDebugAreaEdit(ServerPlayerEntity player, ServerWorld world) {
         AreaEdit edit = popEdit(DEBUG_REDO, player.getUuid());
         if (edit == null) {
-            player.sendMessage(Text.literal("\u00a7c[Gravity Debug] Nothing to redo"), true);
+            player.sendMessage(Text.literal("\u00a7c[重力调试] 没有可重做的操作"), true);
             return;
         }
         applyEdit(world, edit);
         pushEdit(DEBUG_UNDO, player.getUuid(), edit);
-        player.sendMessage(Text.literal("\u00a7e[Gravity Debug] Redo"), true);
+        player.sendMessage(Text.literal("\u00a7e[重力调试] 已重做"), true);
     }
 
     private static void pushDebugEdit(ServerPlayerEntity player, AreaEdit edit) {
@@ -1601,7 +1610,7 @@ public final class GravityMagic {
         int ticks = GravityConfig.getInstance().getForceDurationTicks();
         SELF_FORCE_MOTIONS.put(uuid, new SelfForceMotion(player.getWorld().getRegistryKey(), direction, force, ticks, player.getVelocity()));
         syncClearDirectedEntityGravity(player);
-        player.sendMessage(Text.literal("\u00a7b[Gravity] Self force F=" + formatGravityMultiplier(force)), true);
+        player.sendMessage(Text.literal("\u00a7b[重力] 自身受力，力=" + formatGravityMultiplier(force)), true);
     }
 
     private static void tickSelfForceMotions(MinecraftServer server) {
@@ -1700,7 +1709,7 @@ public final class GravityMagic {
                 clearExtractingBlockGroup(uuid, true);
                 clearHeldBlockGroup(uuid, true);
                 syncExtractPose(player, 0);
-                player.sendMessage(Text.literal("\u00a7c[Gravity] Energy depleted"), true);
+                player.sendMessage(Text.literal("\u00a7c[重力] 能量已耗尽"), true);
             }
             int syncTicks = ENERGY_SYNC_TICKS.merge(uuid, 1, Integer::sum);
             if (syncTicks >= ENERGY_SYNC_INTERVAL_TICKS || Math.abs(next - energy) > 0.5D) {
@@ -1784,7 +1793,7 @@ public final class GravityMagic {
             HeldBlockGroup heldGroup = new HeldBlockGroup(group.world, group.blocks, group.massKg, player.getWorld());
             HELD_BLOCK_GROUPS.put(ownerUuid, heldGroup);
             syncExtractPose(player, 0);
-            player.sendMessage(Text.literal("\u00a7b[Gravity] Blocks gathered"), true);
+            player.sendMessage(Text.literal("\u00a7b[重力] 方块汇聚完成"), true);
         }
     }
 
@@ -1851,7 +1860,7 @@ public final class GravityMagic {
             group.tickAngles();
             if (group.age > HELD_BLOCK_LIFETIME_TICKS) {
                 clearHeldBlockGroup(ownerUuid, true);
-                player.sendMessage(Text.literal("\u00a7c[Gravity] Held blocks faded"), true);
+                player.sendMessage(Text.literal("\u00a7c[重力] 悬浮方块已消散"), true);
                 continue;
             }
 
@@ -2800,6 +2809,11 @@ public final class GravityMagic {
         return Math.clamp(gravity, MIN_GRAVITY, MAX_GRAVITY);
     }
 
+    private static double clampGravityForStage(ServerPlayerEntity player, double gravity) {
+        double maxForce = gravityFromMultiplier(GravityConfig.getInstance().getMaxForce(gravityStage(player)));
+        return Math.clamp(clampGravity(gravity), MIN_GRAVITY, Math.max(MIN_GRAVITY, maxForce));
+    }
+
     public static double gravityFromMultiplier(double multiplier) {
         return clampGravity(Math.max(0.0D, multiplier) * WORLD_GRAVITY);
     }
@@ -2817,15 +2831,31 @@ public final class GravityMagic {
     }
 
     private static String displayName(LaunchMode mode) {
-        return mode == LaunchMode.UP ? "UP" : "RIGHT";
+        return mode == LaunchMode.UP ? "向上" : "向右";
     }
 
     private static String describeSpec(GravityAreaSpec spec) {
-        return spec.shape().name().toLowerCase(java.util.Locale.ROOT)
-                + "/" + spec.half().name().toLowerCase(java.util.Locale.ROOT)
-                + " x=" + spec.sizeX()
-                + " y=" + spec.sizeY()
-                + " z=" + spec.sizeZ();
+        return shapeName(spec.shape())
+                + "/" + halfName(spec.half())
+                + " X=" + spec.sizeX()
+                + " Y=" + spec.sizeY()
+                + " Z=" + spec.sizeZ();
+    }
+
+    private static String shapeName(GravityAreaSpec.Shape shape) {
+        return switch (shape) {
+            case SPHERE -> "球体";
+            case BOX -> "长方体";
+            case CUBE -> "立方体";
+        };
+    }
+
+    private static String halfName(GravityAreaSpec.Half half) {
+        return switch (half) {
+            case FULL -> "完整";
+            case UPPER -> "上半";
+            case LOWER -> "下半";
+        };
     }
 
     private static int invertIslandArea(ServerWorld world, BlockPos origin) {

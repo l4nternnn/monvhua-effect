@@ -24,9 +24,11 @@ import org.lwjgl.glfw.GLFWScrollCallbackI;
 
 public final class GravityClient {
     private static final double MULTIPLIER_STEP = 0.1D;
+    private static final int BLOCK_GROUP_MIN_STAGE = 6;
     private static double selectedGravity = GravityMagic.DEFAULT_GRAVITY;
     private static double energy = 100.0D;
     private static double maxEnergy = 100.0D;
+    private static int currentStage = 1;
     private static GLFWScrollCallbackI previousScrollCallback;
     private static boolean scrollCallbackRegistered = false;
 
@@ -148,10 +150,20 @@ public final class GravityClient {
         if (!isCtrlDown(client)) return false;
 
         double baseMultiplier = GravityMagic.gravityMultiplier(currentTargetGravity(client));
-        selectedGravity = GravityMagic.gravityFromMultiplier(baseMultiplier + (yOffset > 0 ? MULTIPLIER_STEP : -MULTIPLIER_STEP));
+        selectedGravity = clampGravityForCurrentStage(GravityMagic.gravityFromMultiplier(baseMultiplier + (yOffset > 0 ? MULTIPLIER_STEP : -MULTIPLIER_STEP)));
         int entityId = targetEntityId(client);
         SafeClientNetworking.send(new GravityPackets.AdjustGravityC2S(entityId, selectedGravity));
         return true;
+    }
+
+    public static void setCurrentStage(int stage) {
+        currentStage = Math.clamp(stage, 1, 7);
+        selectedGravity = clampGravityForCurrentStage(selectedGravity);
+    }
+
+    private static double clampGravityForCurrentStage(double gravity) {
+        double maxForce = GravityMagic.gravityFromMultiplier(GravityConfig.getInstance().getMaxForce(currentStage));
+        return Math.clamp(GravityMagic.clampGravity(gravity), GravityMagic.MIN_GRAVITY, Math.max(GravityMagic.MIN_GRAVITY, maxForce));
     }
 
     public static boolean onMouseClicked(int button, int mods) {
@@ -164,6 +176,10 @@ public final class GravityClient {
         }
         if (button != GLFW.GLFW_MOUSE_BUTTON_MIDDLE || !isCtrlDown(client, mods)) {
             return false;
+        }
+        if (currentStage < BLOCK_GROUP_MIN_STAGE) {
+            client.player.sendMessage(Text.literal("\u00a7c[Gravity] Block gathering unlocks at stage 6"), true);
+            return true;
         }
 
         HitResult hit = client.player.raycast(64.0D, 0.0F, false);
