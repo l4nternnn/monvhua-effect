@@ -1156,6 +1156,12 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
+    private void refreshEditorStructure() {
+        rebuildPartButtons();
+        rebuildPoseControls();
+        refreshPresetUi();
+    }
+
     private void resetPoseHistoryBaseline() {
         poseHistoryEntries.clear();
         poseHistorySequence = 0;
@@ -1408,9 +1414,7 @@ public class BodyPoseEditorFragment extends Fragment {
         } finally {
             suppressPoseHistory = false;
         }
-        rebuildPartButtons();
-        rebuildPoseControls();
-        refreshPresetUi();
+        refreshEditorStructure();
         rebuildPoseHistoryList();
         showActionbar(message);
     }
@@ -1531,9 +1535,7 @@ public class BodyPoseEditorFragment extends Fragment {
         applyActivePageState();
         selectedEditorItemIndex = -1;
         BodyPosePresetStore.save(presetStore);
-        rebuildPartButtons();
-        rebuildPoseControls();
-        refreshPresetUi();
+        refreshEditorStructure();
         resetPoseHistoryBaseline();
     }
 
@@ -1575,9 +1577,7 @@ public class BodyPoseEditorFragment extends Fragment {
         applyActivePageState();
         selectedEditorItemIndex = -1;
         BodyPosePresetStore.save(presetStore);
-        rebuildPartButtons();
-        rebuildPoseControls();
-        refreshPresetUi();
+        refreshEditorStructure();
         resetPoseHistoryBaseline();
     }
 
@@ -1621,9 +1621,7 @@ public class BodyPoseEditorFragment extends Fragment {
         page.state = captureEditorState(page.name);
         BodyPosePresetStore.save(presetStore);
         selectedEditorItemIndex = -1;
-        rebuildPartButtons();
-        rebuildPoseControls();
-        refreshPresetUi();
+        refreshEditorStructure();
         resetPoseHistoryBaseline();
     }
 
@@ -2004,6 +2002,61 @@ public class BodyPoseEditorFragment extends Fragment {
 
         poseHistoryButton = createStyledButton(ctx);
         panel.addView(poseHistoryButton, new LinearLayout.LayoutParams(-1, -2));
+
+        installLeftActionHandlers();
+    }
+
+    private void installLeftActionHandlers() {
+        if (resetPoseButton != null) {
+            resetPoseButton.setOnClickListener(v -> {
+                resetSelectedPose();
+                refreshNumericValueBindings();
+                invalidatePreview();
+                recordPoseHistoryStep("重置当前");
+            });
+        }
+        if (resetAllPoseButton != null) {
+            resetAllPoseButton.setOnClickListener(v -> {
+                resetAllPartPoses();
+                refreshNumericValueBindings();
+                invalidatePreview();
+                recordPoseHistoryStep("重置全部");
+            });
+        }
+        if (resetTransformButton != null) {
+            resetTransformButton.setOnClickListener(v -> resetActiveTransform());
+        }
+        if (placeButton != null) {
+            placeButton.setOnClickListener(v -> {
+                if (reeditTargetEntityId >= 0) {
+                    updatePlacedBodyPose();
+                } else {
+                    placePosedBody(false);
+                }
+            });
+        }
+        if (placeBackpackButton != null) {
+            placeBackpackButton.setOnClickListener(v -> placePosedBody(true));
+        }
+        if (runCommandButton != null) {
+            runCommandButton.setOnClickListener(v -> runGiveCommand());
+        }
+        if (applySkeletalButton != null) {
+            applySkeletalButton.setOnClickListener(v -> applySkeletalPose());
+        }
+        if (poseHistoryButton != null) {
+            poseHistoryButton.setOnClickListener(v -> openPoseHistoryWindow());
+            poseHistoryButton.setOnTouchListener((view, event) -> {
+                applyButtonFeedback(view, event);
+                int action = event.getActionMasked();
+                if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_BUTTON_RELEASE)
+                        && event.getActionButton() != MotionEvent.BUTTON_SECONDARY) {
+                    openPoseHistoryWindow();
+                    return true;
+                }
+                return action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_BUTTON_PRESS;
+            });
+        }
     }
 
     private View createCenterPanel(Context ctx) {
@@ -2058,6 +2111,8 @@ public class BodyPoseEditorFragment extends Fragment {
 
         panel.addView(ctrlBar, blockParams());
 
+        installPreviewControlHandlers();
+
         // 关闭按钮
         Button doneBtn = createStyledButton(ctx);
         doneBtn.setText("关闭-一般直接按esc");
@@ -2066,6 +2121,30 @@ public class BodyPoseEditorFragment extends Fragment {
 
         refreshButtonLabels();
         return panel;
+    }
+
+    private void installPreviewControlHandlers() {
+        if (showWholeButton != null) {
+            showWholeButton.setOnClickListener(v -> {
+                showWholePreview = !showWholePreview;
+                refreshButtonLabels();
+            });
+        }
+        if (coordToggleButton != null) {
+            coordToggleButton.setOnClickListener(v -> {
+                showCoordinateAxes = !showCoordinateAxes;
+                refreshButtonLabels();
+            });
+        }
+        if (coordMovableButton != null) {
+            coordMovableButton.setOnClickListener(v -> {
+                coordinateAxesMovable = !coordinateAxesMovable;
+                refreshButtonLabels();
+            });
+        }
+        if (worldPreviewToggleButton != null) {
+            worldPreviewToggleButton.setOnClickListener(v -> toggleWorldPreviewMode());
+        }
     }
 
     // ═══════════════════════════════════════════════════════
@@ -2095,6 +2174,8 @@ public class BodyPoseEditorFragment extends Fragment {
         setDefaultPoseModeButton = createStyledButton(ctx);
         poseModeRow.addView(setDefaultPoseModeButton, new LinearLayout.LayoutParams(0, -2, 1f));
         panel.addView(poseModeRow, new LinearLayout.LayoutParams(-1, -2));
+
+        installModelModeHandlers();
 
         addPanelDivider(panel, ctx);
         ScrollView inspectorScroll = new ScrollView(ctx);
@@ -2136,6 +2217,34 @@ public class BodyPoseEditorFragment extends Fragment {
         refreshButtonLabels();
         refreshNumericValueBindings();
         return panel;
+    }
+
+    private void installModelModeHandlers() {
+        if (modelTypeButton != null) {
+            modelTypeButton.setOnClickListener(v -> {
+                slimModel = !slimModel;
+                refreshButtonLabels();
+            });
+        }
+        if (setDefaultModelButton != null) {
+            setDefaultModelButton.setOnClickListener(v -> saveDefaultSlimModel());
+        }
+        if (poseModeButton != null) {
+            poseModeButton.setOnClickListener(v -> {
+                poseEditMode = nextPoseEditMode();
+                ensureValidSelectedPartForMode();
+                clearGizmoInteractionState();
+                rebuildPartButtons();
+                rebuildPoseControls();
+                refreshButtonLabels();
+                refreshNumericValueBindings();
+                invalidatePreview();
+                recordPoseHistoryStep("模式切换");
+            });
+        }
+        if (setDefaultPoseModeButton != null) {
+            setDefaultPoseModeButton.setOnClickListener(v -> saveDefaultPoseMode());
+        }
     }
 
     private void addSectionLabel(LinearLayout parent, Context ctx, String text) {
@@ -4530,143 +4639,72 @@ public class BodyPoseEditorFragment extends Fragment {
         }
         if (modelTypeButton != null) {
             modelTypeButton.setText("Model: " + (slimModel ? "slim-默认" : "default"));
-            modelTypeButton.setOnClickListener(v -> {
-                slimModel = !slimModel;
-                refreshButtonLabels();
-            });
         }
         if (setDefaultModelButton != null) {
             setDefaultModelButton.setText("设为默认");
-            setDefaultModelButton.setOnClickListener(v -> saveDefaultSlimModel());
         }
         if (poseModeButton != null) {
             poseModeButton.setText("Pose Mode: " + getPoseModeLabel());
-            poseModeButton.setOnClickListener(v -> {
-                poseEditMode = nextPoseEditMode();
-                ensureValidSelectedPartForMode();
-                clearGizmoInteractionState();
-                rebuildPartButtons();
-                rebuildPoseControls();
-                refreshButtonLabels();
-                refreshNumericValueBindings();
-                invalidatePreview();
-                recordPoseHistoryStep("模式切换");
-            });
         }
         if (setDefaultPoseModeButton != null) {
             setDefaultPoseModeButton.setText("设为默认");
-            setDefaultPoseModeButton.setOnClickListener(v -> saveDefaultPoseMode());
         }
         if (resetPoseButton != null) {
             resetPoseButton.setText("重置当前姿势");
             resetPoseButton.setEnabled(!selectedPart.equals("all"));
-            resetPoseButton.setOnClickListener(v -> {
-                resetSelectedPose();
-                refreshNumericValueBindings();
-                invalidatePreview();
-                recordPoseHistoryStep("重置当前");
-            });
         }
         if (resetAllPoseButton != null) {
             resetAllPoseButton.setText("重置全部肢体");
-            resetAllPoseButton.setOnClickListener(v -> {
-                resetAllPartPoses();
-                refreshNumericValueBindings();
-                invalidatePreview();
-                recordPoseHistoryStep("重置全部");
-            });
         }
         if (runCommandButton != null) {
             runCommandButton.setText("给予肢体");
-            runCommandButton.setOnClickListener(v -> runGiveCommand());
         }
         if (placeButton != null) {
-            placeButton.setText("放置模型");
             placeButton.setText(reeditTargetEntityId >= 0 ? "更新姿态" : "放置模型");
-            placeButton.setOnClickListener(v -> {
-                if (reeditTargetEntityId >= 0) {
-                    updatePlacedBodyPose();
-                } else {
-                    placePosedBody(false);
-                }
-            });
         }
         if (placeBackpackButton != null) {
             placeBackpackButton.setText("\u653e\u7f6e\u6a21\u578b(\u80cc\u5305)");
             placeBackpackButton.setEnabled(reeditTargetEntityId < 0);
-            placeBackpackButton.setOnClickListener(v -> placePosedBody(true));
         }
         if (applySkeletalButton != null) {
             applySkeletalButton.setText("应用骨骼姿势");
             applySkeletalButton.setEnabled(poseEditMode == PoseEditMode.SKELETAL);
-            applySkeletalButton.setOnClickListener(v -> applySkeletalPose());
         }
         if (poseHistoryButton != null) {
             poseHistoryButton.setText("历史记录 (" + poseHistoryEntries.size() + ")");
-            poseHistoryButton.setOnClickListener(v -> openPoseHistoryWindow());
-            poseHistoryButton.setOnTouchListener((view, event) -> {
-                applyButtonFeedback(view, event);
-                int action = event.getActionMasked();
-                if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_BUTTON_RELEASE)
-                        && event.getActionButton() != MotionEvent.BUTTON_SECONDARY) {
-                    openPoseHistoryWindow();
-                    return true;
-                }
-                return action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_BUTTON_PRESS;
-            });
         }
         if (itemButton != null) {
             itemButton.setText("物品: " + getSelectedItemLabel());
         }
         if (itemDisplayModeButton != null) {
             itemDisplayModeButton.setText("物品显示: " + getActiveItemDisplayMode().label);
-            itemDisplayModeButton.setOnClickListener(v -> toggleActiveItemDisplayMode());
         }
         if (placeItemsButton != null) {
             placeItemsButton.setText("放置物品模型(" + EDITOR_ITEMS.size() + ")");
             placeItemsButton.setEnabled(!EDITOR_ITEMS.isEmpty());
-            placeItemsButton.setOnClickListener(v -> placeEditorItems());
         }
         if (clearSelectedItemButton != null) {
             clearSelectedItemButton.setText("清除选中");
             clearSelectedItemButton.setEnabled(hasSelectedItemModel());
-            clearSelectedItemButton.setOnClickListener(v -> clearSelectedItemModel());
         }
         if (clearAllItemsButton != null) {
             clearAllItemsButton.setText("清除全部");
             clearAllItemsButton.setEnabled(!EDITOR_ITEMS.isEmpty());
-            clearAllItemsButton.setOnClickListener(v -> clearAllItemModels());
         }
         if (resetTransformButton != null) {
             resetTransformButton.setText("重置当前偏移");
-            resetTransformButton.setOnClickListener(v -> resetActiveTransform());
         }
         if (showWholeButton != null) {
             showWholeButton.setText("整体 " + (showWholePreview ? "开" : "关"));
-            showWholeButton.setOnClickListener(v -> {
-                showWholePreview = !showWholePreview;
-                refreshButtonLabels();
-            });
         }
         if (coordToggleButton != null) {
             coordToggleButton.setText("坐标 " + (showCoordinateAxes ? "开" : "关"));
-            coordToggleButton.setOnClickListener(v -> {
-                showCoordinateAxes = !showCoordinateAxes;
-                refreshButtonLabels();
-            });
         }
         if (coordMovableButton != null) {
             coordMovableButton.setText("跟随 " + (coordinateAxesMovable ? "开" : "关"));
-            coordMovableButton.setOnClickListener(v -> {
-                coordinateAxesMovable = !coordinateAxesMovable;
-                refreshButtonLabels();
-            });
         }
         if (worldPreviewToggleButton != null) {
             worldPreviewToggleButton.setText("模式 " + (worldPreviewMode == PreviewMode.FOLLOW_PLAYER ? "预览" : "放置"));
-            worldPreviewToggleButton.setOnClickListener(v -> {
-                toggleWorldPreviewMode();
-            });
         }
     }
 
