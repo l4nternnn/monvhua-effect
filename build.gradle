@@ -3,7 +3,32 @@ plugins {
 	id 'maven-publish'
 }
 
-version = project.mod_version
+def bumpsModVersion = gradle.startParameter.taskNames.any { taskName ->
+	def packagingTaskName = taskName.tokenize(':').last()
+	packagingTaskName in ['build', 'assemble', 'jar', 'remapJar']
+}
+
+def resolvedModVersion = project.mod_version
+if (bumpsModVersion) {
+	def propertiesFile = rootProject.file('gradle.properties')
+	def propertiesText = propertiesFile.getText('UTF-8')
+	def versionMatcher = propertiesText =~ /(?m)^mod_version=(\d+)\.(\d+)\.(\d+)([^\r\n]*)$/
+
+	if (!versionMatcher.find()) {
+		throw new GradleException('Cannot auto-increment mod_version. Expected format: mod_version=major.minor.patch')
+	}
+
+	def major = versionMatcher.group(1)
+	def minor = versionMatcher.group(2)
+	def patch = versionMatcher.group(3).toInteger() + 1
+	def suffix = versionMatcher.group(4)
+	resolvedModVersion = "${major}.${minor}.${patch}${suffix}"
+
+	propertiesFile.setText(propertiesText.replaceFirst(/(?m)^mod_version=.*$/, "mod_version=${resolvedModVersion}"), 'UTF-8')
+	project.ext.set('mod_version', resolvedModVersion)
+}
+
+version = resolvedModVersion
 group = project.maven_group
 
 repositories {
