@@ -24,7 +24,7 @@
 		"InvertedWallMountedBlockItemMixin",
 		"InvertedWallMountedPlacementMixin",
 		"PlayerManagerMixin",
-		"ServerPlayNetworkHandlerMixin",
+		"ServerCommonNetworkHandlerMixin",
 		"ThroughPhaseCollisionMixin"
 	],
 	"injectors": {

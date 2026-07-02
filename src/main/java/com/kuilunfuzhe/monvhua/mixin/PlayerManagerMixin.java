@@ -1,8 +1,6 @@
 package com.kuilunfuzhe.monvhua.mixin;
 
-import com.kuilunfuzhe.monvhua.WitchStage;
 import com.kuilunfuzhe.monvhua.features.imitate.ImitateManager;
-import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
 import com.kuilunfuzhe.monvhua.network.imitate.SilenceServerManager;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -19,7 +17,7 @@ import org.spongepowered.asm.mixin.injection.At;
 
 import java.util.function.Predicate;
 
-@Mixin(PlayerManager.class)
+@Mixin(value = PlayerManager.class, priority = 100)
 public abstract class PlayerManagerMixin {
 
     @WrapOperation(
@@ -40,52 +38,69 @@ public abstract class PlayerManagerMixin {
             ServerPlayerEntity sender,
             MessageType.Parameters originalParameters
     ) {
-        if (!monvhua$isInImitateChatRange(recipient, sender)) {
-            return;
-        }
+        String roleName = monvhua$getVisibleRoleName(recipient, sender);
+        boolean imitateStyled = roleName != null;
 
         SentMessage recipientMessage = message;
+        MessageType.Parameters recipientParameters = monvhua$decorateImitateName(parameters, roleName);
         if (SilenceServerManager.isPlayerSilenced(recipient.getUuid())) {
-            recipientMessage = SentMessage.of(signedMessage.withUnsignedContent(monvhua$createSilenceContent(signedMessage, sender)));
+            recipientMessage = SentMessage.of(signedMessage.withUnsignedContent(monvhua$createSilenceContent(message.content(), imitateStyled)));
+        } else if (imitateStyled) {
+            recipientMessage = SentMessage.of(signedMessage.withUnsignedContent(monvhua$createImitateContent(message.content())));
         }
 
-        original.call(recipient, recipientMessage, filterMaskEnabled, parameters);
+        original.call(recipient, recipientMessage, filterMaskEnabled, recipientParameters);
     }
 
-    private boolean monvhua$isInImitateChatRange(ServerPlayerEntity recipient, ServerPlayerEntity sender) {
-        if (sender == null || !ImitateManager.isImitating(sender)) {
-            return true;
+    private MessageType.Parameters monvhua$decorateImitateName(MessageType.Parameters parameters, String roleName) {
+        if (roleName == null) {
+            return parameters;
         }
+
+        return new MessageType.Parameters(parameters.type(), ImitateManager.getColoredRoleName(roleName), parameters.targetName());
+    }
+
+    private String monvhua$getVisibleRoleName(ServerPlayerEntity recipient, ServerPlayerEntity sender) {
+        if (sender == null) {
+            return null;
+        }
+
+        if (monvhua$isAreaImitateVisibleTo(recipient, sender)) {
+            return ImitateManager.getAreaImitateName(sender);
+        }
+
+        return ImitateManager.getImitateName(sender);
+    }
+
+    private boolean monvhua$isAreaImitateVisibleTo(ServerPlayerEntity recipient, ServerPlayerEntity sender) {
+        if (!ImitateManager.hasAreaImitate(sender)) {
+            return false;
+        }
+
         if (recipient.equals(sender)) {
             return true;
         }
 
-        Vec3d center;
-        double radius;
-        if (ImitateManager.hasAreaImitate(sender)) {
-            ImitateManager.AreaInfo areaInfo = ImitateManager.getAreaInfo(sender);
-            center = new Vec3d(areaInfo.centerX, areaInfo.centerY, areaInfo.centerZ);
-            radius = areaInfo.radius;
-        } else {
-            center = sender.getPos();
-            int stage = Math.min(WitchStage.fromScore(ImitateManager.getWitchScore(sender)).ordinal() + 1, 7);
-            ImitateConfig config = ImitateConfig.getInstance();
-            radius = config != null ? config.getImitateRadius(stage) : 5.0;
-        }
-
+        ImitateManager.AreaInfo areaInfo = ImitateManager.getAreaInfo(sender);
+        Vec3d center = new Vec3d(areaInfo.centerX, areaInfo.centerY, areaInfo.centerZ);
+        double radius = areaInfo.radius;
         return recipient.getPos().distanceTo(center) <= radius;
     }
 
-    private Text monvhua$createSilenceContent(SignedMessage signedMessage, ServerPlayerEntity sender) {
-        Text garbledText = Text.literal(monvhua$garbleText(signedMessage.getSignedContent()))
+    private Text monvhua$createImitateContent(Text content) {
+        return Text.empty()
+                .append(Text.literal("\n"))
+                .append(Text.literal(" └─ ").formatted(Formatting.GRAY))
+                .append(content);
+    }
+
+    private Text monvhua$createSilenceContent(Text content, boolean imitateStyled) {
+        Text garbledText = Text.literal(monvhua$garbleText(content.getString()))
                 .formatted(Formatting.OBFUSCATED)
                 .formatted(Formatting.RED);
 
-        if (sender != null && ImitateManager.isImitating(sender)) {
-            return Text.empty()
-                    .append(Text.literal("\n"))
-                    .append(Text.literal(" └─BB ").formatted(Formatting.GRAY))
-                    .append(garbledText);
+        if (imitateStyled) {
+            return monvhua$createImitateContent(garbledText);
         }
 
         return garbledText;

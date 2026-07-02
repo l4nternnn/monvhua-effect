@@ -33,7 +33,7 @@ public abstract class ServerPlayNetworkHandlerMixin {
 
         Text content = Text.empty()
                 .append(Text.literal("\n"))
-                .append(Text.literal(" └─AA ").formatted(Formatting.GRAY))
+                .append(Text.literal(" └─ ").formatted(Formatting.GRAY))
                 .append(Text.literal(message.getSignedContent()));
         return message.withUnsignedContent(content);
     }

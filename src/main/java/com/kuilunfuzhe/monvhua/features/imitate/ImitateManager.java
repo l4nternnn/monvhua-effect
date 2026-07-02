@@ -29,12 +29,14 @@ public class ImitateManager {
     private static final Map<UUID, AreaInfo> areaImitateMap = new ConcurrentHashMap<>();
 
     public static class AreaInfo {
+        public final String roleName;
         public final double centerX;
         public final double centerY;
         public final double centerZ;
         public final double radius;
 
-        public AreaInfo(double centerX, double centerY, double centerZ, double radius) {
+        public AreaInfo(String roleName, double centerX, double centerY, double centerZ, double radius) {
+            this.roleName = roleName;
             this.centerX = centerX;
             this.centerY = centerY;
             this.centerZ = centerZ;
@@ -128,8 +130,7 @@ public class ImitateManager {
             return;
         }
 
-        imitateMap.put(player.getUuid(), roleName);
-        areaImitateMap.put(player.getUuid(), new AreaInfo(centerX, centerY, centerZ, radius));
+        areaImitateMap.put(player.getUuid(), new AreaInfo(roleName, centerX, centerY, centerZ, radius));
 
         int stage = getPlayerStage(player);
         ImitateConfig config = ImitateConfig.getInstance();
@@ -177,6 +178,11 @@ public class ImitateManager {
 
     public static boolean hasAreaImitate(ServerPlayerEntity player) {
         return areaImitateMap.containsKey(player.getUuid());
+    }
+
+    public static String getAreaImitateName(ServerPlayerEntity player) {
+        AreaInfo areaInfo = areaImitateMap.get(player.getUuid());
+        return areaInfo == null ? null : areaInfo.roleName;
     }
 
     public static String getImitateName(ServerPlayerEntity player) {
