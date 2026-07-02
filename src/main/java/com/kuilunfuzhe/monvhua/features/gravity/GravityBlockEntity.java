@@ -53,6 +53,7 @@ public class GravityBlockEntity extends Entity {
     private int extractDelay;
     private int extractAge;
     private int extractTicks;
+    private boolean linearExtraction;
 
     public GravityBlockEntity(EntityType<? extends GravityBlockEntity> type, World world) {
         super(type, world);
@@ -191,6 +192,16 @@ public class GravityBlockEntity extends Entity {
         this.extractDelay = Math.max(0, delayTicks);
         this.extractTicks = Math.max(1, ticks);
         this.extractAge = 0;
+        this.linearExtraction = false;
+    }
+
+    public void setLinearExtractionTarget(Vec3d target, int ticks) {
+        setLinearExtractionTarget(target, 0, ticks);
+    }
+
+    public void setLinearExtractionTarget(Vec3d target, int delayTicks, int ticks) {
+        setExtractionTarget(target, delayTicks, ticks);
+        this.linearExtraction = true;
     }
 
     public boolean isExtracting() {
@@ -267,8 +278,9 @@ public class GravityBlockEntity extends Entity {
         double t = Math.clamp(flyAge / (double) this.extractTicks, 0.0D, 1.0D);
         double eased = 1.0D - Math.pow(1.0D - t, 3.0D);
         Vec3d current = this.getPos();
-        Vec3d control = extractionBezierControl(start, extractTarget);
-        Vec3d next = quadraticBezier(start, control, extractTarget, eased);
+        Vec3d next = linearExtraction
+                ? linearInterpolate(start, extractTarget, eased)
+                : quadraticBezier(start, extractionBezierControl(start, extractTarget), extractTarget, eased);
         Vec3d delta = next.subtract(current);
         this.setVelocity(delta);
         this.move(MovementType.SELF, delta);
@@ -278,6 +290,7 @@ public class GravityBlockEntity extends Entity {
             this.extractStart = null;
             this.extractTarget = null;
             this.extractDelay = 0;
+            this.linearExtraction = false;
         }
     }
 
@@ -300,6 +313,10 @@ public class GravityBlockEntity extends Entity {
         return p0.multiply(inv * inv)
                 .add(p1.multiply(2.0D * inv * t))
                 .add(p2.multiply(t * t));
+    }
+
+    private static Vec3d linearInterpolate(Vec3d start, Vec3d target, double t) {
+        return start.multiply(1.0D - t).add(target.multiply(t));
     }
 
     private void settleOrDrop() {
