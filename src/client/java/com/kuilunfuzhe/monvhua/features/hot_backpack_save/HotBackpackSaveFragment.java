@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.hot_backpack_save;
 
 import com.google.gson.JsonParser;
+import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 import com.kuilunfuzhe.monvhua.network.hot_backpack_save.HotBackpackPackets;
 import com.mojang.serialization.JsonOps;
@@ -20,29 +21,44 @@ import icyllis.modernui.view.ViewGroup;
 import icyllis.modernui.widget.Button;
 import icyllis.modernui.widget.FrameLayout;
 import icyllis.modernui.widget.LinearLayout;
+import icyllis.modernui.widget.PopupWindow;
 import icyllis.modernui.widget.ScrollView;
 import icyllis.modernui.widget.TextView;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.entity.EquipmentSlot;
+import net.minecraft.item.BlockItem;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
+import net.minecraft.registry.Registries;
+import net.minecraft.util.Identifier;
+import org.lwjgl.glfw.GLFW;
 
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 public class HotBackpackSaveFragment extends Fragment {
     private static final int LEFT_WIDTH = 210;
     private static final int RIGHT_WIDTH = 270;
     private static final int SELF_PANEL_HEIGHT = 510;
+    private static final int MIN_LEFT_WIDTH = 140;
+    private static final int MIN_RIGHT_WIDTH = 170;
+    private static final int MAX_SIDE_WIDTH = 620;
+    private static final int MIN_SELF_PANEL_HEIGHT = 170;
+    private static final int MAX_SELF_PANEL_HEIGHT = 760;
+    private static final int RESIZE_HANDLE_SIZE = 6;
     private static final int SLOT_SIZE = 24;
     private static final int SLOT_GAP = 2;
     private static final int SLOT_PADDING = 4;
@@ -53,14 +69,25 @@ public class HotBackpackSaveFragment extends Fragment {
 
     private final Screen parent;
     private final List<InventorySlotsView> slotGrids = new ArrayList<>();
+    private CreativePickerView creativePicker;
     private HotBackpackState state = HotBackpackSaveClient.state();
     private String selectedUuid = "";
     private long selectedTimestamp;
     private String applyTargetUuid = "";
-    private boolean targetListOpen;
     private ItemStack cursorStack = ItemStack.EMPTY;
+    private int leftPaneWidth = LEFT_WIDTH;
+    private int rightPaneWidth = RIGHT_WIDTH;
+    private int selfPaneHeight = SELF_PANEL_HEIGHT;
 
     private FrameLayout root;
+    private View leftPane;
+    private View centerPane;
+    private View rightPaneView;
+    private View archiveScrollView;
+    private View selfScrollView;
+    private LinearLayout.LayoutParams leftPaneParams;
+    private LinearLayout.LayoutParams rightPaneParams;
+    private LinearLayout.LayoutParams selfScrollParams;
     private LinearLayout playerList;
     private LinearLayout archiveSlots;
     private LinearLayout selfSlots;
@@ -68,6 +95,10 @@ public class HotBackpackSaveFragment extends Fragment {
     private LinearLayout historyList;
     private TextView statusLabel;
     private TextView selectedLabel;
+    private PopupWindow targetPopup;
+    private PopupWindow creativeListPopup;
+    private long resizeEwCursor;
+    private long resizeNsCursor;
 
     public HotBackpackSaveFragment(Screen parent) {
         this.parent = parent;
@@ -117,9 +148,16 @@ public class HotBackpackSaveFragment extends Fragment {
         main.setPadding(10, 10, 10, 10);
         root.addView(main, new FrameLayout.LayoutParams(-1, -1));
 
-        main.addView(createLeftPanel(ctx), new LinearLayout.LayoutParams(LEFT_WIDTH, -1));
-        main.addView(createCenterPanel(ctx), new LinearLayout.LayoutParams(0, -1, 1.0F));
-        main.addView(createRightPanel(ctx), new LinearLayout.LayoutParams(RIGHT_WIDTH, -1));
+        leftPane = createLeftPanel(ctx);
+        centerPane = createCenterPanel(ctx);
+        rightPaneView = createRightPanel(ctx);
+        leftPaneParams = new LinearLayout.LayoutParams(leftPaneWidth, -1);
+        rightPaneParams = new LinearLayout.LayoutParams(rightPaneWidth, -1);
+        main.addView(leftPane, leftPaneParams);
+        main.addView(resizeHandle(ctx, ResizeKind.LEFT_WIDTH), new LinearLayout.LayoutParams(RESIZE_HANDLE_SIZE, -1));
+        main.addView(centerPane, new LinearLayout.LayoutParams(0, -1, 1.0F));
+        main.addView(resizeHandle(ctx, ResizeKind.RIGHT_WIDTH), new LinearLayout.LayoutParams(RESIZE_HANDLE_SIZE, -1));
+        main.addView(rightPaneView, rightPaneParams);
 
         statusLabel = label(ctx, "", 11, 0xFFB6C0CC);
         FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(-2, -2, Gravity.LEFT | Gravity.BOTTOM);
@@ -145,6 +183,9 @@ public class HotBackpackSaveFragment extends Fragment {
         if (active == this) {
             active = null;
         }
+        dismissTargetPopup();
+        dismissCreativeListPopup();
+        resetResizeCursor();
     }
 
     private View createLeftPanel(Context ctx) {
@@ -166,18 +207,26 @@ public class HotBackpackSaveFragment extends Fragment {
 
         ScrollView archiveScroll = new ScrollView(ctx);
         archiveScroll.setBackground(panelShape(0x441A2028, 0x553A4350));
+        archiveScroll.setClipChildren(true);
+        archiveScroll.setClipToPadding(true);
+        archiveScrollView = archiveScroll;
         archiveSlots = vertical(ctx);
         archiveSlots.setPadding(8, 8, 8, 8);
         archiveScroll.addView(archiveSlots, new FrameLayout.LayoutParams(-1, -2));
         panel.addView(archiveScroll, new LinearLayout.LayoutParams(-1, 0, 1.0F));
+        panel.addView(resizeHandle(ctx, ResizeKind.SELF_HEIGHT), new LinearLayout.LayoutParams(-1, RESIZE_HANDLE_SIZE));
 
         panel.addView(title(ctx, "我的背包"), blockParams());
-        ScrollView selfScroll = new ScrollView(ctx);
-        selfScroll.setBackground(panelShape(0x441A2028, 0x553A4350));
+        FrameLayout selfPanel = new FrameLayout(ctx);
+        selfPanel.setBackground(panelShape(0x441A2028, 0x553A4350));
+        selfPanel.setClipChildren(true);
+        selfPanel.setClipToPadding(true);
+        selfScrollView = selfPanel;
         selfSlots = vertical(ctx);
         selfSlots.setPadding(8, 8, 8, 8);
-        selfScroll.addView(selfSlots, new FrameLayout.LayoutParams(-1, -2));
-        panel.addView(selfScroll, new LinearLayout.LayoutParams(-1, SELF_PANEL_HEIGHT));
+        selfPanel.addView(selfSlots, new FrameLayout.LayoutParams(-1, -2));
+        selfScrollParams = new LinearLayout.LayoutParams(-1, selfPaneHeight);
+        panel.addView(selfPanel, selfScrollParams);
         return panel;
     }
 
@@ -240,13 +289,14 @@ public class HotBackpackSaveFragment extends Fragment {
             String label = (record.online ? "● " : "○ ") + safeName(record) + roleSuffix(record);
             Button row = button(ctx, label);
             boolean selected = record.uuid.equals(selectedUuid);
-            row.setTextColor(selected ? 0xFFFFD36A : (record.online ? 0xFFE8EDF4 : 0xFF97A1AE));
+            row.setTextColor(playerRowColor(record, selected));
             row.setBackground(panelShape(selected ? 0xAA3A5268 : 0x332A3038, 0x553A4350));
             row.setOnClickListener(v -> {
                 selectedUuid = record.uuid;
                 selectedTimestamp = 0L;
                 ensureTimestamp();
-                targetListOpen = false;
+                dismissTargetPopup();
+                dismissCreativeListPopup();
                 scheduleRebuildAll();
             });
             playerList.addView(row, blockParams());
@@ -277,9 +327,14 @@ public class HotBackpackSaveFragment extends Fragment {
             selfSlots.addView(label(getContext(), "未进入世界", 12, 0xFFB6C0CC), blockParams());
             return;
         }
+        LinearLayout row = new LinearLayout(getContext());
+        row.setOrientation(LinearLayout.HORIZONTAL);
         InventorySlotsView grid = new InventorySlotsView(getContext(), false);
         slotGrids.add(grid);
-        selfSlots.addView(grid, new LinearLayout.LayoutParams(-1, grid.preferredHeight()));
+        row.addView(grid, new LinearLayout.LayoutParams(0, grid.preferredHeight(), 1.0F));
+        creativePicker = new CreativePickerView(getContext());
+        row.addView(creativePicker, new LinearLayout.LayoutParams(creativePicker.preferredWidth(), creativePicker.preferredHeight()));
+        selfSlots.addView(row, new LinearLayout.LayoutParams(-1, Math.max(grid.preferredHeight(), creativePicker.preferredHeight())));
     }
 
     private void rebuildRight() {
@@ -291,9 +346,13 @@ public class HotBackpackSaveFragment extends Fragment {
         refresh.setOnClickListener(v -> HotBackpackSaveClient.requestState());
         rightPanel.addView(refresh, blockParams());
 
-        Button save = button(ctx, "保存特殊玩家");
-        save.setOnClickListener(v -> ClientPlayNetworking.send(new HotBackpackPackets.SaveSpecialPlayersC2S()));
-        rightPanel.addView(save, blockParams());
+        Button saveSpecial = button(ctx, "保存特殊玩家");
+        saveSpecial.setOnClickListener(v -> ClientPlayNetworking.send(new HotBackpackPackets.SaveSpecialPlayersC2S()));
+        rightPanel.addView(saveSpecial, blockParams());
+
+        Button saveAll = button(ctx, "存档当前所有玩家");
+        saveAll.setOnClickListener(v -> ClientPlayNetworking.send(new HotBackpackPackets.SaveAllPlayersC2S()));
+        rightPanel.addView(saveAll, blockParams());
 
         Button copy = button(ctx, "复制");
         copy.setOnClickListener(v -> updateStatus("已选中当前预览，可粘贴或应用"));
@@ -323,15 +382,9 @@ public class HotBackpackSaveFragment extends Fragment {
         });
         rightPanel.addView(applyCurrent, blockParams());
 
-        Button applyTo = button(ctx, targetListOpen ? "应用当前存档到: 收起" : "应用当前存档到");
-        applyTo.setOnClickListener(v -> {
-            targetListOpen = !targetListOpen;
-            scheduleRebuildRight();
-        });
+        Button applyTo = button(ctx, "应用当前存档到");
+        applyTo.setOnClickListener(this::showTargetPopup);
         rightPanel.addView(applyTo, blockParams());
-        if (targetListOpen) {
-            addTargetList(ctx);
-        }
 
         Button undo = button(ctx, "撤回粘贴");
         undo.setOnClickListener(v -> {
@@ -357,28 +410,177 @@ public class HotBackpackSaveFragment extends Fragment {
         rightPanel.addView(back, blockParams());
     }
 
-    private void addTargetList(Context ctx) {
+    private void showTargetPopup(View anchor) {
+        HotBackpackState.Snapshot snapshot = selectedSnapshot();
+        if (snapshot == null || root == null) {
+            updateStatus("当前玩家还没有存档");
+            return;
+        }
+        dismissTargetPopup();
+        Context ctx = getContext();
+        LinearLayout panel = panel(ctx);
+        panel.addView(title(ctx, "应用当前存档到"), blockParams());
+        ScrollView scroll = new ScrollView(ctx);
+        LinearLayout list = vertical(ctx);
+        list.setPadding(4, 4, 4, 4);
         for (HotBackpackState.PlayerRecord record : sortedRecords()) {
             Button row = button(ctx, (record.uuid.equals(applyTargetUuid) ? "✓ " : "") + safeName(record));
+            row.setTextColor(playerRowColor(record, false));
             row.setOnClickListener(v -> {
-                applyTargetUuid = record.uuid;
-                HotBackpackState.Snapshot snapshot = selectedSnapshot();
-                if (snapshot != null) {
-                    MinecraftClient client = MinecraftClient.getInstance();
+                MinecraftClient client = MinecraftClient.getInstance();
+                if (!record.uuid.equals(applyTargetUuid)) {
+                    applyTargetUuid = record.uuid;
+                    row.setText("✓ " + safeName(record));
                     if (client.player != null) {
                         client.player.sendMessage(Text.literal("再次点击确认应用到 " + safeName(record)), true);
                     }
-                    UUID sourceId = parseUuid(snapshot.uuid);
-                    UUID targetId = parseUuid(record.uuid);
-                    if (sourceId != null && targetId != null) {
-                        ClientPlayNetworking.send(new HotBackpackPackets.ApplySnapshotC2S(sourceId, snapshot.timestamp, targetId));
-                    }
+                    return;
                 }
-                targetListOpen = false;
-                scheduleRebuildRight();
+                if (client.player != null) {
+                    client.player.sendMessage(Text.literal("已应用到 " + safeName(record)), true);
+                }
+                UUID sourceId = parseUuid(snapshot.uuid);
+                UUID targetId = parseUuid(record.uuid);
+                if (sourceId != null && targetId != null) {
+                    ClientPlayNetworking.send(new HotBackpackPackets.ApplySnapshotC2S(sourceId, snapshot.timestamp, targetId));
+                }
+                dismissTargetPopup();
             });
-            rightPanel.addView(row, blockParams());
+            list.addView(row, blockParams());
         }
+        scroll.addView(list, new FrameLayout.LayoutParams(-1, -2));
+        panel.addView(scroll, new LinearLayout.LayoutParams(-1, 320));
+
+        Button close = button(ctx, "关闭");
+        close.setOnClickListener(v -> dismissTargetPopup());
+        panel.addView(close, blockParams());
+
+        targetPopup = new PopupWindow(panel, 320, 410, true);
+        targetPopup.setBackgroundDrawable(new ColorDrawable(0xF0181B22));
+        targetPopup.setOutsideTouchable(true);
+        targetPopup.setFocusable(true);
+        targetPopup.setOnDismissListener(() -> targetPopup = null);
+        targetPopup.showAtLocation(root, Gravity.CENTER, 0, 0);
+    }
+
+    private void dismissTargetPopup() {
+        if (targetPopup != null) {
+            PopupWindow popup = targetPopup;
+            targetPopup = null;
+            popup.dismiss();
+        }
+    }
+
+    private void showCreativeListPopup(CreativePickerView picker) {
+        if (root == null) {
+            return;
+        }
+        dismissCreativeListPopup();
+        Context ctx = getContext();
+        LinearLayout panel = panel(ctx);
+        panel.addView(title(ctx, "更多创造分类"), blockParams());
+        panel.addView(label(ctx, "选择一个分类后在右侧列表中拿取物品", 11, 0xFFB6C0CC), blockParams());
+
+        ScrollView scroll = new ScrollView(ctx);
+        LinearLayout list = vertical(ctx);
+        list.setPadding(4, 4, 4, 4);
+        List<CreativeCategory> popupCategories = new ArrayList<>(picker.overflowTabs());
+        if (!popupCategories.contains(CreativeCategory.OTHER)) {
+            popupCategories.add(CreativeCategory.OTHER);
+        }
+        for (CreativeCategory category : popupCategories) {
+            if (category == CreativeCategory.MORE || category == CreativeCategory.MODDED) {
+                continue;
+            }
+            Button row = button(ctx, category.label);
+            row.setTextColor(picker.isCategorySelected(category) ? 0xFFFFD36A : 0xFFE8EDF4);
+            row.setOnClickListener(v -> {
+                picker.selectCategory(category);
+                dismissCreativeListPopup();
+            });
+            list.addView(row, blockParams());
+        }
+        List<String> namespaces = modNamespaces();
+        if (!namespaces.isEmpty()) {
+            list.addView(label(ctx, "模组", 12, 0xFFB6C0CC), blockParams());
+            for (String namespace : namespaces) {
+                Button row = button(ctx, displayNameForNamespace(namespace));
+                row.setTextColor(picker.isModNamespaceSelected(namespace) ? 0xFFFFD36A : 0xFFE8EDF4);
+                row.setOnClickListener(v -> {
+                    picker.selectModNamespace(namespace);
+                    dismissCreativeListPopup();
+                });
+                list.addView(row, blockParams());
+            }
+        }
+        scroll.addView(list, new FrameLayout.LayoutParams(-1, -2));
+        panel.addView(scroll, new LinearLayout.LayoutParams(-1, 330));
+
+        Button close = button(ctx, "关闭");
+        close.setOnClickListener(v -> dismissCreativeListPopup());
+        panel.addView(close, blockParams());
+
+        creativeListPopup = new PopupWindow(panel, 300, 430, true);
+        creativeListPopup.setBackgroundDrawable(new ColorDrawable(0xF0181B22));
+        creativeListPopup.setOutsideTouchable(true);
+        creativeListPopup.setFocusable(true);
+        creativeListPopup.setOnDismissListener(() -> creativeListPopup = null);
+        creativeListPopup.showAtLocation(root, Gravity.CENTER, 0, 0);
+    }
+
+    private void dismissCreativeListPopup() {
+        if (creativeListPopup != null) {
+            PopupWindow popup = creativeListPopup;
+            creativeListPopup = null;
+            popup.dismiss();
+        }
+    }
+
+    private void takeCreativeStack(ItemStack stack, boolean right, boolean middle) {
+        if (stack == null || stack.isEmpty()) {
+            return;
+        }
+        if (right && cursorStack != null && !cursorStack.isEmpty()) {
+            cursorStack = ItemStack.EMPTY;
+            refreshSlotGrids();
+            if (creativePicker != null) {
+                creativePicker.invalidate();
+            }
+            updateStatus("手上为空");
+            return;
+        }
+        ItemStack copy = stack.copy();
+        copy.setCount(right && !middle ? 1 : copy.getMaxCount());
+        cursorStack = copy;
+        refreshSlotGrids();
+        if (creativePicker != null) {
+            creativePicker.invalidate();
+        }
+        updateStatus("手上: " + cursorStack.getName().getString());
+    }
+
+    private List<String> modNamespaces() {
+        Set<String> namespaces = new LinkedHashSet<>();
+        for (Item item : Registries.ITEM) {
+            Identifier id = Registries.ITEM.getId(item);
+            if (id != null && !"minecraft".equals(id.getNamespace()) && !"air".equals(id.getPath())) {
+                namespaces.add(id.getNamespace());
+            }
+        }
+        List<String> sorted = new ArrayList<>(namespaces);
+        sorted.sort(Comparator.comparing(this::displayNameForNamespace, String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(namespace -> namespace, String.CASE_INSENSITIVE_ORDER));
+        return sorted;
+    }
+
+    private String displayNameForNamespace(String namespace) {
+        if (namespace == null || namespace.isBlank()) {
+            return "未知模组";
+        }
+        return FabricLoader.getInstance().getModContainer(namespace)
+                .map(container -> container.getMetadata().getName())
+                .filter(name -> name != null && !name.isBlank())
+                .orElse(namespace);
     }
 
     private void rebuildHistory() {
@@ -614,7 +816,19 @@ public class HotBackpackSaveFragment extends Fragment {
     }
 
     private static String roleSuffix(HotBackpackState.PlayerRecord record) {
-        return record.roleTag == null || record.roleTag.isBlank() ? "" : " [" + record.roleTag + "]";
+        return record.roleTag == null || record.roleTag.isBlank() ? "" : " (" + tag_pitch.nameForTag(record.roleTag) + ")";
+    }
+
+    private static int playerRowColor(HotBackpackState.PlayerRecord record, boolean selected) {
+        if (selected) {
+            return 0xFFFFD36A;
+        }
+        int fallback = record.online ? 0xFFE8EDF4 : 0xFF97A1AE;
+        if (record.roleTag == null || record.roleTag.isBlank()) {
+            return fallback;
+        }
+        int rgb = tag_pitch.colorForTag(record.roleTag, fallback & 0x00FFFFFF);
+        return 0xFF000000 | (rgb & 0x00FFFFFF);
     }
 
     private static String safe(String value) {
@@ -695,6 +909,48 @@ public class HotBackpackSaveFragment extends Fragment {
         return button;
     }
 
+    private View resizeHandle(Context ctx, ResizeKind kind) {
+        return new ResizeHandleView(ctx, kind);
+    }
+
+    private void setResizeCursor(ResizeKind kind) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null) {
+            return;
+        }
+        long cursor = kind == ResizeKind.SELF_HEIGHT ? resizeNsCursor : resizeEwCursor;
+        if (cursor == 0L) {
+            cursor = GLFW.glfwCreateStandardCursor(kind == ResizeKind.SELF_HEIGHT
+                    ? GLFW.GLFW_RESIZE_NS_CURSOR
+                    : GLFW.GLFW_RESIZE_EW_CURSOR);
+            if (kind == ResizeKind.SELF_HEIGHT) {
+                resizeNsCursor = cursor;
+            } else {
+                resizeEwCursor = cursor;
+            }
+        }
+        if (cursor != 0L) {
+            GLFW.glfwSetCursor(client.getWindow().getHandle(), cursor);
+        }
+    }
+
+    private void resetResizeCursor() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null && client.getWindow() != null) {
+            GLFW.glfwSetCursor(client.getWindow().getHandle(), 0L);
+        }
+    }
+
+    private void requestOuterScrollLock(boolean locked) {
+        if (root != null && root.getParent() != null) {
+            root.getParent().requestDisallowInterceptTouchEvent(locked);
+        }
+    }
+
+    private int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
     private static LinearLayout.LayoutParams blockParams() {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
         params.setMargins(0, 0, 0, 5);
@@ -708,6 +964,694 @@ public class HotBackpackSaveFragment extends Fragment {
         shape.setStroke(1, stroke);
         shape.setCornerRadius(3.0F);
         return shape;
+    }
+
+    private enum ResizeKind {
+        LEFT_WIDTH,
+        RIGHT_WIDTH,
+        SELF_HEIGHT
+    }
+
+    private final class ResizeHandleView extends View {
+        private final ResizeKind kind;
+        private boolean hovered;
+        private boolean dragging;
+        private float startX;
+        private float startY;
+        private int startLeftWidth;
+        private int startRightWidth;
+        private int startSelfHeight;
+
+        private ResizeHandleView(Context ctx, ResizeKind kind) {
+            super(ctx);
+            this.kind = kind;
+            setBackground(new ColorDrawable(0x223A4350));
+            setOnHoverListener(this::handleHover);
+            setOnTouchListener(this::handleTouch);
+        }
+
+        private boolean handleHover(View view, MotionEvent event) {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_HOVER_ENTER || action == MotionEvent.ACTION_HOVER_MOVE) {
+                hovered = true;
+                setResizeCursor(kind);
+                updateBackground();
+                return true;
+            }
+            if (action == MotionEvent.ACTION_HOVER_EXIT && !dragging) {
+                hovered = false;
+                resetResizeCursor();
+                updateBackground();
+                return true;
+            }
+            return false;
+        }
+
+        private boolean handleTouch(View view, MotionEvent event) {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_BUTTON_PRESS) {
+                dragging = true;
+                hovered = true;
+                startX = event.getX();
+                startY = event.getY();
+                startLeftWidth = leftPaneWidth;
+                startRightWidth = rightPaneWidth;
+                startSelfHeight = selfPaneHeight;
+                setResizeCursor(kind);
+                requestOuterScrollLock(true);
+                updateBackground();
+                return true;
+            }
+            if (action == MotionEvent.ACTION_MOVE && dragging) {
+                int deltaX = Math.round(event.getX() - startX);
+                int deltaY = Math.round(event.getY() - startY);
+                if (kind == ResizeKind.LEFT_WIDTH) {
+                    leftPaneWidth = clamp(startLeftWidth + deltaX, MIN_LEFT_WIDTH, MAX_SIDE_WIDTH);
+                    if (leftPaneParams != null && leftPane != null) {
+                        leftPaneParams.width = leftPaneWidth;
+                        leftPane.setLayoutParams(leftPaneParams);
+                    }
+                } else if (kind == ResizeKind.RIGHT_WIDTH) {
+                    rightPaneWidth = clamp(startRightWidth - deltaX, MIN_RIGHT_WIDTH, MAX_SIDE_WIDTH);
+                    if (rightPaneParams != null && rightPaneView != null) {
+                        rightPaneParams.width = rightPaneWidth;
+                        rightPaneView.setLayoutParams(rightPaneParams);
+                    }
+                } else {
+                    selfPaneHeight = clamp(startSelfHeight - deltaY, MIN_SELF_PANEL_HEIGHT, MAX_SELF_PANEL_HEIGHT);
+                    if (selfScrollParams != null && selfScrollView != null) {
+                        selfScrollParams.height = selfPaneHeight;
+                        selfScrollView.setLayoutParams(selfScrollParams);
+                    }
+                }
+                updateBackground();
+                return true;
+            }
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_BUTTON_RELEASE || action == MotionEvent.ACTION_CANCEL) {
+                dragging = false;
+                requestOuterScrollLock(false);
+                if (hovered && action != MotionEvent.ACTION_CANCEL) {
+                    setResizeCursor(kind);
+                } else {
+                    resetResizeCursor();
+                }
+                updateBackground();
+                return true;
+            }
+            return false;
+        }
+
+        private void updateBackground() {
+            if (dragging) {
+                setBackground(new ColorDrawable(0xCCFFD36A));
+            } else if (hovered) {
+                setBackground(new ColorDrawable(0x88E6C56C));
+            } else {
+                setBackground(new ColorDrawable(0x223A4350));
+            }
+            invalidate();
+        }
+    }
+
+    private enum CreativeCategory {
+        ALL("全部", false),
+        BUILDING("建筑", true),
+        NATURAL("自然", true),
+        FUNCTIONAL("功能", true),
+        REDSTONE("红石", true),
+        TOOLS("工具", true),
+        COMBAT("战斗", true),
+        FOOD("食物", true),
+        INGREDIENTS("原料", true),
+        SPAWN_EGGS("刷怪蛋", false),
+        MODDED("模组", false),
+        OTHER("其它", false),
+        MORE("更多", false);
+
+        private final String label;
+        private final boolean visibleTab;
+
+        CreativeCategory(String label, boolean visibleTab) {
+            this.label = label;
+            this.visibleTab = visibleTab;
+        }
+    }
+
+    private final class CreativePickerView extends MinecraftSurfaceView {
+        private static final int PICKER_WIDTH = 343;
+        private static final int PICKER_HEIGHT = 492;
+        private static final int PAD = 6;
+        private static final int TAB_MIN_W = 42;
+        private static final int TAB_H = 18;
+        private static final int SLOT = 22;
+        private static final int STEP = 24;
+        private static final int GRID_X = PAD;
+        private static final int TAB_ROWS = 2;
+        private static final int TAB_GAP = 2;
+        private static final int GRID_Y = PAD + TAB_H * TAB_ROWS + 12;
+        private static final int COLS = 13;
+        private static final int SCROLL_W = 5;
+
+        private final List<ItemStack> items = new ArrayList<>();
+        private final int[] locationInWindow = new int[2];
+        private CreativeCategory category = CreativeCategory.BUILDING;
+        private String selectedModNamespace = "";
+        private double guiScale = 1.0D;
+        private int screenLeft;
+        private int screenTop;
+        private int guiWidth = PICKER_WIDTH;
+        private int guiHeight = PICKER_HEIGHT;
+        private int scrollRow;
+        private boolean draggingScrollbar;
+        private boolean lastRight;
+        private boolean lastMiddle;
+
+        private CreativePickerView(Context ctx) {
+            super(ctx);
+            setRenderer(new CreativePickerRenderer());
+            setFocusable(true);
+            setFocusableInTouchMode(true);
+            setOnTouchListener(this::handleTouch);
+            setOnGenericMotionListener(this::handleGenericMotion);
+            rebuildItems();
+        }
+
+        private int preferredWidth() {
+            return (int) Math.ceil(PICKER_WIDTH * currentGuiScale());
+        }
+
+        private int preferredHeight() {
+            return (int) Math.ceil(PICKER_HEIGHT * currentGuiScale());
+        }
+
+        private void selectCategory(CreativeCategory nextCategory) {
+            if (nextCategory == null || nextCategory == CreativeCategory.MORE) {
+                return;
+            }
+            category = nextCategory;
+            selectedModNamespace = "";
+            scrollRow = 0;
+            rebuildItems();
+            invalidate();
+        }
+
+        private void selectModNamespace(String namespace) {
+            if (namespace == null || namespace.isBlank()) {
+                return;
+            }
+            category = CreativeCategory.MODDED;
+            selectedModNamespace = namespace;
+            scrollRow = 0;
+            rebuildItems();
+            invalidate();
+        }
+
+        private boolean isCategorySelected(CreativeCategory checkedCategory) {
+            return category == checkedCategory && selectedModNamespace.isBlank();
+        }
+
+        private boolean isModNamespaceSelected(String namespace) {
+            return category == CreativeCategory.MODDED && namespace != null && namespace.equals(selectedModNamespace);
+        }
+
+        private boolean isTopTabSelected(CreativeCategory checkedCategory) {
+            if (checkedCategory == CreativeCategory.MORE) {
+                return false;
+            }
+            if (checkedCategory == CreativeCategory.MODDED) {
+                return category == CreativeCategory.MODDED;
+            }
+            return isCategorySelected(checkedCategory);
+        }
+
+        private String currentCategoryLabel() {
+            if (category == CreativeCategory.MODDED && !selectedModNamespace.isBlank()) {
+                return displayNameForNamespace(selectedModNamespace);
+            }
+            return category.label;
+        }
+
+        private void rebuildItems() {
+            items.clear();
+            for (Item item : Registries.ITEM) {
+                Identifier id = Registries.ITEM.getId(item);
+                if (id == null || "air".equals(id.getPath())) {
+                    continue;
+                }
+                ItemStack stack = item.getDefaultStack();
+                if (!stack.isEmpty() && matchesCategory(category, item, id)) {
+                    items.add(stack);
+                }
+            }
+            items.sort(Comparator
+                    .comparing((ItemStack stack) -> !"minecraft".equals(itemId(stack).getNamespace()))
+                    .thenComparing(stack -> itemId(stack).getNamespace())
+                    .thenComparing(stack -> itemId(stack).getPath()));
+            clampScroll();
+        }
+
+        private Identifier itemId(ItemStack stack) {
+            return Registries.ITEM.getId(stack.getItem());
+        }
+
+        private boolean matchesCategory(CreativeCategory category, Item item, Identifier id) {
+            if (category == CreativeCategory.ALL) {
+                return true;
+            }
+            if (category == CreativeCategory.MODDED) {
+                if (!selectedModNamespace.isBlank()) {
+                    return selectedModNamespace.equals(id.getNamespace());
+                }
+                return !"minecraft".equals(id.getNamespace());
+            }
+            if (category == CreativeCategory.OTHER) {
+                return !matchesListedCategory(item, id);
+            }
+            if (category == CreativeCategory.MORE) {
+                return false;
+            }
+            return matchesSingleCategory(category, item, id);
+        }
+
+        private boolean matchesListedCategory(Item item, Identifier id) {
+            return matchesSingleCategory(CreativeCategory.BUILDING, item, id)
+                    || matchesSingleCategory(CreativeCategory.NATURAL, item, id)
+                    || matchesSingleCategory(CreativeCategory.FUNCTIONAL, item, id)
+                    || matchesSingleCategory(CreativeCategory.REDSTONE, item, id)
+                    || matchesSingleCategory(CreativeCategory.TOOLS, item, id)
+                    || matchesSingleCategory(CreativeCategory.COMBAT, item, id)
+                    || matchesSingleCategory(CreativeCategory.FOOD, item, id)
+                    || matchesSingleCategory(CreativeCategory.INGREDIENTS, item, id)
+                    || matchesSingleCategory(CreativeCategory.SPAWN_EGGS, item, id);
+        }
+
+        private boolean matchesSingleCategory(CreativeCategory category, Item item, Identifier id) {
+            String path = id.getPath();
+            return switch (category) {
+                case BUILDING -> item instanceof BlockItem
+                        && !matchesSingleCategory(CreativeCategory.NATURAL, item, id)
+                        && !matchesSingleCategory(CreativeCategory.REDSTONE, item, id)
+                        && !matchesSingleCategory(CreativeCategory.FUNCTIONAL, item, id);
+                case NATURAL -> containsAny(path, "stone", "dirt", "grass", "sand", "gravel", "log", "wood", "leaves",
+                        "sapling", "flower", "mushroom", "coral", "kelp", "bamboo", "cactus", "vine", "ore", "deepslate");
+                case FUNCTIONAL -> containsAny(path, "crafting_table", "furnace", "chest", "barrel", "bed", "anvil",
+                        "enchanting", "brewing", "beacon", "banner", "sign", "door", "trapdoor", "ladder", "torch",
+                        "lantern", "bell", "jukebox", "lectern", "cauldron", "composter", "shulker_box");
+                case REDSTONE -> containsAny(path, "redstone", "piston", "observer", "repeater", "comparator", "hopper",
+                        "dispenser", "dropper", "rail", "detector", "daylight", "target", "sculk_sensor", "lever", "button",
+                        "pressure_plate", "tripwire");
+                case TOOLS -> containsAny(path, "pickaxe", "shovel", "axe", "hoe", "bucket", "boat", "minecart", "compass",
+                        "clock", "brush", "lead", "name_tag", "flint_and_steel", "fishing_rod", "spyglass", "shears");
+                case COMBAT -> containsAny(path, "sword", "bow", "crossbow", "arrow", "trident", "shield", "helmet",
+                        "chestplate", "leggings", "boots", "horse_armor", "mace");
+                case FOOD -> containsAny(path, "apple", "bread", "beef", "pork", "chicken", "mutton", "rabbit", "cod",
+                        "salmon", "cookie", "cake", "pie", "stew", "soup", "carrot", "potato", "beetroot", "melon",
+                        "berries", "honey", "milk", "egg");
+                case INGREDIENTS -> containsAny(path, "ingot", "nugget", "dust", "shard", "fragment", "stick", "string",
+                        "leather", "feather", "paper", "book", "diamond", "emerald", "coal", "lapis", "quartz", "amethyst",
+                        "raw_", "dye", "bone", "blaze", "pearl", "slime", "clay", "brick");
+                case SPAWN_EGGS -> path.endsWith("_spawn_egg");
+                default -> false;
+            };
+        }
+
+        private boolean containsAny(String value, String... parts) {
+            for (String part : parts) {
+                if (value.contains(part)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private CreativeCategory[] visibleTabs() {
+            return visibleTabs(false).toArray(new CreativeCategory[0]);
+        }
+
+        private List<CreativeCategory> visibleTabs(boolean includeMore) {
+            List<CreativeCategory> candidates = new ArrayList<>();
+            for (CreativeCategory tab : CreativeCategory.values()) {
+                if (tab == CreativeCategory.MORE) {
+                    continue;
+                }
+                candidates.add(tab);
+            }
+            int capacity = tabCapacity(includeMore ? candidates.size() + 1 : candidates.size());
+            int regularCapacity = includeMore && candidates.size() > capacity ? Math.max(0, capacity - 1) : capacity;
+            List<CreativeCategory> tabs = new ArrayList<>();
+            for (CreativeCategory tab : candidates) {
+                if (tabs.size() >= regularCapacity) {
+                    break;
+                }
+                tabs.add(tab);
+            }
+            if (includeMore && candidates.size() > regularCapacity) {
+                tabs.add(CreativeCategory.MORE);
+            }
+            return tabs;
+        }
+
+        private List<CreativeCategory> overflowTabs() {
+            List<CreativeCategory> shown = visibleTabs(true);
+            Set<CreativeCategory> shownSet = new LinkedHashSet<>(shown);
+            List<CreativeCategory> overflow = new ArrayList<>();
+            for (CreativeCategory tab : CreativeCategory.values()) {
+                if (tab != CreativeCategory.MORE && !shownSet.contains(tab)) {
+                    overflow.add(tab);
+                }
+            }
+            return overflow;
+        }
+
+        private int tabCapacity(int tabCount) {
+            int tabWidth = tabWidth(tabCount);
+            return Math.max(1, Math.min(tabCount, (PICKER_WIDTH - PAD * 2 + TAB_GAP) / Math.max(1, tabWidth + TAB_GAP) * TAB_ROWS));
+        }
+
+        private int tabWidth(int tabCount) {
+            int columns = Math.max(1, (int) Math.ceil(tabCount / (float) TAB_ROWS));
+            int available = PICKER_WIDTH - PAD * 2 - (columns - 1) * TAB_GAP;
+            return Math.max(TAB_MIN_W, available / columns);
+        }
+
+        private boolean handleGenericMotion(View view, MotionEvent event) {
+            if (event.getActionMasked() != MotionEvent.ACTION_SCROLL) {
+                return false;
+            }
+            int localX = toLocalGuiCoord(event.getX());
+            int localY = toLocalGuiCoord(event.getY());
+            if (!containsLocalMouse(localX, localY)) {
+                return false;
+            }
+            return scrollPicker(event);
+        }
+
+        private boolean scrollPicker(MotionEvent event) {
+            float wheel = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+            if (Math.abs(wheel) < 0.001F) {
+                wheel = -event.getAxisValue(MotionEvent.AXIS_Y);
+            }
+            if (Math.abs(wheel) < 0.001F) {
+                return false;
+            }
+            scrollRow += wheel < 0.0F ? 1 : -1;
+            clampScroll();
+            invalidate();
+            return true;
+        }
+
+        private boolean handleTouch(View view, MotionEvent event) {
+            int action = event.getActionMasked();
+            int localX = toLocalGuiCoord(event.getX());
+            int localY = toLocalGuiCoord(event.getY());
+            if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_BUTTON_PRESS) {
+                lastRight = event.isButtonPressed(MotionEvent.BUTTON_SECONDARY)
+                        || (event.getButtonState() & MotionEvent.BUTTON_SECONDARY) != 0;
+                lastMiddle = event.isButtonPressed(MotionEvent.BUTTON_TERTIARY)
+                        || (event.getButtonState() & MotionEvent.BUTTON_TERTIARY) != 0;
+                CreativeCategory tab = hitTab(localX, localY);
+                if (tab != null) {
+                    if (tab == CreativeCategory.MORE || tab == CreativeCategory.MODDED || tab == CreativeCategory.OTHER) {
+                        showCreativeListPopup(this);
+                    } else {
+                        selectCategory(tab);
+                    }
+                    return true;
+                }
+                if (hitScrollbar(localX, localY)) {
+                    draggingScrollbar = true;
+                    requestOuterScrollLock(true);
+                    updateScrollbarDrag(localY);
+                    return true;
+                }
+                return true;
+            }
+            if (action == MotionEvent.ACTION_SCROLL) {
+                return scrollPicker(event);
+            }
+            if (action == MotionEvent.ACTION_MOVE) {
+                if (draggingScrollbar) {
+                    requestOuterScrollLock(true);
+                    updateScrollbarDrag(localY);
+                    return true;
+                }
+                invalidate();
+                return false;
+            }
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_BUTTON_RELEASE) {
+                if (draggingScrollbar) {
+                    draggingScrollbar = false;
+                    lastRight = false;
+                    lastMiddle = false;
+                    requestOuterScrollLock(false);
+                    return true;
+                }
+                ItemStack stack = hitStack(localX, localY);
+                if (!stack.isEmpty()) {
+                    boolean right = lastRight || event.isButtonPressed(MotionEvent.BUTTON_SECONDARY)
+                            || (event.getButtonState() & MotionEvent.BUTTON_SECONDARY) != 0;
+                    boolean middle = lastMiddle || event.isButtonPressed(MotionEvent.BUTTON_TERTIARY)
+                            || (event.getButtonState() & MotionEvent.BUTTON_TERTIARY) != 0;
+                    takeCreativeStack(stack, right, middle);
+                }
+                lastRight = false;
+                lastMiddle = false;
+                requestOuterScrollLock(false);
+                return true;
+            }
+            if (action == MotionEvent.ACTION_CANCEL) {
+                draggingScrollbar = false;
+                lastRight = false;
+                lastMiddle = false;
+                requestOuterScrollLock(false);
+            }
+            return false;
+        }
+
+        private void requestOuterScrollLock(boolean locked) {
+            icyllis.modernui.view.ViewParent parent = getParent();
+            if (parent != null) {
+                parent.requestDisallowInterceptTouchEvent(locked);
+            }
+        }
+
+        private CreativeCategory hitTab(int x, int y) {
+            List<CreativeCategory> tabs = visibleTabs(true);
+            int tabWidth = tabWidth(tabs.size());
+            for (int i = 0; i < tabs.size(); i++) {
+                int col = i / TAB_ROWS;
+                int row = i % TAB_ROWS;
+                int left = PAD + col * (tabWidth + TAB_GAP);
+                int top = PAD + row * TAB_H;
+                if (x >= left && x < left + tabWidth && y >= top && y < top + TAB_H - 2) {
+                    return tabs.get(i);
+                }
+            }
+            return null;
+        }
+
+        private ItemStack hitStack(int x, int y) {
+            if (y < GRID_Y || x < GRID_X || x >= GRID_X + COLS * STEP) {
+                return ItemStack.EMPTY;
+            }
+            int col = (x - GRID_X) / STEP;
+            int row = (y - GRID_Y) / STEP;
+            int slotX = GRID_X + col * STEP;
+            int slotY = GRID_Y + row * STEP;
+            if (x >= slotX + SLOT || y >= slotY + SLOT) {
+                return ItemStack.EMPTY;
+            }
+            int index = (scrollRow + row) * COLS + col;
+            return index >= 0 && index < items.size() ? items.get(index).copy() : ItemStack.EMPTY;
+        }
+
+        private boolean hitScrollbar(int x, int y) {
+            return totalRows() > visibleRows() && x >= scrollbarX() && x < scrollbarX() + SCROLL_W
+                    && y >= GRID_Y && y < PICKER_HEIGHT - PAD;
+        }
+
+        private void updateScrollbarDrag(int y) {
+            int totalRows = totalRows();
+            int visibleRows = visibleRows();
+            int maxScroll = Math.max(0, totalRows - visibleRows);
+            int trackTop = GRID_Y;
+            int trackHeight = Math.max(1, PICKER_HEIGHT - PAD - GRID_Y);
+            int thumbHeight = scrollbarThumbHeight(totalRows, visibleRows, trackHeight);
+            int usable = Math.max(1, trackHeight - thumbHeight);
+            int relative = Math.max(0, Math.min(usable, y - trackTop - thumbHeight / 2));
+            scrollRow = Math.round(relative * (float) maxScroll / usable);
+            clampScroll();
+            invalidate();
+        }
+
+        private int scrollbarX() {
+            return GRID_X + COLS * STEP + 4;
+        }
+
+        private int visibleRows() {
+            return Math.max(1, (PICKER_HEIGHT - PAD - GRID_Y) / STEP);
+        }
+
+        private int totalRows() {
+            return Math.max(1, (items.size() + COLS - 1) / COLS);
+        }
+
+        private int scrollbarThumbHeight(int totalRows, int visibleRows, int trackHeight) {
+            return Math.max(18, Math.min(trackHeight, trackHeight * visibleRows / Math.max(visibleRows, totalRows)));
+        }
+
+        private void clampScroll() {
+            int maxScroll = Math.max(0, totalRows() - visibleRows());
+            scrollRow = Math.max(0, Math.min(maxScroll, scrollRow));
+        }
+
+        private double currentGuiScale() {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client == null || client.getWindow() == null) {
+                return 1.0D;
+            }
+            return Math.max(1.0D, client.getWindow().getScaleFactor());
+        }
+
+        private void updateSurfaceBounds(double nextGuiScale) {
+            guiScale = Math.max(1.0D, nextGuiScale);
+            getLocationInWindow(locationInWindow);
+            screenLeft = (int) Math.round(locationInWindow[0] / guiScale);
+            screenTop = (int) Math.round(locationInWindow[1] / guiScale);
+            guiWidth = Math.max(PICKER_WIDTH, (int) Math.round(getWidth() / guiScale));
+            guiHeight = Math.max(PICKER_HEIGHT, (int) Math.round(getHeight() / guiScale));
+        }
+
+        private int toLocalGuiCoord(float value) {
+            return (int) Math.floor(value / Math.max(1.0D, guiScale));
+        }
+
+        private int toLocalGuiMouseX(int screenMouseX) {
+            return screenMouseX - screenLeft;
+        }
+
+        private int toLocalGuiMouseY(int screenMouseY) {
+            return screenMouseY - screenTop;
+        }
+
+        private boolean containsLocalMouse(int localMouseX, int localMouseY) {
+            return localMouseX >= 0 && localMouseY >= 0 && localMouseX < guiWidth && localMouseY < guiHeight;
+        }
+
+        private boolean enableSelfPanelScissor(DrawContext context) {
+            if (selfScrollView == null) {
+                context.enableScissor(0, 0, guiWidth, guiHeight);
+                return true;
+            }
+            int[] clipLocation = new int[2];
+            selfScrollView.getLocationInWindow(clipLocation);
+            int clipLeft = (int) Math.round(clipLocation[0] / guiScale) - screenLeft;
+            int clipTop = (int) Math.round(clipLocation[1] / guiScale) - screenTop;
+            int clipRight = clipLeft + (int) Math.round(selfScrollView.getWidth() / guiScale);
+            int clipBottom = clipTop + (int) Math.round(selfScrollView.getHeight() / guiScale);
+            int left = Math.max(0, clipLeft);
+            int top = Math.max(0, clipTop);
+            int right = Math.min(guiWidth, clipRight);
+            int bottom = Math.min(guiHeight, clipBottom);
+            if (right <= left || bottom <= top) {
+                return false;
+            }
+            context.enableScissor(left, top, right, bottom);
+            return true;
+        }
+
+        private final class CreativePickerRenderer implements MinecraftSurfaceView.Renderer {
+            @Override
+            public void onSurfaceChanged(int w, int h) {
+            }
+
+            @Override
+            public void onDraw(DrawContext context, int mouseX, int mouseY, float tick, double guiScale, float alpha) {
+                MinecraftClient client = MinecraftClient.getInstance();
+                updateSurfaceBounds(guiScale);
+                if (!enableSelfPanelScissor(context)) {
+                    return;
+                }
+                int localMouseX = toLocalGuiMouseX(mouseX);
+                int localMouseY = toLocalGuiMouseY(mouseY);
+                boolean mouseInside = containsLocalMouse(localMouseX, localMouseY);
+                ItemStack hoveredStack = mouseInside ? hitStack(localMouseX, localMouseY) : ItemStack.EMPTY;
+
+                context.fill(0, 0, PICKER_WIDTH, PICKER_HEIGHT, 0xCC12161D);
+                context.drawBorder(0, 0, PICKER_WIDTH, PICKER_HEIGHT, 0xFF3A4350);
+                drawTabs(context, client);
+                drawItems(context, client, localMouseX, localMouseY);
+                drawScrollbar(context);
+                if (items.isEmpty()) {
+                    context.drawText(client.textRenderer, "当前分类无物品", GRID_X, GRID_Y + 4, 0xFFB6C0CC, false);
+                }
+                if (mouseInside && !hoveredStack.isEmpty()) {
+                    context.getMatrices().pushMatrix();
+                    context.getMatrices().translate(-screenLeft, -screenTop);
+                    context.drawItemTooltip(client.textRenderer, hoveredStack, mouseX, mouseY);
+                    context.getMatrices().popMatrix();
+                }
+                context.disableScissor();
+            }
+
+            private void drawTabs(DrawContext context, MinecraftClient client) {
+                List<CreativeCategory> tabs = visibleTabs(true);
+                int tabWidth = tabWidth(tabs.size());
+                for (int i = 0; i < tabs.size(); i++) {
+                    CreativeCategory tab = tabs.get(i);
+                    int col = i / TAB_ROWS;
+                    int row = i % TAB_ROWS;
+                    int left = PAD + col * (tabWidth + TAB_GAP);
+                    int top = PAD + row * TAB_H;
+                    boolean selected = isTopTabSelected(tab);
+                    context.fill(left, top, left + tabWidth, top + TAB_H - 2, selected ? 0xAA3A5268 : 0x55313A4A);
+                    context.drawBorder(left, top, tabWidth, TAB_H - 2, selected ? 0xFFE6C56C : 0x887A8492);
+                    context.drawText(client.textRenderer, tab.label, left + 4, top + 5, selected ? 0xFFFFD36A : 0xFFE8EDF4, false);
+                }
+                context.drawText(client.textRenderer, currentCategoryLabel() + "  " + items.size(), PAD, GRID_Y - 10, 0xFFB6C0CC, false);
+            }
+
+            private void drawItems(DrawContext context, MinecraftClient client, int mouseX, int mouseY) {
+                int visibleRows = visibleRows();
+                for (int row = 0; row < visibleRows; row++) {
+                    for (int col = 0; col < COLS; col++) {
+                        int index = (scrollRow + row) * COLS + col;
+                        int x = GRID_X + col * STEP;
+                        int y = GRID_Y + row * STEP;
+                        boolean hovered = mouseX >= x && mouseX < x + SLOT && mouseY >= y && mouseY < y + SLOT;
+                        context.fill(x, y, x + SLOT, y + SLOT, hovered ? 0xFF56606E : 0xFF222832);
+                        context.drawBorder(x, y, SLOT, SLOT, hovered ? 0xFFE6C56C : 0xFF7A8492);
+                        context.fill(x + 2, y + 2, x + SLOT - 2, y + SLOT - 2, 0xFF101419);
+                        if (index >= 0 && index < items.size()) {
+                            ItemStack stack = items.get(index);
+                            context.drawItem(stack, x + 3, y + 3);
+                            context.drawStackOverlay(client.textRenderer, stack, x + 3, y + 3);
+                        }
+                    }
+                }
+                if (!cursorStack.isEmpty() && mouseX >= 0 && mouseY >= 0 && mouseX < PICKER_WIDTH && mouseY < PICKER_HEIGHT) {
+                    context.drawItem(cursorStack, mouseX - 8, mouseY - 8);
+                    context.drawStackOverlay(client.textRenderer, cursorStack, mouseX - 8, mouseY - 8);
+                }
+            }
+
+            private void drawScrollbar(DrawContext context) {
+                int totalRows = totalRows();
+                int visibleRows = visibleRows();
+                if (totalRows <= visibleRows) {
+                    return;
+                }
+                int trackTop = GRID_Y;
+                int trackHeight = PICKER_HEIGHT - PAD - GRID_Y;
+                int x = scrollbarX();
+                int thumbHeight = scrollbarThumbHeight(totalRows, visibleRows, trackHeight);
+                int maxScroll = Math.max(1, totalRows - visibleRows);
+                int usable = Math.max(1, trackHeight - thumbHeight);
+                int thumbTop = trackTop + Math.round(scrollRow * (float) usable / maxScroll);
+                context.fill(x, trackTop, x + SCROLL_W, trackTop + trackHeight, 0x66242A33);
+                context.fill(x, thumbTop, x + SCROLL_W, thumbTop + thumbHeight, draggingScrollbar ? 0xFFFFD36A : 0xFF8E99A8);
+            }
+        }
     }
 
     private final class InventorySlotsView extends MinecraftSurfaceView {
@@ -833,6 +1777,29 @@ public class HotBackpackSaveFragment extends Fragment {
             return localMouseX >= 0 && localMouseY >= 0 && localMouseX < guiWidth && localMouseY < guiHeight;
         }
 
+        private boolean enablePanelScissor(DrawContext context) {
+            View clipView = archive ? archiveScrollView : selfScrollView;
+            if (clipView == null) {
+                context.enableScissor(0, 0, guiWidth, guiHeight);
+                return true;
+            }
+            int[] clipLocation = new int[2];
+            clipView.getLocationInWindow(clipLocation);
+            int clipLeft = (int) Math.round(clipLocation[0] / guiScale) - screenLeft;
+            int clipTop = (int) Math.round(clipLocation[1] / guiScale) - screenTop;
+            int clipRight = clipLeft + (int) Math.round(clipView.getWidth() / guiScale);
+            int clipBottom = clipTop + (int) Math.round(clipView.getHeight() / guiScale);
+            int left = Math.max(0, clipLeft);
+            int top = Math.max(0, clipTop);
+            int right = Math.min(guiWidth, clipRight);
+            int bottom = Math.min(guiHeight, clipBottom);
+            if (right <= left || bottom <= top) {
+                return false;
+            }
+            context.enableScissor(left, top, right, bottom);
+            return true;
+        }
+
         private final class InventorySlotsRenderer implements MinecraftSurfaceView.Renderer {
             @Override
             public void onSurfaceChanged(int w, int h) {
@@ -842,6 +1809,9 @@ public class HotBackpackSaveFragment extends Fragment {
             public void onDraw(DrawContext context, int mouseX, int mouseY, float tick, double guiScale, float alpha) {
                 MinecraftClient client = MinecraftClient.getInstance();
                 updateSurfaceBounds(guiScale);
+                if (!enablePanelScissor(context)) {
+                    return;
+                }
                 int localMouseX = toLocalGuiMouseX(mouseX);
                 int localMouseY = toLocalGuiMouseY(mouseY);
                 boolean mouseInside = containsLocalMouse(localMouseX, localMouseY);
@@ -871,6 +1841,7 @@ public class HotBackpackSaveFragment extends Fragment {
                     context.drawItemTooltip(client.textRenderer, hoveredStack, mouseX, mouseY);
                     context.getMatrices().popMatrix();
                 }
+                context.disableScissor();
             }
 
             private void drawSlot(DrawContext context, MinecraftClient client, SlotBox box, ItemStack stack, boolean hovered) {

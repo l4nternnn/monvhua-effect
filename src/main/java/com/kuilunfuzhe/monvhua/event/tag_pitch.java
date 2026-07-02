@@ -63,6 +63,30 @@ public final class tag_pitch {
         return name == null || name.isBlank() ? tag : name;
     }
 
+    public static int colorForTag(String tag, int fallback) {
+        String key = keyForTag(tag);
+        if (key == null) {
+            return fallback;
+        }
+        return switch (key) {
+            case "ema" -> 0xfc8eac;
+            case "cero" -> 0x8b0000;
+            case "nnk" -> 0x555555;
+            case "mago" -> 0xaa00aa;
+            case "leiya" -> 0xffaa00;
+            case "milya" -> 0xffff55;
+            case "sherry" -> 0x1e90ff;
+            case "yalisa" -> 0xB1B7AC;
+            case "noa" -> 0x55ffff;
+            case "anan" -> 0x240090;
+            case "yuki" -> 0xe0ffff;
+            case "mll" -> 0xddb6ff;
+            case "coco" -> 0xff6700;
+            case "hanna" -> 0x5f9e3f;
+            default -> fallback;
+        };
+    }
+
     public static String replaceTags(String text) {
         if (text == null || text.isEmpty()) {
             return text;

@@ -50,6 +50,7 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class HotBackpackSaveFeature {
+    private static final String SPECIAL_SAVE_TAG = "save_backpack";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final int INVENTORY_SLOT_COUNT = 41;
     private static final int MAX_HISTORY_PER_PLAYER = 48;
@@ -118,7 +119,7 @@ public final class HotBackpackSaveFeature {
         MinecraftServer server = source.getServer();
         load(server);
         int count = saveSpecialPlayers(server);
-        source.sendFeedback(() -> Text.literal("§a已保存 " + count + " 个特殊 tag 玩家存档"), true);
+        source.sendFeedback(() -> Text.literal("§a已保存 " + count + " 个 save_backpack 玩家存档"), true);
         return count;
     }
 
@@ -135,7 +136,16 @@ public final class HotBackpackSaveFeature {
                         return;
                     }
                     int count = saveSpecialPlayers(context.server());
-                    context.player().sendMessage(Text.literal("§a已保存 " + count + " 个特殊 tag 玩家存档"), true);
+                    context.player().sendMessage(Text.literal("§a已保存 " + count + " 个 save_backpack 玩家存档"), true);
+                    syncAll(context.server());
+                }));
+        ServerPlayNetworking.registerGlobalReceiver(HotBackpackPackets.SaveAllPlayersC2S.ID, (packet, context) ->
+                context.server().execute(() -> {
+                    if (!canManage(context.player())) {
+                        return;
+                    }
+                    int count = saveAllPlayers(context.server());
+                    context.player().sendMessage(Text.literal("§a已保存 " + count + " 个当前在线玩家存档"), true);
                     syncAll(context.server());
                 }));
         ServerPlayNetworking.registerGlobalReceiver(HotBackpackPackets.ApplySnapshotC2S.ID, (packet, context) ->
@@ -179,7 +189,7 @@ public final class HotBackpackSaveFeature {
         load(server);
         int count = 0;
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            if (firstRoleTag(player) == null) {
+            if (!hasSpecialSaveTag(player)) {
                 continue;
             }
             addSnapshot(player, "special-tag-save");
@@ -187,6 +197,22 @@ public final class HotBackpackSaveFeature {
         }
         save(server);
         return count;
+    }
+
+    private static int saveAllPlayers(MinecraftServer server) {
+        activeServer = server;
+        load(server);
+        int count = 0;
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            addSnapshot(player, "all-player-save");
+            count++;
+        }
+        save(server);
+        return count;
+    }
+
+    private static boolean hasSpecialSaveTag(ServerPlayerEntity player) {
+        return player.getCommandTags().contains(SPECIAL_SAVE_TAG);
     }
 
     private static void addSnapshot(ServerPlayerEntity player, String reason) {

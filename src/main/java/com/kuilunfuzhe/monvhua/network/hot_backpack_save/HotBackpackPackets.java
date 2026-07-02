@@ -22,6 +22,7 @@ public final class HotBackpackPackets {
     public static void registerC2S() {
         RequestStateC2S.register();
         SaveSpecialPlayersC2S.register();
+        SaveAllPlayersC2S.register();
         ApplySnapshotC2S.register();
         ApplySnapshotToSelfC2S.register();
         UndoApplyC2S.register();
@@ -76,6 +77,24 @@ public final class HotBackpackPackets {
     public record SaveSpecialPlayersC2S() implements CustomPayload {
         public static final Id<SaveSpecialPlayersC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "save_hot_backpack_special_players"));
         public static final PacketCodec<RegistryByteBuf, SaveSpecialPlayersC2S> CODEC = PacketCodec.unit(new SaveSpecialPlayersC2S());
+        private static boolean registered;
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record SaveAllPlayersC2S() implements CustomPayload {
+        public static final Id<SaveAllPlayersC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "save_hot_backpack_all_players"));
+        public static final PacketCodec<RegistryByteBuf, SaveAllPlayersC2S> CODEC = PacketCodec.unit(new SaveAllPlayersC2S());
         private static boolean registered;
 
         public static void register() {
