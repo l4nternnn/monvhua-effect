@@ -53,7 +53,7 @@ public class ClientTickHandler {
                 return;
             }
             if (KeyBindingHandler.configKey.wasPressed() && client.player.isCreative()) {
-                client.setScreen(new CombinedConfigScreen());
+                CombinedConfigScreen.open();
             }
             if (KeyBindingHandler.bodyPoseEditorKey.wasPressed()) {
                 if (GravityDebugClient.tryOpenConfig(client)) {

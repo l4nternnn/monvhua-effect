@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.mixin.compat.emf;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseModelApplier;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseTuning;
+import com.kuilunfuzhe.monvhua.features.gravity.GravityExtractPoseClientState;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
@@ -58,18 +59,26 @@ public abstract class EmfModelPartCustomCarryArmPoseMixin {
 
 	@Unique
 	private void monvhua$beginApplyCarrierArmPose(MatrixStack matrices) {
-		if (monvhua$scaledArmMotion || !monvhua$isRenderingCarrierPose() || partToBeAttached == null || matrices == null) {
+		if (monvhua$scaledArmMotion || partToBeAttached == null || matrices == null) {
 			return;
 		}
 		String attachedPart = partToBeAttached.toLowerCase(Locale.ROOT);
-		if (attachedPart.contains("right") && (attachedPart.contains("arm") || attachedPart.contains("sleeve"))) {
-			monvhua$scaleCurrentArmMotion();
-			monvhua$applyArmPoseToMatrix(matrices, CarryPoseTuning.CARRIER_RIGHT_ARM_PITCH, CarryPoseTuning.CARRIER_RIGHT_ARM_YAW, CarryPoseTuning.CARRIER_RIGHT_ARM_ROLL);
-			return;
+		if (monvhua$isRenderingGravityExtractPose()) {
+			if (monvhua$isRightArm(attachedPart)) {
+				monvhua$setCurrentArmPose((float) Math.toRadians(-165.0D), (float) Math.toRadians(8.0D), (float) Math.toRadians(8.0D));
+				return;
+			}
 		}
-		if (attachedPart.contains("left") && (attachedPart.contains("arm") || attachedPart.contains("sleeve"))) {
-			monvhua$scaleCurrentArmMotion();
-			monvhua$applyArmPoseToMatrix(matrices, CarryPoseTuning.CARRIER_LEFT_ARM_PITCH, CarryPoseTuning.CARRIER_LEFT_ARM_YAW, CarryPoseTuning.CARRIER_LEFT_ARM_ROLL);
+		if (monvhua$isRenderingCarrierPose()) {
+			if (monvhua$isRightArm(attachedPart)) {
+				monvhua$scaleCurrentArmMotion();
+				monvhua$applyArmPoseToMatrix(matrices, CarryPoseTuning.CARRIER_RIGHT_ARM_PITCH, CarryPoseTuning.CARRIER_RIGHT_ARM_YAW, CarryPoseTuning.CARRIER_RIGHT_ARM_ROLL);
+				return;
+			}
+			if (monvhua$isLeftArm(attachedPart)) {
+				monvhua$scaleCurrentArmMotion();
+				monvhua$applyArmPoseToMatrix(matrices, CarryPoseTuning.CARRIER_LEFT_ARM_PITCH, CarryPoseTuning.CARRIER_LEFT_ARM_YAW, CarryPoseTuning.CARRIER_LEFT_ARM_ROLL);
+			}
 		}
 	}
 
@@ -98,6 +107,28 @@ public abstract class EmfModelPartCustomCarryArmPoseMixin {
 		part.roll *= scale;
 	}
 
+	@Unique
+	private void monvhua$setCurrentArmPose(float pitch, float yaw, float roll) {
+		ModelPart part = (ModelPart) (Object) this;
+		monvhua$scaledArmMotion = true;
+		monvhua$originalPitch = part.pitch;
+		monvhua$originalYaw = part.yaw;
+		monvhua$originalRoll = part.roll;
+		part.pitch = pitch;
+		part.yaw = yaw;
+		part.roll = roll;
+	}
+
+	@Unique
+	private static boolean monvhua$isRightArm(String partName) {
+		return (partName.contains("right") && partName.contains("arm") && !partName.contains("sleeve")) || partName.equals("right_arm") || partName.equals("rightarm");
+	}
+
+	@Unique
+	private static boolean monvhua$isLeftArm(String partName) {
+		return (partName.contains("left") && partName.contains("arm") && !partName.contains("sleeve")) || partName.equals("left_arm") || partName.equals("leftarm");
+	}
+
 	private static boolean monvhua$isRenderingCarrierPose() {
 		try {
 			Field field = monvhua$currentRenderStateField;
@@ -108,6 +139,21 @@ public abstract class EmfModelPartCustomCarryArmPoseMixin {
 			}
 			Object state = field.get(null);
 			return state instanceof PlayerEntityRenderState playerState && CarryPoseClientState.isAnyCarrier(playerState.id);
+		} catch (ReflectiveOperationException ignored) {
+			return false;
+		}
+	}
+
+	private static boolean monvhua$isRenderingGravityExtractPose() {
+		try {
+			Field field = monvhua$currentRenderStateField;
+			if (field == null) {
+				field = CarryPoseModelApplier.class.getDeclaredField("currentRenderState");
+				field.setAccessible(true);
+				monvhua$currentRenderStateField = field;
+			}
+			Object state = field.get(null);
+			return state instanceof PlayerEntityRenderState playerState && GravityExtractPoseClientState.isActive(playerState.id);
 		} catch (ReflectiveOperationException ignored) {
 			return false;
 		}

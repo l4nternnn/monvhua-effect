@@ -49,7 +49,7 @@ public class TextGroupEditScreen extends Screen {
     private int editorWidth;
     private boolean leftHidden;
     private boolean rightHidden;
-    private TextFieldWidget textField;
+    private RichTextFieldWidget textField;
     private TextFieldWidget fontField;
     private TextFieldWidget sizeField;
     private TextFieldWidget wrapField;
@@ -73,6 +73,8 @@ public class TextGroupEditScreen extends Screen {
     private float value = 1.0F;
     private float uploadedHue = -1.0F;
     private int pendingColor;
+    private int savedTextSelectionStart = -1;
+    private int savedTextSelectionEnd = -1;
     private GenericDragger dragger;
 
     public TextGroupEditScreen(Screen parent) {
@@ -104,12 +106,15 @@ public class TextGroupEditScreen extends Screen {
         relayout();
         int buttonY = height - 28;
 
-        textField = addDrawableChild(new TextFieldWidget(textRenderer, editorX, 86, editorWidth, 18, Text.literal("文字")));
+        textField = addDrawableChild(new RichTextFieldWidget(textRenderer, editorX, 86, editorWidth, 18, Text.literal("文字")));
         textField.setMaxLength(AreaTipConfig.MAX_MESSAGE_LENGTH);
         textField.setChangedListener(value -> {
             if (!updatingFields) {
                 dirty = true;
-                currentEntry().text = value;
+                AreaTipConfig.HudTextEntry entry = currentEntry();
+                entry.text = value;
+                entry.sanitizeFontSpans();
+                clearSavedTextSelection();
             }
         });
 
@@ -118,11 +123,14 @@ public class TextGroupEditScreen extends Screen {
         fontField.setChangedListener(value -> {
             if (!updatingFields) {
                 dirty = true;
-                currentEntry().font = value;
+                applySelectedFont(value);
             }
         });
 
-        fontButton = addDrawableChild(ButtonWidget.builder(Text.literal("⌄"), button -> fontDropdownOpen = !fontDropdownOpen)
+        fontButton = addDrawableChild(ButtonWidget.builder(Text.literal("⌄"), button -> {
+                    rememberTextSelection();
+                    fontDropdownOpen = !fontDropdownOpen;
+                })
                 .dimensions(editorX + editorWidth - 22, 144, 22, 18)
                 .build());
 
@@ -206,6 +214,7 @@ public class TextGroupEditScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0) {
+            rememberTextSelection();
             if (colorPickerOpen) {
                 clickColorPicker(mouseX, mouseY);
                 return true;
@@ -224,16 +233,23 @@ public class TextGroupEditScreen extends Screen {
             int textRow = textEntryRowAt(mouseX, mouseY);
             if (textRow >= 0) {
                 selectedTextIndex = textRow;
+                clearSavedTextSelection();
                 refreshFields();
                 return true;
             }
         }
+        boolean textFieldClick = textField != null && isInside(textField.getX(), textField.getY(),
+                textField.getWidth(), textField.getHeight(), mouseX, mouseY);
         if (super.mouseClicked(mouseX, mouseY, button)) {
+            if (textFieldClick) {
+                rememberTextSelection();
+            }
             return true;
         }
         AreaTipConfig.HudTextEntry hit = hitEntry(mouseX, mouseY);
         if (hit != null) {
             selectedTextIndex = currentGroup().hudTexts.indexOf(hit);
+            clearSavedTextSelection();
             refreshFields();
             dragger.attachTo(() -> transformOf(hit));
             dragger.setTransformCallback(transform -> {
@@ -266,8 +282,12 @@ public class TextGroupEditScreen extends Screen {
         if (button == 0 && colorPickerOpen) {
             return true;
         }
-        return dragger != null && dragger.mouseReleased(mouseX, mouseY, button)
+        boolean handled = dragger != null && dragger.mouseReleased(mouseX, mouseY, button)
                 || super.mouseReleased(mouseX, mouseY, button);
+        if (button == 0) {
+            rememberTextSelection();
+        }
+        return handled;
     }
 
     @Override
@@ -470,12 +490,10 @@ public class TextGroupEditScreen extends Screen {
             return true;
         }
         if (isInside(controlX, mapY + 72, 54, 18, mouseX, mouseY)) {
-            AreaTipConfig.HudTextEntry entry = currentEntry();
-            entry.color = pendingColor;
-            entry.useGroupColor = false;
+            applySelectedColor(pendingColor);
             dirty = true;
             colorPickerOpen = false;
-            refreshFields();
+            refreshFieldsPreservingTextSelection();
             return true;
         }
         if (isInside(controlX + 60, mapY + 72, 54, 18, mouseX, mouseY)) {
@@ -526,12 +544,85 @@ public class TextGroupEditScreen extends Screen {
         int row = ((int) mouseY - 166) / 20;
         int index = fontScroll + row;
         if (index >= 0 && index < FONT_OPTIONS.length) {
-            currentEntry().font = FONT_OPTIONS[index];
+            applySelectedFont(FONT_OPTIONS[index]);
             dirty = true;
             fontDropdownOpen = false;
-            refreshFields();
+            refreshFieldsPreservingTextSelection();
         }
         return true;
+    }
+
+    private void applySelectedFont(String font) {
+        AreaTipConfig.HudTextEntry entry = currentEntry();
+        int[] range = selectedTextRange();
+        if (range == null) {
+            entry.font = font;
+            return;
+        }
+        entry.applyFontToRange(range[0], range[1], font);
+    }
+
+    private void applySelectedColor(int color) {
+        AreaTipConfig.HudTextEntry entry = currentEntry();
+        int[] range = selectedTextRange();
+        if (range == null) {
+            entry.color = color;
+            entry.useGroupColor = false;
+            return;
+        }
+        entry.applyColorToRange(range[0], range[1], color);
+    }
+
+    private int[] selectedTextRange() {
+        if (textField == null) {
+            return null;
+        }
+        rememberTextSelection();
+        if (!hasSavedTextSelection()) {
+            return null;
+        }
+        int cursor = savedTextSelectionStart;
+        int selectionEnd = savedTextSelectionEnd;
+        int start = Math.min(cursor, selectionEnd);
+        int end = Math.max(cursor, selectionEnd);
+        return end > start ? new int[]{start, end} : null;
+    }
+
+    private void refreshFieldsPreservingTextSelection() {
+        int[] range = selectedTextRange();
+        refreshFields();
+        if (range != null && textField != null) {
+            int length = textField.getText().length();
+            int start = Math.clamp(range[0], 0, length);
+            int end = Math.clamp(range[1], 0, length);
+            textField.setSelection(start, end);
+            savedTextSelectionStart = start;
+            savedTextSelectionEnd = end;
+        }
+    }
+
+    private void rememberTextSelection() {
+        if (textField == null) {
+            return;
+        }
+        int cursor = textField.getCursor();
+        int selectionEnd = textField.getSelectionEnd();
+        int start = Math.min(cursor, selectionEnd);
+        int end = Math.max(cursor, selectionEnd);
+        if (end <= start) {
+            return;
+        }
+        savedTextSelectionStart = start;
+        savedTextSelectionEnd = end;
+    }
+
+    private boolean hasSavedTextSelection() {
+        return savedTextSelectionEnd > savedTextSelectionStart && savedTextSelectionStart >= 0;
+    }
+
+    private void clearSavedTextSelection() {
+        savedTextSelectionStart = -1;
+        savedTextSelectionEnd = -1;
     }
 
     private boolean clickPanelToggles(double mouseX, double mouseY) {

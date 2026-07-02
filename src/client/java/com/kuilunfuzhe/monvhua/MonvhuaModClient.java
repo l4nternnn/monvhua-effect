@@ -9,12 +9,14 @@ import com.kuilunfuzhe.monvhua.compat.DhCompat;
 import com.kuilunfuzhe.monvhua.compat.EmfCompat;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryTransformDebugCommand;
 import com.kuilunfuzhe.monvhua.features.area_tip.AreaTipClient;
+import com.kuilunfuzhe.monvhua.features.binding.PlayerBindingClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceEnergyClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.SignedEvilTooltipClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.ClientCameraWatchReceiver;
 import com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityClient;
+import com.kuilunfuzhe.monvhua.features.injured_and_bleeding.InjuredBleedingClient;
 import com.kuilunfuzhe.monvhua.features.imitate.ImitateHudOverlay;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorHudOverlay;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
@@ -107,6 +109,8 @@ public class MonvhuaModClient implements ClientModInitializer {
         GravityClient.initialize();
         AreaTipClient.initialize();
         TextAreaHudClient.initialize();
+        InjuredBleedingClient.initialize();
+        PlayerBindingClient.initialize();
         initializeOptionalAxiomAreaTip();
         PaintOverlayClient.initialize();
         DrawingBoardClient.initialize();
@@ -235,9 +239,7 @@ public class MonvhuaModClient implements ClientModInitializer {
                 SecretConfig config = SecretConfig.fromJson(packet.json());
                 if (config != null) {
                     CombinedConfigScreen.cachedSecretConfig = config;
-                    if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
-                        screen.receiveSecretConfig(config);
-                    }
+                    CombinedConfigScreen.receiveSecretConfig(config);
                 }
             });
         });

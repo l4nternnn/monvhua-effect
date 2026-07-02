@@ -9,6 +9,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
 import com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient;
+import com.kuilunfuzhe.monvhua.features.gravity.GravityClient;
 import com.kuilunfuzhe.monvhua.features.through.ThroughClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseTuning;
@@ -134,9 +135,7 @@ public class ClientPacketHandler {
                                 jsonDouble(stageObj, "regenRate", 2.0D)
                         );
                     }
-                    if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
-                        screen.receiveEvilConfigs(configs);
-                    }
+                    CombinedConfigScreen.receiveEvilConfigs(configs);
                     com.kuilunfuzhe.monvhua.features.floating.floating.syncStageRanges(configs);
                 } catch (Exception e) { e.printStackTrace(); }
             });
@@ -210,9 +209,7 @@ public class ClientPacketHandler {
         ClientPlayNetworking.registerGlobalReceiver(SyncConfigS2CPacket.ID, (packet, context) -> {
             context.client().execute(() -> {
                 GazeConfig config = GazeConfig.fromJson(packet.json());
-                if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
-                    screen.receiveGazeConfig(config);
-                }
+                CombinedConfigScreen.receiveGazeConfig(config);
             });
         });
 
@@ -220,18 +217,14 @@ public class ClientPacketHandler {
         ClientPlayNetworking.registerGlobalReceiver(ConfigS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 MirrorConfig config = MirrorConfig.fromJson(packet.json());
-                if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
-                    screen.receiveMirrorConfig(config);
-                }
+                CombinedConfigScreen.receiveMirrorConfig(config);
             });
         });
 
         ClientPlayNetworking.registerGlobalReceiver(ThroughConfigS2CPacket.ID, (packet, context) -> {
             context.client().execute(() -> {
                 ThroughConfig config = ThroughConfig.fromJson(packet.json());
-                if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
-                    screen.receiveThroughConfig(config);
-                }
+                CombinedConfigScreen.receiveThroughConfig(config);
             });
         });
 
@@ -239,9 +232,7 @@ public class ClientPacketHandler {
             context.client().execute(() -> {
                 FloatingConfig config = FloatingConfig.fromJson(packet.json());
                 FloatingConfig.syncInstance(config);
-                if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
-                    screen.receiveFloatingConfig(config);
-                }
+                CombinedConfigScreen.receiveFloatingConfig(config);
             });
         });
 
@@ -249,9 +240,7 @@ public class ClientPacketHandler {
             context.client().execute(() -> {
                 PlantMagicConfig config = PlantMagicConfig.fromJson(packet.json());
                 PlantMagicConfig.syncInstance(config);
-                if (context.client().currentScreen instanceof CombinedConfigScreen screen) {
-                    screen.receivePlantMagicConfig(config);
-                }
+                CombinedConfigScreen.receivePlantMagicConfig(config);
             });
         });
 
@@ -333,6 +322,7 @@ public class ClientPacketHandler {
             context.client().execute(() -> {
                 int newStage = packet.stage();
                 MonvhuaModClient.currentPlayerStage = newStage;
+                GravityClient.setCurrentStage(newStage);
                 MinecraftClient client = context.client();
                 if (client.player != null) {
                     String magicName = currentStageToastMagicName(client);

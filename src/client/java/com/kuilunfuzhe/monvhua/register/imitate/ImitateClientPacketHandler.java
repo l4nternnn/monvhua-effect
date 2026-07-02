@@ -77,9 +77,7 @@ public class ImitateClientPacketHandler {
                 ImitateConfig newConfig = packet.getConfig();
                 ImitateConfig.setInstance(newConfig);
                 
-                if (client.currentScreen instanceof CombinedConfigScreen screen) {
-                    screen.receiveImitateConfig(newConfig);
-                }
+                CombinedConfigScreen.receiveImitateConfig(newConfig);
             });
         });
 

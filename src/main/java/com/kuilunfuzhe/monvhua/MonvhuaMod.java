@@ -19,6 +19,7 @@ import com.kuilunfuzhe.monvhua.features.action.ActionEngine;
 import com.kuilunfuzhe.monvhua.features.action.ActionExecutor;
 import com.kuilunfuzhe.monvhua.features.action.TimelineScheduler;
 import com.kuilunfuzhe.monvhua.features.area_tip.AreaTipFeature;
+import com.kuilunfuzhe.monvhua.features.binding.PlayerBindingFeature;
 import com.kuilunfuzhe.monvhua.features.block.body.BodyPartManager;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryEvents;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
@@ -27,6 +28,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
 import com.kuilunfuzhe.monvhua.features.guidance.Gazeguidance;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import com.kuilunfuzhe.monvhua.features.imitate.ImitateManager;
+import com.kuilunfuzhe.monvhua.features.injured_and_bleeding.InjuredBleedingFeature;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayFeature;
 import com.kuilunfuzhe.monvhua.features.paint.PaintBucketBlock;
 import com.kuilunfuzhe.monvhua.features.plant.PlantMagic;
@@ -654,6 +656,8 @@ public class MonvhuaMod implements ModInitializer {
         BlockHoleItems.initialize();
         PaintItems.initialize();
         PaintOverlayFeature.initialize();
+        InjuredBleedingFeature.initialize();
+        PlayerBindingFeature.initialize();
         ThroughItem.initialize(configManager);
         ModBlocks.initialize();
         Assembly_ModItems.initialize();
@@ -886,6 +890,9 @@ public class MonvhuaMod implements ModInitializer {
                     || com.kuilunfuzhe.monvhua.features.floating.floating.shouldPreventFallDamage(player))) {
                 player.fallDistance = 0;
                 return false;
+            }
+            if (entity instanceof net.minecraft.entity.LivingEntity living) {
+                InjuredBleedingFeature.handleDamage(living, amount);
             }
             return true;
         });
