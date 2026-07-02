@@ -23,6 +23,7 @@
 		"InvertedTallPlantBlockMixin",
 		"InvertedWallMountedBlockItemMixin",
 		"InvertedWallMountedPlacementMixin",
+		"PlayerManagerMixin",
 		"ServerPlayNetworkHandlerMixin",
 		"ThroughPhaseCollisionMixin"
 	],
