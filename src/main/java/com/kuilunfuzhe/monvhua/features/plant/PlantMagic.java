@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.features.plant;
 
 import com.kuilunfuzhe.monvhua.config.GlobalConfigManager;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
+import com.kuilunfuzhe.monvhua.features.gravity.GravityBlockEntity;
 import com.kuilunfuzhe.monvhua.item.config.PlantMagicConfig;
 import com.kuilunfuzhe.monvhua.item.plant.PlantMagicItems;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -107,7 +108,7 @@ public final class PlantMagic {
             return false;
         }
 
-        int moveIntervalTicks = config.getMoveIntervalTicks(stage);
+        double moveSpeed = config.getLeafMoveSpeed(stage);
         int count = Math.min(MAX_MOVING_LEAVES, Math.min(sources.size(), targets.size()));
         Set<BlockPos> usedTargets = new HashSet<>();
         Set<BlockPos> movedSources = new HashSet<>();
@@ -120,7 +121,7 @@ public final class PlantMagic {
             BlockPos target = targets.get(i);
             usedTargets.add(target);
             world.setBlockState(source.pos(), Blocks.AIR.getDefaultState(), Block.NOTIFY_ALL);
-            ACTIVE_LEAF_JOURNEYS.add(new LeafJourney(playerId, world, source.pos(), source.state(), target, moveIntervalTicks));
+            ACTIVE_LEAF_JOURNEYS.add(new LeafJourney(playerId, world, source.pos(), source.state(), target, moveSpeed));
         }
         ACTIVE_LEAF_PULLS.put(playerId, new LeafPullCleanup(world, usedTargets, protectedLeaves));
         int cooldownTicks = config.getCooldownTicks(stage);
@@ -355,32 +356,28 @@ public final class PlantMagic {
         private final ServerWorld world;
         private final BlockState state;
         private final BlockState movingState;
-        private final List<BlockPos> path;
         private final BlockPos origin;
         private final BlockPos target;
-        private final int moveIntervalTicks;
+        private final double moveSpeed;
         private final int maxLifetimeTicks;
-        private int pathIndex;
-        private int moveTimer;
         private int holdTicks;
-        private int stuckMoveAttempts;
         private int ageTicks;
-        private boolean visible;
+        private GravityBlockEntity animationEntity;
         private Phase phase = Phase.INBOUND;
 
-        private LeafJourney(UUID owner, ServerWorld world, BlockPos origin, BlockState state, BlockPos target, int moveIntervalTicks) {
+        private LeafJourney(UUID owner, ServerWorld world, BlockPos origin, BlockState state, BlockPos target, double moveSpeed) {
             this.owner = owner;
             this.world = world;
             this.state = state;
             this.movingState = asNonDecayingLeaf(state);
             this.origin = origin.toImmutable();
             this.target = target.toImmutable();
-            this.moveIntervalTicks = Math.max(1, moveIntervalTicks);
-            this.path = buildPath(origin, target);
+            this.moveSpeed = Math.max(0.05D, moveSpeed);
             this.maxLifetimeTicks = Math.max(
                     LEAF_MAX_LIFETIME_TICKS,
-                    this.path.size() * this.moveIntervalTicks * 2 + LEAF_HOLD_TICKS + 100
+                    travelTicks(this.origin, this.target) * 2 + LEAF_HOLD_TICKS + 100
             );
+            startTravel(this.origin, this.target);
         }
 
         private UUID owner() {
@@ -388,108 +385,54 @@ public final class PlantMagic {
         }
 
         private boolean tick() {
-            if (path.isEmpty()) {
-                return true;
-            }
             ageTicks++;
             if (ageTicks > maxLifetimeTicks) {
                 return abortAndRestore();
             }
+
+            if (phase == Phase.INBOUND) {
+                if (isTravelComplete()) {
+                    discardAnimation();
+                    if (!placeTarget()) {
+                        return abortAndRestore();
+                    }
+                    phase = Phase.HOLD;
+                    holdTicks = 0;
+                }
+                return false;
+            }
+
             if (phase == Phase.HOLD) {
                 holdTicks++;
                 if (holdTicks >= LEAF_HOLD_TICKS) {
+                    clearTarget();
                     phase = Phase.OUTBOUND;
-                    moveTimer = 0;
+                    startTravel(target, origin);
                 }
                 return false;
             }
 
-            moveTimer++;
-            if (moveTimer < moveIntervalTicks) {
-                return false;
-            }
-            moveTimer = 0;
-
-            if (phase == Phase.INBOUND) {
-                if (pathIndex >= path.size() - 1) {
-                    phase = Phase.HOLD;
-                    holdTicks = 0;
-                    return false;
-                }
-                if (!moveTo(pathIndex + 1)) {
-                    return handleStuckMove();
-                }
-                if (pathIndex >= path.size() - 1) {
-                    phase = Phase.HOLD;
-                }
-                return false;
-            }
-
-            if (pathIndex <= 0) {
-                return finishAtOrigin();
-            }
-            if (!moveTo(pathIndex - 1)) {
-                return handleStuckMove();
-            }
-            return pathIndex <= 0 && finishAtOrigin();
-        }
-
-        private boolean moveTo(int nextIndex) {
-            BlockPos current = path.get(pathIndex);
-            BlockPos next = path.get(nextIndex);
-            BlockState nextState = world.getBlockState(next);
-            if (nextState.isIn(BlockTags.LEAVES) && !next.equals(target)) {
-                clearCurrent(current);
-                pathIndex = nextIndex;
-                visible = false;
-                stuckMoveAttempts = 0;
+            if (isTravelComplete()) {
+                discardAnimation();
+                restoreOrigin();
                 return true;
             }
-            if (!canOccupy(next, nextState)) {
-                if (phase == Phase.OUTBOUND && nextIndex == 0) {
-                    clearCurrent(current);
-                    pathIndex = nextIndex;
-                    visible = false;
-                    return true;
-                }
-                return false;
-            }
-
-            clearCurrent(current);
-            world.setBlockState(next, movingState, Block.NOTIFY_ALL);
-            pathIndex = nextIndex;
-            visible = true;
-            stuckMoveAttempts = 0;
-            return true;
-        }
-
-        private boolean canOccupy(BlockPos pos, BlockState currentState) {
-            return pos.equals(path.get(pathIndex))
-                    || currentState.isReplaceable();
-        }
-
-        private void clearCurrent(BlockPos current) {
-            if (visible && world.getBlockState(current).isIn(BlockTags.LEAVES)) {
-                world.setBlockState(current, Blocks.AIR.getDefaultState(), Block.NOTIFY_ALL);
-            }
-            visible = false;
-        }
-
-        private boolean handleStuckMove() {
-            stuckMoveAttempts++;
-            return stuckMoveAttempts >= LEAF_STUCK_MOVE_ATTEMPTS && abortAndRestore();
-        }
-
-        private boolean finishAtOrigin() {
-            restoreOrigin();
-            visible = false;
-            return true;
+            return false;
         }
 
         private boolean abortAndRestore() {
-            clearCurrent(path.get(pathIndex));
+            discardAnimation();
             clearTarget();
             restoreOrigin();
+            return true;
+        }
+
+        private boolean placeTarget() {
+            BlockState currentState = world.getBlockState(target);
+            if (!currentState.isReplaceable() && !currentState.isIn(BlockTags.LEAVES)) {
+                return false;
+            }
+            world.setBlockState(target, movingState, Block.NOTIFY_ALL);
             return true;
         }
 
@@ -506,28 +449,52 @@ public final class PlantMagic {
             }
         }
 
-        private static List<BlockPos> buildPath(BlockPos origin, BlockPos target) {
-            List<BlockPos> result = new ArrayList<>();
-            BlockPos cursor = origin.toImmutable();
-            result.add(cursor);
-            int guard = 0;
-            while (!cursor.equals(target) && guard++ < 96) {
-                int dx = target.getX() - cursor.getX();
-                int dy = target.getY() - cursor.getY();
-                int dz = target.getZ() - cursor.getZ();
-                int ax = Math.abs(dx);
-                int ay = Math.abs(dy);
-                int az = Math.abs(dz);
-                if (ax >= ay && ax >= az) {
-                    cursor = cursor.add(Integer.signum(dx), 0, 0);
-                } else if (ay >= ax && ay >= az) {
-                    cursor = cursor.add(0, Integer.signum(dy), 0);
-                } else {
-                    cursor = cursor.add(0, 0, Integer.signum(dz));
-                }
-                result.add(cursor.toImmutable());
+        private void startTravel(BlockPos from, BlockPos to) {
+            discardAnimation();
+            Vec3d start = renderPosition(from);
+            Vec3d end = renderPosition(to);
+            int ticks = travelTicks(from, to);
+            GravityBlockEntity entity = new GravityBlockEntity(world, start.x, start.y, start.z, movingState, Vec3d.ZERO, 0.0D);
+            entity.setOwnerUuid(owner);
+            entity.setGravityY(0.0D);
+            entity.setNoGravity(true);
+            entity.setTemporary(ticks + 40);
+            entity.setPlaceOrDropOnSettle(false);
+            entity.setLinearExtractionTarget(end, ticks);
+            entity.setSlowFreeSpin(
+                    signedAngularVelocity(world, 0.14D, 0.42D),
+                    signedAngularVelocity(world, 0.16D, 0.48D),
+                    signedAngularVelocity(world, 0.12D, 0.36D)
+            );
+            if (world.spawnEntity(entity)) {
+                animationEntity = entity;
             }
-            return result;
+        }
+
+        private boolean isTravelComplete() {
+            return animationEntity == null || !animationEntity.isAlive() || !animationEntity.isExtracting();
+        }
+
+        private void discardAnimation() {
+            if (animationEntity != null && animationEntity.isAlive()) {
+                animationEntity.discard();
+            }
+            animationEntity = null;
+        }
+
+        private int travelTicks(BlockPos from, BlockPos to) {
+            double distance = renderPosition(from).distanceTo(renderPosition(to));
+            return Math.max(1, (int) Math.ceil(distance / moveSpeed * 20.0D));
+        }
+
+        private static Vec3d renderPosition(BlockPos pos) {
+            return new Vec3d(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D);
+        }
+
+        private static float signedAngularVelocity(ServerWorld world, double min, double max) {
+            Random random = world.getRandom();
+            double speed = min + random.nextDouble() * Math.max(0.0D, max - min);
+            return (float) (random.nextBoolean() ? speed : -speed);
         }
     }
 

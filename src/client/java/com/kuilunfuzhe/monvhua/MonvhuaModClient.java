@@ -16,6 +16,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.ClientCameraWatchReceiver;
 import com.kuilunfuzhe.monvhua.features.gazeguidance.GazeguidanceClient;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityClient;
+import com.kuilunfuzhe.monvhua.features.hot_backpack_save.HotBackpackSaveClient;
 import com.kuilunfuzhe.monvhua.features.injured_and_bleeding.InjuredBleedingClient;
 import com.kuilunfuzhe.monvhua.features.imitate.ImitateHudOverlay;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorHudOverlay;
@@ -109,6 +110,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         GravityClient.initialize();
         AreaTipClient.initialize();
         TextAreaHudClient.initialize();
+        HotBackpackSaveClient.initialize();
         InjuredBleedingClient.initialize();
         PlayerBindingClient.initialize();
         initializeOptionalAxiomAreaTip();

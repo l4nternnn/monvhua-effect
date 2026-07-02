@@ -27,6 +27,7 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.ViewingModeBlocker;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
 import com.kuilunfuzhe.monvhua.features.guidance.Gazeguidance;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
+import com.kuilunfuzhe.monvhua.features.hot_backpack_save.HotBackpackSaveFeature;
 import com.kuilunfuzhe.monvhua.features.imitate.ImitateManager;
 import com.kuilunfuzhe.monvhua.features.injured_and_bleeding.InjuredBleedingFeature;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayFeature;
@@ -540,6 +541,7 @@ public class MonvhuaMod implements ModInitializer {
         CommandRegistrationCallback.EVENT.register(SkeletalBodyPartCommand::register);
         CommandRegistrationCallback.EVENT.register(GravityCommand::register);
         CommandRegistrationCallback.EVENT.register(PaintGraffitiCommand::register);
+        CommandRegistrationCallback.EVENT.register(HotBackpackSaveFeature::registerCommands);
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("clairvoyance-肢体|合并")
@@ -657,6 +659,7 @@ public class MonvhuaMod implements ModInitializer {
         PaintItems.initialize();
         PaintOverlayFeature.initialize();
         InjuredBleedingFeature.initialize();
+        HotBackpackSaveFeature.initialize();
         PlayerBindingFeature.initialize();
         ThroughItem.initialize(configManager);
         ModBlocks.initialize();

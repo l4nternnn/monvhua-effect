@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.gui;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.kuilunfuzhe.monvhua.features.hot_backpack_save.HotBackpackSaveClient;
 import com.kuilunfuzhe.monvhua.features.textarea.TextAreaHudClient;
 import com.kuilunfuzhe.monvhua.gui.stage.general_stage;
 import com.kuilunfuzhe.monvhua.item.config.FloatingConfig;
@@ -439,6 +440,9 @@ public final class CombinedConfigScreen {
             addDivider(rightPanel);
             addRightConfigButton("绘制配置", ConfigType.PAINT, false);
             addRightConfigButton("受伤血迹配置", currentType, true);
+            Button playerArchive = button(getContext(), "玩家存档");
+            playerArchive.setOnClickListener(v -> HotBackpackSaveClient.openAfterWorldFrame(MinecraftClient.getInstance().currentScreen));
+            rightPanel.addView(playerArchive, blockParams());
             rebuilding = false;
         }
 
