@@ -19,6 +19,7 @@ import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.network.gravity.GravityPackets;
+import com.kuilunfuzhe.monvhua.network.hot_backpack_save.HotBackpackPackets;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateOpenUIPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateSyncS2CPacket;
@@ -72,6 +73,7 @@ public class ModNetworking {
         PlantMagicPackets.registerS2C();
         AreaTipPackets.registerS2C();
         InjuredBleedingPackets.registerS2C();
+        HotBackpackPackets.registerS2C();
         BindingPackets.registerS2C();
         ImitateOpenUIPacket.register();
         SoundWaveStartS2CPacket.register();
@@ -112,6 +114,7 @@ public class ModNetworking {
         PlantMagicPackets.registerC2S();
         AreaTipPackets.registerC2S();
         InjuredBleedingPackets.registerC2S();
+        HotBackpackPackets.registerC2S();
         BindingPackets.registerC2S();
         SoundWavePacket.register();
         RequestImitateConfigC2SPacket.register();
