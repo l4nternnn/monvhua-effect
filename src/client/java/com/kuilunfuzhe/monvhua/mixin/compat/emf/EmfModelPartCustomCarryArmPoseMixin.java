@@ -121,12 +121,12 @@ public abstract class EmfModelPartCustomCarryArmPoseMixin {
 
 	@Unique
 	private static boolean monvhua$isRightArm(String partName) {
-		return (partName.contains("right") && partName.contains("arm") && !partName.contains("sleeve")) || partName.equals("right_arm") || partName.equals("rightarm");
+		return (partName.contains("right") && (partName.contains("arm") || partName.contains("sleeve"))) || partName.equals("right_arm") || partName.equals("rightarm") || partName.equals("right_sleeve") || partName.equals("rightsleeve");
 	}
 
 	@Unique
 	private static boolean monvhua$isLeftArm(String partName) {
-		return (partName.contains("left") && partName.contains("arm") && !partName.contains("sleeve")) || partName.equals("left_arm") || partName.equals("leftarm");
+		return (partName.contains("left") && (partName.contains("arm") || partName.contains("sleeve"))) || partName.equals("left_arm") || partName.equals("leftarm") || partName.equals("left_sleeve") || partName.equals("leftsleeve");
 	}
 
 	private static boolean monvhua$isRenderingCarrierPose() {

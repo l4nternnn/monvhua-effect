@@ -20,6 +20,20 @@ public abstract class EmfModelPartCarryPoseMixin {
 			remap = false
 	)
 	private void monvhua$reapplyCarryPoseBeforeEmfPartRender(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color, CallbackInfo ci) {
-		CarryPoseModelApplier.applyCurrentRenderContextBeforePartRender((ModelPart) (Object) this);
+		if (CarryPoseModelApplier.isRenderingCarriedPose()) {
+			CarryPoseModelApplier.applyCurrentRenderContextBeforePartRender((ModelPart) (Object) this);
+		}
+	}
+
+	@Inject(
+			method = "method_22699(Lnet/minecraft/class_4587;Lnet/minecraft/class_4588;III)V",
+			at = @At("HEAD"),
+			require = 0,
+			remap = false
+	)
+	private void monvhua$reapplyCarryPoseBeforeEmfPartRenderIntermediary(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color, CallbackInfo ci) {
+		if (CarryPoseModelApplier.isRenderingCarriedPose()) {
+			CarryPoseModelApplier.applyCurrentRenderContextBeforePartRender((ModelPart) (Object) this);
+		}
 	}
 }

@@ -51,21 +51,28 @@ public final class CarryPoseModelApplier {
 		} else if (CarryPoseClientState.isCarried(state.id)) {
 			applyCarriedPose(model, state.id);
 		}
-		if (GravityExtractPoseClientState.isActive(state.id)) {
-			applyGravityExtractPartPose(model, part);
-		}
+
+		//等待日后我亲自处理 ——冰
+
+	    //else if (GravityExtractPoseClientState.isActive(state.id)) {
+		//	applyGravityExtractPartPose(model, part);
+		//}
 	}
 
 	public static boolean isRenderingCarrierPose() {
 		return currentRenderState != null && CarryPoseClientState.isAnyCarrier(currentRenderState.id);
 	}
 
+	public static boolean isRenderingCarriedPose() {
+		return currentRenderState != null && CarryPoseClientState.isCarried(currentRenderState.id);
+	}
+
 	public static boolean isCurrentRightArmPart(ModelPart part) {
-		return currentRenderModel != null && part == currentRenderModel.rightArm;
+		return currentRenderModel != null && (part == currentRenderModel.rightArm || part == currentRenderModel.rightSleeve);
 	}
 
 	public static boolean isCurrentLeftArmPart(ModelPart part) {
-		return currentRenderModel != null && part == currentRenderModel.leftArm;
+		return currentRenderModel != null && (part == currentRenderModel.leftArm || part == currentRenderModel.leftSleeve);
 	}
 
 	public static void applyCarrierRightArmPose(ModelPart part) {
@@ -138,7 +145,9 @@ public final class CarryPoseModelApplier {
 	private static void applyCarrierPose(PlayerEntityModel model) {
 		model.body.pitch = CarryPoseTuning.CARRIER_BODY_PITCH;
 		applyCarrierRightArmPose(model.rightArm);
+		applyCarrierRightArmPose(model.rightSleeve);
 		applyCarrierLeftArmPose(model.leftArm);
+		applyCarrierLeftArmPose(model.leftSleeve);
 	}
 
 	private static void applyCarrierPartPose(PlayerEntityModel model, ModelPart part) {
@@ -146,11 +155,11 @@ public final class CarryPoseModelApplier {
 			model.body.pitch = CarryPoseTuning.CARRIER_BODY_PITCH;
 			return;
 		}
-		if (part == model.rightArm) {
+		if (part == model.rightArm || part == model.rightSleeve) {
 			applyCarrierRightArmPose(part);
 			return;
 		}
-		if (part == model.leftArm) {
+		if (part == model.leftArm || part == model.leftSleeve) {
 			applyCarrierLeftArmPose(part);
 		}
 	}
