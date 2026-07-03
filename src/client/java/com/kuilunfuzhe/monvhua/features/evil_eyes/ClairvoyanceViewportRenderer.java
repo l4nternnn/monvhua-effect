@@ -32,12 +32,16 @@ public final class ClairvoyanceViewportRenderer {
 	private static final AtomicBoolean renderingPreview = new AtomicBoolean(false);
 	private static final double CAMERA_DISTANCE = 4.0;
 	private static final int MAX_TARGETS = 4;
+	private static final long IDLE_RENDER_INTERVAL_TICKS = 40L;
 
 	private static final UUID[] selectedTargets = new UUID[MAX_TARGETS];
 	private static final SimpleFramebuffer[] previewFramebuffers = new SimpleFramebuffer[MAX_TARGETS];
 	private static final Float[] smoothYaws = new Float[MAX_TARGETS];
 	private static final Double[] smoothDistances = new Double[MAX_TARGETS];
 	private static final Vec3d[] smoothCameraPositions = new Vec3d[MAX_TARGETS];
+	private static final long[] lastPreviewRenderTicks = new long[MAX_TARGETS];
+	private static int hoveredSlot = -1;
+	private static int expandedSlot = -1;
 
 	private ClairvoyanceViewportRenderer() {
 	}
@@ -112,6 +116,15 @@ public final class ClairvoyanceViewportRenderer {
 		return count;
 	}
 
+	public static boolean hasTargetAtSlot(int slot) {
+		return slot >= 0 && slot < MAX_TARGETS && selectedTargets[slot] != null;
+	}
+
+	public static void setInteractiveSlots(int hovered, int expanded) {
+		hoveredSlot = hovered >= 0 && hovered < MAX_TARGETS ? hovered : -1;
+		expandedSlot = expanded >= 0 && expanded < MAX_TARGETS ? expanded : -1;
+	}
+
 	public static boolean shouldRenderPreviewWorld() {
 		MinecraftClient client = MinecraftClient.getInstance();
 		return Evil_EyesClient.isViewportMode()
@@ -128,17 +141,30 @@ public final class ClairvoyanceViewportRenderer {
 			for (int slot = 0; slot < MAX_TARGETS; slot++) {
 				UUID targetId = selectedTargets[slot];
 				if (targetId == null) continue;
+				if (!shouldRenderSlot(client, slot)) continue;
 				Entity target = client.world.getEntity(targetId);
 				if (target == null || !target.isAlive()) {
 					clearSlot(slot);
 					continue;
 				}
 				renderPreviewSlot(slot, client, target, tickCounter, fog, fogColor, mainCamera, positionMatrix, projectionMatrix);
+				lastPreviewRenderTicks[slot] = client.world.getTime();
 			}
 			compactTargets();
 		} finally {
 			renderingPreview.set(false);
 		}
+	}
+
+	private static boolean shouldRenderSlot(MinecraftClient client, int slot) {
+		if (slot == hoveredSlot || slot == expandedSlot) {
+			return true;
+		}
+		long now = client.world.getTime();
+		if (previewFramebuffers[slot] == null && lastPreviewRenderTicks[slot] == 0L) {
+			lastPreviewRenderTicks[slot] = now - IDLE_RENDER_INTERVAL_TICKS + slot * Math.max(1L, IDLE_RENDER_INTERVAL_TICKS / MAX_TARGETS);
+		}
+		return now - lastPreviewRenderTicks[slot] >= IDLE_RENDER_INTERVAL_TICKS;
 	}
 
 	private static void renderPreviewSlot(int slot, MinecraftClient client, Entity target, RenderTickCounter tickCounter, GpuBufferSlice fog, Vector4f fogColor, Camera mainCamera, Matrix4f positionMatrix, Matrix4f projectionMatrix) {
@@ -215,8 +241,11 @@ public final class ClairvoyanceViewportRenderer {
 				previewFramebuffers[i] = null;
 			}
 			selectedTargets[i] = null;
+			lastPreviewRenderTicks[i] = 0L;
 			resetSmoothing(i);
 		}
+		hoveredSlot = -1;
+		expandedSlot = -1;
 	}
 
 	private static ViewPose computeViewPose(int slot, MinecraftClient client, Entity target) {
@@ -279,6 +308,7 @@ public final class ClairvoyanceViewportRenderer {
 
 	private static void clearSlot(int slot) {
 		selectedTargets[slot] = null;
+		lastPreviewRenderTicks[slot] = 0L;
 		resetSmoothing(slot);
 	}
 
@@ -311,6 +341,7 @@ public final class ClairvoyanceViewportRenderer {
 			smoothYaws[i] = smoothYaws[i - 1];
 			smoothDistances[i] = smoothDistances[i - 1];
 			smoothCameraPositions[i] = smoothCameraPositions[i - 1];
+			lastPreviewRenderTicks[i] = lastPreviewRenderTicks[i - 1];
 		}
 		clearSlot(index);
 	}
@@ -324,7 +355,9 @@ public final class ClairvoyanceViewportRenderer {
 				smoothYaws[write] = smoothYaws[read];
 				smoothDistances[write] = smoothDistances[read];
 				smoothCameraPositions[write] = smoothCameraPositions[read];
+				lastPreviewRenderTicks[write] = lastPreviewRenderTicks[read];
 				selectedTargets[read] = null;
+				lastPreviewRenderTicks[read] = 0L;
 				resetSmoothing(read);
 			}
 			write++;

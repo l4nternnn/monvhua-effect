@@ -90,6 +90,7 @@ public class Evil_eyesScreen extends Screen {
     private long nextAutoRefreshTick;
     private boolean lastUiOpen;
     private int lastPreviewCount = -1;
+    private boolean lastHovered;
     private boolean lastExpanded;
 
     public Evil_eyesScreen() {
@@ -177,22 +178,25 @@ public class Evil_eyesScreen extends Screen {
         }
         boolean open = true;
         int previewCount = Evil_EyesClient.isViewportMode() ? ClairvoyanceViewportRenderer.previewTargetCount() : 0;
+        boolean hovered = Evil_EyesClient.isViewportMode() && ClairvoyanceViewportRenderer.hasTargetAtSlot(hoveredSlot);
         boolean expanded = expandedSlot >= 0;
-        if (!force && lastUiOpen == open && lastPreviewCount == previewCount && lastExpanded == expanded) {
+        if (!force && lastUiOpen == open && lastPreviewCount == previewCount && lastHovered == hovered && lastExpanded == expanded) {
             return;
         }
         lastUiOpen = open;
         lastPreviewCount = previewCount;
+        lastHovered = hovered;
         lastExpanded = expanded;
-        ClientPlayNetworking.send(new ClairvoyanceUiStateC2S(open, previewCount, expanded));
+        ClientPlayNetworking.send(new ClairvoyanceUiStateC2S(open, previewCount, hovered, expanded));
     }
 
     private void sendClosedUiState() {
         if (client != null && client.player != null && client.getNetworkHandler() != null) {
-            ClientPlayNetworking.send(new ClairvoyanceUiStateC2S(false, 0, false));
+            ClientPlayNetworking.send(new ClairvoyanceUiStateC2S(false, 0, false, false));
         }
         lastUiOpen = false;
         lastPreviewCount = 0;
+        lastHovered = false;
         lastExpanded = false;
     }
 
@@ -288,6 +292,8 @@ public class Evil_eyesScreen extends Screen {
         if (Evil_EyesClient.isViewportMode()) {
             drawRotatedScaledTexture(context, VIEW_PART_BACKGROUND, viewBounds, VIEW_PART_TEXTURE_WIDTH, VIEW_PART_TEXTURE_HEIGHT);
             updateViewAnimations(mouseX, mouseY);
+            ClairvoyanceViewportRenderer.setInteractiveSlots(hoveredSlot, expandedSlot);
+            syncUiState(false);
             for (int slot = 0; slot < VIEW_SLOTS; slot++) {
                 if (slot == expandedSlot || slot == hoveredSlot) {
                     continue;
@@ -350,6 +356,9 @@ public class Evil_eyesScreen extends Screen {
     private void updateViewAnimations(int mouseX, int mouseY) {
         long now = System.currentTimeMillis();
         hoveredSlot = expandedSlot < 0 ? hoveredBaseSlot(mouseX, mouseY) : -1;
+        if (!ClairvoyanceViewportRenderer.hasTargetAtSlot(hoveredSlot)) {
+            hoveredSlot = -1;
+        }
         for (int slot = 0; slot < VIEW_SLOTS; slot++) {
             boolean hovered = slot == hoveredSlot;
             viewAnimations[slot].setHovering(hovered, now);
@@ -493,7 +502,7 @@ public class Evil_eyesScreen extends Screen {
                 return true;
             }
             for (int slot = VIEW_SLOTS - 1; slot >= 0; slot--) {
-                if (contains(viewSlotBounds[slot], mouseX, mouseY)) {
+                if (contains(viewSlotBounds[slot], mouseX, mouseY) && ClairvoyanceViewportRenderer.hasTargetAtSlot(slot)) {
                     expandedSlot = slot;
                     expandedStartedAt = System.currentTimeMillis();
                     syncUiState(true);

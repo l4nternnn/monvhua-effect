@@ -48,7 +48,7 @@ public class CameraWatchManager {
 
     /** 观看会话记录：包含被观看实体UUID和会话开始游戏刻 */
     private record CameraSession(UUID targetUuid, long startTick) {}
-    private record UiState(boolean open, int previewCount, boolean expanded) {}
+    private record UiState(boolean open, int previewCount, boolean hovered, boolean expanded) {}
     private record EnergyRates(double uiDrainRate, double watchDrainRate, double regenRate) {}
 
     /**
@@ -61,14 +61,14 @@ public class CameraWatchManager {
         return SESSIONS.containsKey(player.getUuid());
     }
 
-    public static void setUiState(ServerPlayerEntity player, boolean open, int previewCount, boolean expanded) {
+    public static void setUiState(ServerPlayerEntity player, boolean open, int previewCount, boolean hovered, boolean expanded) {
         UUID uuid = player.getUuid();
         playerEnergy.putIfAbsent(uuid, MAX_ENERGY);
         if (!open) {
             UI_STATES.remove(uuid);
             return;
         }
-        UI_STATES.put(uuid, new UiState(true, MathHelper.clamp(previewCount, 0, 4), expanded));
+        UI_STATES.put(uuid, new UiState(true, MathHelper.clamp(previewCount, 0, 4), hovered, expanded));
     }
 
     /**
@@ -84,6 +84,11 @@ public class CameraWatchManager {
         Entity target = world.getEntity(targetUuid);
         if (target == null || !target.isAlive()) {
             viewer.sendMessage(Text.literal("§c目标不存在或已死亡"), true);
+            return;
+        }
+        if (!Evil_Eyes.canMarkTarget(target)) {
+            viewer.sendMessage(Text.literal("搂c鐩爣涓嶅彲琚崈閲岀溂瑙傜湅"), true);
+            stopWatching(viewer, server);
             return;
         }
         stopWatching(viewer, server);
@@ -142,7 +147,10 @@ public class CameraWatchManager {
             UiState uiState = UI_STATES.get(uuid);
             double drainRate = 0.0D;
             if (uiState != null && uiState.open()) {
-                drainRate += rates.uiDrainRate() * (1 + Math.max(0, uiState.previewCount()));
+                drainRate += rates.uiDrainRate();
+                if (uiState.hovered() && uiState.previewCount() > 0) {
+                    drainRate += rates.uiDrainRate();
+                }
                 if (uiState.expanded()) {
                     drainRate += rates.watchDrainRate();
                 }

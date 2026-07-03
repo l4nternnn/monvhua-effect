@@ -141,7 +141,10 @@ public class Evil_Eyes {
             UUID uuid = entry.getKey();
             Entity e = player.getWorld().getEntity(uuid);
             // 过滤锚点盔甲架
-            if (!canMarkTarget(e)) continue;
+            if (!canMarkTarget(e)) {
+                marks.remove(uuid);
+                continue;
+            }
             String name = e == null ? "未知实体" : e.getName().getString();
             ServerPlayNetworking.send(player, new EntityMarkedS2C(uuid, name, tag_pitch.tagForEntity(e)));
         }
@@ -164,7 +167,12 @@ public class Evil_Eyes {
         return entity instanceof LivingEntity
                 && entity.isAlive()
                 && !isAnchorStand(entity)
-                && !tag_pitch.tagForEntity(entity).isBlank();
+                && !isTaggedPlayer(entity);
+    }
+
+    private static boolean isTaggedPlayer(Entity entity) {
+        return entity instanceof ServerPlayerEntity
+                && entity.getCommandTags().contains("eye_ignore");
     }
 
     /**
@@ -296,7 +304,10 @@ public class Evil_Eyes {
      */
     public static void syncMarkedListToClient(ServerPlayerEntity marker) {
         Map<UUID, Long> marks = playerMarkedEntities.get(marker.getUuid());
-        if (marks == null) return;
+        if (marks == null) {
+            ServerPlayNetworking.send(marker, new EntityMarkedS2C(CLEAR_SIGNAL, ""));
+            return;
+        }
         int stage = getPlayerStage(marker, configManager);
         int maxMarks = configManager.getStageConfig(stage).maxMarks();
         sendMarkedListToClient(marker, marks, maxMarks);
@@ -419,7 +430,7 @@ public class Evil_Eyes {
 
         // 1. 手动标记/取消标记（不消耗每日次数）
         ServerPlayNetworking.registerGlobalReceiver(ClairvoyanceUiStateC2S.ID, (payload, context) -> {
-            CameraWatchManager.setUiState(context.player(), payload.open(), payload.previewCount(), payload.expanded());
+            CameraWatchManager.setUiState(context.player(), payload.open(), payload.previewCount(), payload.hovered(), payload.expanded());
         });
 
         ServerPlayNetworking.registerGlobalReceiver(MarkEntityC2S.ID, (payload, context) -> {
@@ -525,6 +536,12 @@ public class Evil_Eyes {
             // 检查被观看实体是否在锚点30格范围内或自身30格范围内（自动标记同理）
             Entity targetEntity = player.getWorld().getEntity(selected);
             if (targetEntity == null) return;
+            if (!canMarkTarget(targetEntity)) {
+                marks.remove(selected);
+                syncMarkedListToClient(player);
+                player.sendMessage(Text.literal("搂c鐩爣涓嶅彲琚崈閲岀溂瑙傜湅"), true);
+                return;
+            }
             boolean nearAnchor = targetEntity.squaredDistanceTo(player) < ANCHOR_RANGE_SQ;
             if (!nearAnchor) {
                 for (Map.Entry<UUID, UUID> entry : armorStandOwner.entrySet()) {
@@ -634,7 +651,6 @@ public class Evil_Eyes {
 
         // 7. 自动标记：实体看向手持千里眼的玩家（注视检测）
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            if (!Boolean.getBoolean("monvhua.clairvoyance.lookAutoMark")) return;
             if (server.getTicks() % 5 != 0) return; // 每5tick（0.25秒）执行一次，降低开销
             World world = server.getWorld(World.OVERWORLD);
             if (world == null) return;

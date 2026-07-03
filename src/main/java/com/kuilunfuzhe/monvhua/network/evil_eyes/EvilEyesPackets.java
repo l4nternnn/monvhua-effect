@@ -177,17 +177,22 @@ public final class EvilEyesPackets {
         }
     }
 
-    public record ClairvoyanceUiStateC2S(boolean open, int previewCount, boolean expanded) implements CustomPayload {
+    public record ClairvoyanceUiStateC2S(boolean open, int previewCount, boolean hovered, boolean expanded) implements CustomPayload {
         public static final Id<ClairvoyanceUiStateC2S> ID = new Id<>(Identifier.of("monvhua", "clairvoyance_ui_state"));
         public static final PacketCodec<RegistryByteBuf, ClairvoyanceUiStateC2S> CODEC = PacketCodec.of(
                 (packet, buf) -> {
                     buf.writeBoolean(packet.open);
                     buf.writeInt(packet.previewCount);
+                    buf.writeBoolean(packet.hovered);
                     buf.writeBoolean(packet.expanded);
                 },
-                buf -> new ClairvoyanceUiStateC2S(buf.readBoolean(), buf.readInt(), buf.readBoolean())
+                buf -> new ClairvoyanceUiStateC2S(buf.readBoolean(), buf.readInt(), buf.readBoolean(), buf.readBoolean())
         );
         private static boolean registered = false;
+
+        public ClairvoyanceUiStateC2S(boolean open, int previewCount, boolean expanded) {
+            this(open, previewCount, false, expanded);
+        }
 
         public static void register() {
             if (!registered) {
