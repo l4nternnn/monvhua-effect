@@ -99,13 +99,6 @@ public abstract class FirstPersonCarrierAttachedEntityRenderMixin {
 		if (client.player == null) {
 			return false;
 		}
-		if (!client.options.getPerspective().isFirstPerson()) {
-			return CarryPoseClientState.isCarrier(carrier.getId());
-		}
-		if (carrier == client.player) {
-			return true;
-		}
-		return CarryPoseClientState.isCarried(client.player.getId())
-				&& CarryPoseClientState.getPartnerId(client.player.getId()) == carrier.getId();
+		return CarryPoseClientState.isCarrier(carrier.getId());
 	}
 }
