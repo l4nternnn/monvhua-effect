@@ -51,7 +51,6 @@ public final class CarriedPlayerPoseRenderer {
 			CarryPoseModelApplier.beginRenderContext(model, state);
 			try {
 				CarryPoseModelApplier.apply(model, state);
-				copyOuterLayerTransforms(model);
 				if (hideHead) {
 					model.head.visible = false;
 					model.hat.visible = false;
@@ -113,15 +112,6 @@ public final class CarriedPlayerPoseRenderer {
 		model.rightSleeve.visible = player.isPartVisible(PlayerModelPart.RIGHT_SLEEVE);
 		model.leftPants.visible = player.isPartVisible(PlayerModelPart.LEFT_PANTS_LEG);
 		model.rightPants.visible = player.isPartVisible(PlayerModelPart.RIGHT_PANTS_LEG);
-	}
-
-	private static void copyOuterLayerTransforms(PlayerEntityModel model) {
-		model.hat.copyTransform(model.head);
-		model.jacket.copyTransform(model.body);
-		model.leftSleeve.copyTransform(model.leftArm);
-		model.rightSleeve.copyTransform(model.rightArm);
-		model.leftPants.copyTransform(model.leftLeg);
-		model.rightPants.copyTransform(model.rightLeg);
 	}
 
 	private static Identifier getRenderTexture(AbstractClientPlayerEntity player, SkinTextures skinTextures) {

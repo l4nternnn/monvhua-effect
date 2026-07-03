@@ -54,6 +54,9 @@ public abstract class FirstPersonCarrierAttachedEntityRenderMixin {
 	}
 
 	private static void monvhua$renderAttachedCarriedEntity(MinecraftClient client, EntityRenderDispatcher dispatcher, VertexConsumerProvider.Immediate vertexConsumers, Entity carrier, float tickProgress, Camera camera, Matrix4f positionMatrix) {
+		if (!monvhua$shouldRenderInWorldTail(client, carrier)) {
+			return;
+		}
 		if (!CarryPoseClientState.isCarrier(carrier.getId())) {
 			return;
 		}
@@ -90,5 +93,19 @@ public abstract class FirstPersonCarrierAttachedEntityRenderMixin {
 				CarryAttachmentRenderState.endAttachedCarriedEntityRender();
 			}
 		}
+	}
+
+	private static boolean monvhua$shouldRenderInWorldTail(MinecraftClient client, Entity carrier) {
+		if (client.player == null) {
+			return false;
+		}
+		if (!client.options.getPerspective().isFirstPerson()) {
+			return CarryPoseClientState.isCarrier(carrier.getId());
+		}
+		if (carrier == client.player) {
+			return true;
+		}
+		return CarryPoseClientState.isCarried(client.player.getId())
+				&& CarryPoseClientState.getPartnerId(client.player.getId()) == carrier.getId();
 	}
 }
