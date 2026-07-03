@@ -4,7 +4,9 @@
 	"compatibilityLevel": "JAVA_21",
 	"plugin": "com.kuilunfuzhe.monvhua.mixin.compat.emf.EmfCompatMixinPlugin",
 	"client": [
-		"EmfModelPartCarryPoseMixin"
+		"EmfModelPartCarryPoseMixin",
+		"EmfModelPartCustomCarryArmPoseMixin",
+		"EmfModelPartVanillaCarryArmMotionMixin"
 	],
 	"injectors": {
 		"defaultRequire": 0

@@ -33,6 +33,10 @@
 		{
 			"config": "monvhua.iris_compat.mixins.json",
 			"environment": "client"
+		},
+		{
+			"config": "monvhua.emf_compat.mixins.json",
+			"environment": "client"
 		}
 	],
 	"depends": {
