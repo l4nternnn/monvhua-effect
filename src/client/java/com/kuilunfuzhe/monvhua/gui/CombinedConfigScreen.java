@@ -389,6 +389,9 @@ public final class CombinedConfigScreen {
                 boolean selected = type == currentType && !injuredPage;
                 selectedButton(button, selected);
                 button.setOnClickListener(v -> {
+                    if (!stageCurrentFields()) {
+                        return;
+                    }
                     currentType = type;
                     injuredPage = false;
                     stage = 1;
@@ -451,6 +454,9 @@ public final class CombinedConfigScreen {
             boolean selected = injured ? injuredPage : currentType == type && !injuredPage;
             selectedButton(button, selected);
             button.setOnClickListener(v -> {
+                if (!stageCurrentFields()) {
+                    return;
+                }
                 currentType = type;
                 injuredPage = injured;
                 stage = 1;
@@ -596,6 +602,9 @@ public final class CombinedConfigScreen {
                         rangeStage = next;
                         rebuildRight();
                     } else {
+                        if (!stageCurrentFields()) {
+                            return;
+                        }
                         stage = next;
                         rebuildCenter();
                     }
@@ -830,6 +839,112 @@ public final class CombinedConfigScreen {
             parent.addView(save, blockParams());
         }
 
+        private boolean stageCurrentFields() {
+            if (rebuilding || injuredPage || fields.isEmpty()) {
+                return true;
+            }
+            try {
+                switch (currentType) {
+                    case EVIL_EYES -> stageEvilFields();
+                    case GAZE_GUIDANCE -> stageGazeFields();
+                    case MIRROR -> stageMirrorFields();
+                    case THROUGH -> stageThroughFields();
+                    case IMITATE -> stageImitateFields();
+                    case FLOATING -> stageFloatingFields();
+                    case SECRET -> stageSecretFields();
+                    case PLANT -> stagePlantFields();
+                    case PAINT -> stagePaintFields();
+                    case GRAVITY -> stageGravityFields();
+                }
+                return true;
+            } catch (NumberFormatException e) {
+                invalid();
+                return false;
+            }
+        }
+
+        private void stageEvilFields() {
+            GlobalConfigS2C.StageConfig old = evil(stage);
+            CACHED_EVIL_CONFIGS[stage] = new GlobalConfigS2C.StageConfig(
+                    intField("daily"), intField("marks"), old.minScore(), old.maxScore(),
+                    old.watchRequiredTicks(), intField("parrotDaily"), old.maxActiveParrots(),
+                    doubleField("uiDrain"), doubleField("watchDrain"), doubleField("regen"));
+        }
+
+        private void stageGazeFields() {
+            cachedGazeConfig.setEnergyDrain(stage, doubleField("drain"));
+            cachedGazeConfig.setEnergyRegen(stage, doubleField("regen"));
+            cachedGazeConfig.setRadius(stage, doubleField("radius"));
+            cachedGazeConfig.setMaxMarks(stage, intField("marks"));
+        }
+
+        private void stageMirrorFields() {
+            cachedMirrorConfig.setWatchTime(stage, intField("watch"));
+            cachedMirrorConfig.setSuccessRate(stage, doubleField("success"));
+            cachedMirrorConfig.setViewCount(stage, intField("count"));
+            cachedMirrorConfig.setRadius(stage, doubleField("radius"));
+            cachedMirrorConfig.setChargeTime(stage, intField("charge"));
+        }
+
+        private void stageThroughFields() {
+            cachedThroughConfig.setSpeedMultiplier(stage, doubleField("speed"));
+            cachedThroughConfig.setVanishDelaySeconds(stage, intField("delay"));
+        }
+
+        private void stageImitateFields() {
+            cachedImitateConfig.setDuration(stage, intField("duration"));
+            cachedImitateConfig.setSwitchCooldown(stage, intField("switchCooldown"));
+            cachedImitateConfig.setSoundWaveCooldown(stage, intField("soundCooldown"));
+            cachedImitateConfig.setSoundWaveRadius(stage, doubleField("soundRadius"));
+            cachedImitateConfig.setSoundWaveEffectDuration(stage, intField("soundDuration"));
+            cachedImitateConfig.setSilenceRadius(stage, doubleField("silenceRadius"));
+            cachedImitateConfig.setSilenceDuration(stage, intField("silenceDuration"));
+            cachedImitateConfig.setSilenceCooldown(stage, intField("silenceCooldown"));
+            cachedImitateConfig.setImitateRadius(stage, doubleField("imitateRadius"));
+            cachedImitateConfig.setSoundWaveUnlockThreshold(intField("soundUnlock"));
+            cachedImitateConfig.setSilenceUnlockThreshold(intField("silenceUnlock"));
+            cachedImitateConfig.setAreaSelectUnlockThreshold(intField("areaUnlock"));
+        }
+
+        private void stageFloatingFields() {
+            cachedFloatingConfig.setEnergyDrain(stage, doubleField("drain"));
+            cachedFloatingConfig.setFlightSpeed(stage, (float) doubleField("speed"));
+            cachedFloatingConfig.setEnergyRegen(stage, doubleField("regen"));
+        }
+
+        private void stageSecretFields() {
+            cachedSecretConfig.setRange(stage, intField("range"));
+            cachedSecretConfig.setProbability(stage, doubleField("probability"));
+        }
+
+        private void stagePlantFields() {
+            cachedPlantMagicConfig.setLeafMoveSpeed(stage, doubleField("speed"));
+            cachedPlantMagicConfig.setShellCoverageDegrees(stage, doubleField("coverage"));
+            cachedPlantMagicConfig.setCooldownSeconds(stage, intField("cooldown"));
+        }
+
+        private void stagePaintFields() {
+            PaintConfig config = new PaintConfig();
+            config.brushConsumptionMultiplier = doubleField("consumption");
+            config.bucketBrushLoads = intField("bucketLoads");
+            cachedPaintConfig = PaintConfig.fromJson(config.toJson());
+        }
+
+        private void stageGravityFields() {
+            cachedGravityConfig.forceDurationSeconds = intField("duration");
+            cachedGravityConfig.damageKilojoulesPerHalfHeart = doubleField("damage");
+            cachedGravityConfig.setMaxForce(stage, doubleField("maxForce"));
+            cachedGravityConfig.setSelfForceDrain(stage, doubleField("selfDrain"));
+            cachedGravityConfig.setEnergyRegen(stage, doubleField("regen"));
+            if (canConfigureGravityBlockGroup()) {
+                cachedGravityConfig.setMaxPickBlocks(stage, intField("blockCount"));
+                cachedGravityConfig.setMaxPickHardness(stage, doubleField("hardness"));
+                cachedGravityConfig.setBlockExtractDrain(stage, doubleField("extractDrain"));
+                cachedGravityConfig.setBlockHoldDrain(stage, doubleField("holdDrain"));
+                cachedGravityConfig.setBlockExtractTicks(stage, intField("extractTicks"));
+            }
+        }
+
         private void saveEvil() {
             try {
                 GlobalConfigS2C.StageConfig old = evil(stage);
@@ -838,7 +953,9 @@ public final class CombinedConfigScreen {
                         old.watchRequiredTicks(), intField("parrotDaily"), old.maxActiveParrots(),
                         doubleField("uiDrain"), doubleField("watchDrain"), doubleField("regen"));
                 CACHED_EVIL_CONFIGS[stage] = updated;
-                ClientPlayNetworking.send(general_stage.toUpdatePacket(stage, updated));
+                for (int i = 1; i <= STAGES; i++) {
+                    ClientPlayNetworking.send(general_stage.toUpdatePacket(i, evil(i)));
+                }
                 message("千里眼配置已提交");
             } catch (NumberFormatException e) {
                 invalid();
@@ -847,10 +964,7 @@ public final class CombinedConfigScreen {
 
         private void saveGaze() {
             try {
-                cachedGazeConfig.setEnergyDrain(stage, doubleField("drain"));
-                cachedGazeConfig.setEnergyRegen(stage, doubleField("regen"));
-                cachedGazeConfig.setRadius(stage, doubleField("radius"));
-                cachedGazeConfig.setMaxMarks(stage, intField("marks"));
+                stageGazeFields();
                 ClientPlayNetworking.send(new UpdateConfigC2SPacket(cachedGazeConfig.toJson()));
                 message("视线诱导配置已提交");
             } catch (NumberFormatException e) {
@@ -860,11 +974,7 @@ public final class CombinedConfigScreen {
 
         private void saveMirror() {
             try {
-                cachedMirrorConfig.setWatchTime(stage, intField("watch"));
-                cachedMirrorConfig.setSuccessRate(stage, doubleField("success"));
-                cachedMirrorConfig.setViewCount(stage, intField("count"));
-                cachedMirrorConfig.setRadius(stage, doubleField("radius"));
-                cachedMirrorConfig.setChargeTime(stage, intField("charge"));
+                stageMirrorFields();
                 ClientPlayNetworking.send(new MirrorPackets.ConfigUpdateC2S(cachedMirrorConfig.toJson()));
                 message("镜子配置已提交");
             } catch (NumberFormatException e) {
@@ -874,8 +984,7 @@ public final class CombinedConfigScreen {
 
         private void saveThrough() {
             try {
-                cachedThroughConfig.setSpeedMultiplier(stage, doubleField("speed"));
-                cachedThroughConfig.setVanishDelaySeconds(stage, intField("delay"));
+                stageThroughFields();
                 ClientPlayNetworking.send(new ThroughConfigUpdateC2SPacket(cachedThroughConfig.toJson()));
                 message("穿墙配置已提交");
             } catch (NumberFormatException e) {
@@ -885,18 +994,7 @@ public final class CombinedConfigScreen {
 
         private void saveImitate() {
             try {
-                cachedImitateConfig.setDuration(stage, intField("duration"));
-                cachedImitateConfig.setSwitchCooldown(stage, intField("switchCooldown"));
-                cachedImitateConfig.setSoundWaveCooldown(stage, intField("soundCooldown"));
-                cachedImitateConfig.setSoundWaveRadius(stage, doubleField("soundRadius"));
-                cachedImitateConfig.setSoundWaveEffectDuration(stage, intField("soundDuration"));
-                cachedImitateConfig.setSilenceRadius(stage, doubleField("silenceRadius"));
-                cachedImitateConfig.setSilenceDuration(stage, intField("silenceDuration"));
-                cachedImitateConfig.setSilenceCooldown(stage, intField("silenceCooldown"));
-                cachedImitateConfig.setImitateRadius(stage, doubleField("imitateRadius"));
-                cachedImitateConfig.setSoundWaveUnlockThreshold(intField("soundUnlock"));
-                cachedImitateConfig.setSilenceUnlockThreshold(intField("silenceUnlock"));
-                cachedImitateConfig.setAreaSelectUnlockThreshold(intField("areaUnlock"));
+                stageImitateFields();
                 ClientPlayNetworking.send(new UpdateImitateConfigC2SPacket(cachedImitateConfig.toJson()));
                 message("模仿配置已提交");
             } catch (NumberFormatException e) {
@@ -906,9 +1004,7 @@ public final class CombinedConfigScreen {
 
         private void saveFloating() {
             try {
-                cachedFloatingConfig.setEnergyDrain(stage, doubleField("drain"));
-                cachedFloatingConfig.setFlightSpeed(stage, (float) doubleField("speed"));
-                cachedFloatingConfig.setEnergyRegen(stage, doubleField("regen"));
+                stageFloatingFields();
                 ClientPlayNetworking.send(new FloatingPackets.UpdateConfigC2S(cachedFloatingConfig.toJson()));
                 message("漂浮配置已提交");
             } catch (NumberFormatException e) {
@@ -918,8 +1014,7 @@ public final class CombinedConfigScreen {
 
         private void saveSecret() {
             try {
-                cachedSecretConfig.setRange(stage, intField("range"));
-                cachedSecretConfig.setProbability(stage, doubleField("probability"));
+                stageSecretFields();
                 ClientPlayNetworking.send(new SecretPackets.UpdateConfigC2S(cachedSecretConfig.toJson()));
                 message("窃密配置已提交");
             } catch (NumberFormatException e) {
@@ -929,9 +1024,7 @@ public final class CombinedConfigScreen {
 
         private void savePlant() {
             try {
-                cachedPlantMagicConfig.setLeafMoveSpeed(stage, doubleField("speed"));
-                cachedPlantMagicConfig.setShellCoverageDegrees(stage, doubleField("coverage"));
-                cachedPlantMagicConfig.setCooldownSeconds(stage, intField("cooldown"));
+                stagePlantFields();
                 ClientPlayNetworking.send(new PlantMagicPackets.UpdateConfigC2S(cachedPlantMagicConfig.toJson()));
                 message("植物配置已提交");
             } catch (NumberFormatException e) {
@@ -941,10 +1034,7 @@ public final class CombinedConfigScreen {
 
         private void savePaint() {
             try {
-                PaintConfig config = new PaintConfig();
-                config.brushConsumptionMultiplier = doubleField("consumption");
-                config.bucketBrushLoads = intField("bucketLoads");
-                cachedPaintConfig = PaintConfig.fromJson(config.toJson());
+                stagePaintFields();
                 ClientPlayNetworking.send(new PaintOverlayPackets.UpdatePaintConfigC2S(cachedPaintConfig.toJson()));
                 message("绘制配置已提交");
             } catch (NumberFormatException e) {
@@ -954,28 +1044,8 @@ public final class CombinedConfigScreen {
 
         private void saveGravity() {
             try {
-                GravityConfig config = new GravityConfig();
-                config.forceDurationSeconds = intField("duration");
-                config.damageKilojoulesPerHalfHeart = doubleField("damage");
-                config.maxPickBlocksByStage = cachedGravityConfig.maxPickBlocksByStage.clone();
-                config.maxPickHardnessByStage = cachedGravityConfig.maxPickHardnessByStage.clone();
-                config.maxForceByStage = cachedGravityConfig.maxForceByStage.clone();
-                config.selfForceDrainByStage = cachedGravityConfig.selfForceDrainByStage.clone();
-                config.energyRegenByStage = cachedGravityConfig.energyRegenByStage.clone();
-                config.blockExtractDrainByStage = cachedGravityConfig.blockExtractDrainByStage.clone();
-                config.blockHoldDrainByStage = cachedGravityConfig.blockHoldDrainByStage.clone();
-                config.blockExtractTicksByStage = cachedGravityConfig.blockExtractTicksByStage.clone();
-                config.setMaxForce(stage, doubleField("maxForce"));
-                config.setSelfForceDrain(stage, doubleField("selfDrain"));
-                config.setEnergyRegen(stage, doubleField("regen"));
-                if (canConfigureGravityBlockGroup()) {
-                    config.setMaxPickBlocks(stage, intField("blockCount"));
-                    config.setMaxPickHardness(stage, doubleField("hardness"));
-                    config.setBlockExtractDrain(stage, doubleField("extractDrain"));
-                    config.setBlockHoldDrain(stage, doubleField("holdDrain"));
-                    config.setBlockExtractTicks(stage, intField("extractTicks"));
-                }
-                cachedGravityConfig = GravityConfig.fromJson(config.toJson());
+                stageGravityFields();
+                cachedGravityConfig = GravityConfig.fromJson(cachedGravityConfig.toJson());
                 ClientPlayNetworking.send(new GravityPackets.UpdateConfigC2S(cachedGravityConfig.toJson()));
                 message("重力配置已提交");
             } catch (NumberFormatException e) {
