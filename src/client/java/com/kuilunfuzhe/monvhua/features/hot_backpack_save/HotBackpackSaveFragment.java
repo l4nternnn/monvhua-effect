@@ -591,7 +591,7 @@ public class HotBackpackSaveFragment extends Fragment {
             return;
         }
         for (HotBackpackState.Snapshot snapshot : record.history) {
-            Button row = button(getContext(), time(snapshot.timestamp));
+            Button row = button(getContext(), time(snapshot.timestamp) + actionSuffix(snapshot.reason));
             row.setTextColor(snapshot.timestamp == selectedTimestamp ? 0xFFFFD36A : 0xFFE8EDF4);
             row.setOnClickListener(v -> {
                 selectedTimestamp = snapshot.timestamp;
@@ -808,6 +808,48 @@ public class HotBackpackSaveFragment extends Fragment {
 
     private static String time(long timestamp) {
         return TIME_FORMAT.format(Instant.ofEpochMilli(timestamp));
+    }
+
+    private static String actionSuffix(String reason) {
+        String action = actionSummary(reason);
+        return action.isBlank() ? "" : "  " + action;
+    }
+
+    private static String actionSummary(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return "";
+        }
+        String text = reason.startsWith("undoable:") ? reason.substring("undoable:".length()) : reason;
+        if (text.startsWith("edit-own-slot:")) {
+            return "编辑自身 " + slotLabel(text.substring("edit-own-slot:".length()));
+        }
+        if (text.startsWith("edit-archive-slot:")) {
+            return "编辑存档 " + slotLabel(text.substring("edit-archive-slot:".length()));
+        }
+        return switch (text) {
+            case "special-tag-save" -> "保存特殊玩家";
+            case "all-player-save" -> "保存全部玩家";
+            case "apply-snapshot" -> "应用存档";
+            case "before-undo" -> "撤销前状态";
+            case "undo-before-apply" -> "应用前备份";
+            default -> text;
+        };
+    }
+
+    private static String slotLabel(String rawSlot) {
+        try {
+            int slot = Integer.parseInt(rawSlot);
+            return switch (slot) {
+                case 36 -> "靴子";
+                case 37 -> "护腿";
+                case 38 -> "胸甲";
+                case 39 -> "头盔";
+                case 40 -> "副手";
+                default -> slot >= 0 && slot < 36 ? "物品栏 " + slot : "槽位 " + slot;
+            };
+        } catch (NumberFormatException ignored) {
+            return rawSlot;
+        }
     }
 
     private static String safeName(HotBackpackState.PlayerRecord record) {

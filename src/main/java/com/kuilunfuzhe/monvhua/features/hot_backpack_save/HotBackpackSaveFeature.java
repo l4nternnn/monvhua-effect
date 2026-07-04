@@ -54,6 +54,7 @@ public final class HotBackpackSaveFeature {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final int INVENTORY_SLOT_COUNT = 41;
     private static final int MAX_HISTORY_PER_PLAYER = 48;
+    private static final String UNDOABLE_REASON_PREFIX = "undoable:";
     private static final Set<String> ROLE_TAGS = new LinkedHashSet<>();
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
             .withLocale(Locale.ROOT)
@@ -217,16 +218,29 @@ public final class HotBackpackSaveFeature {
 
     private static void addSnapshot(ServerPlayerEntity player, String reason) {
         Snapshot snapshot = capture(player, reason);
+        addSnapshot(player, snapshot);
+    }
+
+    private static void addSnapshot(ServerPlayerEntity player, Snapshot snapshot) {
         PlayerRecord record = store.records.computeIfAbsent(player.getUuid().toString(), ignored -> new PlayerRecord());
         record.uuid = player.getUuid().toString();
         record.name = player.getName().getString();
         record.roleTag = snapshot.roleTag;
         record.online = true;
+        snapshot.uuid = record.uuid;
+        snapshot.name = record.name;
+        snapshot.roleTag = record.roleTag;
         record.history.add(0, snapshot);
         record.history.sort(Comparator.comparingLong((Snapshot s) -> s.timestamp).reversed());
         while (record.history.size() > MAX_HISTORY_PER_PLAYER) {
             record.history.remove(record.history.size() - 1);
         }
+    }
+
+    private static void addUndoableSnapshot(ServerPlayerEntity player, String action) {
+        Snapshot snapshot = capture(player, UNDOABLE_REASON_PREFIX + action);
+        store.undo.put(player.getUuid().toString(), snapshot);
+        addSnapshot(player, snapshot);
     }
 
     private static Snapshot capture(ServerPlayerEntity player, String reason) {
@@ -378,7 +392,7 @@ public final class HotBackpackSaveFeature {
 
     private static void applySnapshotToOnlinePlayer(ServerPlayerEntity target, Snapshot snapshot, boolean pushUndo) {
         if (pushUndo) {
-            store.undo.put(target.getUuid().toString(), capture(target, "undo-before-apply"));
+            addUndoableSnapshot(target, "apply-snapshot");
         }
         for (int i = 0; i < INVENTORY_SLOT_COUNT; i++) {
             String json = i < snapshot.items.size() ? snapshot.items.get(i) : "";
@@ -461,13 +475,19 @@ public final class HotBackpackSaveFeature {
 
     private static void undoApply(MinecraftServer server, ServerPlayerEntity actor, UUID targetUuid) {
         load(server);
-        Snapshot undo = store.undo.remove(targetUuid.toString());
+        Snapshot undo = popLatestUndoableSnapshot(targetUuid.toString());
+        if (undo == null) {
+            undo = store.undo.remove(targetUuid.toString());
+        } else {
+            store.undo.remove(targetUuid.toString());
+        }
         if (undo == null) {
             actor.sendMessage(Text.literal("§c没有可撤回的粘贴记录"), true);
             return;
         }
         ServerPlayerEntity target = server.getPlayerManager().getPlayer(targetUuid);
         if (target != null) {
+            addUndoableSnapshot(target, "before-undo");
             applySnapshotToOnlinePlayer(target, undo, false);
             actor.sendMessage(Text.literal("§a已撤回到粘贴前状态"), true);
         } else {
@@ -476,6 +496,22 @@ public final class HotBackpackSaveFeature {
         }
         save(server);
         syncAll(server);
+    }
+
+    private static Snapshot popLatestUndoableSnapshot(String uuid) {
+        PlayerRecord record = store.records.get(uuid);
+        if (record == null || record.history == null) {
+            return null;
+        }
+        record.history.sort(Comparator.comparingLong((Snapshot s) -> s.timestamp).reversed());
+        for (int i = 0; i < record.history.size(); i++) {
+            Snapshot snapshot = record.history.get(i);
+            if (snapshot != null && snapshot.reason != null && snapshot.reason.startsWith(UNDOABLE_REASON_PREFIX)) {
+                record.history.remove(i);
+                return snapshot;
+            }
+        }
+        return null;
     }
 
     private static void editSnapshotSlot(MinecraftServer server, ServerPlayerEntity actor, UUID sourceUuid, long timestamp, int slot, String itemNbtJson) {
@@ -491,6 +527,7 @@ public final class HotBackpackSaveFeature {
         while (snapshot.items.size() < INVENTORY_SLOT_COUNT) {
             snapshot.items.add("");
         }
+        snapshot.reason = "edit-archive-slot:" + slot;
         snapshot.items.set(slot, itemNbtJson == null ? "" : itemNbtJson);
         save(server);
         syncAll(server);
@@ -500,10 +537,16 @@ public final class HotBackpackSaveFeature {
         if (slot < 0 || slot >= INVENTORY_SLOT_COUNT) {
             return;
         }
+        addUndoableSnapshot(player, "edit-own-slot:" + slot);
         setSlotStack(player, slot, itemFromJson(itemNbtJson));
         player.getInventory().markDirty();
         player.playerScreenHandler.sendContentUpdates();
         player.currentScreenHandler.sendContentUpdates();
+        MinecraftServer server = player.getServer();
+        if (server != null) {
+            save(server);
+            syncAll(server);
+        }
     }
 
     private static Snapshot findSnapshot(UUID uuid, long timestamp) {
