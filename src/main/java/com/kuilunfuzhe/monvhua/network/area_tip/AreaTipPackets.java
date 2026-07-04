@@ -42,6 +42,7 @@ public final class AreaTipPackets {
         PlaceBoundsC2S.register();
         DeleteBoundsC2S.register();
         PlaceSelectionC2S.register();
+        PlaceSelectionChunkC2S.register();
         DeleteSelectionC2S.register();
         ResourceUploadStartC2S.register();
         ResourceUploadChunkC2S.register();
@@ -411,6 +412,64 @@ public final class AreaTipPackets {
 
         private void write(RegistryByteBuf buf) {
             buf.writeUuid(groupId);
+            writeBlocks(buf, blocks);
+            buf.writeInt(color);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record PlaceSelectionChunkC2S(UUID batchId, UUID groupId, BlockPos min, BlockPos max,
+                                         int chunkIndex, int totalChunks, int totalBlocks,
+                                         List<BlockPos> blocks, int color) implements CustomPayload {
+        public static final Id<PlaceSelectionChunkC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "place_area_tip_selection_chunk"));
+        public static final PacketCodec<RegistryByteBuf, PlaceSelectionChunkC2S> CODEC = PacketCodec.of(PlaceSelectionChunkC2S::write, PlaceSelectionChunkC2S::new);
+        private static boolean registered = false;
+
+        public PlaceSelectionChunkC2S {
+            batchId = batchId == null ? UUID.randomUUID() : batchId;
+            groupId = groupId == null ? new UUID(0L, 0L) : groupId;
+            min = min == null ? BlockPos.ORIGIN : min.toImmutable();
+            max = max == null ? min : max.toImmutable();
+            chunkIndex = Math.max(0, chunkIndex);
+            totalChunks = Math.max(1, totalChunks);
+            totalBlocks = Math.max(0, totalBlocks);
+            blocks = sanitizeBlocks(blocks);
+            color = 0xFF000000 | (color & 0xFFFFFF);
+        }
+
+        private PlaceSelectionChunkC2S(RegistryByteBuf buf) {
+            this(
+                    buf.readUuid(),
+                    buf.readUuid(),
+                    buf.readBlockPos(),
+                    buf.readBlockPos(),
+                    buf.readVarInt(),
+                    buf.readVarInt(),
+                    buf.readVarInt(),
+                    readBlocks(buf),
+                    buf.readInt()
+            );
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeUuid(batchId);
+            buf.writeUuid(groupId);
+            buf.writeBlockPos(min);
+            buf.writeBlockPos(max);
+            buf.writeVarInt(chunkIndex);
+            buf.writeVarInt(totalChunks);
+            buf.writeVarInt(totalBlocks);
             writeBlocks(buf, blocks);
             buf.writeInt(color);
         }

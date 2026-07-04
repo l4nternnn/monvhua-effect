@@ -5,6 +5,7 @@ import com.kuilunfuzhe.monvhua.item.config.AreaTipConfig;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.mojang.brigadier.CommandDispatcher;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
@@ -36,8 +37,14 @@ public final class TextAreaHudClient {
     private static final List<PlaybackSession> PLAYBACKS = new ArrayList<>();
     private static final Map<String, Integer> PASS_COUNTS = new HashMap<>();
     private static final Map<String, Integer> PLAY_COUNTS = new HashMap<>();
-    private static UUID lastInsideAreaId;
+    private static final long PRESENCE_STALE_TICKS = 40L;
+    private static TextAreaVolumeIndex areaIndex = TextAreaVolumeIndex.empty();
+    private static UUID insideAreaId;
+    private static BlockPos lastCheckedBlock;
+    private static AreaTipClient.AreaView lastCheckedArea;
+    private static long activeAreasRevision = -1L;
     private static long activeConfigRevision = -1L;
+    private static long lastPresenceTick = -1L;
     private static Screen pendingEditorParent;
     private static boolean countsLoaded;
 
@@ -53,15 +60,18 @@ public final class TextAreaHudClient {
             if (client.player == null || TextGroupEditFragment.isActive()) {
                 return;
             }
-            updateAreaPlayback(client);
             renderPlaybackSessions(context, client);
         });
-        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(client -> {
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (pendingEditorParent != null && client.currentScreen == null) {
                 Screen parent = pendingEditorParent;
                 pendingEditorParent = null;
                 TextGroupEditFragment.open(parent);
             }
+            if (client.player == null || TextGroupEditFragment.isActive()) {
+                return;
+            }
+            updateAreaPlayback(client);
         });
     }
 
@@ -89,7 +99,7 @@ public final class TextAreaHudClient {
 
     public static void resetPlayback() {
         PLAYBACKS.clear();
-        lastInsideAreaId = null;
+        resetPresence();
         activeConfigRevision = AreaTipClient.configRevision();
     }
 
@@ -110,31 +120,59 @@ public final class TextAreaHudClient {
     private static void updateAreaPlayback(MinecraftClient client) {
         if (client.world == null) {
             PLAYBACKS.clear();
-            lastInsideAreaId = null;
+            resetPresence();
             return;
         }
         if (activeConfigRevision != AreaTipClient.configRevision()) {
             resetPlayback();
         }
+        refreshAreaIndex();
+        long now = client.world.getTime();
+        boolean stalePresence = lastPresenceTick >= 0L && now - lastPresenceTick > PRESENCE_STALE_TICKS;
+        if (stalePresence) {
+            insideAreaId = null;
+            lastCheckedBlock = null;
+            lastCheckedArea = null;
+        }
+        lastPresenceTick = now;
+
         AreaTipClient.AreaView inside = currentArea(client);
         if (inside == null) {
-            lastInsideAreaId = null;
+            insideAreaId = null;
             return;
         }
-        if (!inside.id().equals(lastInsideAreaId)) {
-            lastInsideAreaId = inside.id();
+        if (!inside.id().equals(insideAreaId)) {
+            insideAreaId = inside.id();
             startPlayback(client, inside);
         }
     }
 
     private static AreaTipClient.AreaView currentArea(MinecraftClient client) {
         BlockPos playerBlock = client.player.getBlockPos();
-        for (AreaTipClient.AreaView area : AreaTipClient.areas()) {
-            if (area.containsBlock(playerBlock)) {
-                return area;
-            }
+        if (playerBlock.equals(lastCheckedBlock)) {
+            return lastCheckedArea;
         }
-        return null;
+        lastCheckedBlock = playerBlock.toImmutable();
+        lastCheckedArea = areaIndex.areaAt(playerBlock).orElse(null);
+        return lastCheckedArea;
+    }
+
+    private static void refreshAreaIndex() {
+        long areasRevision = AreaTipClient.areasRevision();
+        if (activeAreasRevision == areasRevision) {
+            return;
+        }
+        areaIndex = TextAreaVolumeIndex.build(AreaTipClient.areas());
+        activeAreasRevision = areasRevision;
+        lastCheckedBlock = null;
+        lastCheckedArea = null;
+    }
+
+    private static void resetPresence() {
+        insideAreaId = null;
+        lastCheckedBlock = null;
+        lastCheckedArea = null;
+        lastPresenceTick = -1L;
     }
 
     private static void startPlayback(MinecraftClient client, AreaTipClient.AreaView area) {

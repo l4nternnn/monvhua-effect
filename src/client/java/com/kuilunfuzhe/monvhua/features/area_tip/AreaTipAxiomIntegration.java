@@ -21,9 +21,11 @@ import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 
 import java.lang.reflect.Method;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Queue;
 import java.util.ServiceLoader;
 import java.util.UUID;
 
@@ -36,6 +38,11 @@ public final class AreaTipAxiomIntegration {
     private static DeleteSelectionKey lastDeleteSelectionKey;
     private static List<BlockPos> lastDeleteFilteredBlocks = List.of();
     private static long lastDeleteSelectionChangedAt;
+    private static final int PLACEMENT_CHUNKS_PER_TICK = 2;
+    private static final Queue<PlacementChunk> PENDING_PLACEMENT_CHUNKS = new ArrayDeque<>();
+    private static int pendingPlacementTotalChunks;
+    private static int pendingPlacementSentChunks;
+    private static int pendingPlacementTotalBlocks;
 
     private AreaTipAxiomIntegration() {
     }
@@ -51,7 +58,10 @@ public final class AreaTipAxiomIntegration {
         try {
             for (ToolRegistryService registry : ServiceLoader.load(ToolRegistryService.class)) {
                 registry.register(new AreaTipAxiomTool());
-                ClientTickEvents.END_CLIENT_TICK.register(AreaTipAxiomIntegration::tickDeleteMode);
+                ClientTickEvents.END_CLIENT_TICK.register(client -> {
+                    tickDeleteMode(client);
+                    tickPendingPlacement(client);
+                });
                 registered = true;
                 MonvhuaMod.LOGGER.info("[Monvhua] Registered Axiom area tip tool");
                 return;
@@ -122,7 +132,9 @@ public final class AreaTipAxiomIntegration {
                 ImGui.text("Selection: " + selection.sizeX() + " x " + selection.sizeY() + " x " + selection.sizeZ()
                         + " / " + selection.totalBlocks() + " block(s)");
                 if (selection.wasTruncated()) {
-                    ImGui.textColored(255, 170, 70, 255, "Selection will be truncated to " + MAX_SELECTION_BLOCKS + " blocks");
+                    ImGui.textColored(255, 170, 70, 255, selection.isFullCuboid()
+                            ? "Full cuboid will be stored as bounds"
+                            : "Large exact selection will be sent in " + MAX_SELECTION_BLOCKS + "-block chunks");
                 }
                 ImGui.textDisabled(selection.minText() + " -> " + selection.maxText());
             }
@@ -253,7 +265,26 @@ public final class AreaTipAxiomIntegration {
         }
 
         private boolean placeSelection() {
-            return placeSelection(currentPlacementSelection());
+            return placeCurrentAxiomSelection();
+        }
+
+        private boolean placeCurrentAxiomSelection() {
+            MinecraftClient client = MinecraftClient.getInstance();
+            SelectionSummary selection = currentSelectionSummary();
+            if (selection == null || selection.isEmpty()) {
+                if (client.player != null) {
+                    client.player.sendMessage(Text.literal("\u00a7cNo Axiom selection"), true);
+                }
+                return false;
+            }
+            flushIfNeeded(AreaTipConfig.getInstance(), true);
+            if (selection.isFullCuboid()) {
+                return AreaTipClient.placeCurrentGroupBounds(selection.min(), selection.max());
+            }
+            if (selection.totalBlocks() <= MAX_SELECTION_BLOCKS) {
+                return placeSelection(currentSelection());
+            }
+            return queueLargePlacementSelection(client, selection);
         }
 
         private boolean placeSelection(SelectionBlocks selection) {
@@ -299,6 +330,16 @@ public final class AreaTipAxiomIntegration {
             AreaTipConfig config = AreaTipConfig.getInstance();
             ensureGroup(config);
             AreaTipConfig.GroupConfig group = selectedGroup(config);
+            if (selection.isFullCuboid()) {
+                flushIfNeeded(config, true);
+                boolean sent = AreaTipClient.deleteCurrentGroupBounds(selection.min(), selection.max());
+                if (sent) {
+                    Selection.clearSelectionNoHistory();
+                    clearDeleteSelectionCache();
+                }
+                setDeleteMode(false);
+                return sent;
+            }
             List<BlockPos> filtered = filterDeleteSelection(group.uuid(), selection);
             if (filtered.isEmpty()) {
                 Selection.clearSelectionNoHistory();
@@ -411,6 +452,14 @@ public final class AreaTipAxiomIntegration {
         AreaTipConfig.GroupConfig group = selectedGroup(config);
         AreaTipClient.keepAxiomGroupVisible(group.uuid());
 
+        SelectionSummary summary = currentSelectionSummary();
+        if (summary == null) {
+            clearDeleteSelectionCache();
+            return;
+        }
+        if (summary.isFullCuboid() && summary.wasTruncated()) {
+            return;
+        }
         SelectionBlocks selection = currentSelection();
         if (selection == null) {
             clearDeleteSelectionCache();
@@ -503,6 +552,103 @@ public final class AreaTipAxiomIntegration {
         lastDeleteSelectionKey = null;
         lastDeleteFilteredBlocks = List.of();
         lastDeleteSelectionChangedAt = 0L;
+    }
+
+    private static boolean queueLargePlacementSelection(MinecraftClient client, SelectionSummary selection) {
+        if (!PENDING_PLACEMENT_CHUNKS.isEmpty()) {
+            if (client.player != null) {
+                client.player.sendMessage(Text.literal("\u00a7eAxiom text area placement is still sending"), true);
+            }
+            return true;
+        }
+        AreaTipConfig.GroupConfig group = AreaTipClient.currentGroup();
+        if (group == null) {
+            if (client.player != null) {
+                client.player.sendMessage(Text.literal("\u00a7cNo area tip group configured"), true);
+            }
+            return false;
+        }
+        List<List<BlockPos>> chunks = readSelectionChunks(AreaTipAxiomTool.MAX_SELECTION_BLOCKS);
+        if (chunks.isEmpty()) {
+            if (client.player != null) {
+                client.player.sendMessage(Text.literal("\u00a7cNo Axiom selection"), true);
+            }
+            return false;
+        }
+        UUID batchId = UUID.randomUUID();
+        int totalChunks = chunks.size();
+        for (int i = 0; i < totalChunks; i++) {
+            PENDING_PLACEMENT_CHUNKS.add(new PlacementChunk(
+                    batchId,
+                    group.uuid(),
+                    selection.min(),
+                    selection.max(),
+                    i,
+                    totalChunks,
+                    selection.totalBlocks(),
+                    chunks.get(i),
+                    group.color
+            ));
+        }
+        pendingPlacementTotalChunks = totalChunks;
+        pendingPlacementSentChunks = 0;
+        pendingPlacementTotalBlocks = selection.totalBlocks();
+        if (client.player != null) {
+            client.player.sendMessage(Text.literal("\u00a7eQueued " + pendingPlacementTotalBlocks
+                    + " Axiom selected block(s) in " + totalChunks + " text area chunk(s)"), true);
+        }
+        return true;
+    }
+
+    private static void tickPendingPlacement(MinecraftClient client) {
+        if (client == null || client.player == null || PENDING_PLACEMENT_CHUNKS.isEmpty()) {
+            return;
+        }
+        int sent = 0;
+        while (sent < PLACEMENT_CHUNKS_PER_TICK && !PENDING_PLACEMENT_CHUNKS.isEmpty()) {
+            PlacementChunk chunk = PENDING_PLACEMENT_CHUNKS.poll();
+            if (AreaTipClient.placeSelectionChunk(chunk.batchId(), chunk.groupId(), chunk.min(), chunk.max(),
+                    chunk.chunkIndex(), chunk.totalChunks(), chunk.totalBlocks(), chunk.blocks(), chunk.color())) {
+                pendingPlacementSentChunks++;
+                sent++;
+            }
+        }
+        if (PENDING_PLACEMENT_CHUNKS.isEmpty()) {
+            client.player.sendMessage(Text.literal("\u00a7aSent " + pendingPlacementTotalBlocks
+                    + " Axiom selected block(s) in " + pendingPlacementSentChunks + "/"
+                    + pendingPlacementTotalChunks + " chunk(s)"), true);
+            pendingPlacementTotalChunks = 0;
+            pendingPlacementSentChunks = 0;
+            pendingPlacementTotalBlocks = 0;
+        }
+    }
+
+    private static List<List<BlockPos>> readSelectionChunks(int chunkSize) {
+        try {
+            Class<?> selectionClass = Class.forName("com.moulberry.axiom.clipboard.Selection");
+            Class<?> bufferClass = Class.forName("com.moulberry.axiom.clipboard.SelectionBuffer");
+            Method getSelectionBuffer = selectionClass.getMethod("getSelectionBuffer");
+            Object buffer = getSelectionBuffer.invoke(null);
+            if (buffer == null || (boolean) bufferClass.getMethod("isEmpty").invoke(buffer)) {
+                return List.of();
+            }
+            List<List<BlockPos>> chunks = new ArrayList<>();
+            List<BlockPos> current = new ArrayList<>(chunkSize);
+            TriIntConsumer consumer = (x, y, z) -> {
+                current.add(new BlockPos(x, y, z));
+                if (current.size() >= chunkSize) {
+                    chunks.add(List.copyOf(current));
+                    current.clear();
+                }
+            };
+            bufferClass.getMethod("forEach", TriIntConsumer.class).invoke(buffer, consumer);
+            if (!current.isEmpty()) {
+                chunks.add(List.copyOf(current));
+            }
+            return List.copyOf(chunks);
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return List.of();
+        }
     }
 
     private static void setSelection(List<BlockPos> blocks) {
@@ -708,9 +854,26 @@ public final class AreaTipAxiomIntegration {
             return totalBlocks > AreaTipAxiomTool.MAX_SELECTION_BLOCKS;
         }
 
+        private boolean isEmpty() {
+            return totalBlocks <= 0;
+        }
+
+        private boolean isFullCuboid() {
+            return volume() == totalBlocks;
+        }
+
+        private long volume() {
+            return (long) sizeX() * (long) sizeY() * (long) sizeZ();
+        }
+
         private static String posText(BlockPos pos) {
             return pos.getX() + ", " + pos.getY() + ", " + pos.getZ();
         }
+    }
+
+    private record PlacementChunk(UUID batchId, UUID groupId, BlockPos min, BlockPos max,
+                                  int chunkIndex, int totalChunks, int totalBlocks,
+                                  List<BlockPos> blocks, int color) {
     }
 
     private record SelectionBlocks(BlockPos min, BlockPos max, List<BlockPos> blocks, int totalBlocks) {

@@ -10,6 +10,7 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Style;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -32,14 +33,22 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayDeque;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.Queue;
 
 public final class AreaTipFeature {
     private static final Map<UUID, UUID> LAST_TRIGGERED_GROUP = new HashMap<>();
     private static final Map<UUID, ResourceUploadState> RESOURCE_UPLOADS = new HashMap<>();
     private static final Map<UUID, Queue<ResourceDownloadJob>> RESOURCE_DOWNLOADS = new HashMap<>();
+    private static final Map<UUID, SelectionPlacementState> SELECTION_PLACEMENTS = new HashMap<>();
+    private static final Queue<SelectionMergeJob> SELECTION_MERGE_JOBS = new ArrayDeque<>();
     private static final int MAX_RESOURCE_BYTES = 64 * 1024 * 1024;
     private static final int RESOURCE_BYTES_PER_TICK = 3072;
+    private static final int MAX_SELECTION_BATCH_CHUNKS = 4096;
+    private static final int SELECTION_MERGE_CHUNKS_PER_TICK = 2;
+    private static final int SELECTION_MERGE_AREAS_PER_TICK = 64;
 
     private AreaTipFeature() {
     }
@@ -66,6 +75,9 @@ public final class AreaTipFeature {
         ServerPlayNetworking.registerGlobalReceiver(AreaTipPackets.PlaceSelectionC2S.ID, (packet, context) ->
                 context.server().execute(() -> placeSelection(context.player(), packet)));
 
+        ServerPlayNetworking.registerGlobalReceiver(AreaTipPackets.PlaceSelectionChunkC2S.ID, (packet, context) ->
+                context.server().execute(() -> placeSelectionChunk(context.player(), packet)));
+
         ServerPlayNetworking.registerGlobalReceiver(AreaTipPackets.DeleteSelectionC2S.ID, (packet, context) ->
                 context.server().execute(() -> deleteSelection(context.player(), packet)));
 
@@ -84,6 +96,7 @@ public final class AreaTipFeature {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> syncTo(handler.getPlayer()));
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            tickSelectionMergeJobs(server);
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                 tickResourceDownload(player);
                 if (server.getTicks() % 5 == 0) {
@@ -189,30 +202,49 @@ public final class AreaTipFeature {
         if (player == null || !(player.getWorld() instanceof ServerWorld world) || !canUseAreaTip(player) || packet.blocks().isEmpty()) {
             return;
         }
-        BlockPos min = minOf(packet.blocks());
-        BlockPos max = maxOf(packet.blocks());
-        BlockPos center = new BlockPos(
-                (min.getX() + max.getX()) / 2,
-                (min.getY() + max.getY()) / 2,
-                (min.getZ() + max.getZ()) / 2
-        );
-        AreaTipAreaStore.StoredArea area = AreaTipAreaStore.get(world).addLatest(new AreaTipAreaStore.StoredArea(
-                UUID.randomUUID(),
-                packet.groupId(),
-                center,
-                GravityAreaSpec.Shape.BOX.ordinal(),
-                GravityAreaSpec.Half.FULL.ordinal(),
-                1,
-                1,
-                1,
-                packet.color(),
-                min,
-                max,
-                packet.blocks()
-        ));
+        AreaTipAreaStore.StoredArea area = addSelectionArea(world, packet.groupId(), packet.color(), packet.blocks());
         broadcastFullSync(world);
         player.sendMessage(Text.literal("\u00a7aArea tip filled " + area.blocks().size() + " selected block(s)"), true);
         sendGroupMessage(player, packet.groupId());
+    }
+
+    private static void placeSelectionChunk(ServerPlayerEntity player, AreaTipPackets.PlaceSelectionChunkC2S packet) {
+        if (player == null || !(player.getWorld() instanceof ServerWorld world) || !canUseAreaTip(player)
+                || packet.blocks().isEmpty() || packet.totalChunks() <= 0 || packet.totalChunks() > MAX_SELECTION_BATCH_CHUNKS
+                || packet.chunkIndex() < 0 || packet.chunkIndex() >= packet.totalChunks()) {
+            return;
+        }
+        SelectionPlacementState state = SELECTION_PLACEMENTS.computeIfAbsent(packet.batchId(), ignored ->
+                new SelectionPlacementState(
+                        player.getUuid(),
+                        world,
+                        packet.groupId(),
+                        packet.min(),
+                        packet.max(),
+                        packet.color(),
+                        packet.totalChunks(),
+                        packet.totalBlocks()
+                ));
+        if (!state.accepts(player, world, packet)) {
+            return;
+        }
+        state.addChunk(packet.chunkIndex(), packet.blocks());
+        if (!state.isComplete()) {
+            return;
+        }
+        SELECTION_PLACEMENTS.remove(packet.batchId());
+        SELECTION_MERGE_JOBS.add(new SelectionMergeJob(
+                player.getUuid(),
+                world,
+                packet.groupId(),
+                packet.color(),
+                state.orderedChunks(),
+                packet.min(),
+                packet.max(),
+                packet.totalBlocks()
+        ));
+        player.sendMessage(Text.literal("\u00a7eQueued " + packet.totalBlocks()
+                + " Axiom selected block(s) for async text area merge"), true);
     }
 
     private static void deleteBounds(ServerPlayerEntity player, AreaTipPackets.DeleteBoundsC2S packet) {
@@ -238,6 +270,52 @@ public final class AreaTipFeature {
             player.sendMessage(Text.literal("\u00a7eDeleted " + removed + " area tip block(s)"), true);
         } else {
             player.sendMessage(Text.literal("\u00a7cNo area tip blocks intersect the Axiom selection"), true);
+        }
+    }
+
+    private static AreaTipAreaStore.StoredArea addSelectionArea(ServerWorld world, UUID groupId, int color, List<BlockPos> blocks) {
+        BlockPos min = minOf(blocks);
+        BlockPos max = maxOf(blocks);
+        BlockPos center = new BlockPos(
+                (min.getX() + max.getX()) / 2,
+                (min.getY() + max.getY()) / 2,
+                (min.getZ() + max.getZ()) / 2
+        );
+        return AreaTipAreaStore.get(world).addLatest(new AreaTipAreaStore.StoredArea(
+                UUID.randomUUID(),
+                groupId,
+                center,
+                GravityAreaSpec.Shape.BOX.ordinal(),
+                GravityAreaSpec.Half.FULL.ordinal(),
+                1,
+                1,
+                1,
+                color,
+                min,
+                max,
+                blocks
+        ));
+    }
+
+    private static void tickSelectionMergeJobs(MinecraftServer server) {
+        int processed = 0;
+        while (processed < SELECTION_MERGE_CHUNKS_PER_TICK && !SELECTION_MERGE_JOBS.isEmpty()) {
+            SelectionMergeJob job = SELECTION_MERGE_JOBS.peek();
+            if (job == null) {
+                SELECTION_MERGE_JOBS.poll();
+                continue;
+            }
+            if (job.process(SELECTION_MERGE_CHUNKS_PER_TICK, SELECTION_MERGE_AREAS_PER_TICK)) {
+                SELECTION_MERGE_JOBS.poll();
+                broadcastFullSync(job.world());
+                ServerPlayerEntity player = server.getPlayerManager().getPlayer(job.playerId());
+                if (player != null) {
+                    player.sendMessage(Text.literal("\u00a7aArea tip filled " + job.addedBlocks()
+                            + " selected block(s) across " + job.addedAreas() + " compressed area(s)"), true);
+                    sendGroupMessage(player, job.groupId());
+                }
+            }
+            processed++;
         }
     }
 
@@ -555,5 +633,292 @@ public final class AreaTipFeature {
     }
 
     private record ResourceDownloadJob(String filename, byte[] bytes, int totalChunks, int chunkIndex) {
+    }
+
+    private record SelectionBox(BlockPos min, BlockPos max, int volume) {
+    }
+
+    private record XRun(int minX, int maxX) {
+    }
+
+    private record XZRect(int minX, int maxX, int minZ, int maxZ) {
+    }
+
+    private record LayerRect(int y, XZRect rect) {
+    }
+
+    private record RowKey(int y, int z) {
+    }
+
+    private static final class SelectionPlacementState {
+        private final UUID playerId;
+        private final ServerWorld world;
+        private final UUID groupId;
+        private final BlockPos min;
+        private final BlockPos max;
+        private final int color;
+        private final int totalChunks;
+        private final int totalBlocks;
+        private final Map<Integer, List<BlockPos>> chunks = new HashMap<>();
+
+        private SelectionPlacementState(UUID playerId, ServerWorld world, UUID groupId, BlockPos min, BlockPos max,
+                                        int color, int totalChunks, int totalBlocks) {
+            this.playerId = playerId;
+            this.world = world;
+            this.groupId = groupId;
+            this.min = min.toImmutable();
+            this.max = max.toImmutable();
+            this.color = color;
+            this.totalChunks = totalChunks;
+            this.totalBlocks = totalBlocks;
+        }
+
+        private boolean accepts(ServerPlayerEntity player, ServerWorld world, AreaTipPackets.PlaceSelectionChunkC2S packet) {
+            return player.getUuid().equals(playerId)
+                    && this.world == world
+                    && groupId.equals(packet.groupId())
+                    && min.equals(packet.min())
+                    && max.equals(packet.max())
+                    && color == packet.color()
+                    && totalChunks == packet.totalChunks()
+                    && totalBlocks == packet.totalBlocks();
+        }
+
+        private void addChunk(int index, List<BlockPos> blocks) {
+            if (index < 0 || index >= totalChunks || blocks == null || blocks.isEmpty()) {
+                return;
+            }
+            chunks.putIfAbsent(index, List.copyOf(blocks));
+        }
+
+        private boolean isComplete() {
+            return chunks.size() == totalChunks;
+        }
+
+        private Queue<List<BlockPos>> orderedChunks() {
+            Queue<List<BlockPos>> ordered = new ArrayDeque<>();
+            for (int i = 0; i < totalChunks; i++) {
+                List<BlockPos> chunk = chunks.get(i);
+                if (chunk != null && !chunk.isEmpty()) {
+                    ordered.add(chunk);
+                }
+            }
+            return ordered;
+        }
+    }
+
+    private static final class SelectionMergeJob {
+        private final UUID playerId;
+        private final ServerWorld world;
+        private final UUID groupId;
+        private final int color;
+        private final Queue<List<BlockPos>> chunks;
+        private final BlockPos min;
+        private final BlockPos max;
+        private final int totalBlocks;
+        private final LinkedHashSet<BlockPos> selectedBlocks = new LinkedHashSet<>();
+        private Queue<SelectionBox> pendingAreas;
+        private int addedBlocks;
+        private int addedAreas;
+
+        private SelectionMergeJob(UUID playerId, ServerWorld world, UUID groupId, int color,
+                                  Queue<List<BlockPos>> chunks, BlockPos min, BlockPos max, int totalBlocks) {
+            this.playerId = playerId;
+            this.world = world;
+            this.groupId = groupId;
+            this.color = color;
+            this.chunks = new ArrayDeque<>(chunks);
+            this.min = min.toImmutable();
+            this.max = max.toImmutable();
+            this.totalBlocks = totalBlocks;
+        }
+
+        private boolean process(int maxChunks, int maxAreas) {
+            int processed = 0;
+            while (processed < maxChunks && !chunks.isEmpty()) {
+                List<BlockPos> chunk = chunks.poll();
+                if (chunk != null && !chunk.isEmpty()) {
+                    for (BlockPos block : chunk) {
+                        if (block != null && block.getX() >= min.getX() && block.getX() <= max.getX()
+                                && block.getY() >= min.getY() && block.getY() <= max.getY()
+                                && block.getZ() >= min.getZ() && block.getZ() <= max.getZ()) {
+                            selectedBlocks.add(block.toImmutable());
+                        }
+                    }
+                }
+                processed++;
+            }
+            if (!chunks.isEmpty()) {
+                return false;
+            }
+            if (pendingAreas == null) {
+                pendingAreas = new ArrayDeque<>(compressSelection(selectedBlocks));
+                selectedBlocks.clear();
+            }
+            int addedThisTick = 0;
+            while (addedThisTick < maxAreas && !pendingAreas.isEmpty()) {
+                SelectionBox box = pendingAreas.poll();
+                if (box != null && box.volume() > 0) {
+                    addSelectionBox(world, groupId, color, box);
+                    addedBlocks += box.volume();
+                    addedAreas++;
+                }
+                addedThisTick++;
+            }
+            return pendingAreas.isEmpty();
+        }
+
+        private static List<SelectionBox> compressSelection(Collection<BlockPos> blocks) {
+            if (blocks == null || blocks.isEmpty()) {
+                return List.of();
+            }
+            Map<RowKey, List<Integer>> rows = new HashMap<>();
+            for (BlockPos block : blocks) {
+                rows.computeIfAbsent(new RowKey(block.getY(), block.getZ()), ignored -> new java.util.ArrayList<>()).add(block.getX());
+            }
+
+            Map<Integer, Map<XRun, List<Integer>>> runsByLayer = new HashMap<>();
+            for (Map.Entry<RowKey, List<Integer>> entry : rows.entrySet()) {
+                List<Integer> xs = entry.getValue();
+                xs.sort(Integer::compareTo);
+                List<XRun> runs = new java.util.ArrayList<>();
+                int start = xs.get(0);
+                int end = start;
+                for (int i = 1; i < xs.size(); i++) {
+                    int x = xs.get(i);
+                    if (x <= end) {
+                        continue;
+                    }
+                    if (x == end + 1) {
+                        end = x;
+                        continue;
+                    }
+                    runs.add(new XRun(start, end));
+                    start = x;
+                    end = x;
+                }
+                runs.add(new XRun(start, end));
+
+                Map<XRun, List<Integer>> runsByZ = runsByLayer.computeIfAbsent(
+                        entry.getKey().y(),
+                        ignored -> new HashMap<>()
+                );
+                for (XRun run : runs) {
+                    runsByZ.computeIfAbsent(run, ignored -> new java.util.ArrayList<>()).add(entry.getKey().z());
+                }
+            }
+
+            Map<Integer, List<XZRect>> layerRects = new HashMap<>();
+            for (Map.Entry<Integer, Map<XRun, List<Integer>>> layerEntry : runsByLayer.entrySet()) {
+                for (Map.Entry<XRun, List<Integer>> runEntry : layerEntry.getValue().entrySet()) {
+                    List<Integer> zs = runEntry.getValue();
+                    zs.sort(Integer::compareTo);
+                    int minZ = zs.get(0);
+                    int maxZ = minZ;
+                    for (int i = 1; i < zs.size(); i++) {
+                        int z = zs.get(i);
+                        if (z <= maxZ) {
+                            continue;
+                        }
+                        if (z == maxZ + 1) {
+                            maxZ = z;
+                            continue;
+                        }
+                        layerRects.computeIfAbsent(layerEntry.getKey(), ignored -> new java.util.ArrayList<>())
+                                .add(new XZRect(runEntry.getKey().minX(), runEntry.getKey().maxX(), minZ, maxZ));
+                        minZ = z;
+                        maxZ = z;
+                    }
+                    layerRects.computeIfAbsent(layerEntry.getKey(), ignored -> new java.util.ArrayList<>())
+                            .add(new XZRect(runEntry.getKey().minX(), runEntry.getKey().maxX(), minZ, maxZ));
+                }
+            }
+
+            List<LayerRect> layers = new java.util.ArrayList<>();
+            for (Map.Entry<Integer, List<XZRect>> entry : layerRects.entrySet()) {
+                for (XZRect rect : entry.getValue()) {
+                    layers.add(new LayerRect(entry.getKey(), rect));
+                }
+            }
+            layers.sort(Comparator
+                    .comparingInt((LayerRect layer) -> layer.rect().minX())
+                    .thenComparingInt(layer -> layer.rect().maxX())
+                    .thenComparingInt(layer -> layer.rect().minZ())
+                    .thenComparingInt(layer -> layer.rect().maxZ())
+                    .thenComparingInt(LayerRect::y));
+
+            List<SelectionBox> boxes = new java.util.ArrayList<>();
+            XZRect currentRect = null;
+            int minY = 0;
+            int maxY = 0;
+            for (LayerRect layer : layers) {
+                if (currentRect != null && currentRect.equals(layer.rect()) && layer.y() == maxY + 1) {
+                    maxY = layer.y();
+                    continue;
+                }
+                if (currentRect != null) {
+                    boxes.add(toSelectionBox(currentRect, minY, maxY));
+                }
+                currentRect = layer.rect();
+                minY = layer.y();
+                maxY = layer.y();
+            }
+            if (currentRect != null) {
+                boxes.add(toSelectionBox(currentRect, minY, maxY));
+            }
+            return boxes;
+        }
+
+        private static SelectionBox toSelectionBox(XZRect rect, int minY, int maxY) {
+            BlockPos min = new BlockPos(rect.minX(), minY, rect.minZ());
+            BlockPos max = new BlockPos(rect.maxX(), maxY, rect.maxZ());
+            long volume = (long) (rect.maxX() - rect.minX() + 1)
+                    * (long) (maxY - minY + 1)
+                    * (long) (rect.maxZ() - rect.minZ() + 1);
+            return new SelectionBox(min, max, volume > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) volume);
+        }
+
+        private static void addSelectionBox(ServerWorld world, UUID groupId, int color, SelectionBox box) {
+            BlockPos min = box.min();
+            BlockPos max = box.max();
+            BlockPos center = new BlockPos(
+                    (min.getX() + max.getX()) / 2,
+                    (min.getY() + max.getY()) / 2,
+                    (min.getZ() + max.getZ()) / 2
+            );
+            AreaTipAreaStore.get(world).addLatest(new AreaTipAreaStore.StoredArea(
+                    UUID.randomUUID(),
+                    groupId,
+                    center,
+                    GravityAreaSpec.Shape.BOX.ordinal(),
+                    GravityAreaSpec.Half.FULL.ordinal(),
+                    1,
+                    1,
+                    1,
+                    color,
+                    min,
+                    max
+            ));
+        }
+
+        private UUID playerId() {
+            return playerId;
+        }
+
+        private ServerWorld world() {
+            return world;
+        }
+
+        private UUID groupId() {
+            return groupId;
+        }
+
+        private int addedBlocks() {
+            return Math.min(addedBlocks, totalBlocks);
+        }
+
+        private int addedAreas() {
+            return addedAreas;
+        }
     }
 }

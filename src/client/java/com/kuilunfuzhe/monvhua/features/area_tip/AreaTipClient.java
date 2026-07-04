@@ -178,6 +178,27 @@ public final class AreaTipClient {
         return true;
     }
 
+    public static boolean placeSelectionChunk(UUID batchId, UUID groupId, BlockPos min, BlockPos max,
+                                              int chunkIndex, int totalChunks, int totalBlocks,
+                                              List<BlockPos> blocks, int color) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null || batchId == null || groupId == null || min == null || max == null || blocks == null || blocks.isEmpty()) {
+            return false;
+        }
+        SafeClientNetworking.send(new AreaTipPackets.PlaceSelectionChunkC2S(
+                batchId,
+                groupId,
+                min,
+                max,
+                chunkIndex,
+                totalChunks,
+                totalBlocks,
+                blocks,
+                color
+        ));
+        return true;
+    }
+
     public static boolean deleteCurrentGroupBounds(BlockPos min, BlockPos max) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || min == null || max == null) {
