@@ -37,11 +37,15 @@ public final class InjuredBleedingClient {
     private static final float PIXEL_SIZE = 1.0F / 16.0F;
     private static final float BLOOD_BUTTERFLY_SCALE = 1.0F;
     private static final double BLOOD_BUTTERFLY_BASE_LIFETIME_SECONDS = 8.0D;
+    private static final int MAX_ACTIVE_DECALS = 1536;
+    private static final int MAX_ACTIVE_SPRAY_DROPS = 4096;
+    private static final int MAX_TRAIL_PARTICLE_SPAWNS_PER_TICK = 96;
     private static final int MAX_TRAIL_PARTICLES_PER_DROP = 2;
     private static final List<BloodDecal> DECALS = new ArrayList<>();
     private static final List<SprayDrop> SPRAY_DROPS = new ArrayList<>();
     private static Constructor<?> bloodButterflyOptionsConstructor;
     private static boolean bloodButterflyOptionsUnavailable;
+    private static int trailParticleSpawnBudget;
 
     private InjuredBleedingClient() {
     }
@@ -66,7 +70,7 @@ public final class InjuredBleedingClient {
         Vec3d emitterOffset = packet.emitterOffset();
         int fadeTicks = Math.max(20, packet.fadeTicks());
         for (InjuredBleedingPackets.BloodDropData drop : packet.drops()) {
-            SPRAY_DROPS.add(SprayDrop.create(
+            addSprayDrop(SprayDrop.create(
                     packet.entityId(),
                     origin,
                     emitterOffset,
@@ -97,6 +101,7 @@ public final class InjuredBleedingClient {
             SPRAY_DROPS.clear();
             return;
         }
+        trailParticleSpawnBudget = MAX_TRAIL_PARTICLE_SPAWNS_PER_TICK;
         DECALS.removeIf(BloodDecal::tickAndExpired);
         Iterator<SprayDrop> drops = SPRAY_DROPS.iterator();
         while (drops.hasNext()) {
@@ -156,7 +161,20 @@ public final class InjuredBleedingClient {
     }
 
     private static void addImpactDecal(Vec3d pos, Vec3d normal, float rotationDegrees, int shapeSeed, int fadeTicks) {
+        trimOldest(DECALS, MAX_ACTIVE_DECALS - 1);
         DECALS.add(new BloodDecal(pos, normal, rotationDegrees, shapeSeed, fadeTicks));
+    }
+
+    private static void addSprayDrop(SprayDrop drop) {
+        trimOldest(SPRAY_DROPS, MAX_ACTIVE_SPRAY_DROPS - 1);
+        SPRAY_DROPS.add(drop);
+    }
+
+    private static <T> void trimOldest(List<T> list, int maxSize) {
+        int removeCount = list.size() - Math.max(0, maxSize);
+        if (removeCount > 0) {
+            list.subList(0, removeCount).clear();
+        }
     }
 
     private static boolean addBloodButterflyParticle(MinecraftClient client, Vec3d pos, int seed, double lifetimeSeconds) {
@@ -333,6 +351,9 @@ public final class InjuredBleedingClient {
             if (replaceWithButterfly) {
                 return false;
             }
+            if (!consumeTrailParticleSpawnBudget()) {
+                return false;
+            }
             Vec3d pos = ballisticPos(flightAge);
             Vec3d particleVelocity = velocity.add(0.0D, BALLISTIC_GRAVITY_PER_TICK * flightAge, 0.0D);
             trackTrailParticle(spawn(client, pos, particleVelocity.x, particleVelocity.y, particleVelocity.z));
@@ -436,6 +457,14 @@ public final class InjuredBleedingClient {
     }
 
     private record Pixel(float x, float y, float size) {
+    }
+
+    private static boolean consumeTrailParticleSpawnBudget() {
+        if (trailParticleSpawnBudget <= 0) {
+            return false;
+        }
+        trailParticleSpawnBudget--;
+        return true;
     }
 
     private record Basis(Vec3d right, Vec3d up) {

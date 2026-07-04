@@ -18,6 +18,8 @@ public class InjuredBleedingConfig {
 
     public int sprayTicks = 20;
     public double spraySeconds = 1.0D;
+    public double sprayRampUpSeconds = 0.15D;
+    public double sprayDecaySeconds = 1.0D;
     public int particlesPerSecond = 28;
     public double bloodSpotFadeSeconds = 6.0D;
     public double bloodSpotButterflyChancePercent = 0.0D;
@@ -62,8 +64,13 @@ public class InjuredBleedingConfig {
         if (config.spraySeconds <= 0.0D && config.sprayTicks > 0) {
             config.spraySeconds = config.sprayTicks / 20.0D;
         }
+        if (config.sprayDecaySeconds <= 0.0D) {
+            config.sprayDecaySeconds = config.spraySeconds;
+        }
         config.spraySeconds = Math.clamp(config.spraySeconds, 0.05D, 20.0D);
-        config.sprayTicks = Math.clamp((int) Math.round(config.spraySeconds * 20.0D), 1, 400);
+        config.sprayRampUpSeconds = Math.clamp(config.sprayRampUpSeconds, 0.0D, 20.0D);
+        config.sprayDecaySeconds = Math.clamp(config.sprayDecaySeconds, 0.05D, 20.0D);
+        config.sprayTicks = Math.clamp((int) Math.round((config.sprayRampUpSeconds + config.sprayDecaySeconds) * 20.0D), 1, 800);
         config.particlesPerSecond = Math.clamp(config.particlesPerSecond, 1, 240);
         config.bloodSpotFadeSeconds = Math.clamp(config.bloodSpotFadeSeconds, 0.5D, 120.0D);
         config.bloodSpotButterflyChancePercent = Math.clamp(config.bloodSpotButterflyChancePercent, 0.0D, 100.0D);

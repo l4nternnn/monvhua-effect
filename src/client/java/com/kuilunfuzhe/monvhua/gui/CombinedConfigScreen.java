@@ -564,7 +564,8 @@ public final class CombinedConfigScreen {
 
         private void buildInjuredBleeding(LinearLayout parent) {
             if (parent == centerPanel || injuredPage) {
-                addField(parent, "spraySeconds", "喷洒时间/s", cachedInjuredBleedingConfig.spraySeconds);
+                addField(parent, "sprayRampUpSeconds", "喷洒加速时间/s", cachedInjuredBleedingConfig.sprayRampUpSeconds);
+                addField(parent, "sprayDecaySeconds", "喷洒衰减时间/s", cachedInjuredBleedingConfig.sprayDecaySeconds);
                 addField(parent, "particlesPerSecond", "每秒喷洒粒子数量", cachedInjuredBleedingConfig.particlesPerSecond);
                 addField(parent, "bloodSpotFadeSeconds", "落地血点消失时间/s", cachedInjuredBleedingConfig.bloodSpotFadeSeconds);
                 addField(parent, "bloodSpotButterflyChancePercent", "Blood butterfly chance/%", cachedInjuredBleedingConfig.bloodSpotButterflyChancePercent);
@@ -999,7 +1000,9 @@ public final class CombinedConfigScreen {
         private void saveInjuredBleeding() {
             try {
                 InjuredBleedingConfig config = new InjuredBleedingConfig();
-                config.spraySeconds = doubleField("spraySeconds");
+                config.sprayRampUpSeconds = doubleField("sprayRampUpSeconds");
+                config.sprayDecaySeconds = doubleField("sprayDecaySeconds");
+                config.spraySeconds = config.sprayRampUpSeconds + config.sprayDecaySeconds;
                 config.particlesPerSecond = intField("particlesPerSecond");
                 config.bloodSpotFadeSeconds = doubleField("bloodSpotFadeSeconds");
                 config.bloodSpotButterflyChancePercent = doubleField("bloodSpotButterflyChancePercent");

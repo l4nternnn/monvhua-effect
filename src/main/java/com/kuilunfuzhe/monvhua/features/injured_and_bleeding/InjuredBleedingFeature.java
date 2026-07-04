@@ -65,9 +65,11 @@ public final class InjuredBleedingFeature {
         Vec3d emitter = attackPartPos(entity, random);
         Vec3d emitterOffset = emitter.subtract(origin);
         InjuredBleedingConfig config = InjuredBleedingConfig.getInstance();
-        int sprayTicks = config.sprayTicks;
+        int rampUpTicks = Math.max(0, (int) Math.round(config.sprayRampUpSeconds * 20.0D));
+        int decayTicks = Math.max(1, (int) Math.round(config.sprayDecaySeconds * 20.0D));
+        int sprayTicks = Math.max(1, rampUpTicks + decayTicks);
         int fadeTicks = Math.max(1, (int) Math.round(config.bloodSpotFadeSeconds * 20.0D));
-        int dropCount = Math.clamp((int) Math.round(config.particlesPerSecond * config.spraySeconds), 1, InjuredBleedingPackets.MAX_DROPS);
+        int dropCount = Math.clamp((int) Math.round(config.particlesPerSecond * effectiveFullSpeedSeconds(rampUpTicks, decayTicks)), 1, InjuredBleedingPackets.MAX_DROPS);
 
         List<InjuredBleedingPackets.BloodDropData> drops = new ArrayList<>(dropCount);
         for (int i = 0; i < dropCount; i++) {
@@ -78,7 +80,7 @@ public final class InjuredBleedingFeature {
                     (float) angle,
                     (float) radius,
                     random.nextFloat() * 360.0F,
-                    randomSprayDelay(random, i, dropCount, config.particlesPerSecond, sprayTicks),
+                    randomSprayDelay(random, i, dropCount, rampUpTicks, decayTicks, sprayTicks),
                     flightTicks,
                     random.nextInt()
             ));
@@ -105,13 +107,27 @@ public final class InjuredBleedingFeature {
         }
     }
 
-    private static int randomSprayDelay(Random random, int index, int dropCount, int particlesPerSecond, int sprayTicks) {
+    private static int randomSprayDelay(Random random, int index, int dropCount, int rampUpTicks, int decayTicks, int sprayTicks) {
         if (sprayTicks <= 1 || dropCount <= 1) return 0;
-        int bucket = index / Math.max(1, Math.min(particlesPerSecond, dropCount));
-        int bucketStart = Math.min(sprayTicks - 1, bucket * 20);
-        int bucketEnd = Math.min(sprayTicks - 1, bucketStart + 19);
-        if (bucketStart >= bucketEnd) return bucketStart;
-        return bucketStart + random.nextInt(bucketEnd - bucketStart + 1);
+        double sample = (index + random.nextDouble()) / dropCount;
+        return Math.clamp((int) Math.round(delayAtEmissionFraction(sample, rampUpTicks, decayTicks)), 0, sprayTicks - 1);
+    }
+
+    private static double effectiveFullSpeedSeconds(int rampUpTicks, int decayTicks) {
+        return (rampUpTicks + decayTicks) / 40.0D;
+    }
+
+    private static double delayAtEmissionFraction(double fraction, int rampUpTicks, int decayTicks) {
+        double rampArea = rampUpTicks * 0.5D;
+        double decayArea = decayTicks * 0.5D;
+        double totalArea = Math.max(0.0001D, rampArea + decayArea);
+        double targetArea = Math.clamp(fraction, 0.0D, 1.0D) * totalArea;
+        if (rampUpTicks > 0 && targetArea <= rampArea) {
+            return Math.sqrt(2.0D * targetArea * rampUpTicks);
+        }
+        double decayTarget = targetArea - rampArea;
+        double normalizedArea = Math.clamp(decayTarget / Math.max(0.0001D, decayArea), 0.0D, 1.0D);
+        return rampUpTicks + decayTicks * (1.0D - Math.sqrt(1.0D - normalizedArea));
     }
 
     private static Vec3d attackPartPos(LivingEntity entity, Random random) {
