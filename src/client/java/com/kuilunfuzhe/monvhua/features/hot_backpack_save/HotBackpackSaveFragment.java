@@ -97,6 +97,7 @@ public class HotBackpackSaveFragment extends Fragment {
     private TextView selectedLabel;
     private PopupWindow targetPopup;
     private PopupWindow creativeListPopup;
+    private boolean stateRefreshQueued;
     private long resizeEwCursor;
     private long resizeNsCursor;
 
@@ -113,10 +114,7 @@ public class HotBackpackSaveFragment extends Fragment {
 
     public static void receiveState(HotBackpackState nextState) {
         if (active != null) {
-            active.state = nextState == null ? new HotBackpackState() : nextState;
-            active.state.sanitize();
-            active.ensureSelection();
-            active.scheduleRebuildAll();
+            active.applyState(nextState);
         }
     }
 
@@ -297,13 +295,14 @@ public class HotBackpackSaveFragment extends Fragment {
                 ensureTimestamp();
                 dismissTargetPopup();
                 dismissCreativeListPopup();
-                scheduleRebuildAll();
+                scheduleSelectionRefresh();
             });
             playerList.addView(row, blockParams());
         }
     }
 
     private void rebuildArchiveSlots() {
+        slotGrids.removeIf(grid -> grid.archive);
         archiveSlots.removeAllViews();
         HotBackpackState.Snapshot snapshot = selectedSnapshot();
         if (selectedLabel != null) {
@@ -321,6 +320,7 @@ public class HotBackpackSaveFragment extends Fragment {
     }
 
     private void rebuildSelfSlots() {
+        slotGrids.removeIf(grid -> !grid.archive);
         selfSlots.removeAllViews();
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) {
@@ -595,12 +595,12 @@ public class HotBackpackSaveFragment extends Fragment {
             row.setTextColor(snapshot.timestamp == selectedTimestamp ? 0xFFFFD36A : 0xFFE8EDF4);
             row.setOnClickListener(v -> {
                 selectedTimestamp = snapshot.timestamp;
-                scheduleRebuildAll();
+                scheduleSelectionRefresh();
             });
             row.setOnTouchListener((view, event) -> {
                 if (event.getAction() == MotionEvent.ACTION_UP && event.getButtonState() == MotionEvent.BUTTON_SECONDARY) {
                     selectedTimestamp = snapshot.timestamp;
-                    scheduleRebuildAll();
+                    scheduleSelectionRefresh();
                     return true;
                 }
                 return false;
@@ -883,6 +883,56 @@ public class HotBackpackSaveFragment extends Fragment {
             return;
         }
         root.post(this::rebuildAll);
+    }
+
+    private void applyState(HotBackpackState nextState) {
+        state = nextState == null ? new HotBackpackState() : nextState;
+        state.sanitize();
+        ensureSelection();
+        scheduleStateRefresh();
+    }
+
+    private void scheduleStateRefresh() {
+        if (root == null) {
+            refreshStateViews();
+            return;
+        }
+        if (stateRefreshQueued) {
+            return;
+        }
+        stateRefreshQueued = true;
+        root.post(() -> {
+            stateRefreshQueued = false;
+            refreshStateViews();
+        });
+    }
+
+    private void scheduleSelectionRefresh() {
+        if (root == null) {
+            refreshStateViews();
+            return;
+        }
+        root.post(this::refreshStateViews);
+    }
+
+    private void refreshStateViews() {
+        if (playerList == null) {
+            return;
+        }
+        try {
+            rebuildPlayers();
+            rebuildArchiveSlots();
+            if (historyList != null) {
+                rebuildHistory();
+            }
+            refreshSlotGrids();
+            if (creativePicker != null) {
+                creativePicker.invalidate();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            updateStatus("玩家存档界面刷新失败: " + e.getClass().getSimpleName());
+        }
     }
 
     private void scheduleRebuildRight() {

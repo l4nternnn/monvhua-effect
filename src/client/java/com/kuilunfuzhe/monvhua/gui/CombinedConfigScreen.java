@@ -107,14 +107,14 @@ public final class CombinedConfigScreen {
         return activeFragment != null;
     }
 
-    private static void refreshActiveFragment() {
+    private static void refreshActiveFragment(ConfigType changedType, boolean injuredChanged) {
         CombinedConfigFragment fragment = activeFragment;
         if (fragment == null) {
             return;
         }
         Runnable refresh = () -> {
             if (activeFragment == fragment) {
-                fragment.refreshFromExternalConfig();
+                fragment.refreshFromExternalConfig(changedType, injuredChanged);
             }
         };
         if (Core.isOnUiThread()) {
@@ -135,67 +135,67 @@ public final class CombinedConfigScreen {
         for (int i = 0; i < configsArray.length && i + 1 < CACHED_EVIL_CONFIGS.length; i++) {
             CACHED_EVIL_CONFIGS[i + 1] = configsArray[i];
         }
-        refreshActiveFragment();
+        refreshActiveFragment(ConfigType.EVIL_EYES, false);
     }
 
     public static void receiveGazeConfig(GazeConfig config) {
         if (config == null) return;
         cachedGazeConfig = config;
-        refreshActiveFragment();
+        refreshActiveFragment(ConfigType.GAZE_GUIDANCE, false);
     }
 
     public static void receiveMirrorConfig(MirrorConfig config) {
         if (config == null) return;
         cachedMirrorConfig = config;
-        refreshActiveFragment();
+        refreshActiveFragment(ConfigType.MIRROR, false);
     }
 
     public static void receiveThroughConfig(ThroughConfig config) {
         if (config == null) return;
         cachedThroughConfig = config;
-        refreshActiveFragment();
+        refreshActiveFragment(ConfigType.THROUGH, false);
     }
 
     public static void receiveImitateConfig(ImitateConfig config) {
         if (config == null) return;
         cachedImitateConfig = config;
-        refreshActiveFragment();
+        refreshActiveFragment(ConfigType.IMITATE, false);
     }
 
     public static void receiveFloatingConfig(FloatingConfig config) {
         if (config == null) return;
         cachedFloatingConfig = config;
-        refreshActiveFragment();
+        refreshActiveFragment(ConfigType.FLOATING, false);
     }
 
     public static void receivePlantMagicConfig(PlantMagicConfig config) {
         if (config == null) return;
         cachedPlantMagicConfig = config;
-        refreshActiveFragment();
+        refreshActiveFragment(ConfigType.PLANT, false);
     }
 
     public static void receiveSecretConfig(SecretConfig config) {
         if (config == null) return;
         cachedSecretConfig = config;
-        refreshActiveFragment();
+        refreshActiveFragment(ConfigType.SECRET, false);
     }
 
     public static void receivePaintConfig(PaintConfig config) {
         if (config == null) return;
         cachedPaintConfig = config;
-        refreshActiveFragment();
+        refreshActiveFragment(ConfigType.PAINT, false);
     }
 
     public static void receiveGravityConfig(GravityConfig config) {
         if (config == null) return;
         cachedGravityConfig = config;
-        refreshActiveFragment();
+        refreshActiveFragment(ConfigType.GRAVITY, false);
     }
 
     public static void receiveInjuredBleedingConfig(InjuredBleedingConfig config) {
         if (config == null) return;
         cachedInjuredBleedingConfig = config;
-        refreshActiveFragment();
+        refreshActiveFragment(null, true);
     }
 
     private static void ensureDefaults() {
@@ -276,6 +276,7 @@ public final class CombinedConfigScreen {
         private final Map<String, EditText> fields = new LinkedHashMap<>();
         private final Map<String, EditText> sideFields = new LinkedHashMap<>();
         private boolean rebuilding;
+        private boolean userTouched;
 
         @Override
         public View onCreateView(LayoutInflater inflater, ViewGroup container, DataSet savedInstanceState) {
@@ -375,10 +376,20 @@ public final class CombinedConfigScreen {
             return panel;
         }
 
-        private void refreshFromExternalConfig() {
+        private void refreshFromExternalConfig(ConfigType changedType, boolean injuredChanged) {
             if (rebuilding) return;
-            if (centerPanel != null) rebuildCenter();
-            if (rightPanel != null) rebuildRight();
+            if (userTouched) return;
+            if (injuredChanged) {
+                if (injuredPage && centerPanel != null) rebuildCenter();
+                return;
+            }
+            if (changedType == null) return;
+            if (changedType == ConfigType.EVIL_EYES && rightPanel != null) {
+                rebuildRight();
+            }
+            if (!injuredPage && currentType == changedType && centerPanel != null) {
+                rebuildCenter();
+            }
         }
 
         private void rebuildNav() {
@@ -389,6 +400,7 @@ public final class CombinedConfigScreen {
                 boolean selected = type == currentType && !injuredPage;
                 selectedButton(button, selected);
                 button.setOnClickListener(v -> {
+                    userTouched = true;
                     if (!stageCurrentFields()) {
                         return;
                     }
@@ -454,6 +466,7 @@ public final class CombinedConfigScreen {
             boolean selected = injured ? injuredPage : currentType == type && !injuredPage;
             selectedButton(button, selected);
             button.setOnClickListener(v -> {
+                userTouched = true;
                 if (!stageCurrentFields()) {
                     return;
                 }
@@ -599,9 +612,11 @@ public final class CombinedConfigScreen {
                 selectedButton(b, next == selected);
                 b.setOnClickListener(v -> {
                     if (side) {
+                        userTouched = true;
                         rangeStage = next;
                         rebuildRight();
                     } else {
+                        userTouched = true;
                         if (!stageCurrentFields()) {
                             return;
                         }
