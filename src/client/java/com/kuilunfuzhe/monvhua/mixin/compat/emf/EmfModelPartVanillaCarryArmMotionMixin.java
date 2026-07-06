@@ -4,6 +4,8 @@ import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseModelApplier;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseTuning;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityExtractPoseClientState;
+import com.kuilunfuzhe.monvhua.features.hold_hands.HoldHandsClientState;
+import com.kuilunfuzhe.monvhua.features.hold_hands.HoldHandsSkeletalPose;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
@@ -32,6 +34,10 @@ public abstract class EmfModelPartVanillaCarryArmMotionMixin {
 	private float monvhua$originalYaw;
 	@Unique
 	private float monvhua$originalRoll;
+	@Unique
+	private boolean monvhua$hiddenForHoldHands;
+	@Unique
+	private boolean monvhua$originalVisible;
 
 	@Shadow(remap = false)
 	private String name;
@@ -62,6 +68,9 @@ public abstract class EmfModelPartVanillaCarryArmMotionMixin {
 			return;
 		}
 		String partName = name.toLowerCase(Locale.ROOT);
+		if (monvhua$beginHideHeldHandArm(partName)) {
+			return;
+		}
 		if (monvhua$isRenderingGravityExtractPose()) {
 			if (monvhua$isRightArm(partName)) {
 				monvhua$setCurrentArmPose((float) Math.toRadians(-165.0D), (float) Math.toRadians(8.0D), (float) Math.toRadians(8.0D));
@@ -81,6 +90,11 @@ public abstract class EmfModelPartVanillaCarryArmMotionMixin {
 
 	@Unique
 	private void monvhua$restoreCarrierArmMotion() {
+		if (monvhua$hiddenForHoldHands) {
+			ModelPart part = (ModelPart) (Object) this;
+			part.visible = monvhua$originalVisible;
+			monvhua$hiddenForHoldHands = false;
+		}
 		if (!monvhua$scaledArmMotion) {
 			return;
 		}
@@ -117,6 +131,23 @@ public abstract class EmfModelPartVanillaCarryArmMotionMixin {
 	}
 
 	@Unique
+	private boolean monvhua$beginHideHeldHandArm(String partName) {
+		HoldHandsSkeletalPose.HandSide heldSide = monvhua$currentHeldHandSide();
+		if (heldSide == null) {
+			return false;
+		}
+		if ((heldSide == HoldHandsSkeletalPose.HandSide.RIGHT && !monvhua$isRightArm(partName))
+				|| (heldSide == HoldHandsSkeletalPose.HandSide.LEFT && !monvhua$isLeftArm(partName))) {
+			return false;
+		}
+		ModelPart part = (ModelPart) (Object) this;
+		monvhua$hiddenForHoldHands = true;
+		monvhua$originalVisible = part.visible;
+		part.visible = false;
+		return true;
+	}
+
+	@Unique
 	private static boolean monvhua$isRightArm(String partName) {
 		return (partName.contains("right") && (partName.contains("arm") || partName.contains("sleeve"))) || partName.equals("right_arm") || partName.equals("rightarm") || partName.equals("right_sleeve") || partName.equals("rightsleeve");
 	}
@@ -139,6 +170,24 @@ public abstract class EmfModelPartVanillaCarryArmMotionMixin {
 		} catch (ReflectiveOperationException ignored) {
 			return false;
 		}
+	}
+
+	@Unique
+	private static HoldHandsSkeletalPose.HandSide monvhua$currentHeldHandSide() {
+		try {
+			Field field = monvhua$currentRenderStateField;
+			if (field == null) {
+				field = CarryPoseModelApplier.class.getDeclaredField("currentRenderState");
+				field.setAccessible(true);
+				monvhua$currentRenderStateField = field;
+			}
+			Object state = field.get(null);
+			if (state instanceof PlayerEntityRenderState playerState && HoldHandsClientState.isHoldingHands(playerState.id)) {
+				return HoldHandsClientState.getHandSide(playerState.id);
+			}
+		} catch (ReflectiveOperationException ignored) {
+		}
+		return null;
 	}
 
 	private static boolean monvhua$isRenderingGravityExtractPose() {

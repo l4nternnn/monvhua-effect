@@ -7,7 +7,8 @@ import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
-public record HoldHandsSyncS2CPacket(int entityId, boolean active, int handSide, int partnerId) implements CustomPayload {
+public record HoldHandsSyncS2CPacket(int entityId, boolean active, int handSide, int partnerId,
+                                     float defaultDistance) implements CustomPayload {
     public static final int HAND_LEFT = 0;
     public static final int HAND_RIGHT = 1;
     public static final int NO_PARTNER = -1;
@@ -21,6 +22,7 @@ public record HoldHandsSyncS2CPacket(int entityId, boolean active, int handSide,
                     PacketCodecs.BOOLEAN, HoldHandsSyncS2CPacket::active,
                     PacketCodecs.INTEGER, HoldHandsSyncS2CPacket::handSide,
                     PacketCodecs.INTEGER, HoldHandsSyncS2CPacket::partnerId,
+                    PacketCodecs.FLOAT, HoldHandsSyncS2CPacket::defaultDistance,
                     HoldHandsSyncS2CPacket::new
             );
 

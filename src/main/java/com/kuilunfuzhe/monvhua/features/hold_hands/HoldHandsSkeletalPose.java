@@ -19,6 +19,11 @@ public final class HoldHandsSkeletalPose {
     public static final String RIGHT_ARM_PART = "right_arm";
     public static final String LEFT_ARM_PART = "left_arm";
 
+    public static final String ACTIVE_ROLE_SKIN = "hiro";
+    public static final String PASSIVE_ROLE_SKIN = "ema";
+    public static final HandSide ACTIVE_ROLE_HAND = HandSide.LEFT;
+    public static final HandSide PASSIVE_ROLE_HAND = HandSide.RIGHT;
+
     public static final List<BonePose> RIGHT_HAND_DEFAULT_POSE = List.of(
             new BonePose(RIGHT_ARM_LOWER_BONE, 0.18090954F, 0.17231862F, -0.6817982F),
             new BonePose(RIGHT_ARM_UPPER_BONE, 0.0F, 11.101904F, 7.696805F)
@@ -41,6 +46,18 @@ public final class HoldHandsSkeletalPose {
 
     public static List<BonePose> defaultPoseForHand(HandSide side) {
         return side == HandSide.LEFT ? LEFT_HAND_DEFAULT_POSE : RIGHT_HAND_DEFAULT_POSE;
+    }
+
+    public static HandSide handForRole(HoldRole role) {
+        return role == HoldRole.ACTIVE ? ACTIVE_ROLE_HAND : PASSIVE_ROLE_HAND;
+    }
+
+    public static String skinForRole(HoldRole role) {
+        return role == HoldRole.ACTIVE ? ACTIVE_ROLE_SKIN : PASSIVE_ROLE_SKIN;
+    }
+
+    public static boolean isFollowerHand(HandSide side) {
+        return side == PASSIVE_ROLE_HAND;
     }
 
     public static Map<String, float[]> rotationsForHand(HandSide side) {
@@ -109,6 +126,11 @@ public final class HoldHandsSkeletalPose {
     public enum HandSide {
         LEFT,
         RIGHT
+    }
+
+    public enum HoldRole {
+        ACTIVE,
+        PASSIVE
     }
 
     public record BonePose(String name, float pitch, float yaw, float roll,
