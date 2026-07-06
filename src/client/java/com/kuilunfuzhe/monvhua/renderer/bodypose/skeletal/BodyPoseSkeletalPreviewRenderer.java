@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 
 public final class BodyPoseSkeletalPreviewRenderer {
     private static final Identifier MODEL_ID = Identifier.of("monvhua", "models/entity/skeletal_model.bbmodel");
@@ -59,6 +60,7 @@ public final class BodyPoseSkeletalPreviewRenderer {
     private static final Vector3f NOSE_LOCAL_D = new Vector3f(-1.075F, 1.875F, 0.991F);
     private static final float MODEL_UNIT = 16.0F;
     private static final float MODEL_Y_ORIGIN = 24.9207F;
+    private static final float PLAYER_ATTACHED_MODEL_Y_ORIGIN = 37.9207F;
     private static final float VOXEL_OUTER_THICKNESS = 0.5F;
     private static final float OUTER_LAYER_NORMAL_OFFSET = 0.002F;
     private static final double RAYCAST_EPSILON = 1.0E-7D;
@@ -151,6 +153,32 @@ public final class BodyPoseSkeletalPreviewRenderer {
     public static boolean renderDragPose(MatrixStack matrices, VertexConsumerProvider vertexConsumers,
                                          Identifier texture, int light, boolean slim, Set<String> visibleParts) {
         return render(matrices, vertexConsumers, texture, light, getDragRotations(), Map.of(), Map.of(), visibleParts, slim);
+    }
+
+    public static boolean renderPlayerAttached(MatrixStack matrices, VertexConsumerProvider vertexConsumers, Identifier texture,
+                                               int light, Map<String, float[]> rotations, Map<String, float[]> offsets,
+                                               Map<String, Float> scales, Set<String> visibleParts, boolean slim,
+                                               RenderLayer renderLayer, Set<String> hiddenMeshes, NbtCompound customData) {
+        SkeletalModel model = getModel();
+        if (model == null || model.meshes.isEmpty()) {
+            return false;
+        }
+
+        model.updatePose(rotations, offsets, scales);
+        Set<String> normalizedHiddenMeshes = normalizeMeshNames(hiddenMeshes);
+        SkinTexturePixels.PaintedSkinTexture paintedSkin = SkinTexturePixels.getWithModelPaint(texture, customData, slim);
+        Identifier renderTexture = paintedSkin.textureId();
+        boolean paintedTexture = !renderTexture.equals(texture);
+
+        RenderLayer skinLayer = renderLayer != null && !paintedTexture
+                ? renderLayer
+                : RenderLayer.getEntityCutoutNoCull(renderTexture);
+        Matrix4f matrix = matrices.peek().getPositionMatrix();
+        renderMeshes(model, matrix, vertexConsumers, skinLayer, skinLayer, light, visibleParts, normalizedHiddenMeshes, false,
+                rotations, offsets, scales, BodyPoseSkeletalPreviewRenderer::toPlayerModelPosition);
+        renderMeshes(model, matrix, vertexConsumers, skinLayer, skinLayer, light, visibleParts, normalizedHiddenMeshes, true,
+                rotations, offsets, scales, BodyPoseSkeletalPreviewRenderer::toPlayerModelPosition);
+        return true;
     }
 
     public static PaintHit raycastModelPaint(Matrix4d modelToWorld, Vec3d eye, Vec3d end,
@@ -483,6 +511,15 @@ public final class BodyPoseSkeletalPreviewRenderer {
                                      RenderLayer skinLayer, RenderLayer solidColorLayer,
                                      int light, Set<String> visibleParts, Set<String> hiddenMeshes, boolean outerLayer,
                                      Map<String, float[]> rotations, Map<String, float[]> offsets, Map<String, Float> scales) {
+        renderMeshes(model, matrix, vertexConsumers, skinLayer, solidColorLayer, light, visibleParts, hiddenMeshes,
+                outerLayer, rotations, offsets, scales, BodyPoseSkeletalPreviewRenderer::toRenderPosition);
+    }
+
+    private static void renderMeshes(SkeletalModel model, Matrix4f matrix, VertexConsumerProvider vertexConsumers,
+                                     RenderLayer skinLayer, RenderLayer solidColorLayer,
+                                     int light, Set<String> visibleParts, Set<String> hiddenMeshes, boolean outerLayer,
+                                     Map<String, float[]> rotations, Map<String, float[]> offsets, Map<String, Float> scales,
+                                     Function<Vector3f, Vector3f> positionMapper) {
         boolean renderedNose = false;
         for (Mesh mesh : model.meshes) {
             if (mesh.outerLayer != outerLayer) {
@@ -502,7 +539,7 @@ public final class BodyPoseSkeletalPreviewRenderer {
                 continue;
             }
             VertexConsumer vertexConsumer = vertexConsumers.getBuffer(mesh.usesSolidColorTexture ? solidColorLayer : skinLayer);
-            renderMesh(mesh, model, matrix, vertexConsumer, light, rotations, offsets, scales);
+            renderMesh(mesh, model, matrix, vertexConsumer, light, rotations, offsets, scales, positionMapper);
         }
         if (!outerLayer && !renderedNose) {
             renderNoseOverlay(model, matrix, vertexConsumers.getBuffer(skinLayer), light, visibleParts);
@@ -726,12 +763,20 @@ public final class BodyPoseSkeletalPreviewRenderer {
     private static void renderMesh(Mesh mesh, SkeletalModel model, Matrix4f matrix,
                                    VertexConsumer vertexConsumer, int light,
                                    Map<String, float[]> rotations, Map<String, float[]> offsets, Map<String, Float> scales) {
+        renderMesh(mesh, model, matrix, vertexConsumer, light, rotations, offsets, scales,
+                BodyPoseSkeletalPreviewRenderer::toRenderPosition);
+    }
+
+    private static void renderMesh(Mesh mesh, SkeletalModel model, Matrix4f matrix,
+                                   VertexConsumer vertexConsumer, int light,
+                                   Map<String, float[]> rotations, Map<String, float[]> offsets, Map<String, Float> scales,
+                                   Function<Vector3f, Vector3f> positionMapper) {
         Map<String, Vector3f> transformedVertices = new HashMap<>(mesh.vertices.size());
         for (Map.Entry<String, Vector3f> entry : mesh.vertices.entrySet()) {
             transformedVertices.put(entry.getKey(), transformVertex(mesh, entry.getKey(), entry.getValue(), model));
         }
         applyMeshPose(mesh, transformedVertices, rotations, offsets, scales);
-        transformedVertices.replaceAll((ignored, position) -> toRenderPosition(position));
+        transformedVertices.replaceAll((ignored, position) -> positionMapper.apply(position));
 
         for (Face face : mesh.faces) {
             if (face.vertices.size() < 3) {
@@ -1183,6 +1228,14 @@ public final class BodyPoseSkeletalPreviewRenderer {
         return new Vector3f(
                 modelPosition.x / MODEL_UNIT,
                 (modelPosition.y - MODEL_Y_ORIGIN) / MODEL_UNIT,
+                modelPosition.z / MODEL_UNIT
+        );
+    }
+
+    private static Vector3f toPlayerModelPosition(Vector3f modelPosition) {
+        return new Vector3f(
+                -modelPosition.x / MODEL_UNIT,
+                (PLAYER_ATTACHED_MODEL_Y_ORIGIN - modelPosition.y) / MODEL_UNIT,
                 modelPosition.z / MODEL_UNIT
         );
     }

@@ -5,6 +5,7 @@ import com.kuilunfuzhe.monvhua.features.carryentity.CarryAttachedRenderMath;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryAttachmentRenderState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseClientState;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryPoseModelApplier;
+import com.kuilunfuzhe.monvhua.features.hold_hands.HoldHandsSkeletalArmRenderer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.entity.LivingEntityRenderer;
@@ -102,8 +103,18 @@ public abstract class PlayerEntityRendererCarryPoseMixin {
 		}
 
 		monvhua$syncEmfCarrierUpperBodyAnimationState(playerState, playerModel);
+		HoldHandsSkeletalArmRenderer.hideVanillaArm(playerState, playerModel);
 		CarryPoseModelApplier.beginRenderContext(playerModel, playerState);
 		CarryPoseModelApplier.apply(playerModel, playerState);
+	}
+
+	@Inject(method = "render(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+			at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/entity/model/EntityModel;render(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumer;III)V", shift = At.Shift.AFTER), require = 1)
+	private void monvhua$renderHoldHandsSkeletalArm(LivingEntityRenderState state, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
+		if (!(state instanceof PlayerEntityRenderState playerState) || !(getModel() instanceof PlayerEntityModel playerModel)) {
+			return;
+		}
+		HoldHandsSkeletalArmRenderer.renderHeldArm(playerState, matrices, vertexConsumers, light);
 	}
 
 	@Unique
@@ -128,6 +139,7 @@ public abstract class PlayerEntityRendererCarryPoseMixin {
 	@Unique
 	private void monvhua$endCarryPoseRenderContext(LivingEntityRenderState state) {
 		if (state instanceof PlayerEntityRenderState playerState && getModel() instanceof PlayerEntityModel playerModel) {
+			HoldHandsSkeletalArmRenderer.restoreVanillaArm(playerModel);
 			CarryPoseModelApplier.endRenderContext(playerModel, playerState);
 		}
 	}

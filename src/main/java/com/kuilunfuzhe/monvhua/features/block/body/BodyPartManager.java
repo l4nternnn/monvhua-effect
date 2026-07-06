@@ -3,16 +3,20 @@ package com.kuilunfuzhe.monvhua.features.block.body;
 import com.kuilunfuzhe.monvhua.command.GiveBodyPartCommand;
 import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalBodyPart;
 import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalBodyPartBlockEntity;
+import com.kuilunfuzhe.monvhua.features.hold_hands.HoldHandsManager;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlaceTrueSkeletalBodyC2SPacket;
+import com.kuilunfuzhe.monvhua.network.hold_hands.HoldHandsInteractC2SPacket;
 import com.kuilunfuzhe.monvhua.screen.BodyPartScreenHandler;
 import com.kuilunfuzhe.monvhua.util.ImplementedInventory;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.NbtComponent;
@@ -354,6 +358,12 @@ public class BodyPartManager {
 			return ActionResult.SUCCESS;
 		});
 
+		ServerPlayNetworking.registerGlobalReceiver(HoldHandsInteractC2SPacket.ID, (payload, context) -> {
+			ServerPlayerEntity player = context.player();
+			context.server().execute(() -> handleHoldHandsMiddleClick(player, payload.entityId()));
+		});
+
+		ServerTickEvents.END_SERVER_TICK.register(HoldHandsManager::tick);
 	}
 
 	// ========== 核心方法 ==========
@@ -372,6 +382,20 @@ public class BodyPartManager {
 	public static boolean isCombinedBodyItem(ItemStack stack) {
 		Identifier model = stack.get(DataComponentTypes.ITEM_MODEL);
 		return model != null && model.equals(Identifier.of("monvhua", "combined_body"));
+	}
+
+	private static void handleHoldHandsMiddleClick(ServerPlayerEntity player, int entityId) {
+		if (player == null || !player.isSneaking()) {
+			return;
+		}
+		if (!(player.getWorld() instanceof ServerWorld world)) {
+			return;
+		}
+		Entity entity = world.getEntityById(entityId);
+		if (!(entity instanceof ServerPlayerEntity target) || target == player) {
+			return;
+		}
+		HoldHandsManager.togglePair(player, target);
 	}
 
 	public static void placeCombinedBody(World world, BlockPos pos, ItemStack stack, ServerPlayerEntity player) {

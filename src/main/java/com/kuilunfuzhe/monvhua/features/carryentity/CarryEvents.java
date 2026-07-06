@@ -6,6 +6,7 @@ import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.kuilunfuzhe.monvhua.event.tag_pitch;
+import com.kuilunfuzhe.monvhua.features.hold_hands.HoldHandsManager;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryTransformPackets;
 import com.kuilunfuzhe.monvhua.network.openback.CarryEntityPayload;
 import com.kuilunfuzhe.monvhua.network.openback.PlaceCarriedEntityPayload;
@@ -84,12 +85,14 @@ public class CarryEvents {
 		// 断开连接清理
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
 			ServerPlayerEntity player = handler.getPlayer();
+			HoldHandsManager.cleanupForDisconnect(player);
 			CarryManager.cleanupForDisconnect(player);
 		});
 
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			CarryTransformConfig.syncTo(handler.getPlayer());
 			CarryManager.syncAllCarryPosesTo(handler.getPlayer());
+			HoldHandsManager.syncAllTo(handler.getPlayer());
 		});
 
 		// 搬运实体请求
