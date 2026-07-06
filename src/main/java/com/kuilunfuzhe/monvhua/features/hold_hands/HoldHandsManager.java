@@ -17,11 +17,15 @@ public final class HoldHandsManager {
     private static final double MODEL_HIRO_TO_EMA_FORWARD_OFFSET = -0.089465946D;
     private static final double DEFAULT_FOLLOW_SIDE_OFFSET = -MODEL_HIRO_TO_EMA_SIDE_OFFSET;
     private static final double DEFAULT_FOLLOW_FORWARD_OFFSET = -MODEL_HIRO_TO_EMA_FORWARD_OFFSET;
+    private static final double SHOULDER_SIDE_OFFSET = 0.34375D;
+    private static final double ARM_REACH_LENGTH = 0.72D;
+    private static final double HAND_CONNECTION_SLACK = 0.08D;
     private static final double FOLLOW_STOP_DISTANCE = 0.04D;
     private static final double FOLLOW_PULL_DISTANCE = 0.14D;
     private static final double FOLLOW_TELEPORT_DISTANCE = 3.0D;
     private static final double FOLLOW_MAX_SPEED = 0.68D;
     private static final double FOLLOW_SMOOTHING = 0.85D;
+    private static final double MIN_PLAYER_BODY_DISTANCE = 0.82D;
     private static final double STRETCH_DEADZONE = 0.03D;
     private static final double MAX_STRETCH_EXTRA_DISTANCE = 0.38D;
     private static final double SOFT_CONNECTION_STIFFNESS = 0.95D;
@@ -30,8 +34,13 @@ public final class HoldHandsManager {
     private static final double HARD_CONNECTION_SLACK = 0.02D;
     private static final double HARD_CONNECTION_STIFFNESS = 1.65D;
     private static final double HARD_CONNECTION_MAX_CORRECTION_SPEED = 0.9D;
+    private static final double BACKWARD_DOT_THRESHOLD = -0.015D;
+    private static final double BACKWARD_SIDEWAYS_SPEED_SCALE = 0.85D;
     private static final double ARM_MIN_HORIZONTAL_ANGLE = 0.0D;
     private static final double ARM_MAX_HORIZONTAL_ANGLE = 135.0D;
+    private static final double BODY_ROTATE_START_ANGLE = 110.0D;
+    private static final double BODY_ROTATE_MAX_ANGLE = 135.0D;
+    private static final float HOLD_BODY_YAW_STEP = 5.0F;
     private static final double ORBIT_MAX_SPEED = 0.28D;
     private static final double ORBIT_SMOOTHING = 0.55D;
     private static final double ORBIT_MIN_RADIUS = 0.65D;
@@ -67,10 +76,11 @@ public final class HoldHandsManager {
 
     private static void startPair(ServerPlayerEntity initiator, ServerPlayerEntity target) {
         double defaultDistance = Math.max(0.001D, horizontalDistance(initiator.getPos(), target.getPos()));
+        float holdBodyYaw = initiator.getBodyYaw();
         ACTIVE.put(initiator.getUuid(), new HoldHandData(
-                HoldHandsSkeletalPose.handForRole(HoldHandsSkeletalPose.HoldRole.ACTIVE), target.getUuid(), defaultDistance));
+                HoldHandsSkeletalPose.handForRole(HoldHandsSkeletalPose.HoldRole.ACTIVE), target.getUuid(), defaultDistance, holdBodyYaw));
         ACTIVE.put(target.getUuid(), new HoldHandData(
-                HoldHandsSkeletalPose.handForRole(HoldHandsSkeletalPose.HoldRole.PASSIVE), initiator.getUuid(), defaultDistance));
+                HoldHandsSkeletalPose.handForRole(HoldHandsSkeletalPose.HoldRole.PASSIVE), initiator.getUuid(), defaultDistance, holdBodyYaw));
         sync(initiator, true);
         sync(target, true);
     }
@@ -114,8 +124,9 @@ public final class HoldHandsManager {
                 continue;
             }
 
-            syncFollowerBodyYaw(leader, follower);
-            movePairTowardHandConstraint(leader, follower, data.defaultDistance());
+            float holdBodyYaw = updateHoldBodyYaw(leader, follower, data);
+            syncFollowerBodyYaw(leader, follower, holdBodyYaw);
+            movePairTowardHandConstraint(leader, follower, data.defaultDistance(), holdBodyYaw);
         }
     }
 
@@ -169,32 +180,58 @@ public final class HoldHandsManager {
                 && follower.getWorld() == leader.getWorld();
     }
 
-    private static void syncFollowerBodyYaw(ServerPlayerEntity leader, ServerPlayerEntity follower) {
-        float yaw = leader.getYaw();
+    private static float updateHoldBodyYaw(ServerPlayerEntity leader, ServerPlayerEntity follower, HoldHandData followerData) {
+        float currentYaw = followerData.holdBodyYaw();
+        float targetYaw = leader.getYaw();
+        double armAngle = Math.abs(MathHelper.wrapDegrees(targetYaw - currentYaw));
+        if (armAngle <= BODY_ROTATE_START_ANGLE) {
+            return currentYaw;
+        }
+
+        double pressure = MathHelper.clamp((armAngle - BODY_ROTATE_START_ANGLE)
+                / Math.max(0.000001D, BODY_ROTATE_MAX_ANGLE - BODY_ROTATE_START_ANGLE), 0.0D, 1.0D);
+        float nextYaw = stepTowardsAngle(currentYaw, targetYaw, (float) (HOLD_BODY_YAW_STEP * pressure));
+        setPairHoldBodyYaw(leader, follower, nextYaw);
+        return nextYaw;
+    }
+
+    private static void setPairHoldBodyYaw(ServerPlayerEntity leader, ServerPlayerEntity follower, float holdBodyYaw) {
+        HoldHandData leaderData = ACTIVE.get(leader.getUuid());
+        if (leaderData != null) {
+            ACTIVE.put(leader.getUuid(), leaderData.withHoldBodyYaw(holdBodyYaw));
+        }
+        HoldHandData followerData = ACTIVE.get(follower.getUuid());
+        if (followerData != null) {
+            ACTIVE.put(follower.getUuid(), followerData.withHoldBodyYaw(holdBodyYaw));
+        }
+    }
+
+    private static void syncFollowerBodyYaw(ServerPlayerEntity leader, ServerPlayerEntity follower, float holdBodyYaw) {
+        float yaw = followerFacingYaw(leader, follower, holdBodyYaw);
         follower.setYaw(yaw);
         follower.setBodyYaw(yaw);
         follower.setHeadYaw(yaw);
     }
 
     private static void movePairTowardHandConstraint(ServerPlayerEntity leader, ServerPlayerEntity follower,
-                                                     double defaultDistance) {
-        if (enforceFollowerHardConnection(leader, follower, defaultDistance)) {
+                                                     double defaultDistance, float holdBodyYaw) {
+        if (enforceFollowerHardConnection(leader, follower, defaultDistance, holdBodyYaw)) {
             return;
         }
 
         Vec3d leaderToFollower = follower.getPos().subtract(leader.getPos());
-        double leaderArmAngle = horizontalFollowerSlotAngleDegrees(leader, leaderToFollower);
+        double leaderArmAngle = horizontalFollowerSlotAngleDegrees(holdBodyYaw, leaderToFollower);
         if (leaderArmAngle < ARM_MIN_HORIZONTAL_ANGLE || leaderArmAngle > ARM_MAX_HORIZONTAL_ANGLE) {
-            moveFollowerAroundLeader(leader, follower);
+            moveFollowerAroundLeader(leader, follower, holdBodyYaw);
         } else {
-            moveFollowerTowardDefaultSlot(leader, follower);
+            moveFollowerTowardDefaultSlot(leader, follower, holdBodyYaw);
         }
 
-        applyFollowerSoftConnection(leader, follower, defaultDistance);
+        applyFollowerSoftConnection(leader, follower, defaultDistance, holdBodyYaw);
     }
 
     private static boolean enforceFollowerHardConnection(ServerPlayerEntity leader, ServerPlayerEntity follower,
-                                                         double defaultDistance) {
+                                                         double defaultDistance, float holdBodyYaw) {
         double currentDistance = horizontalDistance(leader.getPos(), follower.getPos());
         double maxStretchDistance = maxStretchDistance(defaultDistance);
         if (currentDistance <= maxStretchDistance + HARD_CONNECTION_SLACK) {
@@ -209,11 +246,18 @@ public final class HoldHandsManager {
         }
 
         Vec3d radialUnit = radial.multiply(1.0D / radialLength);
+        if (currentDistance <= MIN_PLAYER_BODY_DISTANCE) {
+            Vec3d followerVelocity = follower.getVelocity();
+            Vec3d outwardCorrection = radialUnit.multiply((MIN_PLAYER_BODY_DISTANCE - currentDistance) * HARD_CONNECTION_STIFFNESS);
+            follower.setVelocity(outwardCorrection.x, followerVelocity.y, outwardCorrection.z);
+            follower.velocityModified = true;
+            return true;
+        }
         double overStretch = currentDistance - maxStretchDistance;
         double correctionSpeed = Math.min(HARD_CONNECTION_MAX_CORRECTION_SPEED,
                 overStretch * HARD_CONNECTION_STIFFNESS);
         Vec3d inwardCorrection = radialUnit.multiply(-correctionSpeed);
-        Vec3d leaderVelocity = leader.getVelocity();
+        Vec3d leaderVelocity = followerDragVelocity(leader, follower, holdBodyYaw);
         Vec3d followerVelocity = follower.getVelocity();
         follower.setVelocity(leaderVelocity.x + inwardCorrection.x,
                 followerVelocity.y,
@@ -223,8 +267,11 @@ public final class HoldHandsManager {
     }
 
     private static void applyFollowerSoftConnection(ServerPlayerEntity leader, ServerPlayerEntity follower,
-                                                    double defaultDistance) {
+                                                    double defaultDistance, float holdBodyYaw) {
         double currentDistance = horizontalDistance(leader.getPos(), follower.getPos());
+        if (currentDistance <= MIN_PLAYER_BODY_DISTANCE) {
+            return;
+        }
         double targetDistance = defaultDistance + STRETCH_DEADZONE;
         if (currentDistance <= targetDistance) {
             return;
@@ -242,7 +289,7 @@ public final class HoldHandsManager {
         double correctionSpeed = Math.min(SOFT_CONNECTION_MAX_CORRECTION_SPEED,
                 overStretch * SOFT_CONNECTION_STIFFNESS);
         Vec3d inwardCorrection = radialUnit.multiply(-correctionSpeed);
-        Vec3d leaderVelocity = leader.getVelocity();
+        Vec3d leaderVelocity = followerDragVelocity(leader, follower, holdBodyYaw);
         Vec3d followerVelocity = follower.getVelocity();
         double leaderVelocityWeight = MathHelper.clamp(overStretch / Math.max(0.000001D, MAX_STRETCH_EXTRA_DISTANCE),
                 0.0D, 1.0D);
@@ -256,8 +303,95 @@ public final class HoldHandsManager {
         follower.velocityModified = true;
     }
 
-    private static void moveFollowerTowardDefaultSlot(ServerPlayerEntity leader, ServerPlayerEntity follower) {
-        Vec3d desired = leader.getPos().add(getDefaultFollowerOffset(leader));
+    private static boolean isLeaderMovingBackward(ServerPlayerEntity leader, float holdBodyYaw) {
+        Vec3d velocity = leader.getVelocity();
+        Vec3d horizontalVelocity = new Vec3d(velocity.x, 0.0D, velocity.z);
+        if (horizontalVelocity.horizontalLengthSquared() <= 0.000001D) {
+            return false;
+        }
+        return horizontalVelocity.dotProduct(forwardVector(holdBodyYaw)) < BACKWARD_DOT_THRESHOLD;
+    }
+
+    private static Vec3d followerDragVelocity(ServerPlayerEntity leader, ServerPlayerEntity follower, float holdBodyYaw) {
+        Vec3d velocity = leader.getVelocity();
+        Vec3d horizontalVelocity = new Vec3d(velocity.x, 0.0D, velocity.z);
+        if (!isLeaderMovingBackward(leader, holdBodyYaw) || horizontalVelocity.horizontalLengthSquared() <= 0.000001D) {
+            return horizontalVelocity;
+        }
+
+        Vec3d followerToLeader = leader.getPos().subtract(follower.getPos());
+        Vec3d radial = new Vec3d(followerToLeader.x, 0.0D, followerToLeader.z);
+        if (radial.horizontalLengthSquared() <= 0.000001D) {
+            return Vec3d.ZERO;
+        }
+
+        Vec3d radialUnit = radial.normalize();
+        double radialSpeed = horizontalVelocity.dotProduct(radialUnit);
+        Vec3d tangentialVelocity = horizontalVelocity.subtract(radialUnit.multiply(radialSpeed));
+        Vec3d sidewaysVelocity = tangentialVelocity.multiply(BACKWARD_SIDEWAYS_SPEED_SCALE);
+        if (sidewaysVelocity.horizontalLengthSquared() <= 0.000001D) {
+            sidewaysVelocity = sideVectorTowardLeader(leader, follower, holdBodyYaw)
+                    .multiply(horizontalVelocity.horizontalLength() * BACKWARD_SIDEWAYS_SPEED_SCALE);
+        }
+        return sidewaysVelocity;
+    }
+
+    private static float followerFacingYaw(ServerPlayerEntity leader, ServerPlayerEntity follower, float holdBodyYaw) {
+        Vec3d toLeader = leader.getPos().subtract(follower.getPos());
+        if (toLeader.horizontalLengthSquared() <= 0.000001D) {
+            return holdBodyYaw;
+        }
+
+        if (isLeaderMovingBackward(leader, holdBodyYaw)) {
+            return sidewaysDragYaw(leader, follower, holdBodyYaw);
+        }
+
+        float faceLeaderYaw = yawFromVector(toLeader);
+        float faceLeaderPressure = MathHelper.clamp((float) (Math.abs(MathHelper.wrapDegrees(leader.getYaw() - holdBodyYaw))
+                / BODY_ROTATE_MAX_ANGLE), 0.0F, 1.0F);
+        return stepTowardsAngle(holdBodyYaw, faceLeaderYaw, 90.0F * faceLeaderPressure);
+    }
+
+    private static float sidewaysDragYaw(ServerPlayerEntity leader, ServerPlayerEntity follower, float holdBodyYaw) {
+        Vec3d toLeader = leader.getPos().subtract(follower.getPos());
+        if (toLeader.horizontalLengthSquared() <= 0.000001D) {
+            return holdBodyYaw;
+        }
+
+        float faceLeaderYaw = yawFromVector(toLeader);
+        float leftSideYaw = MathHelper.wrapDegrees(faceLeaderYaw - 90.0F);
+        float rightSideYaw = MathHelper.wrapDegrees(faceLeaderYaw + 90.0F);
+        float leaderYaw = MathHelper.wrapDegrees(holdBodyYaw);
+        return Math.abs(MathHelper.wrapDegrees(leftSideYaw - leaderYaw))
+                <= Math.abs(MathHelper.wrapDegrees(rightSideYaw - leaderYaw))
+                ? leftSideYaw
+                : rightSideYaw;
+    }
+
+    private static Vec3d sideVectorTowardLeader(ServerPlayerEntity leader, ServerPlayerEntity follower, float holdBodyYaw) {
+        float yaw = sidewaysDragYaw(leader, follower, holdBodyYaw);
+        return forwardVector(yaw);
+    }
+
+    private static Vec3d forwardVector(float yaw) {
+        double yawRad = Math.toRadians(yaw);
+        return new Vec3d(-Math.sin(yawRad), 0.0D, Math.cos(yawRad));
+    }
+
+    private static float yawFromVector(Vec3d vector) {
+        return MathHelper.wrapDegrees((float) Math.toDegrees(Math.atan2(-vector.x, vector.z)));
+    }
+
+    private static float stepTowardsAngle(float current, float target, float maxStep) {
+        float delta = MathHelper.wrapDegrees(target - current);
+        if (Math.abs(delta) <= maxStep) {
+            return MathHelper.wrapDegrees(target);
+        }
+        return MathHelper.wrapDegrees(current + Math.copySign(maxStep, delta));
+    }
+
+    private static void moveFollowerTowardDefaultSlot(ServerPlayerEntity leader, ServerPlayerEntity follower, float holdBodyYaw) {
+        Vec3d desired = leader.getPos().add(getDefaultFollowerOffset(holdBodyYaw));
         Vec3d delta = desired.subtract(follower.getPos());
         double distance = delta.horizontalLength();
 
@@ -282,7 +416,7 @@ public final class HoldHandsManager {
         follower.velocityModified = true;
     }
 
-    private static void moveFollowerAroundLeader(ServerPlayerEntity leader, ServerPlayerEntity follower) {
+    private static void moveFollowerAroundLeader(ServerPlayerEntity leader, ServerPlayerEntity follower, float holdBodyYaw) {
         Vec3d radius = follower.getPos().subtract(leader.getPos());
         Vec3d horizontalRadius = new Vec3d(radius.x, 0.0D, radius.z);
         double radiusLength = horizontalRadius.horizontalLength();
@@ -292,11 +426,11 @@ public final class HoldHandsManager {
         }
 
         if (radiusLength >= FOLLOW_TELEPORT_DISTANCE) {
-            moveFollowerTowardDefaultSlot(leader, follower);
+            moveFollowerTowardDefaultSlot(leader, follower, holdBodyYaw);
             return;
         }
 
-        Vec3d desiredDirection = getDefaultFollowerOffset(leader).normalize();
+        Vec3d desiredDirection = getDefaultFollowerOffset(holdBodyYaw).normalize();
         Vec3d desired = leader.getPos().add(desiredDirection.multiply(radiusLength));
         Vec3d delta = desired.subtract(follower.getPos());
         Vec3d radiusUnit = horizontalRadius.normalize();
@@ -329,24 +463,29 @@ public final class HoldHandsManager {
     }
 
     private static double maxStretchDistance(double defaultDistance) {
-        return Math.max(defaultDistance + MAX_STRETCH_EXTRA_DISTANCE, defaultDistance + STRETCH_DEADZONE);
+        double armLimitedDistance = DEFAULT_FOLLOW_SIDE_OFFSET
+                + ARM_REACH_LENGTH * 2.0D
+                - SHOULDER_SIDE_OFFSET * 2.0D
+                + HAND_CONNECTION_SLACK;
+        double legacyDistance = defaultDistance + MAX_STRETCH_EXTRA_DISTANCE;
+        return Math.max(defaultDistance + STRETCH_DEADZONE, Math.min(legacyDistance, armLimitedDistance));
     }
 
-    private static Vec3d getDefaultFollowerOffset(ServerPlayerEntity leader) {
-        double yawRad = Math.toRadians(leader.getYaw());
+    private static Vec3d getDefaultFollowerOffset(float holdBodyYaw) {
+        double yawRad = Math.toRadians(holdBodyYaw);
         Vec3d right = new Vec3d(Math.cos(yawRad), 0.0D, Math.sin(yawRad));
         Vec3d forward = new Vec3d(-Math.sin(yawRad), 0.0D, Math.cos(yawRad));
         return right.multiply(DEFAULT_FOLLOW_SIDE_OFFSET).add(forward.multiply(DEFAULT_FOLLOW_FORWARD_OFFSET));
     }
 
-    private static double horizontalFollowerSlotAngleDegrees(ServerPlayerEntity leader, Vec3d leaderToFollower) {
+    private static double horizontalFollowerSlotAngleDegrees(float holdBodyYaw, Vec3d leaderToFollower) {
         Vec3d horizontal = new Vec3d(leaderToFollower.x, 0.0D, leaderToFollower.z);
         if (horizontal.horizontalLengthSquared() <= 0.000001D) {
             return 0.0D;
         }
 
-        double defaultYaw = localHorizontalYawDegrees(leader, getDefaultFollowerOffset(leader));
-        double currentYaw = localHorizontalYawDegrees(leader, horizontal);
+        double defaultYaw = localHorizontalYawDegrees(holdBodyYaw, getDefaultFollowerOffset(holdBodyYaw));
+        double currentYaw = localHorizontalYawDegrees(holdBodyYaw, horizontal);
         return MathHelper.wrapDegrees(currentYaw - defaultYaw);
     }
 
@@ -356,14 +495,18 @@ public final class HoldHandsManager {
             return 0.0D;
         }
 
-        Vec3d defaultPartnerOffset = getDefaultFollowerOffset(player).multiply(-1.0D);
+        Vec3d defaultPartnerOffset = getDefaultFollowerOffset(player.getBodyYaw()).multiply(-1.0D);
         double defaultYaw = localHorizontalYawDegrees(player, defaultPartnerOffset);
         double currentYaw = localHorizontalYawDegrees(player, horizontal);
         return MathHelper.wrapDegrees(currentYaw - defaultYaw);
     }
 
     private static double localHorizontalYawDegrees(ServerPlayerEntity player, Vec3d horizontal) {
-        double yawRad = Math.toRadians(player.getYaw());
+        return localHorizontalYawDegrees(player.getBodyYaw(), horizontal);
+    }
+
+    private static double localHorizontalYawDegrees(float bodyYaw, Vec3d horizontal) {
+        double yawRad = Math.toRadians(bodyYaw);
         Vec3d right = new Vec3d(Math.cos(yawRad), 0.0D, Math.sin(yawRad));
         Vec3d forward = new Vec3d(-Math.sin(yawRad), 0.0D, Math.cos(yawRad));
         double localRight = horizontal.dotProduct(right);
@@ -371,6 +514,10 @@ public final class HoldHandsManager {
         return MathHelper.wrapDegrees(Math.toDegrees(Math.atan2(localRight, localForward)));
     }
 
-    private record HoldHandData(HoldHandsSkeletalPose.HandSide handSide, UUID partnerUuid, double defaultDistance) {
+    private record HoldHandData(HoldHandsSkeletalPose.HandSide handSide, UUID partnerUuid, double defaultDistance,
+                                float holdBodyYaw) {
+        private HoldHandData withHoldBodyYaw(float holdBodyYaw) {
+            return new HoldHandData(handSide, partnerUuid, defaultDistance, holdBodyYaw);
+        }
     }
 }

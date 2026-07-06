@@ -37,6 +37,17 @@ public final class HoldHandsSkeletalArmRenderer {
     private static final float SHOULDER_SIDE_OFFSET = 0.34F;
     private static final float PALM_SIDE_OFFSET = 0.46F;
     private static final float TARGET_LIFT_DISTANCE = 0.34F;
+    private static final float UPPER_ARM_LENGTH = 0.375F;
+    private static final float LOWER_ARM_LENGTH = 0.44F;
+    private static final float APPROX_ARM_LENGTH = UPPER_ARM_LENGTH + LOWER_ARM_LENGTH;
+    private static final float LOWER_ARM_PITCH_SCALE = 0.18F;
+    private static final float LOWER_ARM_YAW_SCALE = 0.12F;
+    private static final float MIN_LOWER_BEND = 0.0F;
+    private static final float MAX_LOWER_BEND = 24.0F;
+    private static final float SOURCE_MODEL_Y_ORIGIN = 37.9207F;
+    private static final float MODEL_UNIT = 16.0F;
+    private static final Vec3d LEFT_PALM_SOCKET = sourceModelToPlayerOffset(-5.5F, 12.0F, -0.5F);
+    private static final Vec3d RIGHT_PALM_SOCKET = sourceModelToPlayerOffset(5.5F, 12.0F, -0.5F);
     private static final double DEFAULT_FOLLOW_SIDE_OFFSET = 1.008708D;
     private static final double DEFAULT_FOLLOW_FORWARD_OFFSET = 0.089465946D;
 
@@ -210,30 +221,30 @@ public final class HoldHandsSkeletalArmRenderer {
             return rotations;
         }
 
-        float stretchRatio = stretchRatio(delta, state.id);
-        Vec3d targetVector = sharedHandTargetVector(self, partner, state.bodyYaw, side, stretchRatio);
-        double targetHorizontalLength = Math.sqrt(targetVector.x * targetVector.x + targetVector.z * targetVector.z);
-        if (targetHorizontalLength <= 0.000001D) {
-            return rotations;
-        }
-
-        float localYaw = MathHelper.clamp(relativeArmYawDegrees(state.bodyYaw, targetVector, side),
-                ARM_MIN_HORIZONTAL_ANGLE, ARM_MAX_HORIZONTAL_ANGLE);
-        float localPitch = MathHelper.clamp((float) Math.toDegrees(Math.atan2(targetVector.y, targetHorizontalLength)),
-                -90.0F, 90.0F);
-        applyEndpointDrivenArmPose(rotations, side, localYaw, localPitch, stretchRatio);
-        return rotations;
+        double defaultDistance = HoldHandsClientState.getDefaultDistance(state.id);
+        return HoldHandsArmIkSolver.solve(self, partner, state.bodyYaw, side, defaultDistance);
     }
 
     private static Vec3d sharedHandTargetVector(Entity self, Entity partner, float bodyYaw,
                                                 HoldHandsSkeletalPose.HandSide side, float stretchRatio) {
-        HoldHandsSkeletalPose.HandSide partnerSide = HoldHandsClientState.getHandSide(partner.getId());
-        Vec3d selfShoulder = armAnchor(self.getPos(), bodyYaw, side, SHOULDER_HEIGHT, SHOULDER_SIDE_OFFSET);
-        Vec3d selfPalm = armAnchor(self.getPos(), bodyYaw, side, HAND_TARGET_HEIGHT, PALM_SIDE_OFFSET);
-        Vec3d partnerPalm = armAnchor(partner.getPos(), partner.getYaw(), partnerSide, HAND_TARGET_HEIGHT, PALM_SIDE_OFFSET);
-        Vec3d sharedTarget = selfPalm.add(partnerPalm).multiply(0.5D)
+        Entity leader = side == HoldHandsSkeletalPose.ACTIVE_ROLE_HAND ? self : partner;
+        Entity follower = side == HoldHandsSkeletalPose.ACTIVE_ROLE_HAND ? partner : self;
+        HoldHandsSkeletalPose.HandSide selfSide = side;
+        HoldHandsSkeletalPose.HandSide leaderSide = HoldHandsSkeletalPose.ACTIVE_ROLE_HAND;
+        HoldHandsSkeletalPose.HandSide followerSide = HoldHandsSkeletalPose.PASSIVE_ROLE_HAND;
+
+        Vec3d selfShoulder = armAnchor(self.getPos(), bodyYaw, selfSide, SHOULDER_HEIGHT, SHOULDER_SIDE_OFFSET);
+        Vec3d leaderPalm = palmSocketAnchor(leader.getPos(), leader.getYaw(), leaderSide);
+        Vec3d followerPalm = palmSocketAnchor(follower.getPos(), follower.getYaw(), followerSide);
+        Vec3d hiroDefaultPalm = palmSocketAnchor(leader.getPos(), leader.getYaw(), leaderSide);
+        Vec3d emaDefaultPalm = palmSocketAnchor(leader.getPos().add(defaultFollowerOffset(leader.getYaw())),
+                leader.getYaw(), followerSide);
+
+        Vec3d defaultShared = hiroDefaultPalm.add(emaDefaultPalm).multiply(0.5D);
+        Vec3d currentShared = leaderPalm.add(followerPalm).multiply(0.5D)
                 .add(0.0D, stretchRatio * TARGET_LIFT_DISTANCE, 0.0D);
-        return sharedTarget.subtract(selfShoulder);
+        Vec3d sharedTarget = defaultShared.lerp(currentShared, MathHelper.clamp(stretchRatio, 0.0F, 1.0F));
+        return clampArmVector(sharedTarget.subtract(selfShoulder));
     }
 
     private static Vec3d armAnchor(Vec3d feetPos, float bodyYaw, HoldHandsSkeletalPose.HandSide side,
@@ -242,6 +253,47 @@ public final class HoldHandsSkeletalArmRenderer {
         Vec3d right = new Vec3d(Math.cos(yawRad), 0.0D, Math.sin(yawRad));
         double direction = side == HoldHandsSkeletalPose.HandSide.LEFT ? -1.0D : 1.0D;
         return feetPos.add(right.multiply(direction * sideOffset)).add(0.0D, height, 0.0D);
+    }
+
+    private static Vec3d palmSocketAnchor(Vec3d feetPos, float bodyYaw, HoldHandsSkeletalPose.HandSide side) {
+        Vec3d local = side == HoldHandsSkeletalPose.HandSide.LEFT ? LEFT_PALM_SOCKET : RIGHT_PALM_SOCKET;
+        return feetPos.add(rotateBodyOffset(local, bodyYaw));
+    }
+
+    private static Vec3d rotateBodyOffset(Vec3d localOffset, float bodyYaw) {
+        double yawRad = Math.toRadians(bodyYaw);
+        double rightX = Math.cos(yawRad);
+        double rightZ = Math.sin(yawRad);
+        double forwardX = -Math.sin(yawRad);
+        double forwardZ = Math.cos(yawRad);
+        return new Vec3d(
+                localOffset.x * rightX + localOffset.z * forwardX,
+                localOffset.y,
+                localOffset.x * rightZ + localOffset.z * forwardZ
+        );
+    }
+
+    private static Vec3d sourceModelToPlayerOffset(float modelX, float modelY, float modelZ) {
+        return new Vec3d(
+                -modelX / MODEL_UNIT,
+                (SOURCE_MODEL_Y_ORIGIN - modelY) / MODEL_UNIT,
+                modelZ / MODEL_UNIT
+        );
+    }
+
+    private static Vec3d defaultFollowerOffset(float leaderYaw) {
+        double yawRad = Math.toRadians(leaderYaw);
+        Vec3d right = new Vec3d(Math.cos(yawRad), 0.0D, Math.sin(yawRad));
+        Vec3d forward = new Vec3d(-Math.sin(yawRad), 0.0D, Math.cos(yawRad));
+        return right.multiply(DEFAULT_FOLLOW_SIDE_OFFSET).add(forward.multiply(DEFAULT_FOLLOW_FORWARD_OFFSET));
+    }
+
+    private static Vec3d clampArmVector(Vec3d vector) {
+        double length = vector.length();
+        if (length <= APPROX_ARM_LENGTH || length <= 0.000001D) {
+            return vector;
+        }
+        return vector.multiply(APPROX_ARM_LENGTH / length);
     }
 
     private static float relativeArmYawDegrees(float bodyYaw, Vec3d delta, HoldHandsSkeletalPose.HandSide side) {
@@ -280,11 +332,15 @@ public final class HoldHandsSkeletalArmRenderer {
     private static void applyEndpointDrivenArmPose(Map<String, float[]> rotations,
                                                    HoldHandsSkeletalPose.HandSide side,
                                                    float localYaw, float localPitch,
-                                                   float stretchRatio) {
+                                                   float stretchRatio, double targetLength) {
         String upperBone = side == HoldHandsSkeletalPose.HandSide.LEFT
                 ? HoldHandsSkeletalPose.LEFT_ARM_UPPER_BONE
                 : HoldHandsSkeletalPose.RIGHT_ARM_UPPER_BONE;
+        String lowerBone = side == HoldHandsSkeletalPose.HandSide.LEFT
+                ? HoldHandsSkeletalPose.LEFT_ARM_LOWER_BONE
+                : HoldHandsSkeletalPose.RIGHT_ARM_LOWER_BONE;
         float[] upperRotation = rotations.get(upperBone);
+        float[] lowerRotation = rotations.get(lowerBone);
         if (upperRotation == null || upperRotation.length < 3) {
             return;
         }
@@ -293,8 +349,27 @@ public final class HoldHandsSkeletalArmRenderer {
         float handDirection = side == HoldHandsSkeletalPose.HandSide.LEFT ? 1.0F : -1.0F;
         float upliftDirection = side == HoldHandsSkeletalPose.HandSide.LEFT ? 1.0F : -1.0F;
         float stretchUplift = stretchRatio * STRETCH_UP_PITCH * upliftDirection;
+        float bend = lowerArmBendDegrees(targetLength);
+        float upperAssist = bend * 0.32F * upliftDirection;
 
-        upperRotation[0] += localPitch * ARM_PITCH_SCALE * upliftDirection * influence + stretchUplift;
+        upperRotation[0] += localPitch * ARM_PITCH_SCALE * upliftDirection * influence + stretchUplift - upperAssist;
         upperRotation[1] += localYaw * ARM_YAW_SCALE * handDirection * influence;
+        if (lowerRotation != null && lowerRotation.length >= 3) {
+            lowerRotation[0] += bend * LOWER_ARM_PITCH_SCALE * upliftDirection;
+            lowerRotation[1] += localYaw * LOWER_ARM_YAW_SCALE * handDirection * influence;
+        }
+    }
+
+    private static float lowerArmBendDegrees(double targetLength) {
+        double clampedLength = MathHelper.clamp(targetLength,
+                Math.abs(UPPER_ARM_LENGTH - LOWER_ARM_LENGTH) + 0.001D,
+                UPPER_ARM_LENGTH + LOWER_ARM_LENGTH - 0.001D);
+        double numerator = UPPER_ARM_LENGTH * UPPER_ARM_LENGTH
+                + LOWER_ARM_LENGTH * LOWER_ARM_LENGTH
+                - clampedLength * clampedLength;
+        double denominator = 2.0D * UPPER_ARM_LENGTH * LOWER_ARM_LENGTH;
+        double elbowCos = MathHelper.clamp(numerator / denominator, -1.0D, 1.0D);
+        double bend = Math.toDegrees(Math.acos(elbowCos));
+        return MathHelper.clamp((float) bend, MIN_LOWER_BEND, MAX_LOWER_BEND);
     }
 }
