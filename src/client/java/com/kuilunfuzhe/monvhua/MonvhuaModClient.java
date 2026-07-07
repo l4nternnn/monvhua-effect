@@ -22,6 +22,8 @@ import com.kuilunfuzhe.monvhua.features.imitate.ImitateHudOverlay;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorHudOverlay;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
 import com.kuilunfuzhe.monvhua.features.paint.PlayerPaintCommand;
+import com.kuilunfuzhe.monvhua.features.playerlist.PlayerListRestrictClient;
+import com.kuilunfuzhe.monvhua.network.playerlist.PlayerListRestrictS2CPacket;
 import com.kuilunfuzhe.monvhua.features.paint.drawingboard.DrawingBoardClient;
 import com.kuilunfuzhe.monvhua.features.textarea.TextAreaHudClient;
 import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
@@ -142,6 +144,11 @@ public class MonvhuaModClient implements ClientModInitializer {
             context.client().execute(() -> {
                 SilenceClientManager.setSilenced(packet.targetUUID(), packet.durationSeconds());
             });
+        });
+
+        // ===== 玩家列表限制同步 =====
+        ClientPlayNetworking.registerGlobalReceiver(PlayerListRestrictS2CPacket.ID, (packet, context) -> {
+            context.client().execute(() -> PlayerListRestrictClient.setRestricted(packet.restricted()));
         });
 
         // ===== 6. 攻击锚点装甲架 =====

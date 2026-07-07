@@ -52,7 +52,8 @@
 		"MouseMixin",
 		"PlayerEntityRenderStateAccessor",
 		"PlayerEntityRendererInvoker",
-		"PlayerEntityRendererMixin"
+		"PlayerEntityRendererMixin",
+		"PlayerListHudMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

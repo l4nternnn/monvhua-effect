@@ -542,6 +542,7 @@ public class MonvhuaMod implements ModInitializer {
         CommandRegistrationCallback.EVENT.register(GravityCommand::register);
         CommandRegistrationCallback.EVENT.register(PaintGraffitiCommand::register);
         CommandRegistrationCallback.EVENT.register(HotBackpackSaveFeature::registerCommands);
+        CommandRegistrationCallback.EVENT.register(PlayerListRestrictCommand::register);
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("clairvoyance-肢体|合并")
@@ -861,6 +862,7 @@ public class MonvhuaMod implements ModInitializer {
             TimelineScheduler.cleanupPlayer(uuid);
             ThroughItem.exitSecrecy(player);
             PaintBucketBlock.dropCarried(player);
+            PlayerListRestrictCommand.onPlayerDisconnect(player);
         });
 
         // ===== 14. 死亡清理 =====

@@ -43,6 +43,7 @@ import com.kuilunfuzhe.monvhua.network.through.ThroughConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughConfigUpdateC2SPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.fantasy.FantasyS2CPacket;
+import com.kuilunfuzhe.monvhua.network.playerlist.PlayerListRestrictS2CPacket;
 
 public class ModNetworking {
 
@@ -85,6 +86,7 @@ public class ModNetworking {
         SilenceTargetsS2CPacket.register();
         SecretPackets.registerS2C();
         FantasyS2CPacket.register();
+        PlayerListRestrictS2CPacket.register();
 
     }
 
