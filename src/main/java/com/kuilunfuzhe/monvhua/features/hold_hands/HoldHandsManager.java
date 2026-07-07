@@ -26,6 +26,9 @@ public final class HoldHandsManager {
     private static final double FOLLOW_MAX_SPEED = 0.68D;
     private static final double FOLLOW_SMOOTHING = 0.85D;
     private static final double MIN_PLAYER_BODY_DISTANCE = 0.82D;
+    private static final double SIDE_LOCK_MIN_DISTANCE = 0.35D;
+    private static final double SIDE_LOCK_STIFFNESS = 0.62D;
+    private static final double SIDE_LOCK_MAX_SPEED = 0.42D;
     private static final double STRETCH_DEADZONE = 0.03D;
     private static final double MAX_STRETCH_EXTRA_DISTANCE = 0.38D;
     private static final double SOFT_CONNECTION_STIFFNESS = 0.95D;
@@ -215,9 +218,8 @@ public final class HoldHandsManager {
 
     private static void movePairTowardHandConstraint(ServerPlayerEntity leader, ServerPlayerEntity follower,
                                                      double defaultDistance, float holdBodyYaw) {
-        if (enforceFollowerHardConnection(leader, follower, defaultDistance, holdBodyYaw)) {
-            return;
-        }
+        applyFollowerSideLock(leader, follower, holdBodyYaw);
+        boolean hardConnectionApplied = enforceFollowerHardConnection(leader, follower, defaultDistance, holdBodyYaw);
 
         Vec3d leaderToFollower = follower.getPos().subtract(leader.getPos());
         double leaderArmAngle = horizontalFollowerSlotAngleDegrees(holdBodyYaw, leaderToFollower);
@@ -227,7 +229,32 @@ public final class HoldHandsManager {
             moveFollowerTowardDefaultSlot(leader, follower, holdBodyYaw);
         }
 
-        applyFollowerSoftConnection(leader, follower, defaultDistance, holdBodyYaw);
+        if (!hardConnectionApplied) {
+            applyFollowerSoftConnection(leader, follower, defaultDistance, holdBodyYaw);
+        }
+    }
+
+    private static void applyFollowerSideLock(ServerPlayerEntity leader, ServerPlayerEntity follower, float holdBodyYaw) {
+        Vec3d desiredOffset = getDefaultFollowerOffset(holdBodyYaw);
+        Vec3d desiredSide = new Vec3d(desiredOffset.x, 0.0D, desiredOffset.z);
+        if (desiredSide.horizontalLengthSquared() <= 0.000001D) {
+            return;
+        }
+
+        Vec3d sideUnit = desiredSide.normalize();
+        Vec3d leaderToFollower = follower.getPos().subtract(leader.getPos());
+        Vec3d horizontal = new Vec3d(leaderToFollower.x, 0.0D, leaderToFollower.z);
+        double sideDistance = horizontal.dotProduct(sideUnit);
+        double correctionDistance = SIDE_LOCK_MIN_DISTANCE - sideDistance;
+        if (correctionDistance <= 0.0D) {
+            return;
+        }
+
+        Vec3d correction = sideUnit.multiply(Math.min(SIDE_LOCK_MAX_SPEED,
+                correctionDistance * SIDE_LOCK_STIFFNESS));
+        Vec3d currentVelocity = follower.getVelocity();
+        follower.setVelocity(currentVelocity.x + correction.x, currentVelocity.y, currentVelocity.z + correction.z);
+        follower.velocityModified = true;
     }
 
     private static boolean enforceFollowerHardConnection(ServerPlayerEntity leader, ServerPlayerEntity follower,
