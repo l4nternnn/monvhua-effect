@@ -7,18 +7,53 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import net.minecraft.network.message.MessageType;
 import net.minecraft.network.message.SentMessage;
 import net.minecraft.network.message.SignedMessage;
+import net.minecraft.network.packet.s2c.play.GameMessageS2CPacket;
 import net.minecraft.server.PlayerManager;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
-import net.minecraft.util.math.Vec3d;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.List;
 import java.util.function.Predicate;
 
-@Mixin(value = PlayerManager.class, priority = 100)
+@Mixin(value = PlayerManager.class, priority = 2000)
 public abstract class PlayerManagerMixin {
+    @Shadow
+    public abstract List<ServerPlayerEntity> getPlayerList();
+
+    @Inject(
+            method = "broadcast(Lnet/minecraft/network/message/SignedMessage;Lnet/minecraft/server/network/ServerPlayerEntity;Lnet/minecraft/network/message/MessageType$Parameters;)V",
+            at = @At("HEAD")
+    )
+    private void monvhua$sendAreaImitateBeforeChatLimit(SignedMessage message, ServerPlayerEntity sender, MessageType.Parameters parameters, CallbackInfo ci) {
+        if (sender == null || !ImitateManager.hasAreaImitate(sender)) {
+            return;
+        }
+
+        String roleName = ImitateManager.getAreaImitateName(sender);
+        if (roleName == null) {
+            return;
+        }
+
+        Text content = message.getContent();
+        String signedContent = message.getSignedContent();
+        for (ServerPlayerEntity recipient : getPlayerList()) {
+            if (recipient.equals(sender) || !ImitateManager.isInAreaImitateArea(recipient, sender)) {
+                continue;
+            }
+
+            boolean silenced = SilenceServerManager.isPlayerSilenced(recipient.getUuid());
+            Text visibleContent = silenced ? monvhua$createGarbledText(content.getString()) : content;
+            Text areaMessage = monvhua$createChatContent(ImitateManager.getColoredRoleName(roleName), visibleContent);
+            recipient.networkHandler.sendPacket(new GameMessageS2CPacket(areaMessage, false));
+            ImitateManager.markAreaImitateSupplementalChat(recipient, signedContent);
+        }
+    }
 
     @WrapOperation(
             method = "broadcast(Lnet/minecraft/network/message/SignedMessage;Ljava/util/function/Predicate;Lnet/minecraft/server/network/ServerPlayerEntity;Lnet/minecraft/network/message/MessageType$Parameters;)V",
@@ -77,14 +112,7 @@ public abstract class PlayerManagerMixin {
             return false;
         }
 
-        if (recipient.equals(sender)) {
-            return true;
-        }
-
-        ImitateManager.AreaInfo areaInfo = ImitateManager.getAreaInfo(sender);
-        Vec3d center = new Vec3d(areaInfo.centerX, areaInfo.centerY, areaInfo.centerZ);
-        double radius = areaInfo.radius;
-        return recipient.getPos().distanceTo(center) <= radius;
+        return ImitateManager.isInAreaImitateArea(recipient, sender);
     }
 
     private Text monvhua$createImitateContent(Text content) {
@@ -95,15 +123,27 @@ public abstract class PlayerManagerMixin {
     }
 
     private Text monvhua$createSilenceContent(Text content, boolean imitateStyled) {
-        Text garbledText = Text.literal(monvhua$garbleText(content.getString()))
-                .formatted(Formatting.OBFUSCATED)
-                .formatted(Formatting.RED);
+        Text garbledText = monvhua$createGarbledText(content.getString());
 
         if (imitateStyled) {
             return monvhua$createImitateContent(garbledText);
         }
 
         return garbledText;
+    }
+
+    private Text monvhua$createChatContent(Text visibleName, Text visibleContent) {
+        return Text.empty()
+                .append(visibleName)
+                .append(Text.literal("\n"))
+                .append(Text.literal(" └─ ").formatted(Formatting.GRAY))
+                .append(visibleContent);
+    }
+
+    private Text monvhua$createGarbledText(String text) {
+        return Text.literal(monvhua$garbleText(text))
+                .formatted(Formatting.OBFUSCATED)
+                .formatted(Formatting.RED);
     }
 
     private String monvhua$garbleText(String text) {

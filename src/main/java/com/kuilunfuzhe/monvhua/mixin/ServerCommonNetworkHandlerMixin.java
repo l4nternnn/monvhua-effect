@@ -9,15 +9,28 @@ import net.minecraft.server.network.ServerPlayNetworkHandler;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
-import net.minecraft.util.math.Vec3d;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.List;
 
 @Mixin(value = ServerCommonNetworkHandler.class, priority = 100)
 public abstract class ServerCommonNetworkHandlerMixin {
+    @Inject(method = "sendPacket", at = @At("HEAD"), cancellable = true)
+    private void monvhua$suppressAreaImitateDuplicate(Packet<?> packet, CallbackInfo ci) {
+        if (!(packet instanceof GameMessageS2CPacket gameMessage) || gameMessage.overlay()) {
+            return;
+        }
+        if (!((Object) this instanceof ServerPlayNetworkHandler networkHandler)) {
+            return;
+        }
+        if (ImitateManager.consumeAreaImitateSupplementalDuplicate(networkHandler.player, gameMessage.content())) {
+            ci.cancel();
+        }
+    }
 
     @ModifyVariable(method = "sendPacket", at = @At("HEAD"), argsOnly = true)
     private Packet<?> monvhua$rewriteChatLimitGameMessage(Packet<?> packet) {
@@ -106,13 +119,7 @@ public abstract class ServerCommonNetworkHandlerMixin {
         if (!ImitateManager.hasAreaImitate(sender)) {
             return false;
         }
-        if (recipient.equals(sender)) {
-            return true;
-        }
-
-        ImitateManager.AreaInfo areaInfo = ImitateManager.getAreaInfo(sender);
-        Vec3d center = new Vec3d(areaInfo.centerX, areaInfo.centerY, areaInfo.centerZ);
-        return recipient.getPos().distanceTo(center) <= areaInfo.radius;
+        return ImitateManager.isInAreaImitateArea(recipient, sender);
     }
 
     private Text monvhua$createChatContent(Text visibleName, Text visibleContent) {

@@ -117,9 +117,9 @@ public final class CarryPoseModelApplier {
 		} else if (CarryPoseClientState.isCarried(state.id)) {
 			applyCarriedPose(model, state.id);
 		}
-		if (GravityExtractPoseClientState.isActive(state.id)) {
-			applyGravityExtractPose(model);
-		}
+		//if (GravityExtractPoseClientState.isActive(state.id)) {
+		//	applyGravityExtractPose(model);
+		//}
 	}
 
 	public static void applyGravityExtractPose(PlayerEntityModel model) {

@@ -5,9 +5,11 @@ import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.item.config.ImitateConfig;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.world.World;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.Map;
@@ -27,6 +29,8 @@ public class ImitateManager {
     private static final Map<UUID, Long> silenceCooldownEnd = new ConcurrentHashMap<>();
     private static final Map<UUID, Boolean> notifiedImitateEnd = new ConcurrentHashMap<>();
     private static final Map<UUID, AreaInfo> areaImitateMap = new ConcurrentHashMap<>();
+    private static final Map<UUID, Long> areaImitateEndTime = new ConcurrentHashMap<>();
+    private static final Map<UUID, PendingAreaChat> areaImitateSupplementalChats = new ConcurrentHashMap<>();
 
     public static class AreaInfo {
         public final String roleName;
@@ -34,14 +38,19 @@ public class ImitateManager {
         public final double centerY;
         public final double centerZ;
         public final double radius;
+        public final RegistryKey<World> worldKey;
 
-        public AreaInfo(String roleName, double centerX, double centerY, double centerZ, double radius) {
+        public AreaInfo(String roleName, double centerX, double centerY, double centerZ, double radius, RegistryKey<World> worldKey) {
             this.roleName = roleName;
             this.centerX = centerX;
             this.centerY = centerY;
             this.centerZ = centerZ;
             this.radius = radius;
+            this.worldKey = worldKey;
         }
+    }
+
+    private record PendingAreaChat(String message, long expiresAt) {
     }
 
     public static final String[] ROLES = {
@@ -99,7 +108,6 @@ public class ImitateManager {
         }
 
         imitateMap.put(player.getUuid(), roleName);
-        areaImitateMap.remove(player.getUuid());
 
         int stage = getPlayerStage(player);
         ImitateConfig config = ImitateConfig.getInstance();
@@ -130,7 +138,7 @@ public class ImitateManager {
             return;
         }
 
-        areaImitateMap.put(player.getUuid(), new AreaInfo(roleName, centerX, centerY, centerZ, radius));
+        areaImitateMap.put(player.getUuid(), new AreaInfo(roleName, centerX, centerY, centerZ, radius, player.getWorld().getRegistryKey()));
 
         int stage = getPlayerStage(player);
         ImitateConfig config = ImitateConfig.getInstance();
@@ -142,7 +150,9 @@ public class ImitateManager {
 
         if (duration > 0) {
             long endTime = System.currentTimeMillis() + duration * 1000L;
-            imitateEndTime.put(player.getUuid(), endTime);
+            areaImitateEndTime.put(player.getUuid(), endTime);
+        } else {
+            areaImitateEndTime.remove(player.getUuid());
         }
 
         if (cooldown > 0) {
@@ -159,6 +169,7 @@ public class ImitateManager {
         imitateMap.remove(player.getUuid());
         imitateEndTime.remove(player.getUuid());
         areaImitateMap.remove(player.getUuid());
+        areaImitateEndTime.remove(player.getUuid());
 
         int stage = getPlayerStage(player);
         ImitateConfig config = ImitateConfig.getInstance();
@@ -183,6 +194,51 @@ public class ImitateManager {
     public static String getAreaImitateName(ServerPlayerEntity player) {
         AreaInfo areaInfo = areaImitateMap.get(player.getUuid());
         return areaInfo == null ? null : areaInfo.roleName;
+    }
+
+    public static boolean isInAreaImitateArea(ServerPlayerEntity recipient, ServerPlayerEntity sender) {
+        AreaInfo areaInfo = areaImitateMap.get(sender.getUuid());
+        if (areaInfo == null) {
+            return false;
+        }
+        if (areaInfo.worldKey != null && !recipient.getWorld().getRegistryKey().equals(areaInfo.worldKey)) {
+            return false;
+        }
+
+        double dx = recipient.getX() - areaInfo.centerX;
+        double dy = recipient.getY() - areaInfo.centerY;
+        double dz = recipient.getZ() - areaInfo.centerZ;
+        return dx * dx + dy * dy + dz * dz <= areaInfo.radius * areaInfo.radius;
+    }
+
+    public static void markAreaImitateSupplementalChat(ServerPlayerEntity recipient, String message) {
+        if (recipient == null || message == null || message.isEmpty()) {
+            return;
+        }
+        areaImitateSupplementalChats.put(recipient.getUuid(), new PendingAreaChat(message, System.currentTimeMillis() + 2000L));
+    }
+
+    public static boolean consumeAreaImitateSupplementalDuplicate(ServerPlayerEntity recipient, Text content) {
+        if (recipient == null || content == null) {
+            return false;
+        }
+
+        PendingAreaChat pending = areaImitateSupplementalChats.get(recipient.getUuid());
+        if (pending == null) {
+            return false;
+        }
+
+        long now = System.currentTimeMillis();
+        if (now > pending.expiresAt()) {
+            areaImitateSupplementalChats.remove(recipient.getUuid(), pending);
+            return false;
+        }
+
+        if (content.getString().contains(pending.message())) {
+            areaImitateSupplementalChats.remove(recipient.getUuid(), pending);
+            return true;
+        }
+        return false;
     }
 
     public static String getImitateName(ServerPlayerEntity player) {
@@ -259,7 +315,19 @@ public class ImitateManager {
                 }
                 imitateMap.remove(uuid);
                 imitateEndTime.remove(uuid);
+            }
+        });
+
+        areaImitateEndTime.forEach((uuid, endTime) -> {
+            if (now >= endTime) {
                 areaImitateMap.remove(uuid);
+                areaImitateEndTime.remove(uuid);
+            }
+        });
+
+        areaImitateSupplementalChats.forEach((uuid, pending) -> {
+            if (now > pending.expiresAt()) {
+                areaImitateSupplementalChats.remove(uuid, pending);
             }
         });
     }
