@@ -422,8 +422,11 @@ public final class PaintOverlayClient {
     }
 
     public static void storeSelectedColorInPresetSlot(int slot) {
+        storeColorInPresetSlot(slot, selectedColor());
+    }
+
+    public static void storeColorInPresetSlot(int slot, int color) {
         slot = MathHelper.clamp(slot, 0, PaintBrushItem.COLOR_SLOTS - 1);
-        int color = selectedColor();
         ItemStack brush = paintBrushStack(MinecraftClient.getInstance());
         if (!brush.isEmpty()) {
             PaintBrushItem.storePresetColor(brush, slot, color);
@@ -2249,7 +2252,8 @@ public final class PaintOverlayClient {
         NONE(0),
         BRUSH(1),
         ERASER(2),
-        PAPER(3);
+        PAPER(3),
+        PRESET(0);
 
         private final int networkId;
 

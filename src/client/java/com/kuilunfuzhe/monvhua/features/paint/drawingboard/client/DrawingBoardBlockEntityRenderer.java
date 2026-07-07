@@ -72,7 +72,7 @@ public class DrawingBoardBlockEntityRenderer implements BlockEntityRenderer<Draw
             TEXTURES.put(key, entry);
         }
         if (entry.version != entity.getVersion()) {
-            entry.upload(entity.copyPixels());
+            entry.upload(entity.getCanvasWidth(), entity.getCanvasHeight(), entity.copyPixels());
             entry.version = entity.getVersion();
         }
         return entry;
@@ -99,18 +99,29 @@ public class DrawingBoardBlockEntityRenderer implements BlockEntityRenderer<Draw
     private static final class TextureEntry {
         private final Identifier id;
         private NativeImageBackedTexture texture;
+        private int width = -1;
+        private int height = -1;
         private int version = -1;
 
         private TextureEntry(Identifier id) {
             this.id = id;
         }
 
-        private void upload(int[] pixels) {
-            NativeImage image = new NativeImage(DrawingBoardBlockEntity.WIDTH, DrawingBoardBlockEntity.HEIGHT, false);
-            for (int y = 0; y < DrawingBoardBlockEntity.HEIGHT; y++) {
-                for (int x = 0; x < DrawingBoardBlockEntity.WIDTH; x++) {
-                    image.setColorArgb(x, y, pixels[y * DrawingBoardBlockEntity.WIDTH + x]);
+        private void upload(int width, int height, int[] pixels) {
+            int safeWidth = Math.max(1, width);
+            int safeHeight = Math.max(1, height);
+            NativeImage image = new NativeImage(safeWidth, safeHeight, false);
+            for (int y = 0; y < safeHeight; y++) {
+                for (int x = 0; x < safeWidth; x++) {
+                    int index = y * safeWidth + x;
+                    image.setColorArgb(x, y, index >= 0 && index < pixels.length ? pixels[index] : 0xFFFFFFFF);
                 }
+            }
+            if (texture != null && (this.width != safeWidth || this.height != safeHeight)) {
+                MinecraftClient.getInstance().getTextureManager().destroyTexture(id);
+                texture = null;
+                this.width = -1;
+                this.height = -1;
             }
             if (texture == null) {
                 texture = new NativeImageBackedTexture(() -> "monvhua drawing board " + id, image);
@@ -119,6 +130,8 @@ public class DrawingBoardBlockEntityRenderer implements BlockEntityRenderer<Draw
                 texture.setImage(image);
                 texture.upload();
             }
+            this.width = safeWidth;
+            this.height = safeHeight;
         }
     }
 }

@@ -21,9 +21,19 @@ public final class DrawingBoardClient {
                 context.client().execute(() -> {
                     if (context.client().world != null
                             && context.client().world.getBlockEntity(packet.pos()) instanceof DrawingBoardBlockEntity board) {
-                        board.setPixels(packet.pixels());
+                        board.setPixels(packet.width(), packet.height(), packet.pixels());
                     }
-                    DrawingBoardScreen.receiveSync(packet.pos(), packet.pixels());
+                    DrawingBoardScreen.receiveSync(packet.pos(), packet.width(), packet.height(), packet.pixels());
+                }));
+        ClientPlayNetworking.registerGlobalReceiver(DrawingBoardPackets.PatchS2C.ID, (packet, context) ->
+                context.client().execute(() -> {
+                    if (context.client().world != null
+                            && context.client().world.getBlockEntity(packet.pos()) instanceof DrawingBoardBlockEntity board
+                            && board.getCanvasWidth() == packet.width()
+                            && board.getCanvasHeight() == packet.height()) {
+                        board.applyPatch(packet.indices(), packet.colors());
+                    }
+                    DrawingBoardScreen.receivePatch(packet.pos(), packet.width(), packet.height(), packet.indices(), packet.colors());
                 }));
         ClientPlayNetworking.registerGlobalReceiver(DrawingBoardPackets.OpenS2C.ID, (packet, context) ->
                 context.client().execute(() -> MinecraftClient.getInstance().setScreen(new DrawingBoardScreen(packet.pos()))));

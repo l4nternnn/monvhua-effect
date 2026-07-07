@@ -37,8 +37,6 @@ public class PaintEditorScreen extends Screen {
     private static final int HISTORY_ROW_HEIGHT = 17;
     private static final int HISTORY_MENU_WIDTH = 86;
     private static final int HISTORY_MENU_HEIGHT = 24;
-    private static final int PRESET_PANEL_WIDTH = 190;
-    private static final int PRESET_PANEL_HEIGHT = 188;
     private static final int PRESET_SLOT_SIZE = 42;
     private static final int PRESET_SLOT_GAP = 8;
     private static final int PRESET_MENU_WIDTH = 92;
@@ -48,7 +46,11 @@ public class PaintEditorScreen extends Screen {
     private static final int TOOL_BRUSH_Y = 36;
     private static final int TOOL_ERASER_Y = 78;
     private static final int TOOL_PAPER_Y = 120;
-    private static final int TOOL_NONE_Y = 162;
+    private static final int TOOL_PRESET_Y = 162;
+    private static final int TOOL_NONE_Y = 204;
+    private static final int PRESET_EDITOR_GRID_Y = 78;
+    private static final int PRESET_EDITOR_PICKER_Y = 258;
+    private static final int PRESET_SAVE_Y = 408;
     private static final int SURFACE = 0xD812141A;
     private static final int SURFACE_SOFT = 0xA6181B23;
     private static final int SURFACE_HOVER = 0xC8242832;
@@ -71,7 +73,6 @@ public class PaintEditorScreen extends Screen {
     private boolean updatingHexField;
     private boolean pickingColor;
     private boolean draggingAlpha;
-    private boolean presetPanelOpen;
     private boolean rightUsing;
     private boolean leftLooking;
     private boolean rightPanning;
@@ -84,6 +85,10 @@ public class PaintEditorScreen extends Screen {
     private boolean presetStoreMenuOpen;
     private int presetStoreMenuX;
     private int presetStoreMenuY;
+    private final int[] presetDraftColors = new int[PaintBrushItem.COLOR_SLOTS];
+    private final boolean[] presetDraftFilled = new boolean[PaintBrushItem.COLOR_SLOTS];
+    private boolean presetDraftsLoaded;
+    private int selectedPresetSlot;
 
     public PaintEditorScreen() {
         super(Text.literal("Paint Editor"));
@@ -99,6 +104,7 @@ public class PaintEditorScreen extends Screen {
         hexField.setTextPredicate(PaintEditorScreen::isValidHexInput);
         hexField.setChangedListener(this::onHexChanged);
         updateHexField();
+        loadPresetDraftsFromBrush();
         uploadColorMapIfNeeded();
     }
 
@@ -151,7 +157,6 @@ public class PaintEditorScreen extends Screen {
         drawLeftPanel(context, mouseX, mouseY);
         drawRightPanel(context, mouseX, mouseY);
         super.render(context, mouseX, mouseY, delta);
-        drawPresetPanel(context, mouseX, mouseY);
         drawPresetStoreContextMenu(context, mouseX, mouseY);
         drawHistoryContextMenu(context, mouseX, mouseY);
     }
@@ -195,12 +200,16 @@ public class PaintEditorScreen extends Screen {
                 return true;
             }
             closeHistoryContextMenu();
-            if (selectedTool != PaintOverlayClient.EditorTool.NONE && !isCtrlDown()) {
+            if (selectedTool != PaintOverlayClient.EditorTool.NONE
+                    && selectedTool != PaintOverlayClient.EditorTool.PRESET
+                    && !isCtrlDown()) {
                 rightUsing = true;
                 PaintOverlayClient.performEditorUseAtScreenPoint(client, selectedTool, mouseX, mouseY, width, height);
                 return true;
             }
-            if (selectedTool == PaintOverlayClient.EditorTool.NONE || isCtrlDown()) {
+            if (selectedTool == PaintOverlayClient.EditorTool.NONE
+                    || selectedTool == PaintOverlayClient.EditorTool.PRESET
+                    || isCtrlDown()) {
                 rightPanning = true;
                 rightPanAnchor = PaintOverlayClient.createEditorPanAnchor(client, mouseX, mouseY, width, height);
                 return true;
@@ -212,9 +221,6 @@ public class PaintEditorScreen extends Screen {
             return super.mouseClicked(mouseX, mouseY, button);
         }
         closeHistoryContextMenu();
-        if (handlePresetPanelMouseDown(mouseX, mouseY)) {
-            return true;
-        }
         if (hexField != null && hexField.visible && hexField.isMouseOver(mouseX, mouseY)) {
             return super.mouseClicked(mouseX, mouseY, button);
         }
@@ -231,7 +237,11 @@ public class PaintEditorScreen extends Screen {
             return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
         }
         if (pickingColor && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-            pickColor(mouseX, mouseY, true);
+            if (selectedTool == PaintOverlayClient.EditorTool.PRESET) {
+                pickPresetColor(mouseX, mouseY, true);
+            } else {
+                pickColor(mouseX, mouseY, true);
+            }
             return true;
         }
         if (draggingAlpha && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
@@ -268,7 +278,11 @@ public class PaintEditorScreen extends Screen {
                 return true;
             }
             if (pickingColor) {
-                PaintOverlayClient.recordPickedColor(PaintOverlayClient.selectedColor());
+                if (selectedTool == PaintOverlayClient.EditorTool.PRESET) {
+                    stageSelectedPresetColor();
+                } else {
+                    PaintOverlayClient.recordPickedColor(PaintOverlayClient.selectedColor());
+                }
             }
             pickingColor = false;
             leftLooking = false;
@@ -339,12 +353,7 @@ public class PaintEditorScreen extends Screen {
         }
         if (keyCode == GLFW.GLFW_KEY_B || keyCode == GLFW.GLFW_KEY_ESCAPE) {
             PaintOverlayClient.markPaintEditorKeyConsumed();
-            if (keyCode == GLFW.GLFW_KEY_B) {
-                presetPanelOpen = !presetPanelOpen;
-                closePresetStoreContextMenu();
-            } else {
-                close();
-            }
+            close();
             return true;
         }
         if (ctrl && keyCode == GLFW.GLFW_KEY_C) {
@@ -360,6 +369,14 @@ public class PaintEditorScreen extends Screen {
         }
         if (keyCode == GLFW.GLFW_KEY_3) {
             toggleTool(PaintOverlayClient.EditorTool.PAPER);
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_4) {
+            toggleTool(PaintOverlayClient.EditorTool.PRESET);
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_5) {
+            toggleTool(PaintOverlayClient.EditorTool.NONE);
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_W || keyCode == GLFW.GLFW_KEY_S) {
@@ -406,6 +423,7 @@ public class PaintEditorScreen extends Screen {
         drawToolButton(context, TOOL_X, TOOL_BRUSH_Y, PaintOverlayClient.EditorTool.BRUSH, new ItemStack(PaintItems.PAINT_BRUSH), mouseX, mouseY);
         drawToolButton(context, TOOL_X, TOOL_ERASER_Y, PaintOverlayClient.EditorTool.ERASER, new ItemStack(PaintItems.ERASER), mouseX, mouseY);
         drawToolButton(context, TOOL_X, TOOL_PAPER_Y, PaintOverlayClient.EditorTool.PAPER, new ItemStack(PaintItems.PAINT_PAPER), mouseX, mouseY);
+        drawToolButton(context, TOOL_X, TOOL_PRESET_Y, PaintOverlayClient.EditorTool.PRESET, ItemStack.EMPTY, mouseX, mouseY);
         drawToolButton(context, TOOL_X, TOOL_NONE_Y, PaintOverlayClient.EditorTool.NONE, ItemStack.EMPTY, mouseX, mouseY);
     }
 
@@ -416,7 +434,17 @@ public class PaintEditorScreen extends Screen {
         if (selected) {
             context.fill(x + 1, y + CHAMFER, x + 4, y + 34 - CHAMFER, ACCENT);
         }
-        if (stack.isEmpty()) {
+        if (tool == PaintOverlayClient.EditorTool.PRESET) {
+            int size = 5;
+            int startX = x + 9;
+            int startY = y + 9;
+            for (int row = 0; row < 3; row++) {
+                for (int col = 0; col < 3; col++) {
+                    int color = presetDraftFilled[row * 3 + col] ? presetDraftColors[row * 3 + col] : 0xFF3A424C;
+                    context.fill(startX + col * 6, startY + row * 6, startX + col * 6 + size, startY + row * 6 + size, color);
+                }
+            }
+        } else if (stack.isEmpty()) {
             context.fill(x + 11, y + 16, x + 23, y + 18, TEXT_PRIMARY);
         } else {
             context.drawItem(stack, x + 9, y + 9);
@@ -437,6 +465,7 @@ public class PaintEditorScreen extends Screen {
             case BRUSH -> drawBrushPanel(context, x + 16);
             case ERASER -> drawEraserPanel(context, x + 16);
             case PAPER -> drawPaperPanel(context, x + 16);
+            case PRESET -> drawPresetEditorPanel(context, x + 16, mouseX, mouseY);
             case NONE -> drawViewPanel(context, x + 16);
         }
     }
@@ -614,6 +643,26 @@ public class PaintEditorScreen extends Screen {
         context.drawText(textRenderer, Text.literal("Free camera"), x, 82, TEXT_SECONDARY, false);
     }
 
+    private void drawPresetEditorPanel(DrawContext context, int x, int mouseX, int mouseY) {
+        drawSection(context, x - 8, 48, 166, 184);
+        drawSectionTitle(context, x, 56, "Presets");
+        int hoverSlot = presetEditorSlotAt(mouseX, mouseY, x);
+        for (int slot = 0; slot < PaintBrushItem.COLOR_SLOTS; slot++) {
+            drawPresetDraftSlot(context, presetEditorSlotX(x, slot), presetEditorSlotY(slot), slot, slot == hoverSlot);
+        }
+
+        drawSection(context, x - 8, 240, 166, 154);
+        drawSectionTitle(context, x, 248, "Picker");
+        drawColorMap(context, x, PRESET_EDITOR_PICKER_Y);
+        drawHueBar(context, x + MAP_SIZE + 8, PRESET_EDITOR_PICKER_Y);
+        drawColorCursor(context, x, PRESET_EDITOR_PICKER_Y);
+        int color = currentPresetDraftColor();
+        drawSwatch(context, x + 134, PRESET_EDITOR_PICKER_Y, 24, color, true);
+        context.drawText(textRenderer, Text.literal("Slot " + (selectedPresetSlot + 1)), x + 134, PRESET_EDITOR_PICKER_Y + 30, TEXT_SECONDARY, false);
+        context.drawText(textRenderer, Text.literal(toHex(color)), x, PRESET_EDITOR_PICKER_Y + MAP_SIZE + 10, TEXT_PRIMARY, false);
+        drawSmallButton(context, x, PRESET_SAVE_Y, 118, 20, "Save");
+    }
+
     private void drawColorMap(DrawContext context, int x, int y) {
         context.fill(x - 2, y - 2, x + MAP_SIZE + 2, y + MAP_SIZE + 2, 0x66000000);
         context.drawTexture(RenderPipelines.GUI_TEXTURED, COLOR_MAP_TEXTURE_ID, x, y, 0.0F, 0.0F, MAP_SIZE, MAP_SIZE, MAP_SIZE, MAP_SIZE);
@@ -682,21 +731,6 @@ public class PaintEditorScreen extends Screen {
         context.fill(knobX - 1, y - 2, knobX + 2, y + 12, 0xFFFFFFFF);
     }
 
-    private void drawPresetPanel(DrawContext context, int mouseX, int mouseY) {
-        if (!presetPanelOpen) {
-            return;
-        }
-        int x = presetPanelX();
-        int y = presetPanelY();
-        drawSection(context, x, y, PRESET_PANEL_WIDTH, PRESET_PANEL_HEIGHT);
-        drawSectionTitle(context, x + 10, y + 8, "Presets");
-        context.drawText(textRenderer, Text.literal("B"), x + PRESET_PANEL_WIDTH - 20, y + 13, TEXT_SECONDARY, false);
-        int hoverSlot = presetSlotAt(mouseX, mouseY);
-        for (int slot = 0; slot < PaintBrushItem.COLOR_SLOTS; slot++) {
-            drawPresetSlot(context, presetSlotX(slot), presetSlotY(slot), slot, slot == hoverSlot);
-        }
-    }
-
     private void drawPresetStoreContextMenu(DrawContext context, int mouseX, int mouseY) {
         if (!presetStoreMenuOpen) {
             return;
@@ -716,28 +750,22 @@ public class PaintEditorScreen extends Screen {
         }
     }
 
-    private void drawPresetSlot(DrawContext context, int x, int y, int slot, boolean hover) {
-        drawPresetSlot(context, x, y, slot, hover, PRESET_SLOT_SIZE);
-    }
-
-    private void drawPresetSlot(DrawContext context, int x, int y, int slot, boolean hover, int size) {
-        boolean filled = PaintOverlayClient.presetSlotFilled(slot);
-        context.fill(x - 1, y - 1, x + size + 1, y + size + 1, hover ? 0xAA8DDAFF : 0x66000000);
+    private void drawPresetDraftSlot(DrawContext context, int x, int y, int slot, boolean hover) {
+        boolean filled = presetDraftFilled[slot];
+        int color = filled ? presetDraftColors[slot] : 0;
+        int border = slot == selectedPresetSlot ? 0xFFFFFFFF : (hover ? 0xAA8DDAFF : 0x66000000);
+        context.fill(x - 2, y - 2, x + PRESET_SLOT_SIZE + 2, y + PRESET_SLOT_SIZE + 2, border);
+        drawChecker(context, x, y, PRESET_SLOT_SIZE, PRESET_SLOT_SIZE, 6);
         if (filled) {
-            int color = PaintOverlayClient.presetSlotColor(slot);
-            drawChecker(context, x, y, size, size, 6);
-            fillChamfered(context, x, y, size, size, Math.min(4, CHAMFER), color);
-            drawBorder(context, x, y, size, size);
+            fillChamfered(context, x, y, PRESET_SLOT_SIZE, PRESET_SLOT_SIZE, Math.min(4, CHAMFER), color);
             String hex = toHex(color);
-            context.fill(x + 2, y + size - 12, x + size - 2, y + size - 2, 0x99000000);
-            context.drawText(textRenderer, Text.literal(hex), x + Math.max(2, (size - textRenderer.getWidth(hex)) / 2), y + size - 10, 0xFFFFFFFF, false);
+            context.fill(x + 2, y + PRESET_SLOT_SIZE - 12, x + PRESET_SLOT_SIZE - 2, y + PRESET_SLOT_SIZE - 2, 0x99000000);
+            context.drawText(textRenderer, Text.literal(hex), x + Math.max(2, (PRESET_SLOT_SIZE - textRenderer.getWidth(hex)) / 2), y + PRESET_SLOT_SIZE - 10, 0xFFFFFFFF, false);
         } else {
-            drawChecker(context, x, y, size, size, 6);
-            context.fill(x, y, x + size, y + size, 0x665A6068);
-            drawDashedBorder(context, x, y, size, size, 0xFFD4D9DF);
-            String empty = "\u7A7A";
-            context.drawText(textRenderer, Text.literal(empty), x + (size - textRenderer.getWidth(empty)) / 2, y + (size - 8) / 2, TEXT_SECONDARY, false);
+            context.fill(x, y, x + PRESET_SLOT_SIZE, y + PRESET_SLOT_SIZE, 0x665A6068);
+            drawDashedBorder(context, x, y, PRESET_SLOT_SIZE, PRESET_SLOT_SIZE, 0xFFD4D9DF);
         }
+        drawBorder(context, x, y, PRESET_SLOT_SIZE, PRESET_SLOT_SIZE);
         context.drawText(textRenderer, Text.literal(String.valueOf(slot + 1)), x + 3, y + 3, filled ? 0xDDFFFFFF : 0xFF30343A, false);
     }
 
@@ -765,6 +793,7 @@ public class PaintEditorScreen extends Screen {
         if (isInside(TOOL_X, TOOL_BRUSH_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.BRUSH;
         if (isInside(TOOL_X, TOOL_ERASER_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.ERASER;
         if (isInside(TOOL_X, TOOL_PAPER_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.PAPER;
+        if (isInside(TOOL_X, TOOL_PRESET_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.PRESET;
         if (isInside(TOOL_X, TOOL_NONE_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.NONE;
         return null;
     }
@@ -817,6 +846,12 @@ public class PaintEditorScreen extends Screen {
                 }
                 if (isInside(x, PAPER_SIZE_Y + 34, 88, 18, mouseX, mouseY)) {
                     client.setScreen(new PaintPaperImportScreen());
+                    return true;
+                }
+                return true;
+            }
+            case PRESET -> {
+                if (handlePresetEditorClick(mouseX, mouseY, x)) {
                     return true;
                 }
                 return true;
@@ -891,56 +926,6 @@ public class PaintEditorScreen extends Screen {
         return false;
     }
 
-    private boolean handlePresetPanelMouseDown(double mouseX, double mouseY) {
-        if (!presetPanelOpen) {
-            return false;
-        }
-        if (!isInside(presetPanelX(), presetPanelY(), PRESET_PANEL_WIDTH, PRESET_PANEL_HEIGHT, mouseX, mouseY)) {
-            return false;
-        }
-        int slot = presetSlotAt(mouseX, mouseY);
-        if (slot >= 0) {
-            PaintOverlayClient.selectBrushSlot(slot);
-            if (PaintOverlayClient.presetSlotFilled(slot)) {
-                selectColor(PaintOverlayClient.presetSlotColor(slot), false, true);
-            }
-        }
-        return true;
-    }
-
-    private int presetPanelX() {
-        return MathHelper.clamp(rightX() - PRESET_PANEL_WIDTH - 10, LEFT_WIDTH + 8, Math.max(LEFT_WIDTH + 8, width - PRESET_PANEL_WIDTH - 2));
-    }
-
-    private int presetPanelY() {
-        return 48;
-    }
-
-    private int presetGridX() {
-        return presetPanelX() + 18;
-    }
-
-    private int presetGridY() {
-        return presetPanelY() + 36;
-    }
-
-    private int presetSlotX(int slot) {
-        return presetGridX() + (slot % 3) * (PRESET_SLOT_SIZE + PRESET_SLOT_GAP);
-    }
-
-    private int presetSlotY(int slot) {
-        return presetGridY() + (slot / 3) * (PRESET_SLOT_SIZE + PRESET_SLOT_GAP);
-    }
-
-    private int presetSlotAt(double mouseX, double mouseY) {
-        for (int slot = 0; slot < PaintBrushItem.COLOR_SLOTS; slot++) {
-            if (isInside(presetSlotX(slot), presetSlotY(slot), PRESET_SLOT_SIZE, PRESET_SLOT_SIZE, mouseX, mouseY)) {
-                return slot;
-            }
-        }
-        return -1;
-    }
-
     private int clampedPresetMenuX() {
         return MathHelper.clamp(presetStoreMenuX, 2, Math.max(2, width - PRESET_MENU_WIDTH - 2));
     }
@@ -982,6 +967,7 @@ public class PaintEditorScreen extends Screen {
                 }
                 yield false;
             }
+            case PRESET -> false;
             case NONE -> false;
         };
     }
@@ -1021,8 +1007,18 @@ public class PaintEditorScreen extends Screen {
     }
 
     private boolean pickColor(double mouseX, double mouseY, boolean dragging) {
-        int x = rightX() + 16;
-        int y = BRUSH_COLOR_Y;
+        return pickColorAt(mouseX, mouseY, rightX() + 16, BRUSH_COLOR_Y, dragging);
+    }
+
+    private boolean pickPresetColor(double mouseX, double mouseY, boolean dragging) {
+        boolean handled = pickColorAt(mouseX, mouseY, rightX() + 16, PRESET_EDITOR_PICKER_Y, dragging);
+        if (handled) {
+            stageSelectedPresetColor();
+        }
+        return handled;
+    }
+
+    private boolean pickColorAt(double mouseX, double mouseY, int x, int y, boolean dragging) {
         if (mouseX >= x && mouseX < x + MAP_SIZE && mouseY >= y && mouseY < y + MAP_SIZE) {
             saturation = MathHelper.clamp((float) ((mouseX - x) / (MAP_SIZE - 1)), 0.0F, 1.0F);
             value = MathHelper.clamp(1.0F - (float) ((mouseY - y) / (MAP_SIZE - 1)), 0.0F, 1.0F);
@@ -1037,6 +1033,92 @@ public class PaintEditorScreen extends Screen {
             return true;
         }
         return dragging && pickingColor;
+    }
+
+    private void loadPresetDraftsFromBrush() {
+        if (presetDraftsLoaded) {
+            return;
+        }
+        for (int slot = 0; slot < PaintBrushItem.COLOR_SLOTS; slot++) {
+            if (PaintOverlayClient.presetSlotFilled(slot)) {
+                presetDraftColors[slot] = PaintOverlayClient.presetSlotColor(slot);
+                presetDraftFilled[slot] = true;
+            } else {
+                presetDraftColors[slot] = PaintOverlayClient.selectedColor();
+                presetDraftFilled[slot] = false;
+            }
+        }
+        selectedPresetSlot = MathHelper.clamp(PaintOverlayClient.selectedBrushSlot(), 0, PaintBrushItem.COLOR_SLOTS - 1);
+        if (presetDraftFilled[selectedPresetSlot]) {
+            selectColor(presetDraftColors[selectedPresetSlot], false, true);
+        }
+        presetDraftsLoaded = true;
+    }
+
+    private boolean handlePresetEditorClick(double mouseX, double mouseY, int x) {
+        int slot = presetEditorSlotAt(mouseX, mouseY, x);
+        if (slot >= 0) {
+            selectPresetDraftSlot(slot);
+            return true;
+        }
+        if (pickPresetColor(mouseX, mouseY, false)) {
+            pickingColor = true;
+            return true;
+        }
+        if (isInside(x, PRESET_SAVE_Y, 118, 20, mouseX, mouseY)) {
+            savePresetDrafts();
+            return true;
+        }
+        return false;
+    }
+
+    private void selectPresetDraftSlot(int slot) {
+        int seedColor = PaintOverlayClient.selectedColor();
+        selectedPresetSlot = MathHelper.clamp(slot, 0, PaintBrushItem.COLOR_SLOTS - 1);
+        PaintOverlayClient.selectBrushSlot(selectedPresetSlot);
+        if (!presetDraftFilled[selectedPresetSlot]) {
+            presetDraftColors[selectedPresetSlot] = seedColor;
+        }
+        selectColor(presetDraftColors[selectedPresetSlot], false, true);
+    }
+
+    private void stageSelectedPresetColor() {
+        presetDraftColors[selectedPresetSlot] = PaintOverlayClient.selectedColor();
+        presetDraftFilled[selectedPresetSlot] = true;
+    }
+
+    private int currentPresetDraftColor() {
+        if (!presetDraftFilled[selectedPresetSlot]) {
+            return PaintOverlayClient.selectedColor();
+        }
+        return presetDraftColors[selectedPresetSlot];
+    }
+
+    private void savePresetDrafts() {
+        for (int slot = 0; slot < PaintBrushItem.COLOR_SLOTS; slot++) {
+            if (presetDraftFilled[slot]) {
+                PaintOverlayClient.storeColorInPresetSlot(slot, presetDraftColors[slot]);
+            }
+        }
+        PaintOverlayClient.selectBrushSlot(selectedPresetSlot);
+        selectColor(presetDraftColors[selectedPresetSlot], false, true);
+    }
+
+    private int presetEditorSlotX(int x, int slot) {
+        return x + 8 + (slot % 3) * (PRESET_SLOT_SIZE + PRESET_SLOT_GAP);
+    }
+
+    private int presetEditorSlotY(int slot) {
+        return PRESET_EDITOR_GRID_Y + (slot / 3) * (PRESET_SLOT_SIZE + PRESET_SLOT_GAP);
+    }
+
+    private int presetEditorSlotAt(double mouseX, double mouseY, int x) {
+        for (int slot = 0; slot < PaintBrushItem.COLOR_SLOTS; slot++) {
+            if (isInside(presetEditorSlotX(x, slot), presetEditorSlotY(slot), PRESET_SLOT_SIZE, PRESET_SLOT_SIZE, mouseX, mouseY)) {
+                return slot;
+            }
+        }
+        return -1;
     }
 
     private void selectColor(int color, boolean record) {
@@ -1224,6 +1306,7 @@ public class PaintEditorScreen extends Screen {
             case BRUSH -> "Brush";
             case ERASER -> "Eraser";
             case PAPER -> "Paper";
+            case PRESET -> "Presets";
             case NONE -> "View";
         };
     }

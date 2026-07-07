@@ -123,7 +123,8 @@ public class DrawingBoardBlock extends BlockWithEntity {
         }
         BlockPos lowerPos = lowerPos(pos, state);
         if (world.getBlockEntity(lowerPos) instanceof DrawingBoardBlockEntity board) {
-            ServerPlayNetworking.send(serverPlayer, new DrawingBoardPackets.SyncS2C(lowerPos, board.copyPixels()));
+            ServerPlayNetworking.send(serverPlayer, new DrawingBoardPackets.SyncS2C(
+                    lowerPos, board.getCanvasWidth(), board.getCanvasHeight(), board.copyPixels()));
             ServerPlayNetworking.send(serverPlayer, new DrawingBoardPackets.OpenS2C(lowerPos));
             return ActionResult.SUCCESS_SERVER;
         }
