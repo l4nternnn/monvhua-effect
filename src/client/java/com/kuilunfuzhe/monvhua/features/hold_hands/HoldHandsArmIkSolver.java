@@ -18,14 +18,12 @@ final class HoldHandsArmIkSolver {
     private static final float STRETCH_DEADZONE = 0.08F;
     private static final float MAX_STRETCH_EXTRA_DISTANCE = 0.9F;
 
-    private static final float SOURCE_MODEL_Y_ORIGIN = 37.9207F;
-    private static final float MODEL_UNIT = 16.0F;
-    private static final Vec3d LEFT_SHOULDER = sourceModelToPlayerOffset(-5.5F, 4.9207F, 0.0F);
-    private static final Vec3d RIGHT_SHOULDER = sourceModelToPlayerOffset(5.5F, 4.9207F, 0.0F);
-    private static final Vec3d LEFT_ELBOW = sourceModelToPlayerOffset(0.0F, 6.0F, 0.0F);
-    private static final Vec3d RIGHT_ELBOW = sourceModelToPlayerOffset(0.0F, 6.0F, 0.0F);
-    private static final Vec3d LEFT_PALM = sourceModelToPlayerOffset(-5.5F, 12.0F, -0.5F);
-    private static final Vec3d RIGHT_PALM = sourceModelToPlayerOffset(5.5F, 12.0F, -0.5F);
+    private static final Vec3d LEFT_SHOULDER = new Vec3d(-0.34D, 1.42D, 0.0D);
+    private static final Vec3d RIGHT_SHOULDER = new Vec3d(0.34D, 1.42D, 0.0D);
+    private static final Vec3d LEFT_ELBOW = new Vec3d(-0.50D, 1.06D, 0.04D);
+    private static final Vec3d RIGHT_ELBOW = new Vec3d(0.50D, 1.06D, 0.04D);
+    private static final Vec3d LEFT_PALM = new Vec3d(-0.56D, 0.78D, 0.04D);
+    private static final Vec3d RIGHT_PALM = new Vec3d(0.56D, 0.78D, 0.04D);
 
     private static final double DEFAULT_FOLLOW_SIDE_OFFSET = 1.008708D;
     private static final double DEFAULT_FOLLOW_FORWARD_OFFSET = 0.089465946D;
@@ -48,7 +46,7 @@ final class HoldHandsArmIkSolver {
 
         float stretch = stretchRatio(delta, defaultDistance);
         Vec3d shoulderWorld = bodyAnchor(self.getPos(), bodyYaw, shoulderSocket(side));
-        Vec3d targetWorld = sharedPalmTarget(self, partner, side, stretch);
+        Vec3d targetWorld = HoldHandsSharedTargetSolver.solve(self, partner, bodyYaw, side, defaultDistance);
         Vec3d localTarget = worldVectorToBodyLocal(targetWorld.subtract(shoulderWorld), bodyYaw);
         if (localTarget.lengthSquared() <= MIN_TARGET_LENGTH * MIN_TARGET_LENGTH) {
             return rotations;
@@ -115,10 +113,9 @@ final class HoldHandsArmIkSolver {
         float upperPitch = MathHelper.clamp(upperAim.pitch() + stretch * TARGET_LIFT * 55.0F,
                 MIN_PITCH_DEGREES, MAX_PITCH_DEGREES);
         float upperYaw = MathHelper.clamp(upperAim.yaw(), MIN_HORIZONTAL_DEGREES, MAX_HORIZONTAL_DEGREES);
-        float lowerPitch = MathHelper.clamp((float) (lowerAim.pitch() - elbowBend * 0.45D),
-                -65.0F, 65.0F);
-        float lowerYaw = MathHelper.clamp(lowerAim.yaw() * 0.35F, -45.0F, 45.0F);
-        return new IkPose(upperPitch, upperYaw, 0.0F, lowerPitch, lowerYaw, 0.0F);
+        float lowerPitch = MathHelper.clamp((float) (lowerAim.pitch() - elbowBend * 0.22D),
+                -28.0F, 28.0F);
+        return new IkPose(upperPitch, upperYaw, 0.0F, lowerPitch, 0.0F, 0.0F);
     }
 
     private static Vec3d limitTarget(HoldHandsSkeletalPose.HandSide side, Vec3d localTarget) {
@@ -226,14 +223,6 @@ final class HoldHandsArmIkSolver {
 
     private static Vec3d palmSocket(HoldHandsSkeletalPose.HandSide side) {
         return side == HoldHandsSkeletalPose.HandSide.LEFT ? LEFT_PALM : RIGHT_PALM;
-    }
-
-    private static Vec3d sourceModelToPlayerOffset(float modelX, float modelY, float modelZ) {
-        return new Vec3d(
-                -modelX / MODEL_UNIT,
-                (SOURCE_MODEL_Y_ORIGIN - modelY) / MODEL_UNIT,
-                modelZ / MODEL_UNIT
-        );
     }
 
     private record Aim(float pitch, float yaw) {
