@@ -26,6 +26,7 @@ import org.lwjgl.util.tinyfd.TinyFileDialogs;
 import org.joml.Matrix3x2fStack;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.ArrayList;
@@ -52,7 +53,12 @@ public class DrawingBoardScreen extends Screen {
     private static final int HISTORY_MENU_W = 86;
     private static final int HISTORY_MENU_H = 24;
     private static final int MAX_HISTORY = 80;
+    private static final int MAX_HISTORY_PIXELS = 65_536;
     private static final int SCROLL_PAN_STEP = 24;
+    private static final int SWATCH_BUTTON_H = 16;
+    private static final int SWATCH_CELL = 12;
+    private static final int SWATCH_GAP = 3;
+    private static final Identifier LOCAL_PREVIEW_TEXTURE = Identifier.of(MonvhuaMod.MOD_ID, "dynamic/drawing_board_local_preview");
 
     private final BlockPos pos;
     private int canvasW = DEFAULT_CANVAS_W;
@@ -96,12 +102,15 @@ public class DrawingBoardScreen extends Screen {
     private int baseDrawH;
     private DraggableResizableLayout layout;
     private DraggableResizableLayout.Bounds canvasBounds = DraggableResizableLayout.Bounds.EMPTY;
+    private DraggableResizableLayout.Bounds previewBounds = DraggableResizableLayout.Bounds.EMPTY;
     private boolean drawing;
     private int drawButton = -1;
     private int brushRadius = 1;
+    private int pickerRadius = 1;
     private int lastX = -1;
     private int lastY = -1;
     private boolean middleDraggingCanvas;
+    private boolean middleDraggingPreview;
     private double middleDragLastX;
     private double middleDragLastY;
     private IntList strokeIndices;
@@ -118,10 +127,23 @@ public class DrawingBoardScreen extends Screen {
     private int importRotation;
     private int importCanvasX;
     private int importCanvasY;
+    private int importDragStartCanvasX;
+    private int importDragStartCanvasY;
+    private double importDragStartMouseX;
+    private double importDragStartMouseY;
     private boolean draggingImport;
+    private NativeImageBackedTexture previewTexture;
+    private NativeImage previewImage;
+    private int[] previewPixels;
+    private double previewZoom = 1.0D;
+    private int previewOffsetX;
+    private int previewOffsetY;
+    private final List<Integer> swatchColors = new ArrayList<>();
+    private int swatchScroll;
+    private String swatchName = "";
 
     public DrawingBoardScreen(BlockPos pos) {
-        super(Text.literal("Drawing Board"));
+        super(Text.literal("画板"));
         this.pos = pos.toImmutable();
         loadColor(PaintOverlayClient.selectedColor() & 0xFFFFFF);
         alpha = PaintOverlayClient.selectedAlpha();
@@ -161,6 +183,7 @@ public class DrawingBoardScreen extends Screen {
         uploadColorMapIfNeeded();
         context.drawTexture(RenderPipelines.GUI_TEXTURED, BACKGROUND, panelX, panelY, 0.0F, 0.0F,
                 panelW, panelH, BACKGROUND_W, BACKGROUND_H, BACKGROUND_W, BACKGROUND_H);
+        drawLocalPreview(context);
         context.fill(canvasX - 2, canvasY - 2, canvasX + drawW + 2, canvasY + drawH + 2, 0xFF777777);
         drawCanvas(context);
         if (layout != null) {
@@ -182,23 +205,29 @@ public class DrawingBoardScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         applyWidthIfFocusLeaving(mouseX, mouseY);
-        if (handleHistoryContextMenuClick(mouseX, mouseY, button)) {
-            return true;
-        }
-        if (historyMenuIndex >= 0) {
-            closeHistoryContextMenu();
-            return true;
-        }
-        if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT && handleHistoryRightClick(mouseX, mouseY)) {
-            return true;
-        }
-        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && handleControlClick(mouseX, mouseY)) {
-            return true;
+        if (insideLocalPreview(mouseX, mouseY)) {
+            if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && isCtrlKeyDown() && previewImage != null) {
+                pickPreviewColor(mouseX, mouseY);
+                return true;
+            }
+            if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && previewImage != null) {
+                middleDraggingPreview = true;
+                middleDragLastX = mouseX;
+                middleDragLastY = mouseY;
+                return true;
+            }
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && previewImage == null) {
+                startLocalPreview();
+                return true;
+            }
         }
         if (importImage != null && insidePaper(mouseX, mouseY)) {
             if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
                 draggingImport = true;
-                moveImportTo(mouseX, mouseY);
+                importDragStartCanvasX = importCanvasX;
+                importDragStartCanvasY = importCanvasY;
+                importDragStartMouseX = mouseX;
+                importDragStartMouseY = mouseY;
                 return true;
             }
             if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
@@ -207,13 +236,14 @@ public class DrawingBoardScreen extends Screen {
             }
             return true;
         }
+        if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && isCtrlKeyDown() && insidePaper(mouseX, mouseY)) {
+            pickCanvasColor(mouseX, mouseY);
+            return true;
+        }
         if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && insideCanvas(mouseX, mouseY)) {
             middleDraggingCanvas = true;
             middleDragLastX = mouseX;
             middleDragLastY = mouseY;
-            return true;
-        }
-        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && layout != null && layout.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
         if ((button == GLFW.GLFW_MOUSE_BUTTON_LEFT || button == GLFW.GLFW_MOUSE_BUTTON_RIGHT)
@@ -226,13 +256,30 @@ public class DrawingBoardScreen extends Screen {
             paintAt(lastX, lastY, button == GLFW.GLFW_MOUSE_BUTTON_RIGHT, true);
             return true;
         }
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && handleControlClick(mouseX, mouseY)) {
+            return true;
+        }
+        if (handleHistoryContextMenuClick(mouseX, mouseY, button)) {
+            return true;
+        }
+        if (historyMenuIndex >= 0) {
+            closeHistoryContextMenu();
+            return true;
+        }
+        if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT && !insideCanvas(mouseX, mouseY) && handleHistoryRightClick(mouseX, mouseY)) {
+            return true;
+        }
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && layout != null && !insidePaper(mouseX, mouseY)
+                && layout.mouseClicked(mouseX, mouseY, button)) {
+            return true;
+        }
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && draggingImport) {
-            moveImportTo(mouseX, mouseY);
+            moveImportByMouse(mouseX, mouseY);
             return true;
         }
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && pickingColor) {
@@ -245,9 +292,10 @@ public class DrawingBoardScreen extends Screen {
             middleDragLastY = mouseY;
             return true;
         }
-        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && layout != null && layout.mouseDragged(mouseX, mouseY, button)) {
-            canvasBounds = layout.bounds("canvas");
-            updateCanvasFromBounds();
+        if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && middleDraggingPreview) {
+            movePreviewBy((int) Math.round(mouseX - middleDragLastX), (int) Math.round(mouseY - middleDragLastY));
+            middleDragLastX = mouseX;
+            middleDragLastY = mouseY;
             return true;
         }
         if (drawing && button == drawButton) {
@@ -269,6 +317,12 @@ public class DrawingBoardScreen extends Screen {
             lastY = y;
             return true;
         }
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && layout != null && layout.mouseDragged(mouseX, mouseY, button)) {
+            canvasBounds = layout.bounds("canvas");
+            previewBounds = layout.bounds("preview");
+            updateCanvasFromBounds();
+            return true;
+        }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
     }
 
@@ -287,11 +341,9 @@ public class DrawingBoardScreen extends Screen {
             middleDraggingCanvas = false;
             return true;
         }
-        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && layout != null && layout.isEditing()) {
-            DraggableResizableLayout.DragResult result = layout.mouseReleased(mouseX, mouseY, button);
-            canvasBounds = layout.bounds("canvas");
-            updateCanvasFromBounds();
-            return result.moved();
+        if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && middleDraggingPreview) {
+            middleDraggingPreview = false;
+            return true;
         }
         if (button == drawButton) {
             drawing = false;
@@ -301,11 +353,38 @@ public class DrawingBoardScreen extends Screen {
             finishStrokeHistory(button == GLFW.GLFW_MOUSE_BUTTON_RIGHT ? "擦除" : "绘制");
             return true;
         }
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && layout != null && layout.isEditing()) {
+            DraggableResizableLayout.DragResult result = layout.mouseReleased(mouseX, mouseY, button);
+            canvasBounds = layout.bounds("canvas");
+            previewBounds = layout.bounds("preview");
+            updateCanvasFromBounds();
+            return result.moved();
+        }
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (insideSwatchPanel(mouseX, mouseY) && !swatchColors.isEmpty()) {
+            int rows = swatchRowsVisible();
+            int cols = swatchColumns();
+            int maxScroll = Math.max(0, (swatchColors.size() + cols - 1) / cols - rows);
+            swatchScroll = MathHelper.clamp(swatchScroll - (int) Math.signum(verticalAmount), 0, maxScroll);
+            return true;
+        }
+        if (previewImage != null && insideLocalPreview(mouseX, mouseY)) {
+            if (isCtrlKeyDown()) {
+                zoomPreviewAt(mouseX, mouseY, verticalAmount);
+            } else {
+                int offset = scrollPanOffset(verticalAmount);
+                if (isAltKeyDown()) {
+                    movePreviewBy(0, offset);
+                } else {
+                    movePreviewBy(offset, 0);
+                }
+            }
+            return true;
+        }
         if (insideCanvas(mouseX, mouseY)) {
             if (isCtrlKeyDown()) {
                 if (importImage != null) {
@@ -383,6 +462,34 @@ public class DrawingBoardScreen extends Screen {
         }
     }
 
+    private void drawLocalPreview(DrawContext context) {
+        int x = previewBounds.x;
+        int y = previewBounds.y;
+        int w = Math.max(1, previewBounds.width);
+        int h = Math.max(1, previewBounds.height);
+        context.fill(x, y, x + w, y + h, 0xFF2B3038);
+        context.drawBorder(x, y, w, h, 0xAA8FA6BE);
+        context.drawText(textRenderer, Text.literal("本地预览"), x + 6, y + 5, 0xFFFFFFFF, false);
+        if (previewImage == null || previewTexture == null) {
+            context.drawText(textRenderer, Text.literal("点击选择图片"), x + 6, y + 22, 0xFFB8C2CC, false);
+            return;
+        }
+        int contentX = x + 4;
+        int contentY = y + 20;
+        int contentW = Math.max(1, w - 8);
+        int contentH = Math.max(1, h - 24);
+        int[] size = previewDrawSize(contentW, contentH);
+        int drawX = contentX + (contentW - size[0]) / 2 + previewOffsetX;
+        int drawY = contentY + (contentH - size[1]) / 2 + previewOffsetY;
+        context.enableScissor(contentX, contentY, contentX + contentW, contentY + contentH);
+        try {
+            context.drawTexture(RenderPipelines.GUI_TEXTURED, LOCAL_PREVIEW_TEXTURE, drawX, drawY, 0.0F, 0.0F,
+                    size[0], size[1], previewImage.getWidth(), previewImage.getHeight(), previewImage.getWidth(), previewImage.getHeight());
+        } finally {
+            context.disableScissor();
+        }
+    }
+
     private void drawImportPreview(DrawContext context) {
         if (importImage == null || importTexture == null) {
             return;
@@ -424,24 +531,29 @@ public class DrawingBoardScreen extends Screen {
         int x = panelX + panelW - PANEL_PAD - CONTROL_W;
         int y = controlsY();
         drawPalette(context, panelX + PANEL_PAD, y, mouseX, mouseY);
-        drawButton(context, x, y, CONTROL_W, 18, "Clear", isInside(x, y, CONTROL_W, 18, mouseX, mouseY));
-        drawButton(context, x, y + 24, CONTROL_W, 18, "Paper", isInside(x, y + 24, CONTROL_W, 18, mouseX, mouseY));
-        drawButton(context, x, y + 48, CONTROL_W, 18, "Reset", isInside(x, y + 48, CONTROL_W, 18, mouseX, mouseY));
-        drawButton(context, x, y + 72, CONTROL_W, 18, "Import", isInside(x, y + 72, CONTROL_W, 18, mouseX, mouseY));
-        drawButton(context, x, y + 96, CONTROL_W, 18, "Fit", isInside(x, y + 96, CONTROL_W, 18, mouseX, mouseY));
-        context.drawText(textRenderer, Text.literal("Brush"), x, y + 124, 0xFFFFFFFF, false);
+        drawSwatchPanel(context, swatchPanelX(), swatchPanelY(), mouseX, mouseY);
+        drawButton(context, x, y, CONTROL_W, 18, "清空", isInside(x, y, CONTROL_W, 18, mouseX, mouseY));
+        drawButton(context, x, y + 24, CONTROL_W, 18, "保存", isInside(x, y + 24, CONTROL_W, 18, mouseX, mouseY));
+        drawButton(context, x, y + 48, CONTROL_W, 18, "重置", isInside(x, y + 48, CONTROL_W, 18, mouseX, mouseY));
+        drawButton(context, x, y + 72, CONTROL_W, 18, "导入", isInside(x, y + 72, CONTROL_W, 18, mouseX, mouseY));
+        drawButton(context, x, y + 96, CONTROL_W, 18, "适配", isInside(x, y + 96, CONTROL_W, 18, mouseX, mouseY));
+        context.drawText(textRenderer, Text.literal("笔刷"), x, y + 124, 0xFFFFFFFF, false);
         drawButton(context, x, y + 144, 18, 16, "-", isInside(x, y + 144, 18, 16, mouseX, mouseY));
         context.drawText(textRenderer, Text.literal(String.valueOf(brushRadius)), x + 27, y + 149, 0xFFFFFFFF, false);
         drawButton(context, x + 46, y + 144, 18, 16, "+", isInside(x + 46, y + 144, 18, 16, mouseX, mouseY));
-        context.drawText(textRenderer, Text.literal("L draw"), x, y + 178, 0xFFE8E8E8, false);
-        context.drawText(textRenderer, Text.literal("R erase"), x, y + 190, 0xFFE8E8E8, false);
+        context.drawText(textRenderer, Text.literal("取色"), x, y + 178, 0xFFFFFFFF, false);
+        drawButton(context, x, y + 198, 18, 16, "-", isInside(x, y + 198, 18, 16, mouseX, mouseY));
+        context.drawText(textRenderer, Text.literal(String.valueOf(pickerRadius)), x + 27, y + 203, 0xFFFFFFFF, false);
+        drawButton(context, x + 46, y + 198, 18, 16, "+", isInside(x + 46, y + 198, 18, 16, mouseX, mouseY));
+        context.drawText(textRenderer, Text.literal("Ctrl+中键"), x, y + 226, 0xFFE8E8E8, false);
+        context.drawText(textRenderer, Text.literal("左绘右擦"), x, y + 238, 0xFFE8E8E8, false);
         drawWidthControl(context, x, y);
         drawHistoryPanel(context, historyX(), y, mouseX, mouseY);
     }
 
     private void drawWidthControl(DrawContext context, int x, int y) {
         int fieldY = y + Math.max(162, panelH - PANEL_PAD - 20 - (y - panelY));
-        context.drawText(textRenderer, Text.literal("Width"), x, fieldY - 11, 0xFFE8E8E8, false);
+        context.drawText(textRenderer, Text.literal("宽度"), x, fieldY - 11, 0xFFE8E8E8, false);
         if (widthField != null) {
             widthField.setPosition(x, fieldY);
             widthField.setWidth(CONTROL_W);
@@ -458,6 +570,9 @@ public class DrawingBoardScreen extends Screen {
     }
 
     private boolean handleControlClick(double mouseX, double mouseY) {
+        if (handleSwatchClick(mouseX, mouseY)) {
+            return true;
+        }
         if (handlePaletteClick(mouseX, mouseY)) {
             return true;
         }
@@ -495,7 +610,84 @@ public class DrawingBoardScreen extends Screen {
             brushRadius = Math.min(12, brushRadius + 1);
             return true;
         }
+        if (isInside(x, y + 198, 18, 16, mouseX, mouseY)) {
+            pickerRadius = Math.max(1, pickerRadius - 1);
+            return true;
+        }
+        if (isInside(x + 46, y + 198, 18, 16, mouseX, mouseY)) {
+            pickerRadius = Math.min(16, pickerRadius + 1);
+            return true;
+        }
         return false;
+    }
+
+    private void drawSwatchPanel(DrawContext context, int x, int y, double mouseX, double mouseY) {
+        int w = PALETTE_W;
+        int gridY = swatchGridY();
+        int gridH = swatchGridHeight();
+        context.drawText(textRenderer, Text.literal("色板"), x, y - 11, 0xFFFFFFFF, false);
+        drawButton(context, x, y, w, SWATCH_BUTTON_H, "导入", isInside(x, y, w, SWATCH_BUTTON_H, mouseX, mouseY));
+        context.fill(x, gridY, x + w, gridY + gridH, 0xAA151A22);
+        context.drawBorder(x, gridY, w, gridH, 0xAA8FA6BE);
+        if (swatchColors.isEmpty()) {
+            context.drawText(textRenderer, Text.literal("无色板"), x + 5, gridY + 7, 0xFFB8C2CC, false);
+            return;
+        }
+        String label = swatchName.isBlank() ? swatchColors.size() + " 色" : swatchName + " / " + swatchColors.size();
+        context.drawText(textRenderer, Text.literal(trimToWidth(label, w - 8)), x + 4, gridY + 5, 0xFFB8C2CC, false);
+        int cols = swatchColumns();
+        int rowsVisible = swatchRowsVisible();
+        int maxScroll = Math.max(0, (swatchColors.size() + cols - 1) / cols - rowsVisible);
+        swatchScroll = MathHelper.clamp(swatchScroll, 0, maxScroll);
+        int startIndex = swatchScroll * cols;
+        int endIndex = Math.min(swatchColors.size(), startIndex + rowsVisible * cols);
+        int startY = swatchCellsY();
+        for (int i = startIndex; i < endIndex; i++) {
+            int local = i - startIndex;
+            int cellX = x + SWATCH_GAP + (local % cols) * (SWATCH_CELL + SWATCH_GAP);
+            int cellY = startY + (local / cols) * (SWATCH_CELL + SWATCH_GAP);
+            int color = swatchColors.get(i);
+            boolean hover = isInside(cellX, cellY, SWATCH_CELL, SWATCH_CELL, mouseX, mouseY);
+            context.fill(cellX - 1, cellY - 1, cellX + SWATCH_CELL + 1, cellY + SWATCH_CELL + 1, hover ? 0xFFFFFFFF : 0xFF111820);
+            context.fill(cellX, cellY, cellX + SWATCH_CELL, cellY + SWATCH_CELL, 0xFF000000 | (color & 0xFFFFFF));
+        }
+        if (maxScroll > 0) {
+            String page = (swatchScroll + 1) + "/" + (maxScroll + 1);
+            context.drawText(textRenderer, Text.literal(page), x + w - textRenderer.getWidth(page) - 4,
+                    gridY + gridH - 11, 0xFFB8C2CC, false);
+        }
+    }
+
+    private boolean handleSwatchClick(double mouseX, double mouseY) {
+        int x = swatchPanelX();
+        int y = swatchPanelY();
+        if (isInside(x, y, PALETTE_W, SWATCH_BUTTON_H, mouseX, mouseY)) {
+            startSwatchImport();
+            return true;
+        }
+        if (swatchColors.isEmpty() || !insideSwatchPanel(mouseX, mouseY)) {
+            return false;
+        }
+        int row = (int) ((mouseY - swatchCellsY()) / (SWATCH_CELL + SWATCH_GAP));
+        int col = (int) ((mouseX - x - SWATCH_GAP) / (SWATCH_CELL + SWATCH_GAP));
+        int cols = swatchColumns();
+        if (row < 0 || col < 0 || col >= cols) {
+            return false;
+        }
+        int cellX = x + SWATCH_GAP + col * (SWATCH_CELL + SWATCH_GAP);
+        int cellY = swatchCellsY() + row * (SWATCH_CELL + SWATCH_GAP);
+        if (!isInside(cellX, cellY, SWATCH_CELL, SWATCH_CELL, mouseX, mouseY)) {
+            return false;
+        }
+        int index = (swatchScroll + row) * cols + col;
+        if (index < 0 || index >= swatchColors.size()) {
+            return false;
+        }
+        alpha = 255;
+        loadColor(swatchColors.get(index));
+        syncPaintColor();
+        PaintOverlayClient.recordPickedColor(currentPaintColor());
+        return true;
     }
 
     private void drawPalette(DrawContext context, int x, int y, int mouseX, int mouseY) {
@@ -504,7 +696,7 @@ public class DrawingBoardScreen extends Screen {
         int hueX = hueBarX();
         int alphaY = alphaSliderY();
         int currentColor = currentPaintColor();
-        context.drawText(textRenderer, Text.literal("Color"), x, y - 12, 0xFFFFFFFF, false);
+        context.drawText(textRenderer, Text.literal("颜色"), x, y - 12, 0xFFFFFFFF, false);
         context.drawTexture(RenderPipelines.GUI_TEXTURED, COLOR_MAP_TEXTURE, mapX, mapY, 0.0F, 0.0F,
                 COLOR_MAP_SIZE, COLOR_MAP_SIZE, COLOR_MAP_SIZE, COLOR_MAP_SIZE);
         drawPanelBorder(context, mapX, mapY, COLOR_MAP_SIZE, COLOR_MAP_SIZE);
@@ -596,12 +788,254 @@ public class DrawingBoardScreen extends Screen {
         return false;
     }
 
+    private void pickCanvasColor(double mouseX, double mouseY) {
+        int centerX = toCanvasX(mouseX);
+        int centerY = toCanvasY(mouseY);
+        int radius = Math.max(1, pickerRadius);
+        long totalA = 0L;
+        long totalR = 0L;
+        long totalG = 0L;
+        long totalB = 0L;
+        int count = 0;
+        int r2 = radius * radius;
+        for (int dy = -radius + 1; dy <= radius - 1; dy++) {
+            for (int dx = -radius + 1; dx <= radius - 1; dx++) {
+                if (dx * dx + dy * dy > r2) {
+                    continue;
+                }
+                int px = centerX + dx;
+                int py = centerY + dy;
+                if (px < 0 || px >= canvasW || py < 0 || py >= canvasH) {
+                    continue;
+                }
+                int color = pixels[py * canvasW + px];
+                totalA += (color >>> 24) & 0xFF;
+                totalR += (color >>> 16) & 0xFF;
+                totalG += (color >>> 8) & 0xFF;
+                totalB += color & 0xFF;
+                count++;
+            }
+        }
+        if (count == 0) {
+            return;
+        }
+        alpha = MathHelper.clamp((int) Math.round(totalA / (double) count), 0, 255);
+        int rgb = (MathHelper.clamp((int) Math.round(totalR / (double) count), 0, 255) << 16)
+                | (MathHelper.clamp((int) Math.round(totalG / (double) count), 0, 255) << 8)
+                | MathHelper.clamp((int) Math.round(totalB / (double) count), 0, 255);
+        loadColor(rgb);
+        syncPaintColor();
+        PaintOverlayClient.recordPickedColor(currentPaintColor());
+    }
+
     private void syncPaintColor() {
         PaintOverlayClient.setSelectedColor(currentPaintColor());
     }
 
     private int currentPaintColor() {
         return (alpha << 24) | hsvToRgb(hue, saturation, value);
+    }
+
+    private int swatchPanelX() {
+        return panelX + PANEL_PAD;
+    }
+
+    private int swatchPanelY() {
+        return alphaSliderY() + 42;
+    }
+
+    private int swatchPanelHeight() {
+        int y = swatchPanelY();
+        return Math.max(54, Math.min(panelY + panelH - y - PANEL_PAD, Math.max(54, baseCanvasY + baseDrawH - y)));
+    }
+
+    private int swatchGridY() {
+        return swatchPanelY() + SWATCH_BUTTON_H + 5;
+    }
+
+    private int swatchGridHeight() {
+        return Math.max(1, swatchPanelHeight() - SWATCH_BUTTON_H - 5);
+    }
+
+    private int swatchCellsY() {
+        return swatchGridY() + 19;
+    }
+
+    private int swatchColumns() {
+        return Math.max(1, (PALETTE_W - SWATCH_GAP) / (SWATCH_CELL + SWATCH_GAP));
+    }
+
+    private int swatchRowsVisible() {
+        return Math.max(1, (swatchGridY() + swatchGridHeight() - swatchCellsY() - SWATCH_GAP) / (SWATCH_CELL + SWATCH_GAP));
+    }
+
+    private boolean insideSwatchPanel(double mouseX, double mouseY) {
+        return isInside(swatchPanelX(), swatchGridY(), PALETTE_W, swatchGridHeight(), mouseX, mouseY);
+    }
+
+    private void startSwatchImport() {
+        Path path = openSwatchFileDialog();
+        if (path == null) {
+            return;
+        }
+        try {
+            List<Integer> colors = readAcoColors(path);
+            if (colors.isEmpty()) {
+                return;
+            }
+            swatchColors.clear();
+            swatchColors.addAll(colors);
+            swatchScroll = 0;
+            Path fileName = path.getFileName();
+            swatchName = fileName == null ? "" : fileName.toString();
+        } catch (IOException ignored) {
+        }
+    }
+
+    private Path openSwatchFileDialog() {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            PointerBuffer filters = stack.mallocPointer(1);
+            filters.put(stack.UTF8("*.aco"));
+            filters.flip();
+            String selected = TinyFileDialogs.tinyfd_openFileDialog(
+                    "选择 Photoshop 色板",
+                    null,
+                    filters,
+                    "Photoshop 色板 (*.aco)",
+                    false
+            );
+            return selected == null || selected.isBlank() ? null : Path.of(selected);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private List<Integer> readAcoColors(Path path) throws IOException {
+        byte[] data = Files.readAllBytes(path);
+        List<Integer> first = parseAcoBlock(data, 0);
+        if (first.isEmpty()) {
+            return first;
+        }
+        int firstCount = data.length >= 4 ? unsignedShort(data, 2) : 0;
+        int next = 4 + firstCount * 10;
+        if (next + 4 <= data.length && unsignedShort(data, next) == 2) {
+            List<Integer> second = parseAcoBlock(data, next);
+            if (!second.isEmpty()) {
+                return second;
+            }
+        }
+        return first;
+    }
+
+    private List<Integer> parseAcoBlock(byte[] data, int offset) {
+        List<Integer> result = new ArrayList<>();
+        if (offset + 4 > data.length) {
+            return result;
+        }
+        int version = unsignedShort(data, offset);
+        int count = unsignedShort(data, offset + 2);
+        if (version != 1 && version != 2) {
+            return result;
+        }
+        int cursor = offset + 4;
+        for (int i = 0; i < count && cursor + 10 <= data.length; i++) {
+            int colorSpace = unsignedShort(data, cursor);
+            int c1 = unsignedShort(data, cursor + 2);
+            int c2 = unsignedShort(data, cursor + 4);
+            int c3 = unsignedShort(data, cursor + 6);
+            int c4 = unsignedShort(data, cursor + 8);
+            Integer rgb = acoColorToRgb(colorSpace, c1, c2, c3, c4);
+            if (rgb != null) {
+                result.add(rgb);
+            }
+            cursor += 10;
+            if (version == 2) {
+                if (cursor + 2 > data.length) {
+                    break;
+                }
+                int nameLength = unsignedShort(data, cursor);
+                cursor += 2 + Math.max(0, nameLength) * 2;
+                if (cursor > data.length) {
+                    break;
+                }
+            }
+        }
+        return result;
+    }
+
+    private Integer acoColorToRgb(int colorSpace, int c1, int c2, int c3, int c4) {
+        return switch (colorSpace) {
+            case 0 -> rgb16(c1, c2, c3);
+            case 1 -> hsvToRgb((float) (c1 / 65_535.0D), (float) (c2 / 65_535.0D), (float) (c3 / 65_535.0D));
+            case 2 -> cmykToRgb(c1, c2, c3, c4);
+            case 7 -> labToRgb(c1, signedShort(c2), signedShort(c3));
+            case 8 -> {
+                int gray = MathHelper.clamp((int) Math.round(c1 * 255.0D / 10_000.0D), 0, 255);
+                yield (gray << 16) | (gray << 8) | gray;
+            }
+            default -> null;
+        };
+    }
+
+    private int rgb16(int r, int g, int b) {
+        return (component16(r) << 16) | (component16(g) << 8) | component16(b);
+    }
+
+    private int component16(int value) {
+        return MathHelper.clamp((int) Math.round(value * 255.0D / 65_535.0D), 0, 255);
+    }
+
+    private int cmykToRgb(int c, int m, int y, int k) {
+        double cyan = 1.0D - c / 65_535.0D;
+        double magenta = 1.0D - m / 65_535.0D;
+        double yellow = 1.0D - y / 65_535.0D;
+        double black = 1.0D - k / 65_535.0D;
+        int r = MathHelper.clamp((int) Math.round(255.0D * (1.0D - cyan) * (1.0D - black)), 0, 255);
+        int g = MathHelper.clamp((int) Math.round(255.0D * (1.0D - magenta) * (1.0D - black)), 0, 255);
+        int b = MathHelper.clamp((int) Math.round(255.0D * (1.0D - yellow) * (1.0D - black)), 0, 255);
+        return (r << 16) | (g << 8) | b;
+    }
+
+    private int labToRgb(int lRaw, int aRaw, int bRaw) {
+        double l = lRaw / 100.0D;
+        double a = aRaw / 100.0D;
+        double b = bRaw / 100.0D;
+        double y = (l + 16.0D) / 116.0D;
+        double x = a / 500.0D + y;
+        double z = y - b / 200.0D;
+        x = 95.047D * labPivot(x);
+        y = 100.000D * labPivot(y);
+        z = 108.883D * labPivot(z);
+        x /= 100.0D;
+        y /= 100.0D;
+        z /= 100.0D;
+        double r = x * 3.2406D + y * -1.5372D + z * -0.4986D;
+        double g = x * -0.9689D + y * 1.8758D + z * 0.0415D;
+        double blue = x * 0.0557D + y * -0.2040D + z * 1.0570D;
+        int ri = MathHelper.clamp((int) Math.round(255.0D * srgbPivot(r)), 0, 255);
+        int gi = MathHelper.clamp((int) Math.round(255.0D * srgbPivot(g)), 0, 255);
+        int bi = MathHelper.clamp((int) Math.round(255.0D * srgbPivot(blue)), 0, 255);
+        return (ri << 16) | (gi << 8) | bi;
+    }
+
+    private double labPivot(double value) {
+        double cube = value * value * value;
+        return cube > 0.008856D ? cube : (value - 16.0D / 116.0D) / 7.787D;
+    }
+
+    private double srgbPivot(double value) {
+        return value <= 0.0031308D ? 12.92D * value : 1.055D * Math.pow(value, 1.0D / 2.4D) - 0.055D;
+    }
+
+    private static int unsignedShort(byte[] data, int offset) {
+        if (offset < 0 || offset + 1 >= data.length) {
+            return 0;
+        }
+        return ((data[offset] & 0xFF) << 8) | (data[offset + 1] & 0xFF);
+    }
+
+    private static int signedShort(int value) {
+        return value >= 0x8000 ? value - 0x10000 : value;
     }
 
     private int colorMapX() {
@@ -696,6 +1130,9 @@ public class DrawingBoardScreen extends Screen {
     }
 
     private int historyIndexAt(double mouseX, double mouseY) {
+        if (insideCanvas(mouseX, mouseY)) {
+            return -1;
+        }
         if (history.isEmpty()) {
             return -1;
         }
@@ -768,18 +1205,20 @@ public class DrawingBoardScreen extends Screen {
         if (targetCursor == historyCursor) {
             return;
         }
+        int[] before = copyPixels();
         if (targetCursor < historyCursor) {
             for (int i = historyCursor - 1; i >= targetCursor; i--) {
                 HistoryStep step = history.get(i);
-                applyHistoryPatch(step.indices, step.before);
+                applyPatchLocal(canvasW, canvasH, step.indices, step.before, false);
             }
         } else {
             for (int i = historyCursor; i < targetCursor; i++) {
                 HistoryStep step = history.get(i);
-                applyHistoryPatch(step.indices, step.after);
+                applyPatchLocal(canvasW, canvasH, step.indices, step.after, false);
             }
         }
         historyCursor = targetCursor;
+        sendDiffPatch(before, pixels);
     }
 
     private void applyHistoryPatch(int[] indices, int[] colors) {
@@ -803,7 +1242,7 @@ public class DrawingBoardScreen extends Screen {
     private void initWidthField() {
         int x = panelX + panelW - PANEL_PAD - CONTROL_W;
         int y = controlsY() + Math.max(162, panelH - PANEL_PAD - 20 - (controlsY() - panelY));
-        widthField = addDrawableChild(new TextFieldWidget(textRenderer, x, y, CONTROL_W, 18, Text.literal("Width")));
+        widthField = addDrawableChild(new TextFieldWidget(textRenderer, x, y, CONTROL_W, 18, Text.literal("宽度")));
         widthField.setMaxLength(4);
         widthField.setTextPredicate(text -> text.isEmpty() || text.chars().allMatch(Character::isDigit));
         widthField.setText(String.valueOf(canvasW));
@@ -867,10 +1306,10 @@ public class DrawingBoardScreen extends Screen {
             filters.put(stack.UTF8("*.gif"));
             filters.flip();
             String selected = TinyFileDialogs.tinyfd_openFileDialog(
-                    "Select import image",
+                    "选择导入图片",
                     null,
                     filters,
-                    "Image files (*.png; *.jpg; *.jpeg; *.bmp; *.gif)",
+                    "图片文件 (*.png; *.jpg; *.jpeg; *.bmp; *.gif)",
                     false
             );
             return selected == null || selected.isBlank() ? null : Path.of(selected);
@@ -917,12 +1356,14 @@ public class DrawingBoardScreen extends Screen {
         return new int[]{w, h};
     }
 
-    private void moveImportTo(double mouseX, double mouseY) {
+    private void moveImportByMouse(double mouseX, double mouseY) {
         if (importImage == null) {
             return;
         }
-        importCanvasX = toCanvasX(mouseX);
-        importCanvasY = toCanvasY(mouseY);
+        int dx = (int) Math.round((mouseX - importDragStartMouseX) * canvasW / Math.max(1.0D, paperW));
+        int dy = (int) Math.round((mouseY - importDragStartMouseY) * canvasH / Math.max(1.0D, paperH));
+        importCanvasX = importDragStartCanvasX + dx;
+        importCanvasY = importDragStartCanvasY + dy;
     }
 
     private void placeImport() {
@@ -942,7 +1383,7 @@ public class DrawingBoardScreen extends Screen {
         canvasH = nextH;
         pixels = nextPixels;
         markCanvasFullyDirty();
-        pushFullHistory("瀵煎叆", before, copyPixels());
+        pushFullHistory("导入", before, copyPixels());
         SafeClientNetworking.send(new DrawingBoardPackets.ApplyPixelsC2S(pos, canvasW, canvasH, pixels));
         if (widthField != null) {
             widthField.setText(String.valueOf(canvasW));
@@ -954,18 +1395,23 @@ public class DrawingBoardScreen extends Screen {
     private void blitImport(int[] target, int targetW, int targetH, int dstX, int dstY, int dstW, int dstH) {
         int imageW = importImage.getWidth();
         int imageH = importImage.getHeight();
-        for (int y = 0; y < dstH; y++) {
-            for (int x = 0; x < dstW; x++) {
-                int[] src = rotatedSourcePixel(x, y, dstW, dstH, imageW, imageH);
+        int startX = Math.max(0, dstX);
+        int startY = Math.max(0, dstY);
+        int endX = Math.min(targetW, dstX + dstW);
+        int endY = Math.min(targetH, dstY + dstH);
+        if (startX >= endX || startY >= endY) {
+            return;
+        }
+        for (int ty = startY; ty < endY; ty++) {
+            for (int tx = startX; tx < endX; tx++) {
+                int localX = tx - dstX;
+                int localY = ty - dstY;
+                int[] src = rotatedSourcePixel(localX, localY, dstW, dstH, imageW, imageH);
                 int color = importPixels[src[1] * imageW + src[0]];
                 if ((color >>> 24) == 0) {
                     continue;
                 }
-                int tx = dstX + x;
-                int ty = dstY + y;
-                if (tx >= 0 && tx < targetW && ty >= 0 && ty < targetH) {
-                    target[ty * targetW + tx] = color;
-                }
+                target[ty * targetW + tx] = color;
             }
         }
     }
@@ -1015,6 +1461,12 @@ public class DrawingBoardScreen extends Screen {
         layout = new DraggableResizableLayout("drawing_board", width, height);
         canvasBounds = layout.element("canvas", defaultCanvasX, defaultCanvasY, defaultDrawW, defaultDrawH,
                 DEFAULT_CANVAS_W, DEFAULT_CANVAS_H, 0.0F, false, true, true, true, aspectRatio());
+        int defaultPreviewW = Math.max(96, Math.min(160, defaultCanvasX - (panelX + PANEL_PAD) - GAP));
+        int defaultPreviewH = Math.max(72, Math.min(120, defaultCanvasY - panelY - PANEL_PAD - GAP));
+        int defaultPreviewX = panelX + PANEL_PAD;
+        int defaultPreviewY = panelY + PANEL_PAD;
+        previewBounds = layout.element("preview", defaultPreviewX, defaultPreviewY, defaultPreviewW, defaultPreviewH,
+                72, 54, 0.0F, false, true, true, true, 4.0F / 3.0F);
         updateCanvasFromBounds();
         resetPaperToCanvas();
     }
@@ -1069,6 +1521,177 @@ public class DrawingBoardScreen extends Screen {
         paperX += dx;
         paperY += dy;
         constrainPaperToCanvas();
+    }
+
+    private boolean insideLocalPreview(double mouseX, double mouseY) {
+        return previewBounds.width > 0 && previewBounds.height > 0
+                && isInside(previewBounds.x, previewBounds.y, previewBounds.width, previewBounds.height, mouseX, mouseY);
+    }
+
+    private void startLocalPreview() {
+        Path path = openImageFileDialog();
+        if (path == null) {
+            return;
+        }
+        try {
+            NativeImage image = TextGroupRenderer.readNativeImage(path);
+            clearLocalPreview();
+            previewImage = image;
+            previewPixels = copyImagePixels(image);
+            previewTexture = new NativeImageBackedTexture(() -> "monvhua drawing board local preview", image);
+            MinecraftClient.getInstance().getTextureManager().registerTexture(LOCAL_PREVIEW_TEXTURE, previewTexture);
+            previewZoom = 1.0D;
+            previewOffsetX = 0;
+            previewOffsetY = 0;
+        } catch (IOException ignored) {
+            clearLocalPreview();
+        }
+    }
+
+    private void clearLocalPreview() {
+        if (previewTexture != null) {
+            MinecraftClient.getInstance().getTextureManager().destroyTexture(LOCAL_PREVIEW_TEXTURE);
+            previewTexture = null;
+        }
+        previewImage = null;
+        previewPixels = null;
+        previewZoom = 1.0D;
+        previewOffsetX = 0;
+        previewOffsetY = 0;
+        middleDraggingPreview = false;
+    }
+
+    private int[] previewDrawSize(int contentW, int contentH) {
+        if (previewImage == null) {
+            return new int[]{1, 1};
+        }
+        double fitScale = Math.min(contentW / (double) Math.max(1, previewImage.getWidth()),
+                contentH / (double) Math.max(1, previewImage.getHeight()));
+        fitScale = Math.max(0.01D, fitScale) * previewZoom;
+        return new int[]{
+                Math.max(1, (int) Math.round(previewImage.getWidth() * fitScale)),
+                Math.max(1, (int) Math.round(previewImage.getHeight() * fitScale))
+        };
+    }
+
+    private int[] previewImagePoint(double mouseX, double mouseY) {
+        if (previewImage == null) {
+            return null;
+        }
+        int contentX = previewBounds.x + 4;
+        int contentY = previewBounds.y + 20;
+        int contentW = Math.max(1, previewBounds.width - 8);
+        int contentH = Math.max(1, previewBounds.height - 24);
+        if (!isInside(contentX, contentY, contentW, contentH, mouseX, mouseY)) {
+            return null;
+        }
+        int[] size = previewDrawSize(contentW, contentH);
+        int drawX = contentX + (contentW - size[0]) / 2 + previewOffsetX;
+        int drawY = contentY + (contentH - size[1]) / 2 + previewOffsetY;
+        if (!isInside(drawX, drawY, size[0], size[1], mouseX, mouseY)) {
+            return null;
+        }
+        int px = MathHelper.clamp((int) ((mouseX - drawX) * previewImage.getWidth() / Math.max(1, size[0])), 0, previewImage.getWidth() - 1);
+        int py = MathHelper.clamp((int) ((mouseY - drawY) * previewImage.getHeight() / Math.max(1, size[1])), 0, previewImage.getHeight() - 1);
+        return new int[]{px, py};
+    }
+
+    private void pickPreviewColor(double mouseX, double mouseY) {
+        int[] point = previewImagePoint(mouseX, mouseY);
+        if (point == null || previewPixels == null || previewImage == null) {
+            return;
+        }
+        int centerX = point[0];
+        int centerY = point[1];
+        int radius = Math.max(1, pickerRadius);
+        long totalA = 0L;
+        long totalR = 0L;
+        long totalG = 0L;
+        long totalB = 0L;
+        int count = 0;
+        int r2 = radius * radius;
+        for (int dy = -radius + 1; dy <= radius - 1; dy++) {
+            for (int dx = -radius + 1; dx <= radius - 1; dx++) {
+                if (dx * dx + dy * dy > r2) {
+                    continue;
+                }
+                int px = centerX + dx;
+                int py = centerY + dy;
+                if (px < 0 || px >= previewImage.getWidth() || py < 0 || py >= previewImage.getHeight()) {
+                    continue;
+                }
+                int color = previewPixels[py * previewImage.getWidth() + px];
+                totalA += (color >>> 24) & 0xFF;
+                totalR += (color >>> 16) & 0xFF;
+                totalG += (color >>> 8) & 0xFF;
+                totalB += color & 0xFF;
+                count++;
+            }
+        }
+        if (count == 0) {
+            return;
+        }
+        alpha = MathHelper.clamp((int) Math.round(totalA / (double) count), 0, 255);
+        int rgb = (MathHelper.clamp((int) Math.round(totalR / (double) count), 0, 255) << 16)
+                | (MathHelper.clamp((int) Math.round(totalG / (double) count), 0, 255) << 8)
+                | MathHelper.clamp((int) Math.round(totalB / (double) count), 0, 255);
+        loadColor(rgb);
+        syncPaintColor();
+        PaintOverlayClient.recordPickedColor(currentPaintColor());
+    }
+
+    private void movePreviewBy(int dx, int dy) {
+        if (dx == 0 && dy == 0) {
+            return;
+        }
+        previewOffsetX += dx;
+        previewOffsetY += dy;
+        constrainPreviewOffset();
+    }
+
+    private void zoomPreviewAt(double mouseX, double mouseY, double verticalAmount) {
+        if (previewImage == null || verticalAmount == 0.0D) {
+            return;
+        }
+        int contentX = previewBounds.x + 4;
+        int contentY = previewBounds.y + 20;
+        int contentW = Math.max(1, previewBounds.width - 8);
+        int contentH = Math.max(1, previewBounds.height - 24);
+        int[] oldSize = previewDrawSize(contentW, contentH);
+        int oldX = contentX + (contentW - oldSize[0]) / 2 + previewOffsetX;
+        int oldY = contentY + (contentH - oldSize[1]) / 2 + previewOffsetY;
+        double anchorX = MathHelper.clamp((mouseX - oldX) / Math.max(1.0D, oldSize[0]), 0.0D, 1.0D);
+        double anchorY = MathHelper.clamp((mouseY - oldY) / Math.max(1.0D, oldSize[1]), 0.0D, 1.0D);
+        previewZoom = MathHelper.clamp(previewZoom * Math.pow(1.12D, verticalAmount), 0.05D, 32.0D);
+        int[] nextSize = previewDrawSize(contentW, contentH);
+        int nextX = (int) Math.round(mouseX - anchorX * nextSize[0]);
+        int nextY = (int) Math.round(mouseY - anchorY * nextSize[1]);
+        previewOffsetX = nextX - (contentX + (contentW - nextSize[0]) / 2);
+        previewOffsetY = nextY - (contentY + (contentH - nextSize[1]) / 2);
+        constrainPreviewOffset();
+    }
+
+    private void constrainPreviewOffset() {
+        if (previewImage == null || previewBounds.width <= 0 || previewBounds.height <= 0) {
+            previewOffsetX = 0;
+            previewOffsetY = 0;
+            return;
+        }
+        int contentW = Math.max(1, previewBounds.width - 8);
+        int contentH = Math.max(1, previewBounds.height - 24);
+        int[] size = previewDrawSize(contentW, contentH);
+        if (size[0] <= contentW) {
+            previewOffsetX = 0;
+        } else {
+            int limit = (size[0] - contentW) / 2;
+            previewOffsetX = MathHelper.clamp(previewOffsetX, -limit, limit);
+        }
+        if (size[1] <= contentH) {
+            previewOffsetY = 0;
+        } else {
+            int limit = (size[1] - contentH) / 2;
+            previewOffsetY = MathHelper.clamp(previewOffsetY, -limit, limit);
+        }
     }
 
     private int scrollPanOffset(double verticalAmount) {
@@ -1180,11 +1803,10 @@ public class DrawingBoardScreen extends Screen {
 
     private void paintAt(int x, int y, boolean erase, boolean send) {
         int color = erase ? 0xFFFFFFFF : currentPaintColor();
-        if (!erase && !hasAnyPaint()) {
-            return;
-        }
         int r2 = brushRadius * brushRadius;
         boolean changed = false;
+        IntList changedIndices = send ? new IntList() : null;
+        IntList changedColors = send ? new IntList() : null;
         for (int dy = -brushRadius + 1; dy <= brushRadius - 1; dy++) {
             for (int dx = -brushRadius + 1; dx <= brushRadius - 1; dx++) {
                 if (dx * dx + dy * dy > r2) {
@@ -1199,12 +1821,17 @@ public class DrawingBoardScreen extends Screen {
                         pixels[index] = color;
                         markCanvasPixelDirty(index);
                         changed = true;
+                        if (changedIndices != null && changedColors != null) {
+                            changedIndices.add(index);
+                            changedColors.add(color);
+                        }
                     }
                 }
             }
         }
-        if (send) {
-            SafeClientNetworking.send(new DrawingBoardPackets.StrokeC2S(pos, x, y, brushRadius, color, false));
+        if (send && changed && changedIndices != null && changedColors != null) {
+            SafeClientNetworking.send(new DrawingBoardPackets.PatchC2S(pos, canvasW, canvasH,
+                    changedIndices.toArray(), changedColors.toArray()));
         }
     }
 
@@ -1223,6 +1850,10 @@ public class DrawingBoardScreen extends Screen {
     }
 
     private boolean hasAnyPaint() {
+        var client = MinecraftClient.getInstance();
+        if (client.player != null && client.player.isCreative()) {
+            return true;
+        }
         var brush = brushStack();
         if (brush.isEmpty()) {
             return false;
@@ -1267,6 +1898,7 @@ public class DrawingBoardScreen extends Screen {
             colorMapTexture = null;
         }
         clearImport();
+        clearLocalPreview();
     }
 
     private void setPixels(int width, int height, int[] source) {
@@ -1326,6 +1958,9 @@ public class DrawingBoardScreen extends Screen {
 
     private void pushFullHistory(String label, int[] before, int[] after) {
         int length = Math.min(before == null ? 0 : before.length, after == null ? 0 : after.length);
+        if (length > MAX_HISTORY_PIXELS) {
+            return;
+        }
         IntList indices = new IntList();
         IntList beforeColors = new IntList();
         IntList afterColors = new IntList();
@@ -1338,6 +1973,21 @@ public class DrawingBoardScreen extends Screen {
         }
         if (!indices.isEmpty()) {
             pushHistory(label, indices.toArray(), beforeColors.toArray(), afterColors.toArray());
+        }
+    }
+
+    private void sendDiffPatch(int[] before, int[] after) {
+        int length = Math.min(before == null ? 0 : before.length, after == null ? 0 : after.length);
+        IntList indices = new IntList();
+        IntList colors = new IntList();
+        for (int i = 0; i < length; i++) {
+            if (before[i] != after[i]) {
+                indices.add(i);
+                colors.add(after[i]);
+            }
+        }
+        if (!indices.isEmpty()) {
+            SafeClientNetworking.send(new DrawingBoardPackets.PatchC2S(pos, canvasW, canvasH, indices.toArray(), colors.toArray()));
         }
     }
 
