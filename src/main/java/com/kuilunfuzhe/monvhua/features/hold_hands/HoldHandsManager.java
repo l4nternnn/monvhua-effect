@@ -31,6 +31,7 @@ public final class HoldHandsManager {
     private static final double FOLLOW_POSITION_MAX_STEP = 0.44D;
     private static final double TAUT_POSITION_MAX_STEP = 0.62D;
     private static final double SHARED_POINT_DEADBAND = 0.018D;
+    private static final double SHARED_POINT_GROUNDED_Y_DEADBAND = 0.035D;
     private static final double SHARED_POINT_GROUNDED_ALPHA = 0.16D;
     private static final double SHARED_POINT_AIRBORNE_ALPHA = 0.55D;
     private static final double SHARED_POINT_FAST_DISTANCE = 0.50D;
@@ -250,13 +251,17 @@ public final class HoldHandsManager {
             return target;
         }
 
+        boolean airborne = (leader != null && (!leader.isOnGround() || leader.getAbilities().flying))
+                || (follower != null && (!follower.isOnGround() || follower.getAbilities().flying));
+        if (!airborne && Math.abs(target.y - previous.y) < SHARED_POINT_GROUNDED_Y_DEADBAND) {
+            target = new Vec3d(target.x, previous.y, target.z);
+        }
+
         double distance = previous.distanceTo(target);
         if (distance < SHARED_POINT_DEADBAND) {
             return previous;
         }
 
-        boolean airborne = (leader != null && (!leader.isOnGround() || leader.getAbilities().flying))
-                || (follower != null && (!follower.isOnGround() || follower.getAbilities().flying));
         double distanceT = smoothUnit((distance - SHARED_POINT_DEADBAND)
                 / Math.max(0.000001D, SHARED_POINT_FAST_DISTANCE - SHARED_POINT_DEADBAND));
         double speedT = smoothUnit((averageSpeed(leader, follower) - 0.08D) / 0.42D);
@@ -303,7 +308,10 @@ public final class HoldHandsManager {
             follower.setVelocity(leader.getVelocity());
             follower.fallDistance = leader.fallDistance;
             follower.velocityModified = true;
-            return solveSharedHandPoint(leader.getPos(), desiredFeet, leader.getVelocity(), leader.getVelocity(),
+            boolean useVerticalEndpoint = shouldUseVerticalPositionLead(leader, follower);
+            return solveSharedHandPoint(leader.getPos(), desiredFeet,
+                    endpointMotion(leader.getVelocity(), useVerticalEndpoint),
+                    endpointMotion(leader.getVelocity(), useVerticalEndpoint),
                     leaderBodyYaw, followerBodyYaw, defaultDistance);
         }
 
@@ -318,7 +326,10 @@ public final class HoldHandsManager {
         follower.setVelocity(targetVelocity);
         follower.fallDistance = leader.fallDistance;
         follower.velocityModified = true;
-        return solveSharedHandPoint(leader.getPos(), predictedFollowerFeet, leaderVelocity, targetVelocity,
+        boolean useVerticalEndpoint = shouldUseVerticalPositionLead(leader, follower);
+        return solveSharedHandPoint(leader.getPos(), predictedFollowerFeet,
+                endpointMotion(leaderVelocity, useVerticalEndpoint),
+                endpointMotion(targetVelocity, useVerticalEndpoint),
                 leaderBodyYaw, followerBodyYaw, defaultDistance);
     }
 
@@ -351,7 +362,10 @@ public final class HoldHandsManager {
 
     private static Vec3d solveSharedHandPoint(ServerPlayerEntity leader, ServerPlayerEntity follower,
                                               double defaultDistance) {
-        return solveSharedHandPoint(leader.getPos(), follower.getPos(), leader.getVelocity(), follower.getVelocity(),
+        boolean useVerticalEndpoint = shouldUseVerticalPositionLead(leader, follower);
+        return solveSharedHandPoint(leader.getPos(), follower.getPos(),
+                endpointMotion(leader.getVelocity(), useVerticalEndpoint),
+                endpointMotion(follower.getVelocity(), useVerticalEndpoint),
                 leader.getBodyYaw(), follower.getBodyYaw(), defaultDistance);
     }
 
@@ -414,6 +428,13 @@ public final class HoldHandsManager {
         double t = MathHelper.clamp((speed - 0.025D) / 0.22D, 0.0D, 1.0D);
         double weight = t * t * (3.0D - 2.0D * t);
         return velocity.multiply(weight);
+    }
+
+    private static Vec3d endpointMotion(Vec3d velocity, boolean includeVertical) {
+        if (velocity == null) {
+            return Vec3d.ZERO;
+        }
+        return includeVertical ? velocity : new Vec3d(velocity.x, 0.0D, velocity.z);
     }
 
     private static boolean shouldUseVerticalPositionLead(ServerPlayerEntity leader, ServerPlayerEntity follower) {
