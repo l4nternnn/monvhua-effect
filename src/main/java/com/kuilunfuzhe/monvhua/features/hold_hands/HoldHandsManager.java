@@ -21,12 +21,22 @@ public final class HoldHandsManager {
     private static final double RIGID_TELEPORT_EPSILON = 0.85D;
     private static final double TAUT_FORCE_START = 0.92D;
     private static final double TAUT_TARGET_DISTANCE_BIAS = 0.985D;
+    private static final double FOLLOW_POSITION_STIFFNESS = 1.35D;
+    private static final double FOLLOW_MAX_CORRECTION_SPEED = 1.65D;
     private static final double TAUT_POSITION_STIFFNESS = 1.75D;
     private static final double TAUT_MAX_SPEED = 2.25D;
+    private static final double FOLLOW_POSITION_STEP_DEADBAND = 0.34D;
+    private static final double TAUT_POSITION_STEP_DEADBAND = 0.18D;
+    private static final double FOLLOW_POSITION_MIN_STEP = 0.08D;
+    private static final double FOLLOW_POSITION_MAX_STEP = 0.34D;
+    private static final double TAUT_POSITION_MAX_STEP = 0.46D;
     private static final double SHARED_POINT_DEADBAND = 0.018D;
     private static final double SHARED_POINT_GROUNDED_ALPHA = 0.16D;
     private static final double SHARED_POINT_AIRBORNE_ALPHA = 0.55D;
     private static final double SHARED_POINT_FAST_DISTANCE = 0.50D;
+    private static final double FOLLOW_YAW_PROGRESS_PER_BLOCK = 0.125D;
+    private static final double FOLLOW_YAW_MOVE_DEADBAND = 0.003D;
+    private static final float FOLLOW_YAW_MAX_STEP = 8.0F;
 
     private static final Map<UUID, HoldHandData> ACTIVE = new ConcurrentHashMap<>();
 
@@ -63,10 +73,10 @@ public final class HoldHandsManager {
         Vec3d sharedHandPoint = solveSharedHandPoint(initiator, target, defaultDistance);
         ACTIVE.put(initiator.getUuid(), new HoldHandData(
                 HoldHandsSkeletalPose.handForRole(HoldHandsSkeletalPose.HoldRole.ACTIVE), target.getUuid(),
-                defaultDistance, holdBodyYaw, sharedHandPoint));
+                defaultDistance, holdBodyYaw, sharedHandPoint, initiator.getPos()));
         ACTIVE.put(target.getUuid(), new HoldHandData(
                 HoldHandsSkeletalPose.handForRole(HoldHandsSkeletalPose.HoldRole.PASSIVE), initiator.getUuid(),
-                defaultDistance, holdBodyYaw, sharedHandPoint));
+                defaultDistance, holdBodyYaw, sharedHandPoint, initiator.getPos()));
         sync(initiator, true);
         sync(target, true);
     }
@@ -111,6 +121,7 @@ public final class HoldHandsManager {
             }
 
             float holdBodyYaw = updateHoldBodyYaw(leader, follower, data);
+            applyFollowerBodyYaw(follower, holdBodyYaw);
             Vec3d sharedHandPoint = enforceRigidLink(leader, follower, holdBodyYaw, data.defaultDistance());
             setPairSharedHandPoint(leader, follower, sharedHandPoint);
             sync(leader, true);
@@ -173,30 +184,47 @@ public final class HoldHandsManager {
 
     private static float updateHoldBodyYaw(ServerPlayerEntity leader, ServerPlayerEntity follower, HoldHandData followerData) {
         float currentYaw = followerData.holdBodyYaw();
-        float targetYaw = leader.getYaw();
-        double armAngle = Math.abs(MathHelper.wrapDegrees(targetYaw - currentYaw));
-        if (armAngle <= BODY_ROTATE_START_ANGLE) {
-            return currentYaw;
+        float targetYaw = leader.getBodyYaw();
+        Vec3d previousLeaderPos = followerData.lastLeaderPos();
+        Vec3d currentLeaderPos = leader.getPos();
+        double moved = horizontalDistance(previousLeaderPos, currentLeaderPos);
+        float nextYaw = currentYaw;
+        if (moved > FOLLOW_YAW_MOVE_DEADBAND) {
+            double progress = MathHelper.clamp(moved * FOLLOW_YAW_PROGRESS_PER_BLOCK, 0.0D, 1.0D);
+            float maxStep = (float) Math.min(FOLLOW_YAW_MAX_STEP, Math.max(0.0D,
+                    Math.abs(MathHelper.wrapDegrees(targetYaw - currentYaw)) * progress));
+            nextYaw = stepTowardsAngle(currentYaw, targetYaw, maxStep);
         }
 
-        double pressure = MathHelper.clamp((armAngle - BODY_ROTATE_START_ANGLE)
-                / Math.max(0.000001D, BODY_ROTATE_MAX_ANGLE - BODY_ROTATE_START_ANGLE), 0.0D, 1.0D);
-        float nextYaw = stepTowardsAngle(currentYaw, targetYaw, (float) (HOLD_BODY_YAW_STEP * pressure));
-        setPairHoldBodyYaw(leader, follower, nextYaw);
-        sync(leader, true);
-        sync(follower, true);
+        setPairHoldBodyYaw(leader, follower, nextYaw, currentLeaderPos);
+        if (Math.abs(MathHelper.wrapDegrees(nextYaw - currentYaw)) > 0.001F) {
+            sync(leader, true);
+            sync(follower, true);
+        }
         return nextYaw;
     }
 
     private static void setPairHoldBodyYaw(ServerPlayerEntity leader, ServerPlayerEntity follower, float holdBodyYaw) {
+        setPairHoldBodyYaw(leader, follower, holdBodyYaw, leader.getPos());
+    }
+
+    private static void setPairHoldBodyYaw(ServerPlayerEntity leader, ServerPlayerEntity follower,
+                                           float holdBodyYaw, Vec3d lastLeaderPos) {
         HoldHandData leaderData = ACTIVE.get(leader.getUuid());
         if (leaderData != null) {
-            ACTIVE.put(leader.getUuid(), leaderData.withHoldBodyYaw(holdBodyYaw));
+            ACTIVE.put(leader.getUuid(), leaderData.withHoldBodyYaw(holdBodyYaw, lastLeaderPos));
         }
         HoldHandData followerData = ACTIVE.get(follower.getUuid());
         if (followerData != null) {
-            ACTIVE.put(follower.getUuid(), followerData.withHoldBodyYaw(holdBodyYaw));
+            ACTIVE.put(follower.getUuid(), followerData.withHoldBodyYaw(holdBodyYaw, lastLeaderPos));
         }
+    }
+
+    private static void applyFollowerBodyYaw(ServerPlayerEntity follower, float holdBodyYaw) {
+        float yaw = MathHelper.wrapDegrees(holdBodyYaw);
+        follower.setYaw(yaw);
+        follower.setBodyYaw(yaw);
+        follower.setHeadYaw(yaw);
     }
 
     private static void setPairSharedHandPoint(ServerPlayerEntity leader, ServerPlayerEntity follower, Vec3d sharedHandPoint) {
@@ -229,9 +257,22 @@ public final class HoldHandsManager {
 
         boolean airborne = (leader != null && (!leader.isOnGround() || leader.getAbilities().flying))
                 || (follower != null && (!follower.isOnGround() || follower.getAbilities().flying));
-        double alpha = distance >= SHARED_POINT_FAST_DISTANCE ? 1.0D
-                : airborne ? SHARED_POINT_AIRBORNE_ALPHA : SHARED_POINT_GROUNDED_ALPHA;
+        double distanceT = smoothUnit((distance - SHARED_POINT_DEADBAND)
+                / Math.max(0.000001D, SHARED_POINT_FAST_DISTANCE - SHARED_POINT_DEADBAND));
+        double speedT = smoothUnit((averageSpeed(leader, follower) - 0.08D) / 0.42D);
+        double baseAlpha = airborne ? SHARED_POINT_AIRBORNE_ALPHA : SHARED_POINT_GROUNDED_ALPHA;
+        double maxAlpha = airborne ? 0.78D : 0.24D;
+        double alpha = baseAlpha + (maxAlpha - baseAlpha) * Math.max(distanceT, speedT * 0.25D);
+        if (distance >= 1.20D) {
+            alpha = 1.0D;
+        }
         return previous.lerp(target, alpha);
+    }
+
+    private static double averageSpeed(ServerPlayerEntity leader, ServerPlayerEntity follower) {
+        Vec3d leaderVelocity = leader == null ? Vec3d.ZERO : leader.getVelocity();
+        Vec3d followerVelocity = follower == null ? Vec3d.ZERO : follower.getVelocity();
+        return leaderVelocity.add(followerVelocity).multiply(0.5D).length();
     }
 
     private static Vec3d enforceRigidLink(ServerPlayerEntity leader, ServerPlayerEntity follower,
@@ -266,20 +307,45 @@ public final class HoldHandsManager {
                     leaderBodyYaw, followerBodyYaw, defaultDistance);
         }
 
-        if (delta.length() > RIGID_TELEPORT_EPSILON) {
-            follower.requestTeleport(desiredFeet.x, desiredFeet.y, desiredFeet.z);
-        }
+        delta = applyFollowerPositionStep(leader, follower, desiredFeet, delta, tautLink);
 
         Vec3d leaderVelocity = leader.getVelocity();
         Vec3d correction = HoldHandsLinkGeometry.clampSpeed(
-                delta.multiply(tautLink ? TAUT_POSITION_STIFFNESS : HoldHandsLinkGeometry.LINK_POSITION_STIFFNESS),
-                tautLink ? TAUT_MAX_SPEED : HoldHandsLinkGeometry.LINK_MAX_SPEED);
+                delta.multiply(tautLink ? TAUT_POSITION_STIFFNESS : FOLLOW_POSITION_STIFFNESS),
+                tautLink ? TAUT_MAX_SPEED : FOLLOW_MAX_CORRECTION_SPEED);
         Vec3d targetVelocity = leaderVelocity.add(correction);
         follower.setVelocity(targetVelocity);
         follower.fallDistance = leader.fallDistance;
         follower.velocityModified = true;
         return solveSharedHandPoint(leader.getPos(), desiredFeet, leaderVelocity, targetVelocity,
                 leaderBodyYaw, followerBodyYaw, defaultDistance);
+    }
+
+    private static Vec3d applyFollowerPositionStep(ServerPlayerEntity leader, ServerPlayerEntity follower,
+                                                   Vec3d desiredFeet, Vec3d delta, boolean tautLink) {
+        double horizontalError = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
+        double deadband = tautLink ? TAUT_POSITION_STEP_DEADBAND : FOLLOW_POSITION_STEP_DEADBAND;
+        if (horizontalError <= deadband) {
+            return delta;
+        }
+
+        Vec3d leaderVelocity = leader.getVelocity();
+        double leaderSpeed = Math.sqrt(leaderVelocity.x * leaderVelocity.x + leaderVelocity.z * leaderVelocity.z);
+        double maxStep = MathHelper.clamp(FOLLOW_POSITION_MIN_STEP + leaderSpeed * 1.35D + horizontalError * 0.18D,
+                FOLLOW_POSITION_MIN_STEP, tautLink ? TAUT_POSITION_MAX_STEP : FOLLOW_POSITION_MAX_STEP);
+        double step = Math.min(horizontalError - deadband, maxStep);
+        double scale = step / Math.max(0.000001D, horizontalError);
+
+        Vec3d current = follower.getPos();
+        double nextX = current.x + delta.x * scale;
+        double nextY = current.y;
+        double nextZ = current.z + delta.z * scale;
+        if (shouldUseVerticalPositionLead(leader, follower) && Math.abs(delta.y) > 0.12D) {
+            nextY += MathHelper.clamp(delta.y, -maxStep, maxStep);
+        }
+
+        follower.requestTeleport(nextX, nextY, nextZ);
+        return desiredFeet.subtract(new Vec3d(nextX, nextY, nextZ));
     }
 
     private static Vec3d solveSharedHandPoint(ServerPlayerEntity leader, ServerPlayerEntity follower,
@@ -336,9 +402,7 @@ public final class HoldHandsManager {
             return defaultFeet;
         }
 
-        Vec3d currentOffset = follower.getPos().subtract(leader.getPos());
-        Vec3d lag = currentOffset.subtract(HoldHandsLinkGeometry.defaultFollowerOffset(holdBodyYaw));
-        return defaultFeet.add(positionalVelocity.multiply(0.55D)).add(lag.multiply(0.10D));
+        return defaultFeet.add(positionalVelocity.multiply(0.55D));
     }
 
     private static Vec3d smoothVelocityLead(Vec3d velocity) {
@@ -392,15 +456,30 @@ public final class HoldHandsManager {
         return MathHelper.wrapDegrees(current + Math.copySign(maxStep, delta));
     }
 
+    private static double horizontalDistance(Vec3d first, Vec3d second) {
+        if (first == null || second == null) {
+            return 0.0D;
+        }
+        double dx = first.x - second.x;
+        double dz = first.z - second.z;
+        return Math.sqrt(dx * dx + dz * dz);
+    }
+
+    private static double smoothUnit(double value) {
+        double t = MathHelper.clamp(value, 0.0D, 1.0D);
+        return t * t * (3.0D - 2.0D * t);
+    }
+
     private record HoldHandData(HoldHandsSkeletalPose.HandSide handSide, UUID partnerUuid, double defaultDistance,
-                                float holdBodyYaw, Vec3d sharedHandPoint) {
-        private HoldHandData withHoldBodyYaw(float holdBodyYaw) {
-            return new HoldHandData(handSide, partnerUuid, defaultDistance, holdBodyYaw, sharedHandPoint);
+                                float holdBodyYaw, Vec3d sharedHandPoint, Vec3d lastLeaderPos) {
+        private HoldHandData withHoldBodyYaw(float holdBodyYaw, Vec3d lastLeaderPos) {
+            return new HoldHandData(handSide, partnerUuid, defaultDistance, holdBodyYaw, sharedHandPoint,
+                    lastLeaderPos == null ? this.lastLeaderPos : lastLeaderPos);
         }
 
         private HoldHandData withSharedHandPoint(Vec3d sharedHandPoint) {
             return new HoldHandData(handSide, partnerUuid, defaultDistance, holdBodyYaw,
-                    sharedHandPoint == null ? Vec3d.ZERO : sharedHandPoint);
+                    sharedHandPoint == null ? Vec3d.ZERO : sharedHandPoint, lastLeaderPos);
         }
     }
 }

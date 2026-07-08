@@ -114,7 +114,7 @@ public abstract class PlayerEntityRendererCarryPoseMixin {
 		if (!(state instanceof PlayerEntityRenderState playerState) || !(getModel() instanceof PlayerEntityModel playerModel)) {
 			return;
 		}
-		HoldHandsSkeletalArmRenderer.renderHeldArm(playerState, matrices, vertexConsumers, light);
+		HoldHandsSkeletalArmRenderer.renderHeldArmAndRestore(playerState, playerModel, matrices, vertexConsumers, light);
 	}
 
 	@Unique

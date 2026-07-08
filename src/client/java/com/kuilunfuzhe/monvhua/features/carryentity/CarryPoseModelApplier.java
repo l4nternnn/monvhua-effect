@@ -19,6 +19,7 @@ public final class CarryPoseModelApplier {
 	private static PlayerEntityModel currentRenderModel;
 	private static PlayerEntityRenderState currentRenderState;
 	private static int currentRenderDepth;
+	private static int suppressedPartPoseDepth;
 
 	private CarryPoseModelApplier() {
 	}
@@ -40,7 +41,24 @@ public final class CarryPoseModelApplier {
 		}
 	}
 
+	public static void beginSuppressPartPose() {
+		suppressedPartPoseDepth++;
+	}
+
+	public static void endSuppressPartPose() {
+		if (suppressedPartPoseDepth > 0) {
+			suppressedPartPoseDepth--;
+		}
+	}
+
+	public static boolean isPartPoseSuppressed() {
+		return suppressedPartPoseDepth > 0;
+	}
+
 	public static void applyCurrentRenderContextBeforePartRender(ModelPart part) {
+		if (isPartPoseSuppressed()) {
+			return;
+		}
 		PlayerEntityModel model = currentRenderModel;
 		PlayerEntityRenderState state = currentRenderState;
 		if (model == null || state == null) {

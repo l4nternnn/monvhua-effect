@@ -85,10 +85,7 @@ public final class HoldHandsLinkGeometry {
         Vec3d averageMotion = leaderMotion.add(followerMotion).multiply(0.5D);
         Vec3d relativeMotion = leaderMotion.subtract(followerMotion);
 
-        Vec3d averageHorizontal = smoothVelocity(new Vec3d(averageMotion.x, 0.0D, averageMotion.z), 0.025D, 0.22D);
-        Vec3d relativeHorizontal = smoothVelocity(new Vec3d(relativeMotion.x, 0.0D, relativeMotion.z), 0.025D, 0.20D);
-        Vec3d horizontalTrail = averageHorizontal.multiply(0.42D).add(relativeHorizontal.multiply(0.18D));
-        horizontalTrail = clampVector(horizontalTrail, ENDPOINT_MAX_HORIZONTAL_TRAIL);
+        Vec3d horizontalTrail = Vec3d.ZERO;
 
         double speedWeight = smoothUnit((new Vec3d(averageMotion.x, 0.0D, averageMotion.z).length() - 0.025D) / 0.20D);
         double verticalWeight = smoothUnit((Math.abs(averageMotion.y) - 0.012D) / 0.08D);
@@ -100,7 +97,7 @@ public final class HoldHandsLinkGeometry {
 
         Vec3d dynamicOffset = horizontalTrail.add(0.0D,
                 verticalMotion + gravitySag + flightLift + stretchLift, 0.0D);
-        double weight = MathHelper.clamp(0.14D + stretch * 0.54D + speedWeight * 0.12D
+        double weight = MathHelper.clamp(0.14D + stretch * 0.54D + speedWeight * 0.04D
                 + verticalWeight * 0.42D, 0.0D, 1.0D);
         return base.lerp(midpoint.add(dynamicOffset), weight);
     }
