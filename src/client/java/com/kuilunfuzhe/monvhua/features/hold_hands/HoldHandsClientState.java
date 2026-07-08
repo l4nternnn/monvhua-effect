@@ -9,6 +9,9 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class HoldHandsClientState {
     private static final Map<Integer, HoldHandData> ACTIVE = new ConcurrentHashMap<>();
     private static final float FALLBACK_DEFAULT_DISTANCE = 1.012668F;
+    private static final double CLIENT_POINT_DEADBAND = 0.025D;
+    private static final double CLIENT_POINT_ALPHA = 0.36D;
+    private static final double CLIENT_POINT_FAST_DISTANCE = 0.60D;
 
     private HoldHandsClientState() {
     }
@@ -21,9 +24,11 @@ public final class HoldHandsClientState {
         HoldHandsSkeletalPose.HandSide handSide = packet.handSide() == HoldHandsSyncS2CPacket.HAND_LEFT
                 ? HoldHandsSkeletalPose.HandSide.LEFT
                 : HoldHandsSkeletalPose.HandSide.RIGHT;
+        Vec3d incomingPoint = new Vec3d(packet.sharedHandX(), packet.sharedHandY(), packet.sharedHandZ());
+        HoldHandData previous = ACTIVE.get(packet.entityId());
+        Vec3d sharedHandPoint = stabilizeClientPoint(previous != null ? previous.sharedHandPoint() : null, incomingPoint);
         ACTIVE.put(packet.entityId(), new HoldHandData(handSide, packet.partnerId(),
-                packet.defaultDistance(), packet.holdBodyYaw(),
-                new Vec3d(packet.sharedHandX(), packet.sharedHandY(), packet.sharedHandZ())));
+                packet.defaultDistance(), packet.holdBodyYaw(), sharedHandPoint));
     }
 
     public static void clear() {
@@ -57,6 +62,28 @@ public final class HoldHandsClientState {
     public static Vec3d getSharedHandPoint(int entityId) {
         HoldHandData data = ACTIVE.get(entityId);
         return data != null ? data.sharedHandPoint() : null;
+    }
+
+    private static Vec3d stabilizeClientPoint(Vec3d previous, Vec3d incoming) {
+        if (incoming == null) {
+            return null;
+        }
+        if (previous == null || previous.lengthSquared() <= 0.000001D) {
+            return incoming;
+        }
+
+        double distance = previous.distanceTo(incoming);
+        if (distance <= CLIENT_POINT_DEADBAND) {
+            return previous;
+        }
+        if (distance >= CLIENT_POINT_FAST_DISTANCE) {
+            return incoming;
+        }
+
+        double t = Math.min(1.0D, Math.max(0.0D,
+                (distance - CLIENT_POINT_DEADBAND) / Math.max(0.000001D, CLIENT_POINT_FAST_DISTANCE - CLIENT_POINT_DEADBAND)));
+        double alpha = CLIENT_POINT_ALPHA + (0.55D - CLIENT_POINT_ALPHA) * t * t * (3.0D - 2.0D * t);
+        return previous.lerp(incoming, alpha);
     }
 
     private record HoldHandData(HoldHandsSkeletalPose.HandSide handSide, int partnerId,

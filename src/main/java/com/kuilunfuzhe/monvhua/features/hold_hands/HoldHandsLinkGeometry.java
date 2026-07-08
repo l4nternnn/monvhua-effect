@@ -85,12 +85,15 @@ public final class HoldHandsLinkGeometry {
         Vec3d averageMotion = leaderMotion.add(followerMotion).multiply(0.5D);
         Vec3d relativeMotion = leaderMotion.subtract(followerMotion);
 
-        Vec3d averageHorizontal = smoothVelocity(new Vec3d(averageMotion.x, 0.0D, averageMotion.z), 0.025D, 0.22D);
-        Vec3d relativeHorizontal = smoothVelocity(new Vec3d(relativeMotion.x, 0.0D, relativeMotion.z), 0.025D, 0.20D);
-        Vec3d horizontalTrail = averageHorizontal.multiply(0.42D).add(relativeHorizontal.multiply(0.18D));
-        horizontalTrail = clampVector(horizontalTrail, ENDPOINT_MAX_HORIZONTAL_TRAIL);
+        Vec3d horizontalMotion = new Vec3d(averageMotion.x, 0.0D, averageMotion.z);
+        double horizontalSpeed = horizontalMotion.length();
+        double horizontalLeadWeight = smoothUnit((horizontalSpeed - 0.025D) / 0.22D);
+        Vec3d horizontalTrail = horizontalSpeed <= 0.000001D
+                ? Vec3d.ZERO
+                : horizontalMotion.multiply(1.0D / horizontalSpeed)
+                .multiply(ENDPOINT_MAX_HORIZONTAL_TRAIL * horizontalLeadWeight * (0.35D + stretch * 0.45D));
 
-        double speedWeight = smoothUnit((new Vec3d(averageMotion.x, 0.0D, averageMotion.z).length() - 0.025D) / 0.20D);
+        double speedWeight = smoothUnit((horizontalSpeed - 0.025D) / 0.20D);
         double verticalWeight = smoothUnit((Math.abs(averageMotion.y) - 0.012D) / 0.08D);
         double gravitySag = WORLD_GRAVITY_ACCELERATION * ENDPOINT_GRAVITY_SCALE * (1.0D + stretch * 0.35D);
         double verticalMotion = smoothScalar(averageMotion.y, 0.012D, 0.12D) * 0.90D
@@ -100,7 +103,7 @@ public final class HoldHandsLinkGeometry {
 
         Vec3d dynamicOffset = horizontalTrail.add(0.0D,
                 verticalMotion + gravitySag + flightLift + stretchLift, 0.0D);
-        double weight = MathHelper.clamp(0.14D + stretch * 0.54D + speedWeight * 0.12D
+        double weight = MathHelper.clamp(0.14D + stretch * 0.54D + speedWeight * 0.04D
                 + verticalWeight * 0.42D, 0.0D, 1.0D);
         return base.lerp(midpoint.add(dynamicOffset), weight);
     }
