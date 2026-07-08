@@ -23,6 +23,8 @@ public record ThroughStateS2CPacket(
         float lockedYaw,
         /** 穿墙锁定时固定的俯仰视角 */
         float lockedPitch,
+        /** 穿墙状态下使用的水平移动速度 */
+        double phaseSpeedMultiplier,
         /** 渐隐动画剩余刻数（tick），用于客户端控制透明度过渡 */
         int fadeOutTicks
 ) implements CustomPayload {
@@ -33,7 +35,7 @@ public record ThroughStateS2CPacket(
      * 从网络缓冲区读取状态数据构造数据包。
      */
     private ThroughStateS2CPacket(RegistryByteBuf buf) {
-        this(buf.readBoolean(), buf.readBoolean(), buf.readBoolean(), buf.readBoolean(), buf.readFloat(), buf.readFloat(), buf.readVarInt());
+        this(buf.readBoolean(), buf.readBoolean(), buf.readBoolean(), buf.readBoolean(), buf.readFloat(), buf.readFloat(), buf.readDouble(), buf.readVarInt());
     }
 
     /**
@@ -46,6 +48,7 @@ public record ThroughStateS2CPacket(
         buf.writeBoolean(phaseStalled);
         buf.writeFloat(lockedYaw);
         buf.writeFloat(lockedPitch);
+        buf.writeDouble(phaseSpeedMultiplier);
         buf.writeVarInt(fadeOutTicks);
     }
 

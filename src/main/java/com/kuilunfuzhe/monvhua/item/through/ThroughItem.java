@@ -814,9 +814,10 @@ public class ThroughItem extends Item {
         RotationSnapshot rotation = PHASE_LOCKED_ROTATIONS.get(player.getUuid());
         float yaw = rotation != null ? rotation.yaw() : player.getYaw();
         float pitch = rotation != null ? rotation.pitch() : player.getPitch();
+        double speedMultiplier = ThroughConfig.getInstance().getSpeedMultiplier(getPlayerStage(player));
         net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(
                 player,
-                new ThroughStateS2CPacket(invisible, phaseNoClip, phaseLocked, phaseStalled, yaw, pitch, 0)
+                new ThroughStateS2CPacket(invisible, phaseNoClip, phaseLocked, phaseStalled, yaw, pitch, speedMultiplier, 0)
         );
     }
 }

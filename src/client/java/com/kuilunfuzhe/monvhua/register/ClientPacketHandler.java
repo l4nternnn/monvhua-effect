@@ -254,6 +254,7 @@ public class ClientPacketHandler {
                     packet.phaseStalled(),
                     packet.lockedYaw(),
                     packet.lockedPitch(),
+                    packet.phaseSpeedMultiplier(),
                     packet.fadeOutTicks()
             ));
         });

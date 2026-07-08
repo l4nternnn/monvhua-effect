@@ -5,6 +5,7 @@ import net.minecraft.client.option.Perspective;
 import net.minecraft.entity.Entity;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -16,6 +17,8 @@ import java.util.Map;
  * 退出时通过EnumMap备份恢复原始音量设置。
  */
 public final class ThroughClientManager {
+    /** 配置默认值，客户端用它把速度配置换算成输入缩放比例。 */
+    private static final double DEFAULT_PHASE_SPEED = 0.05D;
     /** 非玩家音效音量乘数（降至10%） */
     private static final float OTHER_SOUND_MULTIPLIER = 0.10F;
     /** 玩家类音效（心跳）音量乘数（保持100%不变） */
@@ -33,6 +36,8 @@ public final class ThroughClientManager {
     /** 穿墙锁定时服务端固定的视角 */
     private static float lockedYaw = 0.0F;
     private static float lockedPitch = 0.0F;
+    /** 服务端同步的穿墙水平速度 */
+    private static double phaseSpeedMultiplier = DEFAULT_PHASE_SPEED;
     /** 穿墙期间强制第一人称前的原视角，用于结束后恢复 */
     private static Perspective previousPerspective = null;
     /** 穿墙期间客户端原本的无重力状态，用于结束后恢复 */
@@ -57,13 +62,13 @@ public final class ThroughClientManager {
      * @param fadeOutTicks 淡出tick数（当前未使用，保留用于未来扩展）
      */
     public static void setInvisible(boolean invisible, int fadeOutTicks) {
-        setState(invisible, false, false, false, 0.0F, 0.0F, fadeOutTicks);
+        setState(invisible, false, false, false, 0.0F, 0.0F, DEFAULT_PHASE_SPEED, fadeOutTicks);
     }
 
     /**
      * 设置完整隐秘状态，同步穿墙 noClip、锁定输入和锁定视角。
      */
-    public static void setState(boolean invisible, boolean newPhaseNoClip, boolean newPhaseLocked, boolean newPhaseStalled, float newLockedYaw, float newLockedPitch, int fadeOutTicks) {
+    public static void setState(boolean invisible, boolean newPhaseNoClip, boolean newPhaseLocked, boolean newPhaseStalled, float newLockedYaw, float newLockedPitch, double newPhaseSpeedMultiplier, int fadeOutTicks) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (invisible != active) {
             if (client == null) {
@@ -87,6 +92,7 @@ public final class ThroughClientManager {
         phaseStalled = newPhaseStalled;
         lockedYaw = newLockedYaw;
         lockedPitch = newLockedPitch;
+        phaseSpeedMultiplier = Math.max(0.0D, newPhaseSpeedMultiplier);
     }
 
     /** 每tick调用，维护客户端 noClip、禁用侧移/跳跃并锁定视角。 */
@@ -118,6 +124,8 @@ public final class ThroughClientManager {
                 client.options.backKey.setPressed(false);
                 client.options.sprintKey.setPressed(false);
                 stopMotionWhenPhaseMovementStops();
+            } else {
+                constrainPhaseVelocity(client);
             }
         }
     }
@@ -128,6 +136,13 @@ public final class ThroughClientManager {
 
     public static boolean isPhaseStalled() {
         return phaseStalled;
+    }
+
+    public static double getPhaseInputMultiplier() {
+        if (phaseSpeedMultiplier <= 0.0D) {
+            return 0.0D;
+        }
+        return phaseSpeedMultiplier / DEFAULT_PHASE_SPEED;
     }
 
     public static void stopMotionWhenPhaseMovementStops() {
@@ -144,6 +159,21 @@ public final class ThroughClientManager {
         return !client.options.forwardKey.isPressed()
                 && !client.options.backKey.isPressed()
                 && !client.options.sneakKey.isPressed();
+    }
+
+    private static void constrainPhaseVelocity(MinecraftClient client) {
+        Vec3d velocity = client.player.getVelocity();
+        double maxSpeed = Math.max(0.0D, phaseSpeedMultiplier);
+        if (maxSpeed <= 0.0D) {
+            clearCurrentMotion(client);
+            return;
+        }
+
+        double yawRadians = Math.toRadians(lockedYaw);
+        Vec3d forward = new Vec3d(-Math.sin(yawRadians), 0.0D, Math.cos(yawRadians));
+        double forwardSpeed = velocity.x * forward.x + velocity.z * forward.z;
+        forwardSpeed = Math.max(-maxSpeed, Math.min(maxSpeed, forwardSpeed));
+        client.player.setVelocity(forward.multiply(forwardSpeed));
     }
 
     public static boolean shouldIgnorePhaseCollision(Entity entity, BlockPos pos) {
