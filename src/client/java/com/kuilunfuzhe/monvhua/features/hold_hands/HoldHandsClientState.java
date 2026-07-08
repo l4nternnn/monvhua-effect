@@ -10,7 +10,7 @@ public final class HoldHandsClientState {
     private static final Map<Integer, HoldHandData> ACTIVE = new ConcurrentHashMap<>();
     private static final float FALLBACK_DEFAULT_DISTANCE = 1.012668F;
     private static final double CLIENT_POINT_DEADBAND = 0.025D;
-    private static final double CLIENT_POINT_ALPHA = 0.22D;
+    private static final double CLIENT_POINT_ALPHA = 0.36D;
     private static final double CLIENT_POINT_FAST_DISTANCE = 0.60D;
 
     private HoldHandsClientState() {

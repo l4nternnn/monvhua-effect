@@ -85,9 +85,15 @@ public final class HoldHandsLinkGeometry {
         Vec3d averageMotion = leaderMotion.add(followerMotion).multiply(0.5D);
         Vec3d relativeMotion = leaderMotion.subtract(followerMotion);
 
-        Vec3d horizontalTrail = Vec3d.ZERO;
+        Vec3d horizontalMotion = new Vec3d(averageMotion.x, 0.0D, averageMotion.z);
+        double horizontalSpeed = horizontalMotion.length();
+        double horizontalLeadWeight = smoothUnit((horizontalSpeed - 0.025D) / 0.22D);
+        Vec3d horizontalTrail = horizontalSpeed <= 0.000001D
+                ? Vec3d.ZERO
+                : horizontalMotion.multiply(1.0D / horizontalSpeed)
+                .multiply(ENDPOINT_MAX_HORIZONTAL_TRAIL * horizontalLeadWeight * (0.35D + stretch * 0.45D));
 
-        double speedWeight = smoothUnit((new Vec3d(averageMotion.x, 0.0D, averageMotion.z).length() - 0.025D) / 0.20D);
+        double speedWeight = smoothUnit((horizontalSpeed - 0.025D) / 0.20D);
         double verticalWeight = smoothUnit((Math.abs(averageMotion.y) - 0.012D) / 0.08D);
         double gravitySag = WORLD_GRAVITY_ACCELERATION * ENDPOINT_GRAVITY_SCALE * (1.0D + stretch * 0.35D);
         double verticalMotion = smoothScalar(averageMotion.y, 0.012D, 0.12D) * 0.90D

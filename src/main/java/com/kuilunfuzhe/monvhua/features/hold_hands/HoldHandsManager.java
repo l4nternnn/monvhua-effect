@@ -22,14 +22,14 @@ public final class HoldHandsManager {
     private static final double TAUT_FORCE_START = 0.92D;
     private static final double TAUT_TARGET_DISTANCE_BIAS = 0.985D;
     private static final double FOLLOW_POSITION_STIFFNESS = 1.35D;
-    private static final double FOLLOW_MAX_CORRECTION_SPEED = 1.65D;
+    private static final double FOLLOW_MAX_CORRECTION_SPEED = 2.15D;
     private static final double TAUT_POSITION_STIFFNESS = 1.75D;
-    private static final double TAUT_MAX_SPEED = 2.25D;
-    private static final double FOLLOW_POSITION_STEP_DEADBAND = 0.34D;
-    private static final double TAUT_POSITION_STEP_DEADBAND = 0.18D;
+    private static final double TAUT_MAX_SPEED = 3.10D;
+    private static final double FOLLOW_POSITION_STEP_DEADBAND = 0.20D;
+    private static final double TAUT_POSITION_STEP_DEADBAND = 0.08D;
     private static final double FOLLOW_POSITION_MIN_STEP = 0.08D;
-    private static final double FOLLOW_POSITION_MAX_STEP = 0.34D;
-    private static final double TAUT_POSITION_MAX_STEP = 0.46D;
+    private static final double FOLLOW_POSITION_MAX_STEP = 0.44D;
+    private static final double TAUT_POSITION_MAX_STEP = 0.62D;
     private static final double SHARED_POINT_DEADBAND = 0.018D;
     private static final double SHARED_POINT_GROUNDED_ALPHA = 0.16D;
     private static final double SHARED_POINT_AIRBORNE_ALPHA = 0.55D;
@@ -261,8 +261,8 @@ public final class HoldHandsManager {
                 / Math.max(0.000001D, SHARED_POINT_FAST_DISTANCE - SHARED_POINT_DEADBAND));
         double speedT = smoothUnit((averageSpeed(leader, follower) - 0.08D) / 0.42D);
         double baseAlpha = airborne ? SHARED_POINT_AIRBORNE_ALPHA : SHARED_POINT_GROUNDED_ALPHA;
-        double maxAlpha = airborne ? 0.78D : 0.24D;
-        double alpha = baseAlpha + (maxAlpha - baseAlpha) * Math.max(distanceT, speedT * 0.25D);
+        double maxAlpha = airborne ? 0.78D : 0.42D;
+        double alpha = baseAlpha + (maxAlpha - baseAlpha) * Math.max(distanceT, speedT * 0.85D);
         if (distance >= 1.20D) {
             alpha = 1.0D;
         }
@@ -308,6 +308,7 @@ public final class HoldHandsManager {
         }
 
         delta = applyFollowerPositionStep(leader, follower, desiredFeet, delta, tautLink);
+        Vec3d predictedFollowerFeet = desiredFeet.subtract(delta);
 
         Vec3d leaderVelocity = leader.getVelocity();
         Vec3d correction = HoldHandsLinkGeometry.clampSpeed(
@@ -317,7 +318,7 @@ public final class HoldHandsManager {
         follower.setVelocity(targetVelocity);
         follower.fallDistance = leader.fallDistance;
         follower.velocityModified = true;
-        return solveSharedHandPoint(leader.getPos(), desiredFeet, leaderVelocity, targetVelocity,
+        return solveSharedHandPoint(leader.getPos(), predictedFollowerFeet, leaderVelocity, targetVelocity,
                 leaderBodyYaw, followerBodyYaw, defaultDistance);
     }
 
