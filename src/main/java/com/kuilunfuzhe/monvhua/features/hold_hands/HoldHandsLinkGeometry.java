@@ -109,12 +109,18 @@ public final class HoldHandsLinkGeometry {
     }
 
     public static Vec3d hardLinkedEndpoint(Vec3d firstShoulder, double firstReach,
+                                            Vec3d secondShoulder, double secondReach,
+                                            Vec3d desired) {
+        return hardLinkedEndpoint(firstShoulder, firstReach, secondShoulder, secondReach, desired, null);
+    }
+
+    public static Vec3d hardLinkedEndpoint(Vec3d firstShoulder, double firstReach,
                                            Vec3d secondShoulder, double secondReach,
-                                           Vec3d desired) {
+                                           Vec3d desired, Vec3d previous) {
         Vec3d between = secondShoulder.subtract(firstShoulder);
         double distance = between.length();
         if (distance <= 0.000001D) {
-            return pointOnSphere(desired, firstShoulder, Math.min(firstReach, secondReach));
+            return pointOnSphere(previous != null ? previous : desired, firstShoulder, Math.min(firstReach, secondReach));
         }
 
         Vec3d axis = between.multiply(1.0D / distance);
@@ -139,12 +145,20 @@ public final class HoldHandsLinkGeometry {
         Vec3d preferred = desired.subtract(base);
         Vec3d bend = preferred.subtract(axis.multiply(preferred.dotProduct(axis)));
         if (bend.lengthSquared() <= 0.000001D) {
+            Vec3d previousBend = previous == null ? Vec3d.ZERO : previous.subtract(base);
+            bend = previousBend.subtract(axis.multiply(previousBend.dotProduct(axis)));
+        }
+        if (bend.lengthSquared() <= 0.000001D) {
             bend = new Vec3d(axis.z, 0.0D, -axis.x);
             if (bend.lengthSquared() <= 0.000001D) {
                 bend = new Vec3d(1.0D, 0.0D, 0.0D);
             }
         }
-        return base.add(bend.normalize().multiply(height));
+        Vec3d bendDir = bend.normalize();
+        Vec3d first = base.add(bendDir.multiply(height));
+        Vec3d second = base.subtract(bendDir.multiply(height));
+        Vec3d reference = previous != null ? previous : desired;
+        return first.squaredDistanceTo(reference) <= second.squaredDistanceTo(reference) ? first : second;
     }
 
     public static Vec3d constrainEndpointForArm(Vec3d target, Vec3d shoulder, float bodyYaw,

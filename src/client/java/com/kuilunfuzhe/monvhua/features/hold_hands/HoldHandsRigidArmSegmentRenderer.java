@@ -51,7 +51,9 @@ final class HoldHandsRigidArmSegmentRenderer {
             return false;
         }
 
-        float renderBodyYaw = state.bodyYaw;
+        float renderBodyYaw = side == HoldHandsSkeletalPose.PASSIVE_ROLE_HAND
+                ? HoldHandsClientState.getHoldBodyYaw(state.id, state.bodyYaw)
+                : state.bodyYaw;
         Vec3d targetWorld = HoldHandsClientState.getSharedHandPoint(state.id);
         if (targetWorld == null) {
             return false;
