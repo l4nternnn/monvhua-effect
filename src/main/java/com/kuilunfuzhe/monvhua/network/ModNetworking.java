@@ -37,6 +37,7 @@ import com.kuilunfuzhe.monvhua.network.injured_and_bleeding.InjuredBleedingPacke
 import com.kuilunfuzhe.monvhua.network.openback.*;
 import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
 import com.kuilunfuzhe.monvhua.network.plant.PlantMagicPackets;
+import com.kuilunfuzhe.monvhua.network.portal.PortalPackets;
 import com.kuilunfuzhe.monvhua.network.secret.SecretPackets;
 import com.kuilunfuzhe.monvhua.network.through.RequestThroughConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughConfigS2CPacket;
@@ -74,6 +75,7 @@ public class ModNetworking {
         GravityPackets.registerS2C();
         PaintOverlayPackets.registerS2C();
         DrawingBoardPackets.registerS2C();
+        PortalPackets.registerS2C();
         PlantMagicPackets.registerS2C();
         AreaTipPackets.registerS2C();
         InjuredBleedingPackets.registerS2C();
@@ -117,6 +119,7 @@ public class ModNetworking {
         GravityPackets.registerC2S();
         PaintOverlayPackets.registerC2S();
         DrawingBoardPackets.registerC2S();
+        PortalPackets.registerC2S();
         PlantMagicPackets.registerC2S();
         AreaTipPackets.registerC2S();
         InjuredBleedingPackets.registerC2S();

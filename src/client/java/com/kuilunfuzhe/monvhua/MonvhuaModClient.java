@@ -25,6 +25,7 @@ import com.kuilunfuzhe.monvhua.features.paint.PlayerPaintCommand;
 import com.kuilunfuzhe.monvhua.features.playerlist.PlayerListRestrictClient;
 import com.kuilunfuzhe.monvhua.network.playerlist.PlayerListRestrictS2CPacket;
 import com.kuilunfuzhe.monvhua.features.paint.drawingboard.DrawingBoardClient;
+import com.kuilunfuzhe.monvhua.features.portal.client.PortalClient;
 import com.kuilunfuzhe.monvhua.features.textarea.TextAreaHudClient;
 import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.body.bodyback.BodyPartScreen;
@@ -99,6 +100,7 @@ public class MonvhuaModClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         BlockHoleClient.register();
+        PortalClient.initialize();
         registerSkeletalModelResourceReload();
 
         // ===== 1. 网络包接收器注册 =====

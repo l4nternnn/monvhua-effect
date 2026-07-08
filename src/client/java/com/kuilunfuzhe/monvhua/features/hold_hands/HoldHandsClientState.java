@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.hold_hands;
 
 import com.kuilunfuzhe.monvhua.network.hold_hands.HoldHandsSyncS2CPacket;
+import net.minecraft.util.math.Vec3d;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,7 +21,9 @@ public final class HoldHandsClientState {
         HoldHandsSkeletalPose.HandSide handSide = packet.handSide() == HoldHandsSyncS2CPacket.HAND_LEFT
                 ? HoldHandsSkeletalPose.HandSide.LEFT
                 : HoldHandsSkeletalPose.HandSide.RIGHT;
-        ACTIVE.put(packet.entityId(), new HoldHandData(handSide, packet.partnerId(), packet.defaultDistance()));
+        ACTIVE.put(packet.entityId(), new HoldHandData(handSide, packet.partnerId(),
+                packet.defaultDistance(), packet.holdBodyYaw(),
+                new Vec3d(packet.sharedHandX(), packet.sharedHandY(), packet.sharedHandZ())));
     }
 
     public static void clear() {
@@ -46,6 +49,17 @@ public final class HoldHandsClientState {
         return data != null ? Math.max(0.001F, data.defaultDistance()) : FALLBACK_DEFAULT_DISTANCE;
     }
 
-    private record HoldHandData(HoldHandsSkeletalPose.HandSide handSide, int partnerId, float defaultDistance) {
+    public static float getHoldBodyYaw(int entityId, float fallback) {
+        HoldHandData data = ACTIVE.get(entityId);
+        return data != null ? data.holdBodyYaw() : fallback;
+    }
+
+    public static Vec3d getSharedHandPoint(int entityId) {
+        HoldHandData data = ACTIVE.get(entityId);
+        return data != null ? data.sharedHandPoint() : null;
+    }
+
+    private record HoldHandData(HoldHandsSkeletalPose.HandSide handSide, int partnerId,
+                                float defaultDistance, float holdBodyYaw, Vec3d sharedHandPoint) {
     }
 }

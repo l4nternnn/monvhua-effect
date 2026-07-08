@@ -1,0 +1,29 @@
+package com.kuilunfuzhe.monvhua.features.portal.client;
+
+import com.kuilunfuzhe.monvhua.features.portal.PortalBlockEntities;
+import com.kuilunfuzhe.monvhua.network.portal.PortalPackets;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
+
+public final class PortalClient {
+    private static boolean initialized;
+
+    private PortalClient() {
+    }
+
+    public static void initialize() {
+        if (initialized) {
+            return;
+        }
+        initialized = true;
+        BlockEntityRendererFactories.register(
+                PortalBlockEntities.PORTAL_BLOCK_ENTITY,
+                PortalBlockEntityRenderer::new
+        );
+        ClientPlayNetworking.registerGlobalReceiver(PortalPackets.OpenEditorS2C.ID, (packet, context) ->
+                context.client().execute(() -> MinecraftClient.getInstance().setScreen(
+                        new PortalGroupScreen(packet.pos(), packet.selectedGroup(), packet.groups(), packet.endpointCounts())
+                )));
+    }
+}

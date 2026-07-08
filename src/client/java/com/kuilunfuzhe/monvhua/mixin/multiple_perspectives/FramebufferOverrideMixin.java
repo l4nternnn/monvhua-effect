@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.mixin.multiple_perspectives;
 
 import com.kuilunfuzhe.monvhua.features.mirror.FramebufferOverride;
+import com.kuilunfuzhe.monvhua.features.portal.client.PortalFramebufferOverride;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
 import org.spongepowered.asm.mixin.Mixin;
@@ -13,6 +14,9 @@ public class FramebufferOverrideMixin {
 	@Inject(method = "getFramebuffer", at = @At("HEAD"), cancellable = true)
 	private void monvhua$getMirrorFramebufferOverride(CallbackInfoReturnable<Framebuffer> cir) {
 		Framebuffer override = FramebufferOverride.getOverride();
+		if (override == null) {
+			override = PortalFramebufferOverride.get();
+		}
 		if (override != null) {
 			cir.setReturnValue(override);
 		}

@@ -10,6 +10,7 @@ import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
 import com.kuilunfuzhe.monvhua.item.plant.PlantMagicItems;
 import com.kuilunfuzhe.monvhua.item.through.ThroughItem;
+import com.kuilunfuzhe.monvhua.features.portal.PortalItems;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.minecraft.item.ItemGroup;
 import net.minecraft.item.ItemStack;
@@ -38,6 +39,7 @@ public class ModItemGroups {
                             entries.add(AreaTipItems.AREA_TIP_STICK);
                             entries.add(PlantMagicItems.PLANT_WAND);
                             entries.add(ThroughItem.THROUGH_ITEM);
+                            entries.add(PortalItems.FRAME_ITEM);
                             entries.add(mirror_of_then_and_now.MIRROR_ITEM);
                             entries.add(ImitateItem.IMITATE_ITEM);
                             entries.add(PaintItems.PAINT_BRUSH);

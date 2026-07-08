@@ -1,0 +1,22 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "particle": "monvhua:block/1testblock"
+  },
+  "elements": [
+    {
+      "from": [0, 0, 7],
+      "to": [16, 16, 9],
+      "faces": {
+        "north": {
+          "texture": "#particle",
+          "tintindex": 0
+        },
+        "south": {
+          "texture": "#particle",
+          "tintindex": 0
+        }
+      }
+    }
+  ]
+}

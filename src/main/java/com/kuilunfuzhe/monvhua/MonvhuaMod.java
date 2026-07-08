@@ -32,6 +32,7 @@ import com.kuilunfuzhe.monvhua.features.imitate.ImitateManager;
 import com.kuilunfuzhe.monvhua.features.injured_and_bleeding.InjuredBleedingFeature;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayFeature;
 import com.kuilunfuzhe.monvhua.features.paint.PaintBucketBlock;
+import com.kuilunfuzhe.monvhua.features.portal.PortalItems;
 import com.kuilunfuzhe.monvhua.features.plant.PlantMagic;
 import com.kuilunfuzhe.monvhua.item.ModItemGroups;
 import com.kuilunfuzhe.monvhua.item.area_tip.AreaTipItems;
@@ -657,6 +658,7 @@ public class MonvhuaMod implements ModInitializer {
         PlantMagicItems.initialize();
         PlantMagic.initialize(configManager);
         BlockHoleItems.initialize();
+        PortalItems.initialize();
         PaintItems.initialize();
         PaintOverlayFeature.initialize();
         InjuredBleedingFeature.initialize();

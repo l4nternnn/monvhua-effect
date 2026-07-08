@@ -1,6 +1,7 @@
 {
   "item.monvhua.through": "|Magic: Through|",
   "item.monvhua.block_hole": "|Magic: Block Hole|",
+  "item.monvhua.light_portal": "Light Portal",
   "item.monvhua.paint_brush": "Overlay Paint Brush",
   "item.monvhua.eraser": "Eraser",
   "item.monvhua.paint_paper": "Paint Paper",
@@ -9,6 +10,9 @@
   "item.monvhua.area_tip_stick": "Area Tip Stick",
   "block.monvhua.paint_bucket": "Paint Bucket",
   "block.monvhua.block_hole": "|Magic: Block Hole|",
+  "block.monvhua.light_portal": "Light Portal",
+  "item.monvhua.light_portal_frame": "Light Portal Frame",
+  "block.monvhua.light_portal_frame": "Light Portal Frame",
   "key.monvhua.body_pose_editor": "Body Pose Editor",
   "key.monvhua.body_pose_world_preview": "Body Pose World Preview",
   "key.monvhua.action_editor": "Action",

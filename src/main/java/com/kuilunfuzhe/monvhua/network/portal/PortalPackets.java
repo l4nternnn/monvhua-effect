@@ -1,0 +1,189 @@
+package com.kuilunfuzhe.monvhua.network.portal;
+
+import com.kuilunfuzhe.monvhua.MonvhuaMod;
+import com.kuilunfuzhe.monvhua.features.portal.PortalManager;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.network.RegistryByteBuf;
+import net.minecraft.network.codec.PacketCodec;
+import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.math.BlockPos;
+
+public final class PortalPackets {
+    private static final int MAX_GROUPS = 64;
+    private static final int MAX_GROUP_NAME = 32;
+
+    private PortalPackets() {
+    }
+
+    public static void registerS2C() {
+        OpenEditorS2C.register();
+    }
+
+    public static void registerC2S() {
+        BindGroupC2S.register();
+        DeleteGroupC2S.register();
+    }
+
+    public static void registerReceivers() {
+        ServerPlayNetworking.registerGlobalReceiver(BindGroupC2S.ID, (packet, context) ->
+                context.server().execute(() -> PortalManager.bindToGroup(context.player(), packet.pos(), packet.groupId())));
+        ServerPlayNetworking.registerGlobalReceiver(DeleteGroupC2S.ID, (packet, context) ->
+                context.server().execute(() -> PortalManager.deleteGroup(context.player(), packet.groupId())));
+    }
+
+    public record OpenEditorS2C(BlockPos pos, String selectedGroup, String[] groups, int[] endpointCounts) implements CustomPayload {
+        public static final Id<OpenEditorS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "portal_editor_open"));
+        public static final PacketCodec<RegistryByteBuf, OpenEditorS2C> CODEC = PacketCodec.of(OpenEditorS2C::write, OpenEditorS2C::new);
+        private static boolean registered;
+
+        public OpenEditorS2C {
+            pos = pos.toImmutable();
+            selectedGroup = sanitize(selectedGroup);
+            groups = sanitizeGroups(groups);
+            endpointCounts = sanitizeCounts(groups, endpointCounts);
+        }
+
+        private OpenEditorS2C(RegistryByteBuf buf) {
+            this(buf.readBlockPos(), buf.readString(MAX_GROUP_NAME), readGroups(buf), readCounts(buf));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeBlockPos(pos);
+            buf.writeString(selectedGroup, MAX_GROUP_NAME);
+            buf.writeVarInt(groups.length);
+            for (String group : groups) {
+                buf.writeString(group, MAX_GROUP_NAME);
+            }
+            buf.writeVarInt(endpointCounts.length);
+            for (int count : endpointCounts) {
+                buf.writeVarInt(count);
+            }
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record BindGroupC2S(BlockPos pos, String groupId) implements CustomPayload {
+        public static final Id<BindGroupC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "portal_bind_group"));
+        public static final PacketCodec<RegistryByteBuf, BindGroupC2S> CODEC = PacketCodec.of(BindGroupC2S::write, BindGroupC2S::new);
+        private static boolean registered;
+
+        public BindGroupC2S {
+            pos = pos.toImmutable();
+            groupId = sanitize(groupId);
+        }
+
+        private BindGroupC2S(RegistryByteBuf buf) {
+            this(buf.readBlockPos(), buf.readString(MAX_GROUP_NAME));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeBlockPos(pos);
+            buf.writeString(groupId, MAX_GROUP_NAME);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record DeleteGroupC2S(String groupId) implements CustomPayload {
+        public static final Id<DeleteGroupC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "portal_delete_group"));
+        public static final PacketCodec<RegistryByteBuf, DeleteGroupC2S> CODEC = PacketCodec.of(DeleteGroupC2S::write, DeleteGroupC2S::new);
+        private static boolean registered;
+
+        public DeleteGroupC2S {
+            groupId = sanitize(groupId);
+        }
+
+        private DeleteGroupC2S(RegistryByteBuf buf) {
+            this(buf.readString(MAX_GROUP_NAME));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(groupId, MAX_GROUP_NAME);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    private static String sanitize(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return trimmed.length() > MAX_GROUP_NAME ? trimmed.substring(0, MAX_GROUP_NAME) : trimmed;
+    }
+
+    private static String[] readGroups(RegistryByteBuf buf) {
+        int count = Math.min(buf.readVarInt(), MAX_GROUPS);
+        String[] groups = new String[count];
+        for (int i = 0; i < count; i++) {
+            groups[i] = sanitize(buf.readString(MAX_GROUP_NAME));
+        }
+        return groups;
+    }
+
+    private static int[] readCounts(RegistryByteBuf buf) {
+        int count = Math.min(buf.readVarInt(), MAX_GROUPS);
+        int[] counts = new int[count];
+        for (int i = 0; i < count; i++) {
+            counts[i] = Math.max(0, Math.min(2, buf.readVarInt()));
+        }
+        return counts;
+    }
+
+    private static String[] sanitizeGroups(String[] groups) {
+        if (groups == null) {
+            return new String[0];
+        }
+        int length = Math.min(groups.length, MAX_GROUPS);
+        String[] copy = new String[length];
+        for (int i = 0; i < length; i++) {
+            copy[i] = sanitize(groups[i]);
+        }
+        return copy;
+    }
+
+    private static int[] sanitizeCounts(String[] groups, int[] counts) {
+        int length = groups == null ? 0 : groups.length;
+        int[] copy = new int[length];
+        if (counts != null) {
+            for (int i = 0; i < Math.min(length, counts.length); i++) {
+                copy[i] = Math.max(0, Math.min(2, counts[i]));
+            }
+        }
+        return copy;
+    }
+}

@@ -1,0 +1,34 @@
+{
+  "variants": {
+    "controller=false,facing=north": {
+      "model": "monvhua:block/light_portal"
+    },
+    "controller=false,facing=south": {
+      "model": "monvhua:block/light_portal",
+      "y": 180
+    },
+    "controller=false,facing=west": {
+      "model": "monvhua:block/light_portal",
+      "y": 270
+    },
+    "controller=false,facing=east": {
+      "model": "monvhua:block/light_portal",
+      "y": 90
+    },
+    "controller=true,facing=north": {
+      "model": "monvhua:block/light_portal"
+    },
+    "controller=true,facing=south": {
+      "model": "monvhua:block/light_portal",
+      "y": 180
+    },
+    "controller=true,facing=west": {
+      "model": "monvhua:block/light_portal",
+      "y": 270
+    },
+    "controller=true,facing=east": {
+      "model": "monvhua:block/light_portal",
+      "y": 90
+    }
+  }
+}
