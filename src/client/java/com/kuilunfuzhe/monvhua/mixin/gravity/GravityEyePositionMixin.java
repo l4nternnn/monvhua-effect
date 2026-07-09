@@ -47,6 +47,10 @@ public abstract class GravityEyePositionMixin {
     @Inject(method = "getEyeY", at = @At("HEAD"), cancellable = true)
     private void monvhua$getInvertedEyeY(CallbackInfoReturnable<Double> cir) {
         Entity entity = (Entity) (Object) this;
+        if (GravityMagic.getSurfaceGravityDirection(entity) != null) {
+            cir.setReturnValue(GravityMagic.getSurfaceEyePos(entity, 1.0F).y);
+            return;
+        }
         if (isLocalInvertedPlayer(entity)) {
             cir.setReturnValue(invertedEyeY(this.getY()));
         }
@@ -55,6 +59,10 @@ public abstract class GravityEyePositionMixin {
     @Inject(method = "getCameraPosVec", at = @At("HEAD"), cancellable = true)
     private void monvhua$getInvertedCameraPosVec(float tickProgress, CallbackInfoReturnable<Vec3d> cir) {
         Entity entity = (Entity) (Object) this;
+        if (GravityMagic.getSurfaceGravityDirection(entity) != null) {
+            cir.setReturnValue(GravityMagic.getSurfaceEyePos(entity, tickProgress));
+            return;
+        }
         if (!isLocalInvertedPlayer(entity)) {
             return;
         }
@@ -73,4 +81,5 @@ public abstract class GravityEyePositionMixin {
         MinecraftClient client = MinecraftClient.getInstance();
         return client.player == entity && GravityMagic.isInInvertedArea(entity);
     }
+
 }

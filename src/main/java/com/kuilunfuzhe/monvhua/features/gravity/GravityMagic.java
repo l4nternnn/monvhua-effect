@@ -56,6 +56,7 @@ import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
@@ -161,6 +162,11 @@ public final class GravityMagic {
     private static final Map<String, Integer> THROWN_DAMAGE_COOLDOWNS = new ConcurrentHashMap<>();
     private static final Map<UUID, InvertedPlayerState> SERVER_INVERTED_PLAYER_STATES = new ConcurrentHashMap<>();
     private static final Map<UUID, InvertedPlayerState> CLIENT_INVERTED_PLAYER_STATES = new ConcurrentHashMap<>();
+    private static final Set<UUID> SURFACE_LOGIC_PLAYERS = ConcurrentHashMap.newKeySet();
+    private static final Map<UUID, Direction> SERVER_SURFACE_GRAVITY_PLAYERS = new ConcurrentHashMap<>();
+    private static final Map<UUID, Direction> CLIENT_SURFACE_GRAVITY_PLAYERS = new ConcurrentHashMap<>();
+    private static final Map<UUID, SurfaceGravityEngine.SurfaceState> SERVER_SURFACE_PLAYER_STATES = new ConcurrentHashMap<>();
+    private static final Map<UUID, SurfaceGravityEngine.SurfaceState> CLIENT_SURFACE_PLAYER_STATES = new ConcurrentHashMap<>();
     private static final List<AreaGravityField> AREA_FIELDS = new CopyOnWriteArrayList<>();
     private static final Map<UUID, java.util.ArrayDeque<AreaEdit>> DEBUG_UNDO = new ConcurrentHashMap<>();
     private static final Map<UUID, java.util.ArrayDeque<AreaEdit>> DEBUG_REDO = new ConcurrentHashMap<>();
@@ -169,6 +175,11 @@ public final class GravityMagic {
     public enum LaunchMode {
         UP,
         RIGHT
+    }
+
+    public enum LogicMode {
+        FORCE,
+        SURFACE
     }
 
     public record AreaGravityView(UUID id, BlockPos center, GravityAreaSpec spec, int ticks) {
@@ -361,6 +372,14 @@ public final class GravityMagic {
         ServerPlayNetworking.registerGlobalReceiver(GravityPackets.DebugAreaActionC2S.ID, (packet, context) -> {
             context.server().execute(() -> handleDebugAreaAction(context.player(), packet));
         });
+        ServerPlayNetworking.registerGlobalReceiver(GravityPackets.SurfaceLookC2S.ID, (packet, context) -> {
+            context.server().execute(() -> {
+                ServerPlayerEntity player = context.player();
+                if (isSurfaceLogicMode(player) && hasSurfaceGravity(player)) {
+                    setSurfaceLook(player, packet.localYaw(), packet.localPitch());
+                }
+            });
+        });
         ServerPlayNetworking.registerGlobalReceiver(GravityPackets.RequestConfigC2S.ID, (packet, context) ->
                 context.server().execute(() -> syncConfigTo(context.player())));
         ServerPlayNetworking.registerGlobalReceiver(GravityPackets.UpdateConfigC2S.ID, (packet, context) -> {
@@ -404,6 +423,7 @@ public final class GravityMagic {
                 finishDirectedEntityGravity(player, directed);
             }
             resetInvertedPlayerState(player);
+            clearSurfaceLogic(player);
         });
 
         UseBlockCallback.EVENT.register(GravityMagic::useInvertedBlockSurface);
@@ -413,6 +433,158 @@ public final class GravityMagic {
     public static void syncConfigTo(ServerPlayerEntity player) {
         ServerPlayNetworking.send(player, new GravityPackets.ConfigS2C(GravityConfig.getInstance().toJson()));
         syncEnergyTo(player);
+        syncSurfaceLogicMode(player);
+        syncSurfaceGravity(player);
+    }
+
+    public static LogicMode getLogicMode(ServerPlayerEntity player) {
+        return player != null && SURFACE_LOGIC_PLAYERS.contains(player.getUuid()) ? LogicMode.SURFACE : LogicMode.FORCE;
+    }
+
+    public static LogicMode setLogicMode(ServerPlayerEntity player, LogicMode mode) {
+        if (player == null) {
+            return LogicMode.FORCE;
+        }
+        LogicMode next = mode == LogicMode.SURFACE ? LogicMode.SURFACE : LogicMode.FORCE;
+        if (next == LogicMode.SURFACE) {
+            SURFACE_LOGIC_PLAYERS.add(player.getUuid());
+            cleanupPlayerGravity(player, false);
+        } else {
+            SURFACE_LOGIC_PLAYERS.remove(player.getUuid());
+            clearSurfaceGravity(player);
+        }
+        syncSurfaceLogicMode(player);
+        return next;
+    }
+
+    public static LogicMode toggleLogicMode(ServerPlayerEntity player) {
+        return setLogicMode(player, getLogicMode(player) == LogicMode.SURFACE ? LogicMode.FORCE : LogicMode.SURFACE);
+    }
+
+    public static boolean isSurfaceLogicMode(ServerPlayerEntity player) {
+        return getLogicMode(player) == LogicMode.SURFACE;
+    }
+
+    public static boolean isSurfaceLogicMode(Entity entity) {
+        return entity != null && SURFACE_LOGIC_PLAYERS.contains(entity.getUuid());
+    }
+
+    public static Direction getSurfaceGravityDirection(Entity entity) {
+        if (entity == null) {
+            return null;
+        }
+        return surfaceGravityPlayers(entity).get(entity.getUuid());
+    }
+
+    private static Map<UUID, Direction> surfaceGravityPlayers(Entity entity) {
+        return entity != null && entity.getWorld().isClient()
+                ? CLIENT_SURFACE_GRAVITY_PLAYERS
+                : SERVER_SURFACE_GRAVITY_PLAYERS;
+    }
+
+    public static SurfaceGravityEngine.SurfaceState getSurfaceState(Entity entity) {
+        if (entity == null) {
+            return null;
+        }
+        return surfacePlayerStates(entity).get(entity.getUuid());
+    }
+
+    public static SurfaceView getSurfaceView(Entity entity) {
+        SurfaceGravityEngine.SurfaceState state = getSurfaceState(entity);
+        Direction direction = getSurfaceGravityDirection(entity);
+        if (state == null || direction == null) {
+            return null;
+        }
+        return new SurfaceView(direction, state.localYaw(), state.localPitch());
+    }
+
+    public static Vec3d getSurfaceEyePos(Entity entity, float tickProgress) {
+        Direction direction = getSurfaceGravityDirection(entity);
+        if (direction == null) {
+            return entity == null ? Vec3d.ZERO : entity.getCameraPosVec(tickProgress);
+        }
+        Box currentBox = entity.getBoundingBox();
+        Vec3d currentAnchor = SurfaceGravityCollision.anchorFromBox(direction, currentBox);
+        Vec3d previousAnchor = new Vec3d(entity.lastX, entity.lastY, entity.lastZ);
+        Vec3d interpolatedAnchor = new Vec3d(
+                MathHelper.lerp(tickProgress, previousAnchor.x, currentAnchor.x),
+                MathHelper.lerp(tickProgress, previousAnchor.y, currentAnchor.y),
+                MathHelper.lerp(tickProgress, previousAnchor.z, currentAnchor.z)
+        );
+        Box box = currentBox.offset(interpolatedAnchor.subtract(currentAnchor));
+        return SurfaceGravityCollision.eyePosFromBox(entity, direction, box);
+    }
+
+    public static Vec3d getSurfaceLook(Entity entity) {
+        SurfaceGravityEngine.SurfaceState state = getSurfaceState(entity);
+        Direction direction = getSurfaceGravityDirection(entity);
+        if (direction == null) {
+            return entity == null ? new Vec3d(0.0D, 0.0D, 1.0D) : entity.getRotationVec(1.0F);
+        }
+        if (state == null) {
+            return SurfaceGravityBasis.look(direction, entity.getYaw(), entity.getPitch());
+        }
+        return SurfaceGravityBasis.look(direction, state.localYaw(), state.localPitch());
+    }
+
+    public static void setSurfaceLook(Entity entity, float localYaw, float localPitch) {
+        SurfaceGravityEngine.SurfaceState state = getSurfaceState(entity);
+        if (state != null) {
+            state.setLook(localYaw, localPitch);
+            entity.setYaw(localYaw);
+            entity.setPitch(Math.clamp(localPitch, -89.0F, 89.0F));
+        }
+    }
+
+    public static void setClientSurfaceGravity(Entity entity, Direction direction) {
+        setClientSurfaceGravity(entity, direction, null);
+    }
+
+    public static void setClientSurfaceGravity(Entity entity, Direction direction, Vec3d anchor) {
+        if (entity == null) {
+            return;
+        }
+        if (direction == null) {
+            Direction oldDirection = CLIENT_SURFACE_GRAVITY_PLAYERS.get(entity.getUuid());
+            Vec3d oldEye = oldDirection == null ? null : SurfaceGravityCollision.eyePosFromBox(entity, oldDirection, entity.getBoundingBox());
+            CLIENT_SURFACE_GRAVITY_PLAYERS.remove(entity.getUuid());
+            CLIENT_SURFACE_PLAYER_STATES.remove(entity.getUuid());
+            entity.setNoGravity(false);
+            if (oldEye != null) {
+                SurfaceGravityCollision.moveKeepingEye(entity, Direction.DOWN, oldEye);
+            } else {
+                SurfaceGravityCollision.restoreVanillaBox(entity);
+            }
+        } else {
+            Direction oldDirection = CLIENT_SURFACE_GRAVITY_PLAYERS.get(entity.getUuid());
+            Vec3d currentEye = oldDirection == null ? entity.getCameraPosVec(1.0F) : SurfaceGravityCollision.eyePosFromBox(entity, oldDirection, entity.getBoundingBox());
+            Vec3d currentLook = oldDirection == null ? entity.getRotationVec(1.0F) : getSurfaceLook(entity);
+            SurfaceGravityBasis.LocalView localView = SurfaceGravityBasis.localView(direction, currentLook);
+            CLIENT_SURFACE_GRAVITY_PLAYERS.put(entity.getUuid(), direction);
+            SurfaceGravityEngine.SurfaceState state = CLIENT_SURFACE_PLAYER_STATES.computeIfAbsent(
+                    entity.getUuid(),
+                    uuid -> new SurfaceGravityEngine.SurfaceState(direction, localView.yaw(), localView.pitch())
+            );
+            state.setLook(localView.yaw(), localView.pitch());
+            state.setDownDirection(direction);
+            if (anchor != null) {
+                SurfaceGravityCollision.setAnchorAndRefreshBox(entity, direction, anchor);
+            } else {
+                SurfaceGravityCollision.moveKeepingEye(entity, direction, currentEye);
+            }
+        }
+    }
+
+    public static void setClientSurfaceLogicMode(Entity entity, boolean enabled) {
+        if (entity == null) {
+            return;
+        }
+        if (enabled) {
+            SURFACE_LOGIC_PLAYERS.add(entity.getUuid());
+        } else {
+            SURFACE_LOGIC_PLAYERS.remove(entity.getUuid());
+            setClientSurfaceGravity(entity, null);
+        }
     }
 
 
@@ -754,6 +926,10 @@ public final class GravityMagic {
     }
 
     public static boolean lightenLookedAtEntity(ServerPlayerEntity player) {
+        if (isSurfaceLogicMode(player)) {
+            player.sendMessage(Text.literal("§c[Gravity] Surface mode needs right-clicking a block face"), true);
+            return false;
+        }
         if (player.isSneaking()) {
             return applySelfGravityForce(player);
         }
@@ -1058,6 +1234,14 @@ public final class GravityMagic {
             return ActionResult.SUCCESS;
         }
         if (player instanceof ServerPlayerEntity serverPlayer) {
+            if (isSurfaceLogicMode(serverPlayer)) {
+                if (serverPlayer.isSneaking()) {
+                    clearSurfaceGravity(serverPlayer);
+                    return ActionResult.SUCCESS_SERVER;
+                }
+                serverPlayer.sendMessage(Text.literal("§c[Gravity] Surface mode targets block faces, not entities"), true);
+                return ActionResult.FAIL;
+            }
             if (serverPlayer.isSneaking()) {
                 return applySelfGravityForce(serverPlayer) ? ActionResult.SUCCESS_SERVER : ActionResult.FAIL;
             }
@@ -1067,6 +1251,87 @@ public final class GravityMagic {
             serverPlayer.sendMessage(Text.literal("\u00a7c[重力] Ctrl + 中键选中方块"), true);
         }
         return ActionResult.FAIL;
+    }
+
+    public static ActionResult useGravityWand(ServerPlayerEntity player, BlockHitResult hit) {
+        if (player == null) {
+            return ActionResult.FAIL;
+        }
+        if (!isSurfaceLogicMode(player)) {
+            return ActionResult.PASS;
+        }
+        if (player.isSneaking()) {
+            clearSurfaceGravity(player);
+            player.sendMessage(Text.literal("§b[Gravity] Surface gravity cleared"), true);
+            return ActionResult.SUCCESS_SERVER;
+        }
+        if (hit == null || hit.getType() == HitResult.Type.MISS) {
+            player.sendMessage(Text.literal("§c[Gravity] Right-click a block face to choose a surface"), true);
+            return ActionResult.FAIL;
+        }
+
+        Direction gravityDirection = hit.getSide().getOpposite();
+        Direction oldDirection = SERVER_SURFACE_GRAVITY_PLAYERS.get(player.getUuid());
+        Vec3d currentEye = oldDirection == null ? player.getEyePos() : SurfaceGravityCollision.eyePosFromBox(player, oldDirection, player.getBoundingBox());
+        Vec3d currentLook = oldDirection == null ? player.getRotationVec(1.0F) : getSurfaceLook(player);
+        SurfaceGravityBasis.LocalView localView = SurfaceGravityBasis.localView(gravityDirection, currentLook);
+        SERVER_SURFACE_GRAVITY_PLAYERS.put(player.getUuid(), gravityDirection);
+        SurfaceGravityEngine.SurfaceState surfaceState = surfacePlayerStates(player)
+                .computeIfAbsent(player.getUuid(), uuid -> new SurfaceGravityEngine.SurfaceState(gravityDirection, localView.yaw(), localView.pitch()));
+        surfaceState.setLook(localView.yaw(), localView.pitch());
+        surfaceState.setDownDirection(gravityDirection);
+        player.setNoGravity(true);
+        player.fallDistance = 0.0F;
+        SurfaceGravityCollision.moveKeepingEyeOnSurface(player, gravityDirection, currentEye, hit.getPos());
+        syncSurfaceGravity(player);
+        player.sendMessage(Text.literal("§b[Gravity] Surface gravity -> " + gravityDirection.asString()), true);
+        return ActionResult.SUCCESS_SERVER;
+    }
+
+    private static void clearSurfaceLogic(ServerPlayerEntity player) {
+        if (player == null) {
+            return;
+        }
+        SURFACE_LOGIC_PLAYERS.remove(player.getUuid());
+        clearSurfaceGravity(player);
+    }
+
+    public static void clearSurfaceGravity(ServerPlayerEntity player) {
+        if (player == null) {
+            return;
+        }
+        Direction oldDirection = SERVER_SURFACE_GRAVITY_PLAYERS.get(player.getUuid());
+        Vec3d oldEye = oldDirection == null ? null : SurfaceGravityCollision.eyePosFromBox(player, oldDirection, player.getBoundingBox());
+        SERVER_SURFACE_GRAVITY_PLAYERS.remove(player.getUuid());
+        SERVER_SURFACE_PLAYER_STATES.remove(player.getUuid());
+        player.setNoGravity(false);
+        player.fallDistance = 0.0F;
+        if (oldEye != null) {
+            SurfaceGravityCollision.moveKeepingEye(player, Direction.DOWN, oldEye);
+        } else {
+            SurfaceGravityCollision.restoreVanillaBox(player);
+        }
+        syncSurfaceGravity(player);
+    }
+
+    private static void syncSurfaceLogicMode(ServerPlayerEntity player) {
+        if (player != null) {
+            ServerPlayNetworking.send(player, new GravityPackets.LogicModeS2C(isSurfaceLogicMode(player)));
+        }
+    }
+
+    private static void syncSurfaceGravity(ServerPlayerEntity player) {
+        if (player == null) {
+            return;
+        }
+        Direction direction = SERVER_SURFACE_GRAVITY_PLAYERS.get(player.getUuid());
+        Vec3d anchor = player.getPos();
+        ServerPlayNetworking.send(player, new GravityPackets.SurfaceGravityS2C(
+                direction == null ? -1 : direction.ordinal(),
+                anchor.x,
+                anchor.y,
+                anchor.z
+        ));
     }
 
     private static Entity findLookedAtEntity(ServerPlayerEntity player, double reach) {
@@ -2357,6 +2622,11 @@ public final class GravityMagic {
             resetInvertedPlayerState(entity);
             return false;
         }
+        if (hasSurfaceGravity(entity)) {
+            entity.setNoGravity(true);
+            entity.fallDistance = 0.0D;
+            return true;
+        }
         if (!isInInvertedArea(entity)) {
             resetInvertedPlayerIfInactive(entity);
             return false;
@@ -2382,6 +2652,15 @@ public final class GravityMagic {
             DirectedEntityGravity directed = ENTITY_GRAVITY.get(entity.getUuid());
             if (directed != null) {
                 return tickDirectedPlayer(entity, input, directed);
+            }
+            Direction surfaceDirection = getSurfaceGravityDirection(entity);
+            if (surfaceDirection != null) {
+                SurfaceGravityEngine.SurfaceState surfaceState = surfacePlayerStates(entity).computeIfAbsent(
+                        entity.getUuid(),
+                        uuid -> new SurfaceGravityEngine.SurfaceState(surfaceDirection, entity.getYaw(), entity.getPitch())
+                );
+                surfaceState.setDownDirection(surfaceDirection);
+                return SurfaceGravityEngine.tick(entity, input, surfaceState);
             }
         }
 
@@ -2600,6 +2879,9 @@ public final class GravityMagic {
 
     public static void resetInvertedPlayerIfInactive(Entity entity) {
         tickClientDirectedRecovery(entity);
+        if (hasSurfaceGravity(entity)) {
+            return;
+        }
         if (entity != null && !isInInvertedArea(entity)) {
             resetInvertedPlayerState(entity);
         }
@@ -2648,6 +2930,27 @@ public final class GravityMagic {
         Vec3d velocity = entity.getVelocity();
         if (velocity.y > 0.0D) {
             entity.setVelocity(velocity.x, 0.0D, velocity.z);
+        }
+    }
+
+    private static boolean hasSurfaceGravity(Entity entity) {
+        return entity != null && surfaceGravityPlayers(entity).containsKey(entity.getUuid());
+    }
+
+    public static void clearClientSurfaceGravity(Entity entity) {
+        if (entity == null) {
+            return;
+        }
+        Direction oldDirection = CLIENT_SURFACE_GRAVITY_PLAYERS.get(entity.getUuid());
+        Vec3d oldEye = oldDirection == null ? null : SurfaceGravityCollision.eyePosFromBox(entity, oldDirection, entity.getBoundingBox());
+        CLIENT_SURFACE_GRAVITY_PLAYERS.remove(entity.getUuid());
+        CLIENT_SURFACE_PLAYER_STATES.remove(entity.getUuid());
+        entity.setNoGravity(false);
+        entity.fallDistance = 0.0F;
+        if (oldEye != null) {
+            SurfaceGravityCollision.moveKeepingEye(entity, Direction.DOWN, oldEye);
+        } else {
+            SurfaceGravityCollision.restoreVanillaBox(entity);
         }
     }
 
@@ -2783,6 +3086,10 @@ public final class GravityMagic {
         return entity != null && entity.getWorld().isClient() ? CLIENT_INVERTED_PLAYER_STATES : SERVER_INVERTED_PLAYER_STATES;
     }
 
+    private static Map<UUID, SurfaceGravityEngine.SurfaceState> surfacePlayerStates(Entity entity) {
+        return entity != null && entity.getWorld().isClient() ? CLIENT_SURFACE_PLAYER_STATES : SERVER_SURFACE_PLAYER_STATES;
+    }
+
     private static void broadcastAreaGravity(ServerWorld world, AreaGravityField field) {
         GravityPackets.AreaGravityS2C packet = areaPacket(field);
         double trackingDistanceSq = (field.maxExtent() + 96.0D) * (field.maxExtent() + 96.0D);
@@ -2823,7 +3130,8 @@ public final class GravityMagic {
 
     public static boolean shouldSuppressVanillaGravity(Entity entity) {
         DirectedEntityGravity directed = ENTITY_GRAVITY.get(entity.getUuid());
-        return directed != null && !directed.expired() && directed.world().equals(entity.getWorld().getRegistryKey())
+        return hasSurfaceGravity(entity) && !shouldIgnoreInvertedPull(entity)
+                || directed != null && !directed.expired() && directed.world().equals(entity.getWorld().getRegistryKey())
                 || isInInvertedArea(entity) && !shouldIgnoreInvertedPull(entity);
     }
 
@@ -3062,6 +3370,9 @@ public final class GravityMagic {
     }
 
     private record CeilingSupport(double bottomY) {
+    }
+
+    public record SurfaceView(Direction downDirection, float localYaw, float localPitch) {
     }
 
 }

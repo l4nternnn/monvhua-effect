@@ -19,6 +19,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWScrollCallbackI;
@@ -48,6 +49,7 @@ public final class GravityClient {
             }
             GravityMagic.tickClientSyncedAreaGravity();
             GravityMagic.resetInvertedPlayerIfInactive(client.player);
+            SurfaceGravityClientEngine.tick(client);
             GravityExtractPoseClientState.tick();
             tickQuakeHint();
             GravityDebugClient.tick(client);
@@ -121,6 +123,24 @@ public final class GravityClient {
                     energy = packet.energy();
                     maxEnergy = Math.max(1.0D, packet.maxEnergy());
                 }));
+        ClientPlayNetworking.registerGlobalReceiver(GravityPackets.LogicModeS2C.ID, (packet, context) ->
+                context.client().execute(() -> {
+                    MinecraftClient client = MinecraftClient.getInstance();
+                    if (client.player != null) {
+                        GravityMagic.setClientSurfaceLogicMode(client.player, packet.surfaceMode());
+                    }
+                }));
+        ClientPlayNetworking.registerGlobalReceiver(GravityPackets.SurfaceGravityS2C.ID, (packet, context) ->
+                context.client().execute(() -> {
+                    MinecraftClient client = MinecraftClient.getInstance();
+                    if (client.player == null) {
+                        return;
+                    }
+                    int ordinal = packet.directionOrdinal();
+                    Direction direction = ordinal >= 0 && ordinal < Direction.values().length ? Direction.values()[ordinal] : null;
+                    Vec3d anchor = direction == null ? null : new Vec3d(packet.anchorX(), packet.anchorY(), packet.anchorZ());
+                    GravityMagic.setClientSurfaceGravity(client.player, direction, anchor);
+                }));
         ClientPlayNetworking.registerGlobalReceiver(GravityPackets.ExtractPoseS2C.ID, (packet, context) ->
                 context.client().execute(() -> GravityExtractPoseClientState.set(packet.entityId(), packet.ticks())));
         ClientPlayNetworking.registerGlobalReceiver(GravityPackets.QuakeHintS2C.ID, (packet, context) ->
@@ -158,6 +178,7 @@ public final class GravityClient {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.currentScreen != null) return false;
         if (client.player.getMainHandStack().getItem() != GravityItems.GRAVITY_WAND) return false;
+        if (GravityMagic.isSurfaceLogicMode(client.player)) return false;
         if (!isCtrlDown(client)) return false;
 
         double baseMultiplier = GravityMagic.gravityMultiplier(currentTargetGravity(client));
@@ -237,6 +258,10 @@ public final class GravityClient {
         if (client.player == null || client.player.getMainHandStack().getItem() != GravityItems.GRAVITY_WAND) {
             return;
         }
+        if (GravityMagic.isSurfaceLogicMode(client.player)) {
+            renderSurfaceHud(context, client);
+            return;
+        }
 
         String target = describeTarget(client);
         if (target == null) return;
@@ -266,6 +291,20 @@ public final class GravityClient {
         int fillW = (int) Math.round(barW * Math.clamp(energy / maxEnergy, 0.0D, 1.0D));
         context.fill(barX, barY, barX + barW, barY + 5, 0xAA1A2028);
         context.fill(barX, barY, barX + fillW, barY + 5, 0xFF66CCFF);
+    }
+
+    private static void renderSurfaceHud(DrawContext context, MinecraftClient client) {
+        String line = "Surface mode";
+        Direction direction = GravityMagic.getSurfaceGravityDirection(client.player);
+        String line2 = direction == null ? "Right-click a block face" : "Falling " + direction.asString();
+        int centerX = context.getScaledWindowWidth() / 2;
+        int centerY = context.getScaledWindowHeight() / 2;
+        int x = centerX + 20;
+        int y = centerY + 20;
+        int width = Math.max(client.textRenderer.getWidth(line), client.textRenderer.getWidth(line2)) + 10;
+        context.fill(x, y, x + width, y + 28, 0x66000000);
+        context.drawText(client.textRenderer, Text.literal(line), x + 5, y + 4, 0xFFFFFFFF, false);
+        context.drawText(client.textRenderer, Text.literal(line2), x + 5, y + 16, 0xFF88CCFF, false);
     }
 
     private static void showQuakeHint(String direction, int ticks) {

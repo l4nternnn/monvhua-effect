@@ -35,4 +35,17 @@ public abstract class InvertedClientPlayerTravelMixin {
             ci.cancel();
         }
     }
+
+    @Inject(method = "jump", at = @At("HEAD"), cancellable = true)
+    private void monvhua$cancelSurfaceGravityVanillaClientJump(CallbackInfo ci) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        Entity entity = (Entity) (Object) this;
+        if (client.player != entity || GravityMagic.getSurfaceGravityDirection(entity) == null) {
+            return;
+        }
+        if (entity.isTouchingWater() || entity.isInLava() || entity.hasVehicle()) {
+            return;
+        }
+        ci.cancel();
+    }
 }

@@ -21,6 +21,15 @@ public final class GravityCommand {
                                 CommandManager.RegistrationEnvironment environment) {
         dispatcher.register(CommandManager.literal("monvhua-gravity")
                 .requires(source -> source.hasPermissionLevel(2))
+                .then(CommandManager.literal("logic")
+                        .then(CommandManager.literal("force")
+                                .executes(context -> setLogic(context, GravityMagic.LogicMode.FORCE)))
+                        .then(CommandManager.literal("surface")
+                                .executes(context -> setLogic(context, GravityMagic.LogicMode.SURFACE)))
+                        .then(CommandManager.literal("toggle")
+                                .executes(GravityCommand::toggleLogic))
+                        .then(CommandManager.literal("show")
+                                .executes(GravityCommand::showLogic)))
                 .then(CommandManager.literal("area")
                         .then(CommandManager.literal("create")
                                 .then(CommandManager.argument("radius", IntegerArgumentType.integer(1, 256))
@@ -34,6 +43,46 @@ public final class GravityCommand {
                                         .executes(GravityCommand::clearNearest))
                                 .then(CommandManager.literal("all")
                                         .executes(GravityCommand::clearAll)))));
+    }
+
+    private static int setLogic(CommandContext<ServerCommandSource> context, GravityMagic.LogicMode mode) {
+        ServerPlayerEntity player = context.getSource().getPlayer();
+        if (player == null) {
+            context.getSource().sendError(Text.literal("This command requires a player."));
+            return 0;
+        }
+
+        GravityMagic.LogicMode next = GravityMagic.setLogicMode(player, mode);
+        context.getSource().sendFeedback(() -> Text.literal("§a[Gravity] Logic mode: " + logicName(next)), true);
+        return 1;
+    }
+
+    private static int toggleLogic(CommandContext<ServerCommandSource> context) {
+        ServerPlayerEntity player = context.getSource().getPlayer();
+        if (player == null) {
+            context.getSource().sendError(Text.literal("This command requires a player."));
+            return 0;
+        }
+
+        GravityMagic.LogicMode next = GravityMagic.toggleLogicMode(player);
+        context.getSource().sendFeedback(() -> Text.literal("§a[Gravity] Logic mode: " + logicName(next)), true);
+        return 1;
+    }
+
+    private static int showLogic(CommandContext<ServerCommandSource> context) {
+        ServerPlayerEntity player = context.getSource().getPlayer();
+        if (player == null) {
+            context.getSource().sendError(Text.literal("This command requires a player."));
+            return 0;
+        }
+
+        GravityMagic.LogicMode mode = GravityMagic.getLogicMode(player);
+        context.getSource().sendFeedback(() -> Text.literal("§b[Gravity] Logic mode: " + logicName(mode)), false);
+        return 1;
+    }
+
+    private static String logicName(GravityMagic.LogicMode mode) {
+        return mode == GravityMagic.LogicMode.SURFACE ? "surface" : "force";
     }
 
     private static int createArea(CommandContext<ServerCommandSource> context, int height) {

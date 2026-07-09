@@ -8,6 +8,7 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.world.World;
 
 public class GravityWandItem extends Item {
@@ -22,6 +23,10 @@ public class GravityWandItem extends Item {
         if (!world.isClient && user instanceof ServerPlayerEntity player) {
             if (isSilenced(player)) {
                 return ActionResult.FAIL;
+            }
+            ActionResult surfaceResult = GravityMagic.useGravityWand(player, null);
+            if (surfaceResult != ActionResult.PASS) {
+                return surfaceResult;
             }
             if (player.isSneaking()) {
                 return GravityMagic.applySelfGravityForce(player) ? ActionResult.SUCCESS_SERVER : ActionResult.FAIL;
@@ -42,6 +47,11 @@ public class GravityWandItem extends Item {
         if (!world.isClient && user instanceof ServerPlayerEntity player) {
             if (isSilenced(player)) {
                 return ActionResult.FAIL;
+            }
+            BlockHitResult hit = new BlockHitResult(context.getHitPos(), context.getSide(), context.getBlockPos(), context.hitsInsideBlock());
+            ActionResult surfaceResult = GravityMagic.useGravityWand(player, hit);
+            if (surfaceResult != ActionResult.PASS) {
+                return surfaceResult;
             }
             if (player.isSneaking()) {
                 return GravityMagic.applySelfGravityForce(player) ? ActionResult.SUCCESS_SERVER : ActionResult.FAIL;

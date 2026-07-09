@@ -17,6 +17,7 @@ public final class GravityPackets {
         AdjustGravityC2S.register();
         SelectBlocksC2S.register();
         DebugAreaActionC2S.register();
+        SurfaceLookC2S.register();
         RequestConfigC2S.register();
         UpdateConfigC2S.register();
     }
@@ -27,6 +28,8 @@ public final class GravityPackets {
         EntityGravityS2C.register();
         ConfigS2C.register();
         EnergyS2C.register();
+        LogicModeS2C.register();
+        SurfaceGravityS2C.register();
         ExtractPoseS2C.register();
         QuakeHintS2C.register();
     }
@@ -265,6 +268,61 @@ public final class GravityPackets {
         }
     }
 
+    public record LogicModeS2C(boolean surfaceMode) implements CustomPayload {
+        public static final Id<LogicModeS2C> ID = new Id<>(Identifier.of("monvhua", "gravity_logic_mode"));
+        public static final PacketCodec<RegistryByteBuf, LogicModeS2C> CODEC = PacketCodec.of(LogicModeS2C::write, LogicModeS2C::new);
+        private static boolean registered = false;
+
+        private LogicModeS2C(RegistryByteBuf buf) {
+            this(buf.readBoolean());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeBoolean(surfaceMode);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record SurfaceGravityS2C(int directionOrdinal, double anchorX, double anchorY, double anchorZ) implements CustomPayload {
+        public static final Id<SurfaceGravityS2C> ID = new Id<>(Identifier.of("monvhua", "surface_gravity"));
+        public static final PacketCodec<RegistryByteBuf, SurfaceGravityS2C> CODEC = PacketCodec.of(SurfaceGravityS2C::write, SurfaceGravityS2C::new);
+        private static boolean registered = false;
+
+        private SurfaceGravityS2C(RegistryByteBuf buf) {
+            this(buf.readInt(), buf.readDouble(), buf.readDouble(), buf.readDouble());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeInt(directionOrdinal);
+            buf.writeDouble(anchorX);
+            buf.writeDouble(anchorY);
+            buf.writeDouble(anchorZ);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
     public record ExtractPoseS2C(int entityId, int ticks) implements CustomPayload {
         public static final Id<ExtractPoseS2C> ID = new Id<>(Identifier.of("monvhua", "gravity_extract_pose"));
         public static final PacketCodec<RegistryByteBuf, ExtractPoseS2C> CODEC = PacketCodec.of(ExtractPoseS2C::write, ExtractPoseS2C::new);
@@ -323,6 +381,33 @@ public final class GravityPackets {
         public static final Id<RequestConfigC2S> ID = new Id<>(Identifier.of("monvhua", "request_gravity_config"));
         public static final PacketCodec<RegistryByteBuf, RequestConfigC2S> CODEC = PacketCodec.unit(new RequestConfigC2S());
         private static boolean registered = false;
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record SurfaceLookC2S(float localYaw, float localPitch) implements CustomPayload {
+        public static final Id<SurfaceLookC2S> ID = new Id<>(Identifier.of("monvhua", "surface_gravity_look"));
+        public static final PacketCodec<RegistryByteBuf, SurfaceLookC2S> CODEC = PacketCodec.of(SurfaceLookC2S::write, SurfaceLookC2S::new);
+        private static boolean registered = false;
+
+        private SurfaceLookC2S(RegistryByteBuf buf) {
+            this(buf.readFloat(), buf.readFloat());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeFloat(localYaw);
+            buf.writeFloat(localPitch);
+        }
 
         @Override
         public Id<? extends CustomPayload> getId() {
