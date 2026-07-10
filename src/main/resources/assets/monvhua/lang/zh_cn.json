@@ -8,7 +8,7 @@
   "item.monvhua.plant_wand": "|魔法:§a肆意滋生§r|",
   "item.monvhua.gravity_debug_stick": "§e重力调试棒§r",
   "item.monvhua.area_tip_stick": "§b区域提示棒§r",
-  "item.monvhua.paint_brush": "覆盖画笔",
+  "item.monvhua.paint_brush": "画笔",
   "item.monvhua.eraser": "橡皮",
   "item.monvhua.paint_paper": "画纸",
   "item.monvhua.paint_bucket": "油漆桶",
@@ -16,18 +16,18 @@
   "item.monvhua.drawing_board": "画板",
   "block.monvhua.drawing_board": "画板",
   "category.monvhua": "魔女化魔法相关配置菜单",
-  "key.monvhua.body_pose_world_preview": "模型编辑器放置预览开关",
+  "key.monvhua.body_pose_world_preview": "模型编辑器世界预览开关",
   "key.monvhua.mark": "标记实体 (G)",
   "key.monvhua.use": "使用物品",
   "item.monvhua.block_hole": "§8黑洞§r",
   "block.monvhua.block_hole": "§8黑洞§r",
-  "item.monvhua.light_portal": "§b轻量传送门§r",
-  "block.monvhua.light_portal": "§b轻量传送门§r",
-  "item.monvhua.light_portal_frame": "§b轻量传送门框架§r",
-  "block.monvhua.light_portal_frame": "§b轻量传送门框架§r",
+  "item.monvhua.light_portal": "§b传送门§r",
+  "block.monvhua.light_portal": "§b传送门§r",
+  "item.monvhua.light_portal_frame": "§b传送门框架§r",
+  "block.monvhua.light_portal_frame": "§b传送门框架§r",
   "key.gazeguidance.magic": "标记实体",
   "key.monvhua.body_pose_editor":"模型编辑器",
-  "key.monvhua.action_editor": "动作编辑器",
+  "key.monvhua.action_editor": "动作编辑器（已废弃）",
   "category.gazeguidance": "视线诱导",
 
   "item.monvhua.torso": "玩家躯干",
@@ -43,6 +43,9 @@
   "block.monvhua.right_leg": "§3§k123§r§6右腿§r§3§k123§r",
   "item.monvhua.head": "玩家头部",
   "block.monvhua.head": "§3§k123§r§6头部§r§3§k123§r",
+
+  "sound.monvhua.sound_wave": "声音震荡",
+  "sound.monvhua.tinnitus": "耳鸣",
 
   "effect.monvhua.ema_1": "神智清醒",
   "effect.monvhua.ema_2": "略染污浊",
@@ -155,7 +158,5 @@
   "effect.monvhua.hanna_5": "高度魔女化",
   "effect.monvhua.hanna_6": "重度魔女化",
   "effect.monvhua.hanna_7": "准魔女",
-  "effect.monvhua.hanna_8": "魔女",
-  "sound.monvhua.sound_wave": "声音震荡",
-  "sound.monvhua.tinnitus": "耳鸣"
+  "effect.monvhua.hanna_8": "魔女"
 }

@@ -70,6 +70,7 @@ public class PortalGroupScreen extends Screen {
 
     private void bind(String group) {
         if (group != null && !group.trim().isEmpty()) {
+            PortalFramebufferRenderer.requestPreviewCapture(pos);
             ClientPlayNetworking.send(new PortalPackets.BindGroupC2S(pos, group));
             close();
         }

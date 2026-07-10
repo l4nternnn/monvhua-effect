@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.features.portal.client;
 import com.kuilunfuzhe.monvhua.features.portal.PortalBlock;
 import com.kuilunfuzhe.monvhua.features.portal.PortalBlockEntity;
 import com.kuilunfuzhe.monvhua.features.portal.PortalLinkData;
+import com.kuilunfuzhe.monvhua.features.portal.PortalViewConfig;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
@@ -16,31 +17,37 @@ import org.joml.Matrix4f;
 
 public class PortalBlockEntityRenderer implements BlockEntityRenderer<PortalBlockEntity> {
     private static final Identifier FALLBACK_TEXTURE = Identifier.of("monvhua", "textures/block/1testblock.png");
-    private static final float HALF_WIDTH = 0.47F;
-    private static final float MIN_Y = 0.05F;
-    private static final float MAX_Y = 0.95F;
-
     public PortalBlockEntityRenderer(BlockEntityRendererFactory.Context context) {
     }
 
     @Override
     public void render(PortalBlockEntity entity, float tickDelta, MatrixStack matrices,
                        VertexConsumerProvider vertexConsumers, int light, int overlay, Vec3d cameraPos) {
-        if (!entity.isController()) {
+        if (!entity.isController() || PortalFramebufferRenderer.isRenderingPortalView()) {
             return;
         }
 
         Direction facing = entity.getCachedState().contains(PortalBlock.FACING)
                 ? entity.getCachedState().get(PortalBlock.FACING)
                 : Direction.NORTH;
+        double cameraSide = cameraPos.subtract(entity.getPortalCenter())
+                .dotProduct(new Vec3d(facing.getOffsetX(), 0.0D, facing.getOffsetZ()));
+        if (cameraSide <= 0.0D) {
+            return;
+        }
         PortalLinkData link = entity.getLinkData();
+        PortalFramebufferRenderer.offerVisiblePortal(entity, cameraPos);
 
-        Identifier viewTexture = entity.isActive() ? PortalFramebufferRenderer.getTextureIdFor(entity.getPos()) : null;
+        Identifier viewTexture = entity.isActive() ? PortalFramebufferRenderer.getTextureIdFor(entity) : null;
         int color = viewTexture == null ? colorForState(entity, link) : 0xFFFFFFFF;
-        RenderLayer layer = RenderLayer.getEntityTranslucent(viewTexture == null ? FALLBACK_TEXTURE : viewTexture);
+        RenderLayer layer = viewTexture == null
+                ? RenderLayer.getEntityTranslucent(FALLBACK_TEXTURE)
+                : PortalRenderLayers.surface(viewTexture);
         VertexConsumer vertices = vertexConsumers.getBuffer(layer);
         Matrix4f matrix = matrices.peek().getPositionMatrix();
-        renderFace(matrix, vertices, facing, color, light, overlay, entity.getPortalWidth(), entity.getPortalHeight());
+        boolean baseReverse = facing == Direction.SOUTH || facing == Direction.EAST;
+        renderFace(matrix, vertices, facing, color, light, overlay,
+                entity.getPortalWidth(), entity.getPortalHeight(), baseReverse, viewTexture != null);
     }
 
     @Override
@@ -74,33 +81,47 @@ public class PortalBlockEntityRenderer implements BlockEntityRenderer<PortalBloc
         return 0xCC000000 | (r << 16) | (g << 8) | b;
     }
 
-    private static void renderFace(Matrix4f matrix, VertexConsumer vertices, Direction facing, int argb, int light, int overlay, int width, int height) {
+    private static void renderFace(Matrix4f matrix, VertexConsumer vertices, Direction facing, int argb,
+                                   int light, int overlay, int width, int height,
+                                   boolean reverseU, boolean portalSurface) {
         float a = ((argb >>> 24) & 0xFF) / 255.0F;
         float r = ((argb >>> 16) & 0xFF) / 255.0F;
         float g = ((argb >>> 8) & 0xFF) / 255.0F;
         float b = (argb & 0xFF) / 255.0F;
-        float c = 0.5F;
         float nx = facing.getOffsetX();
         float nz = facing.getOffsetZ();
 
         float w = Math.max(1, width);
         float h = Math.max(1, height);
-        float min = 0.03F;
-        float max = Math.max(0.97F, w - 0.03F);
-        float top = Math.max(MAX_Y, h - 0.05F);
+        float horizontalInset = (float) PortalViewConfig.PORTAL_SURFACE_HORIZONTAL_INSET;
+        float verticalInset = (float) PortalViewConfig.PORTAL_SURFACE_VERTICAL_INSET;
+        float min = horizontalInset;
+        float max = Math.max(1.0F - horizontalInset, w - horizontalInset);
+        float bottom = verticalInset;
+        float top = Math.max(1.0F - verticalInset, h - verticalInset);
+        float u0 = reverseU ? 1.0F : 0.0F;
+        float u1 = reverseU ? 0.0F : 1.0F;
 
         if (facing.getAxis() == Direction.Axis.X) {
-            float x = facing == Direction.EAST ? 0.97F : 0.03F;
-            vertex(matrix, vertices, x, MIN_Y, min, 0.0F, 1.0F, r, g, b, a, light, overlay, nx, nz);
-            vertex(matrix, vertices, x, MIN_Y, max, 1.0F, 1.0F, r, g, b, a, light, overlay, nx, nz);
-            vertex(matrix, vertices, x, top, max, 1.0F, 0.0F, r, g, b, a, light, overlay, nx, nz);
-            vertex(matrix, vertices, x, top, min, 0.0F, 0.0F, r, g, b, a, light, overlay, nx, nz);
+            float x = 0.5F;
+            vertex(matrix, vertices, x, bottom, min, u0, 0.0F, r, g, b, a,
+                    light, overlay, nx, nz, portalSurface);
+            vertex(matrix, vertices, x, bottom, max, u1, 0.0F, r, g, b, a,
+                    light, overlay, nx, nz, portalSurface);
+            vertex(matrix, vertices, x, top, max, u1, 1.0F, r, g, b, a,
+                    light, overlay, nx, nz, portalSurface);
+            vertex(matrix, vertices, x, top, min, u0, 1.0F, r, g, b, a,
+                    light, overlay, nx, nz, portalSurface);
         } else {
-            float z = facing == Direction.SOUTH ? 0.97F : 0.03F;
-            vertex(matrix, vertices, max, MIN_Y, z, 0.0F, 1.0F, r, g, b, a, light, overlay, nx, nz);
-            vertex(matrix, vertices, min, MIN_Y, z, 1.0F, 1.0F, r, g, b, a, light, overlay, nx, nz);
-            vertex(matrix, vertices, min, top, z, 1.0F, 0.0F, r, g, b, a, light, overlay, nx, nz);
-            vertex(matrix, vertices, max, top, z, 0.0F, 0.0F, r, g, b, a, light, overlay, nx, nz);
+            float z = 0.5F;
+            vertex(matrix, vertices, max, bottom, z, u0, 0.0F, r, g, b, a,
+                    light, overlay, nx, nz, portalSurface);
+            vertex(matrix, vertices, min, bottom, z, u1, 0.0F, r, g, b, a,
+                    light, overlay, nx, nz, portalSurface);
+            vertex(matrix, vertices, min, top, z, u1, 1.0F, r, g, b, a,
+                    light, overlay, nx, nz, portalSurface);
+            vertex(matrix, vertices, max, top, z, u0, 1.0F, r, g, b, a,
+                    light, overlay, nx, nz, portalSurface);
         }
     }
 
@@ -108,7 +129,14 @@ public class PortalBlockEntityRenderer implements BlockEntityRenderer<PortalBloc
                                float x, float y, float z,
                                float u, float v,
                                float r, float g, float b, float a,
-                               int light, int overlay, float nx, float nz) {
+                               int light, int overlay, float nx, float nz,
+                               boolean portalSurface) {
+        if (portalSurface) {
+            vertices.vertex(matrix, x, y, z)
+                    .texture(u, v)
+                    .color(r, g, b, a);
+            return;
+        }
         vertices.vertex(matrix, x, y, z)
                 .color(r, g, b, a)
                 .texture(u, v)

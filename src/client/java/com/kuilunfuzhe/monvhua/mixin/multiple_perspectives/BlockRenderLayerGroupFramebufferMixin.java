@@ -11,13 +11,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(BlockRenderLayerGroup.class)
 public class BlockRenderLayerGroupFramebufferMixin {
-	@Inject(method = "getFramebuffer", at = @At("HEAD"), cancellable = true)
-	private void monvhua$getMirrorFramebufferOverride(CallbackInfoReturnable<Framebuffer> cir) {
-		if ((Object) this != BlockRenderLayerGroup.OPAQUE) {
-			return;
-		}
-
-		Framebuffer override = FramebufferOverride.getOverride();
+    @Inject(method = "getFramebuffer", at = @At("HEAD"), cancellable = true)
+    private void monvhua$getMirrorFramebufferOverride(CallbackInfoReturnable<Framebuffer> cir) {
+        Framebuffer override = FramebufferOverride.getOverride();
 		if (override == null) {
 			override = PortalFramebufferOverride.get();
 		}

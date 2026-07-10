@@ -5,6 +5,7 @@ import net.minecraft.block.ShapeContext;
 import net.minecraft.block.TrapdoorBlock;
 import com.kuilunfuzhe.monvhua.mixin.gravity.SurfaceGravityEntityAccessor;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.MovementType;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.registry.tag.BlockTags;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -12,6 +13,7 @@ import net.minecraft.util.PlayerInput;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.shape.VoxelShape;
 
@@ -109,6 +111,7 @@ public final class SurfaceGravityEngine {
         }
 
         entity.setVelocity(velocity);
+        updateBodyYaw(state);
         return true;
     }
 
@@ -190,19 +193,21 @@ public final class SurfaceGravityEngine {
     }
 
     private static Vec3d move(Entity entity, Vec3d movement, Direction downDirection) {
-        Vec3d adjusted = Entity.adjustMovementForCollisions(
-                entity,
-                movement,
-                entity.getBoundingBox(),
-                entity.getWorld(),
-                List.of()
-        );
-        if (adjusted.lengthSquared() > 1.0E-12D) {
-            entity.setBoundingBox(entity.getBoundingBox().offset(adjusted));
-            SurfaceGravityCollision.syncPositionToBox(entity, downDirection);
-        }
+        Vec3d before = entity.getPos();
+        entity.move(MovementType.SELF, movement);
+        SurfaceGravityCollision.refreshBox(entity, downDirection);
+        Vec3d adjusted = entity.getPos().subtract(before);
         updateCollisionFlags(entity, movement, adjusted, downDirection);
         return adjusted;
+    }
+
+    public static BlockPos getSurfaceLandingPos(Entity entity, Direction downDirection, float yOffset) {
+        if (entity == null || downDirection == null) {
+            return null;
+        }
+        Vec3d anchor = SurfaceGravityCollision.anchorFromBox(downDirection, entity.getBoundingBox());
+        Vec3d down = SurfaceGravityBasis.directionVector(downDirection);
+        return BlockPos.ofFloored(anchor.add(down.multiply(yOffset)));
     }
 
     private static void updateCollisionFlags(Entity entity, Vec3d requested, Vec3d adjusted, Direction downDirection) {
@@ -225,6 +230,12 @@ public final class SurfaceGravityEngine {
         entity.groundCollision = grounded;
         entity.verticalCollision = grounded || entity.verticalCollision;
         ((SurfaceGravityEntityAccessor) entity).monvhua$setOnGround(grounded);
+    }
+
+    private static void updateBodyYaw(SurfaceState state) {
+        // Velocity-based vanilla body tracking turns wall strafing into an
+        // unwanted world-up/world-down tilt. Track the local view instead.
+        state.updateBodyYaw(state.localYaw);
     }
 
     private static void snapToSupport(Entity entity, Direction downDirection) {
@@ -336,6 +347,8 @@ public final class SurfaceGravityEngine {
         private Direction downDirection;
         private float localYaw;
         private float localPitch;
+        private float localBodyYaw;
+        private float lastLocalBodyYaw;
         private int detachTicks;
         private boolean attached;
 
@@ -343,6 +356,8 @@ public final class SurfaceGravityEngine {
             this.downDirection = downDirection;
             this.localYaw = localYaw;
             this.localPitch = localPitch;
+            this.localBodyYaw = localYaw;
+            this.lastLocalBodyYaw = localYaw;
         }
 
         public Direction downDirection() {
@@ -350,7 +365,13 @@ public final class SurfaceGravityEngine {
         }
 
         public void setDownDirection(Direction downDirection) {
-            this.downDirection = downDirection == null ? Direction.DOWN : downDirection;
+            Direction next = downDirection == null ? Direction.DOWN : downDirection;
+            if (this.downDirection != next) {
+                this.downDirection = next;
+                resetBodyYaw();
+            } else {
+                this.downDirection = next;
+            }
         }
 
         public float localYaw() {
@@ -361,9 +382,32 @@ public final class SurfaceGravityEngine {
             return localPitch;
         }
 
+        public float localBodyYaw() {
+            return localBodyYaw;
+        }
+
+        public float lastLocalBodyYaw() {
+            return lastLocalBodyYaw;
+        }
+
         public void setLook(float localYaw, float localPitch) {
             this.localYaw = localYaw;
             this.localPitch = Math.clamp(localPitch, -89.0F, 89.0F);
+        }
+
+        private void resetBodyYaw() {
+            this.localBodyYaw = this.localYaw;
+            this.lastLocalBodyYaw = this.localYaw;
+        }
+
+        private void updateBodyYaw(float targetYaw) {
+            this.lastLocalBodyYaw = this.localBodyYaw;
+            this.localBodyYaw += MathHelper.wrapDegrees(targetYaw - this.localBodyYaw) * 0.3F;
+            float headDelta = MathHelper.wrapDegrees(this.localYaw - this.localBodyYaw);
+            float maxHeadDelta = 50.0F;
+            if (Math.abs(headDelta) > maxHeadDelta) {
+                this.localBodyYaw += headDelta - Math.signum(headDelta) * maxHeadDelta;
+            }
         }
     }
 

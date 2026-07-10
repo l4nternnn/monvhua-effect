@@ -19,6 +19,29 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(WorldRenderer.class)
 public class WorldRendererHookMixin {
+	@Inject(method = "render", at = @At("HEAD"))
+	private void monvhua$preparePortalPerspective(
+		ObjectAllocator allocator,
+		RenderTickCounter tickCounter,
+		boolean renderBlockOutline,
+		Camera camera,
+		Matrix4f positionMatrix,
+		Matrix4f projectionMatrix,
+		GpuBufferSlice fog,
+		Vector4f fogColor,
+		boolean shouldRenderSky,
+		CallbackInfo ci
+	) {
+		if (FramebufferOverride.getOverride() != null || PortalFramebufferOverride.get() != null) {
+			return;
+		}
+		PortalFramebufferRenderer.renderNearestPortal(
+			tickCounter,
+			camera,
+			projectionMatrix
+		);
+	}
+
 	@Inject(method = "render", at = @At("TAIL"))
 	private void monvhua$renderMirrorPerspective(
 		ObjectAllocator allocator,
@@ -36,7 +59,6 @@ public class WorldRendererHookMixin {
 			return;
 		}
 		MirrorViewportRenderer.renderFullScreenMirror(tickCounter, fog, fogColor, camera, positionMatrix, projectionMatrix);
-		PortalFramebufferRenderer.renderNearestPortal(tickCounter, fog, fogColor, camera, positionMatrix, projectionMatrix);
 		if (ClairvoyanceViewportRenderer.shouldRenderPreviewWorld()) {
 			ClairvoyanceViewportRenderer.renderPreviewWorld(tickCounter, fog, fogColor, camera, positionMatrix, projectionMatrix);
 		}

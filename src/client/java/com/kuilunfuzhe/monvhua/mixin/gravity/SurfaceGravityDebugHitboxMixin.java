@@ -43,7 +43,6 @@ public abstract class SurfaceGravityDebugHitboxMixin {
         Vec3d eye = SurfaceGravityCollision.eyePosFromBox(entity, downDirection, box);
         Vec3d eyeLocal = eye.subtract(renderOrigin);
         Vec3d look = GravityMagic.getSurfaceLook(entity);
-        Vec3d lineStart = eyeLocal.add(look.multiply(0.05D));
 
         VertexConsumer vertices = vertexConsumers.getBuffer(RenderLayer.getLines());
         VertexRendering.drawBox(
@@ -56,14 +55,14 @@ public abstract class SurfaceGravityDebugHitboxMixin {
                 box.maxY - state.y,
                 box.maxZ - state.z,
                 1.0F,
-                0.0F,
-                0.0F,
+                1.0F,
+                1.0F,
                 1.0F
         );
         VertexRendering.drawVector(
                 matrices,
                 vertices,
-                new Vector3f((float) lineStart.x, (float) lineStart.y, (float) lineStart.z),
+                new Vector3f((float) eyeLocal.x, (float) eyeLocal.y, (float) eyeLocal.z),
                 look.multiply(3.0D),
                 -16776961
         );

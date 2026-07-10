@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.features.portal.client;
 import com.kuilunfuzhe.monvhua.features.portal.PortalBlockEntities;
 import com.kuilunfuzhe.monvhua.network.portal.PortalPackets;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
 
@@ -22,8 +23,21 @@ public final class PortalClient {
                 PortalBlockEntityRenderer::new
         );
         ClientPlayNetworking.registerGlobalReceiver(PortalPackets.OpenEditorS2C.ID, (packet, context) ->
-                context.client().execute(() -> MinecraftClient.getInstance().setScreen(
-                        new PortalGroupScreen(packet.pos(), packet.selectedGroup(), packet.groups(), packet.endpointCounts())
+                context.client().execute(() -> {
+                    PortalFramebufferRenderer.requestPreviewCapture(packet.pos());
+                    MinecraftClient.getInstance().setScreen(
+                            new PortalGroupScreen(packet.pos(), packet.selectedGroup(), packet.groups(), packet.endpointCounts())
+                    );
+                }));
+        ClientPlayNetworking.registerGlobalReceiver(PortalPackets.RemoteViewStateS2C.ID, (packet, context) ->
+                context.client().execute(() -> PortalRemoteChunkCache.updateView(
+                        packet.active(),
+                        packet.targetPos(),
+                        packet.viewCenter(),
+                        packet.radius(),
+                        packet.generation()
                 )));
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
+                client.execute(PortalRemoteChunkCache::clear));
     }
 }

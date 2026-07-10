@@ -1271,6 +1271,11 @@ public final class GravityMagic {
         }
 
         Direction gravityDirection = hit.getSide().getOpposite();
+        if (gravityDirection == Direction.DOWN) {
+            clearSurfaceGravity(player);
+            player.sendMessage(Text.literal("\u00A7b[Gravity] Returned to normal gravity"), true);
+            return ActionResult.SUCCESS_SERVER;
+        }
         Direction oldDirection = SERVER_SURFACE_GRAVITY_PLAYERS.get(player.getUuid());
         Vec3d currentEye = oldDirection == null ? player.getEyePos() : SurfaceGravityCollision.eyePosFromBox(player, oldDirection, player.getBoundingBox());
         Vec3d currentLook = oldDirection == null ? player.getRotationVec(1.0F) : getSurfaceLook(player);

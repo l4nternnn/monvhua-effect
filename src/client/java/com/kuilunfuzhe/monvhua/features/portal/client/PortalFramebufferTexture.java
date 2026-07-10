@@ -11,6 +11,9 @@ public final class PortalFramebufferTexture extends AbstractTexture {
 
     public void setFramebuffer(SimpleFramebuffer framebuffer) {
         this.framebuffer = framebuffer;
+        if (framebuffer != null && framebuffer.getColorAttachment() != null) {
+            framebuffer.getColorAttachment().setTextureFilter(FilterMode.LINEAR, false);
+        }
     }
 
     @Override
@@ -34,10 +37,7 @@ public final class PortalFramebufferTexture extends AbstractTexture {
         if (framebuffer == null || framebuffer.getColorAttachment() == null) {
             return;
         }
-        framebuffer.getColorAttachment().setTextureFilter(
-                useMipmaps ? FilterMode.LINEAR : FilterMode.NEAREST,
-                false
-        );
+        framebuffer.getColorAttachment().setTextureFilter(FilterMode.LINEAR, false);
     }
 
     @Override

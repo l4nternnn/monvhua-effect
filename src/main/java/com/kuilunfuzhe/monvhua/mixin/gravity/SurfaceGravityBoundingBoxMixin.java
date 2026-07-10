@@ -2,9 +2,11 @@ package com.kuilunfuzhe.monvhua.mixin.gravity;
 
 import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import com.kuilunfuzhe.monvhua.features.gravity.SurfaceGravityCollision;
+import com.kuilunfuzhe.monvhua.features.gravity.SurfaceGravityEngine;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerPosition;
 import net.minecraft.network.packet.s2c.play.PositionFlag;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
@@ -21,6 +23,10 @@ import java.util.Set;
 public abstract class SurfaceGravityBoundingBoxMixin {
     @Unique
     private boolean monvhua$refreshingSurfaceGravityBox;
+    @Unique
+    private Direction monvhua$dimensionsSurfaceDirection;
+    @Unique
+    private Vec3d monvhua$dimensionsSurfaceAnchor;
 
     @Inject(method = "calculateDefaultBoundingBox", at = @At("HEAD"), cancellable = true)
     private void monvhua$calculateSurfaceGravityBoundingBox(Vec3d pos, CallbackInfoReturnable<Box> cir) {
@@ -47,9 +53,38 @@ public abstract class SurfaceGravityBoundingBoxMixin {
         monvhua$refreshSurfaceGravityBox();
     }
 
+    @Inject(method = "calculateDimensions", at = @At("HEAD"))
+    private void monvhua$captureSurfaceGravityAnchorBeforeDimensions(CallbackInfo ci) {
+        Entity entity = (Entity) (Object) this;
+        Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
+        if (downDirection == null) {
+            monvhua$dimensionsSurfaceDirection = null;
+            monvhua$dimensionsSurfaceAnchor = null;
+            return;
+        }
+        monvhua$dimensionsSurfaceDirection = downDirection;
+        monvhua$dimensionsSurfaceAnchor = SurfaceGravityCollision.anchorFromBox(downDirection, entity.getBoundingBox());
+    }
+
     @Inject(method = "calculateDimensions", at = @At("RETURN"))
     private void monvhua$refreshSurfaceGravityBoxAfterDimensions(CallbackInfo ci) {
-        monvhua$refreshSurfaceGravityBox();
+        Entity entity = (Entity) (Object) this;
+        Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
+        if (downDirection == null) {
+            monvhua$dimensionsSurfaceDirection = null;
+            monvhua$dimensionsSurfaceAnchor = null;
+            return;
+        }
+        Vec3d anchor = downDirection == monvhua$dimensionsSurfaceDirection
+                ? monvhua$dimensionsSurfaceAnchor
+                : null;
+        monvhua$dimensionsSurfaceDirection = null;
+        monvhua$dimensionsSurfaceAnchor = null;
+        if (anchor != null) {
+            SurfaceGravityCollision.setAnchorAndRefreshBox(entity, downDirection, anchor);
+        } else {
+            monvhua$refreshSurfaceGravityBox();
+        }
     }
 
     @Unique
@@ -85,5 +120,31 @@ public abstract class SurfaceGravityBoundingBoxMixin {
             return;
         }
         cir.setReturnValue(GravityMagic.getSurfaceLook(entity));
+    }
+
+    @Inject(method = "getLandingPos", at = @At("HEAD"), cancellable = true)
+    private void monvhua$getSurfaceGravityLandingPos(CallbackInfoReturnable<BlockPos> cir) {
+        Entity entity = (Entity) (Object) this;
+        Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
+        if (downDirection == null) {
+            return;
+        }
+        BlockPos pos = SurfaceGravityEngine.getSurfaceLandingPos(entity, downDirection, 0.2F);
+        if (pos != null) {
+            cir.setReturnValue(pos);
+        }
+    }
+
+    @Inject(method = "getSteppingPos", at = @At("HEAD"), cancellable = true)
+    private void monvhua$getSurfaceGravitySteppingPos(CallbackInfoReturnable<BlockPos> cir) {
+        Entity entity = (Entity) (Object) this;
+        Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
+        if (downDirection == null) {
+            return;
+        }
+        BlockPos pos = SurfaceGravityEngine.getSurfaceLandingPos(entity, downDirection, 1.0E-5F);
+        if (pos != null) {
+            cir.setReturnValue(pos);
+        }
     }
 }

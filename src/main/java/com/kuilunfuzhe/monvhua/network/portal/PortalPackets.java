@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.network.portal;
 
 import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.features.portal.PortalManager;
+import com.kuilunfuzhe.monvhua.features.portal.PortalViewConfig;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.RegistryByteBuf;
@@ -20,11 +21,13 @@ public final class PortalPackets {
 
     public static void registerS2C() {
         OpenEditorS2C.register();
+        RemoteViewStateS2C.register();
     }
 
     public static void registerC2S() {
         BindGroupC2S.register();
         DeleteGroupC2S.register();
+        RequestRemoteViewC2S.register();
     }
 
     public static void registerReceivers() {
@@ -32,6 +35,49 @@ public final class PortalPackets {
                 context.server().execute(() -> PortalManager.bindToGroup(context.player(), packet.pos(), packet.groupId())));
         ServerPlayNetworking.registerGlobalReceiver(DeleteGroupC2S.ID, (packet, context) ->
                 context.server().execute(() -> PortalManager.deleteGroup(context.player(), packet.groupId())));
+        ServerPlayNetworking.registerGlobalReceiver(RequestRemoteViewC2S.ID, (packet, context) ->
+                context.server().execute(() -> PortalManager.requestRemoteView(context.player(), packet.sourcePos())));
+    }
+
+    public record RemoteViewStateS2C(boolean active, BlockPos targetPos, BlockPos viewCenter,
+                                     int radius, long generation)
+            implements CustomPayload {
+        public static final Id<RemoteViewStateS2C> ID =
+                new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "portal_remote_view_state"));
+        public static final PacketCodec<RegistryByteBuf, RemoteViewStateS2C> CODEC =
+                PacketCodec.of(RemoteViewStateS2C::write, RemoteViewStateS2C::new);
+        private static boolean registered;
+
+        public RemoteViewStateS2C {
+            targetPos = targetPos == null ? BlockPos.ORIGIN : targetPos.toImmutable();
+            viewCenter = viewCenter == null ? targetPos : viewCenter.toImmutable();
+            radius = PortalViewConfig.clampRemoteRadius(radius);
+            generation = Math.max(0L, generation);
+        }
+
+        private RemoteViewStateS2C(RegistryByteBuf buf) {
+            this(buf.readBoolean(), buf.readBlockPos(), buf.readBlockPos(), buf.readVarInt(), buf.readVarLong());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeBoolean(active);
+            buf.writeBlockPos(targetPos);
+            buf.writeBlockPos(viewCenter);
+            buf.writeVarInt(radius);
+            buf.writeVarLong(generation);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
     }
 
     public record OpenEditorS2C(BlockPos pos, String selectedGroup, String[] groups, int[] endpointCounts) implements CustomPayload {
@@ -123,6 +169,38 @@ public final class PortalPackets {
 
         private void write(RegistryByteBuf buf) {
             buf.writeString(groupId, MAX_GROUP_NAME);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record RequestRemoteViewC2S(BlockPos sourcePos) implements CustomPayload {
+        public static final Id<RequestRemoteViewC2S> ID =
+                new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "portal_remote_view_request"));
+        public static final PacketCodec<RegistryByteBuf, RequestRemoteViewC2S> CODEC =
+                PacketCodec.of(RequestRemoteViewC2S::write, RequestRemoteViewC2S::new);
+        private static boolean registered;
+
+        public RequestRemoteViewC2S {
+            sourcePos = sourcePos.toImmutable();
+        }
+
+        private RequestRemoteViewC2S(RegistryByteBuf buf) {
+            this(buf.readBlockPos());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeBlockPos(sourcePos);
         }
 
         public static void register() {

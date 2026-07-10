@@ -4,6 +4,8 @@
 	"compatibilityLevel": "JAVA_21",
 	"plugin": "com.kuilunfuzhe.monvhua.mixin.compat.axiom.AxiomCompatMixinPlugin",
 	"client": [
+		"compat.axiom.AxiomPortalChunkOverrideGuardMixin",
+		"compat.axiom.AxiomPortalRenderGuardMixin",
 		"compat.axiom.AxiomEditorUIFontMixin",
 		"compat.axiom.AxiomSelectionDeleteModeMixin",
 		"compat.axiom.AxiomUserActionDeleteModeMixin",

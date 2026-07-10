@@ -8,20 +8,28 @@ import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ChunkTicketType;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
+import net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
+import net.minecraft.world.chunk.WorldChunk;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,12 +40,15 @@ public final class PortalManager {
     private static final int COOLDOWN_TICKS = 10;
     private static final int ACTIVATION_DELAY_TICKS = 60;
     private static final int MAX_FLOOD_CELLS = MAX_PORTAL_SIZE * MAX_PORTAL_SIZE;
+    private static final double REMOTE_REQUEST_DISTANCE_SQUARED = 256.0D * 256.0D;
 
-    private static final Set<BlockPos> PORTALS = ConcurrentHashMap.newKeySet();
+    private static final Set<PortalEndpoint> PORTALS = ConcurrentHashMap.newKeySet();
     private static final ConcurrentHashMap<UUID, Vec3d> LAST_POSITIONS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, Integer> COOLDOWNS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, PortalGroup> GROUPS = new ConcurrentHashMap<>();
     private static final Set<BlockPos> CLEARING_PORTALS = ConcurrentHashMap.newKeySet();
+    private static final ConcurrentHashMap<UUID, RemoteViewSubscription> REMOTE_VIEWS = new ConcurrentHashMap<>();
+    private static long nextRemoteGeneration = 1L;
     private static boolean initialized;
 
     private PortalManager() {
@@ -54,18 +65,22 @@ public final class PortalManager {
 
     public static void onPortalPlaced(World world, BlockPos pos, PortalBlockEntity portal) {
         if (portal.isController()) {
-            PORTALS.add(pos.toImmutable());
+            registerPortal(world, pos);
         }
     }
 
     public static void onPortalRemoved(World world, BlockPos pos) {
-        PORTALS.remove(pos);
+        unregisterPortal(world, pos);
         removeEndpoint(pos);
         if (!(world instanceof ServerWorld serverWorld)) {
             return;
         }
-        for (BlockPos knownPos : new ArrayList<>(PORTALS)) {
-            BlockEntity blockEntity = serverWorld.getBlockEntity(knownPos);
+        RegistryKey<World> worldKey = serverWorld.getRegistryKey();
+        for (PortalEndpoint endpoint : new ArrayList<>(PORTALS)) {
+            if (!endpoint.worldKey().equals(worldKey)) {
+                continue;
+            }
+            BlockEntity blockEntity = serverWorld.getBlockEntity(endpoint.pos());
             if (blockEntity instanceof PortalBlockEntity portal) {
                 PortalLinkData link = portal.getLinkData();
                 if (link != null && link.targetPos().equals(pos)) {
@@ -136,7 +151,7 @@ public final class PortalManager {
                 || !portal.isController()) {
             return;
         }
-        registerExistingEndpoint(portal);
+        registerExistingEndpoint(world, portal);
         sendEditor(serverPlayer, portal);
     }
 
@@ -147,6 +162,7 @@ public final class PortalManager {
                 || !portal.isController()) {
             return;
         }
+        registerPortal(world, controllerPos);
         String clean = sanitizeGroup(groupId);
         if (clean.isEmpty()) {
             player.sendMessage(Text.literal("Portal group name is empty"), true);
@@ -177,6 +193,73 @@ public final class PortalManager {
         clearEndpoint(player.getWorld(), group.second);
     }
 
+    public static void requestRemoteView(ServerPlayerEntity player, BlockPos sourcePos) {
+        if (!(player.getWorld() instanceof ServerWorld world)
+                || Vec3d.ofCenter(sourcePos).squaredDistanceTo(player.getEyePos()) > REMOTE_REQUEST_DISTANCE_SQUARED) {
+            return;
+        }
+        PortalBlockEntity source = getController(world, sourcePos);
+        if (source == null || !source.isActive() || source.getLinkData() == null) {
+            closeRemoteView(player, REMOTE_VIEWS.remove(player.getUuid()));
+            return;
+        }
+        PortalBlockEntity target = getController(world, source.getLinkData().targetPos());
+        if (target == null || !target.isController()) {
+            closeRemoteView(player, REMOTE_VIEWS.remove(player.getUuid()));
+            return;
+        }
+        BlockPos viewCenter = mapRemoteViewCenter(player, source, target);
+        int remoteRadius = PortalViewConfig.clampRemoteRadius(
+                world.getServer().getPlayerManager().getViewDistance()
+        );
+
+        RemoteViewSubscription existing = REMOTE_VIEWS.get(player.getUuid());
+        if (existing != null
+                && existing.world == world
+                && existing.targetPos.equals(target.getPos())
+                && existing.radius == remoteRadius) {
+            existing.lastRequestTick = world.getTime();
+            if (existing.recenter(viewCenter)) {
+                sendRemoteViewState(player, existing);
+            }
+            return;
+        }
+        closeRemoteView(player, REMOTE_VIEWS.remove(player.getUuid()));
+
+        long generation = nextRemoteGeneration++;
+        RemoteViewSubscription subscription =
+                new RemoteViewSubscription(
+                        world,
+                        target.getPos(),
+                        viewCenter,
+                        remoteRadius,
+                        generation,
+                        world.getTime()
+                );
+        REMOTE_VIEWS.put(player.getUuid(), subscription);
+        sendRemoteViewState(player, subscription);
+    }
+
+    private static void sendRemoteViewState(ServerPlayerEntity player, RemoteViewSubscription subscription) {
+        ServerPlayNetworking.send(player, new PortalPackets.RemoteViewStateS2C(
+                true,
+                subscription.targetPos,
+                subscription.viewCenter,
+                subscription.radius,
+                subscription.generation
+        ));
+    }
+
+    public static void markRemoteChunkDirty(ServerWorld world, BlockPos pos) {
+        long chunkKey = new ChunkPos(pos).toLong();
+        long dueTick = world.getTime() + PortalViewConfig.REMOTE_DIRTY_DELAY_TICKS;
+        for (RemoteViewSubscription subscription : REMOTE_VIEWS.values()) {
+            if (subscription.world == world && subscription.contains(chunkKey)) {
+                subscription.dirtyChunks.merge(chunkKey, dueTick, Math::min);
+            }
+        }
+    }
+
     private static void sendEditor(ServerPlayerEntity player, PortalBlockEntity portal) {
         List<String> names = new ArrayList<>();
         List<Integer> counts = new ArrayList<>();
@@ -196,7 +279,8 @@ public final class PortalManager {
         return Vec3d.ofCenter(pos).squaredDistanceTo(player.getEyePos()) <= 64.0D;
     }
 
-    private static void registerExistingEndpoint(PortalBlockEntity portal) {
+    private static void registerExistingEndpoint(ServerWorld world, PortalBlockEntity portal) {
+        registerPortal(world, portal.getPos());
         if (!portal.getGroupId().isEmpty()) {
             GROUPS.computeIfAbsent(portal.getGroupId(), PortalGroup::new).add(portal.getPos());
         }
@@ -209,7 +293,13 @@ public final class PortalManager {
     }
 
     private static void clearEndpoint(World world, BlockPos pos) {
-        if (pos != null && world.getBlockEntity(pos) instanceof PortalBlockEntity portal) {
+        if (pos == null) {
+            return;
+        }
+        PortalBlockEntity portal = world instanceof ServerWorld serverWorld
+                ? getController(serverWorld, pos)
+                : world.getBlockEntity(pos) instanceof PortalBlockEntity found ? found : null;
+        if (portal != null) {
             portal.setGroupId("");
             portal.clearTarget();
         }
@@ -227,12 +317,18 @@ public final class PortalManager {
             }
             return;
         }
+        registerPortal(world, first.getPos());
+        registerPortal(world, second.getPos());
         long activeTick = world.getTime() + ACTIVATION_DELAY_TICKS;
         first.setTarget(second.getPos(), second.getFacing(), activeTick);
         second.setTarget(first.getPos(), first.getFacing(), activeTick);
     }
 
     private static PortalBlockEntity getController(ServerWorld world, BlockPos pos) {
+        if (pos == null) {
+            return null;
+        }
+        world.getChunk(pos);
         return world.getBlockEntity(pos) instanceof PortalBlockEntity portal && portal.isController() ? portal : null;
     }
 
@@ -349,7 +445,7 @@ public final class PortalManager {
                 if (world.getBlockEntity(pos) instanceof PortalBlockEntity portal) {
                     portal.setStructure(origin, structure.width(), structure.height());
                     if (controller) {
-                        PORTALS.add(pos.toImmutable());
+                        registerPortal(world, pos);
                     }
                 }
             }
@@ -378,6 +474,7 @@ public final class PortalManager {
     private static void tickWorld(ServerWorld world) {
         pruneCooldowns();
         tickPortalActivation(world);
+        tickRemoteViews(world);
         for (ServerPlayerEntity player : world.getPlayers()) {
             UUID playerId = player.getUuid();
             Vec3d currentPos = player.getPos();
@@ -406,12 +503,102 @@ public final class PortalManager {
         }
     }
 
+    private static void tickRemoteViews(ServerWorld world) {
+        Iterator<Map.Entry<UUID, RemoteViewSubscription>> iterator = REMOTE_VIEWS.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, RemoteViewSubscription> entry = iterator.next();
+            RemoteViewSubscription subscription = entry.getValue();
+            if (subscription.world != world) {
+                continue;
+            }
+            ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(entry.getKey());
+            if (player == null
+                    || player.getWorld() != world
+                    || world.getTime() - subscription.lastRequestTick > PortalViewConfig.REMOTE_VIEW_TIMEOUT_TICKS) {
+                iterator.remove();
+                closeRemoteView(player, subscription);
+                continue;
+            }
+
+            int initialBudget = PortalViewConfig.REMOTE_INITIAL_CHUNKS_PER_TICK;
+            while (initialBudget-- > 0 && !subscription.pendingChunks.isEmpty()) {
+                sendRemoteChunk(player, subscription, subscription.pendingChunks.removeFirst());
+            }
+
+            int dirtyBudget = PortalViewConfig.REMOTE_DIRTY_CHUNKS_PER_TICK;
+            Iterator<Map.Entry<Long, Long>> dirtyIterator = subscription.dirtyChunks.entrySet().iterator();
+            while (dirtyBudget > 0 && dirtyIterator.hasNext()) {
+                Map.Entry<Long, Long> dirty = dirtyIterator.next();
+                if (dirty.getValue() > world.getTime()) {
+                    continue;
+                }
+                dirtyIterator.remove();
+                sendRemoteChunk(player, subscription, new ChunkPos(dirty.getKey()));
+                dirtyBudget--;
+            }
+
+            if (world.getTime() - subscription.lastTicketRefreshTick >= 100L) {
+                subscription.lastTicketRefreshTick = world.getTime();
+                for (long ticketed : subscription.ticketedChunks) {
+                    world.getChunkManager().addTicket(
+                            ChunkTicketType.PORTAL,
+                            new ChunkPos(ticketed),
+                            PortalViewConfig.REMOTE_VIEW_TICKET_RADIUS
+                    );
+                }
+            }
+        }
+    }
+
+    private static void sendRemoteChunk(ServerPlayerEntity player, RemoteViewSubscription subscription, ChunkPos pos) {
+        if (player == null || player.networkHandler == null || !subscription.contains(pos.toLong())) {
+            return;
+        }
+        subscription.world.getChunkManager().addTicket(
+                ChunkTicketType.PORTAL,
+                pos,
+                PortalViewConfig.REMOTE_VIEW_TICKET_RADIUS
+        );
+        subscription.ticketedChunks.add(pos.toLong());
+        WorldChunk chunk = subscription.world.getChunk(pos.x, pos.z);
+        player.networkHandler.sendPacket(new ChunkDataS2CPacket(
+                chunk,
+                subscription.world.getChunkManager().getLightingProvider(),
+                null,
+                null
+        ));
+    }
+
+    private static void closeRemoteView(ServerPlayerEntity player, RemoteViewSubscription subscription) {
+        if (subscription == null) {
+            return;
+        }
+        for (long ticketed : subscription.ticketedChunks) {
+            subscription.world.getChunkManager().removeTicket(
+                    ChunkTicketType.PORTAL,
+                    new ChunkPos(ticketed),
+                    PortalViewConfig.REMOTE_VIEW_TICKET_RADIUS
+            );
+        }
+        if (player != null && player.networkHandler != null) {
+            ServerPlayNetworking.send(player, new PortalPackets.RemoteViewStateS2C(
+                    false,
+                    BlockPos.ORIGIN,
+                    BlockPos.ORIGIN,
+                    0,
+                    subscription.generation
+            ));
+        }
+    }
+
     private static void tickPortalActivation(ServerWorld world) {
-        for (BlockPos knownPos : new ArrayList<>(PORTALS)) {
-            if (world.getBlockEntity(knownPos) instanceof PortalBlockEntity portal) {
+        RegistryKey<World> worldKey = world.getRegistryKey();
+        for (PortalEndpoint endpoint : new ArrayList<>(PORTALS)) {
+            if (!endpoint.worldKey().equals(worldKey)) {
+                continue;
+            }
+            if (world.getBlockEntity(endpoint.pos()) instanceof PortalBlockEntity portal) {
                 portal.tickActivation(world);
-            } else {
-                PORTALS.remove(knownPos);
             }
         }
     }
@@ -435,7 +622,7 @@ public final class PortalManager {
                 if (world.getBlockEntity(controllerPos) instanceof PortalBlockEntity controller
                         && controller.isController()
                         && isInsidePortalRect(controller, pos)) {
-                    PORTALS.add(controllerPos.toImmutable());
+                    registerPortal(world, controllerPos);
                     return controller;
                 }
             }
@@ -448,8 +635,7 @@ public final class PortalManager {
         Vec3d normal = normal(portal.getFacing());
         double previousSide = previousPos.subtract(center).dotProduct(normal);
         double currentSide = currentPos.subtract(center).dotProduct(normal);
-        return (previousSide > PLANE_EPSILON && currentSide <= PLANE_EPSILON)
-                || (previousSide < -PLANE_EPSILON && currentSide >= -PLANE_EPSILON);
+        return previousSide > PLANE_EPSILON && currentSide <= PLANE_EPSILON;
     }
 
     private static boolean isInsidePortalRect(PortalBlockEntity portal, Vec3d pos) {
@@ -464,24 +650,33 @@ public final class PortalManager {
     }
 
     private static void teleportPlayer(ServerWorld world, ServerPlayerEntity player, PortalBlockEntity portal, PortalLinkData link) {
-        BlockEntity targetBlockEntity = world.getBlockEntity(link.targetPos());
-        if (!(targetBlockEntity instanceof PortalBlockEntity targetPortal) || !targetPortal.isController()) {
+        PortalBlockEntity targetPortal = getController(world, link.targetPos());
+        if (targetPortal == null) {
             portal.clearTarget();
             return;
         }
         Vec3d sourceCenter = portal.getPortalCenter();
         Vec3d targetCenter = targetPortal.getPortalCenter();
-        Vec3d relative = player.getPos().subtract(sourceCenter);
-        Vec3d rotated = rotateHorizontal(relative, portal.getFacing(), targetPortal.getFacing().getOpposite());
-        Vec3d exitNormal = normal(targetPortal.getFacing()).multiply(0.75D);
-        Vec3d targetPos = targetCenter.add(rotated).add(exitNormal);
-        float yawDelta = targetPortal.getFacing().getPositiveHorizontalDegrees()
-                - portal.getFacing().getPositiveHorizontalDegrees()
-                + 180.0F;
-        float yaw = MathHelper.wrapDegrees(player.getYaw() + yawDelta);
+        Vec3d mapped = PortalTransform.mapPosition(
+                player.getPos(),
+                sourceCenter,
+                portal.getFacing(),
+                targetCenter,
+                targetPortal.getFacing()
+        );
+        Vec3d targetNormal = normal(targetPortal.getFacing());
+        double normalOffset = mapped.subtract(targetCenter).dotProduct(targetNormal);
+        Vec3d targetPos = mapped
+                .subtract(targetNormal.multiply(normalOffset))
+                .add(targetNormal.multiply(-PortalViewConfig.TELEPORT_EXIT_OFFSET));
+        float yaw = PortalTransform.mapYaw(player.getYaw(), portal.getFacing(), targetPortal.getFacing());
 
         player.teleport(world, targetPos.x, targetPos.y, targetPos.z, java.util.Set.of(), yaw, player.getPitch(), false);
-        player.setVelocity(rotateHorizontal(player.getVelocity(), portal.getFacing(), targetPortal.getFacing().getOpposite()));
+        player.setVelocity(PortalTransform.mapVector(
+                player.getVelocity(),
+                portal.getFacing(),
+                targetPortal.getFacing()
+        ));
         player.velocityModified = true;
     }
 
@@ -538,14 +733,31 @@ public final class PortalManager {
         }
     }
 
-    private static Vec3d rotateHorizontal(Vec3d vector, Direction from, Direction to) {
-        int steps = Math.floorMod(to.getHorizontalQuarterTurns() - from.getHorizontalQuarterTurns(), 4);
-        return switch (steps) {
-            case 1 -> new Vec3d(-vector.z, vector.y, vector.x);
-            case 2 -> new Vec3d(-vector.x, vector.y, -vector.z);
-            case 3 -> new Vec3d(vector.z, vector.y, -vector.x);
-            default -> vector;
-        };
+    private static void registerPortal(World world, BlockPos pos) {
+        PORTALS.add(new PortalEndpoint(world.getRegistryKey(), pos));
+    }
+
+    private static void unregisterPortal(World world, BlockPos pos) {
+        PORTALS.remove(new PortalEndpoint(world.getRegistryKey(), pos));
+    }
+
+    private record PortalEndpoint(RegistryKey<World> worldKey, BlockPos pos) {
+        private PortalEndpoint {
+            pos = pos.toImmutable();
+        }
+    }
+
+    private static BlockPos mapRemoteViewCenter(ServerPlayerEntity player,
+                                                PortalBlockEntity source,
+        PortalBlockEntity target) {
+        Vec3d mapped = PortalTransform.mapPosition(
+                player.getEyePos(),
+                source.getPortalCenter(),
+                source.getFacing(),
+                target.getPortalCenter(),
+                target.getFacing()
+        );
+        return BlockPos.ofFloored(mapped.x, mapped.y, mapped.z);
     }
 
     private static Vec3d normal(Direction direction) {
@@ -594,6 +806,103 @@ public final class PortalManager {
 
         private int count() {
             return (first == null ? 0 : 1) + (second == null ? 0 : 1);
+        }
+    }
+
+    private static final class RemoteViewSubscription {
+        private final ServerWorld world;
+        private final BlockPos targetPos;
+        private final int radius;
+        private final long generation;
+        private final ArrayDeque<ChunkPos> pendingChunks;
+        private final Set<Long> acceptedChunks = new HashSet<>();
+        private final Set<Long> ticketedChunks = new HashSet<>();
+        private final Map<Long, Long> dirtyChunks = new HashMap<>();
+        private BlockPos viewCenter;
+        private long lastRequestTick;
+        private long lastTicketRefreshTick;
+
+        private RemoteViewSubscription(ServerWorld world, BlockPos targetPos, BlockPos viewCenter,
+                                       int radius, long generation, long currentTick) {
+            this.world = world;
+            this.targetPos = targetPos.toImmutable();
+            this.viewCenter = viewCenter.toImmutable();
+            this.radius = radius;
+            this.generation = generation;
+            this.lastRequestTick = currentTick;
+            this.lastTicketRefreshTick = currentTick;
+
+            List<ChunkPos> ordered = buildOrderedChunks(this.targetPos, this.viewCenter, radius);
+            for (ChunkPos pos : ordered) {
+                acceptedChunks.add(pos.toLong());
+            }
+            this.pendingChunks = new ArrayDeque<>(ordered);
+        }
+
+        private boolean contains(long chunkKey) {
+            return acceptedChunks.contains(chunkKey);
+        }
+
+        private boolean recenter(BlockPos newViewCenter) {
+            ChunkPos previousCenter = new ChunkPos(viewCenter);
+            ChunkPos nextCenter = new ChunkPos(newViewCenter);
+            if (previousCenter.equals(nextCenter)) {
+                return false;
+            }
+
+            List<ChunkPos> ordered = buildOrderedChunks(targetPos, newViewCenter, radius);
+            Set<Long> nextAccepted = new HashSet<>();
+            for (ChunkPos pos : ordered) {
+                nextAccepted.add(pos.toLong());
+            }
+
+            pendingChunks.removeIf(pos -> !nextAccepted.contains(pos.toLong()));
+            dirtyChunks.keySet().removeIf(chunkKey -> !nextAccepted.contains(chunkKey));
+
+            Iterator<Long> ticketIterator = ticketedChunks.iterator();
+            while (ticketIterator.hasNext()) {
+                long chunkKey = ticketIterator.next();
+                if (nextAccepted.contains(chunkKey)) {
+                    continue;
+                }
+                world.getChunkManager().removeTicket(
+                        ChunkTicketType.PORTAL,
+                        new ChunkPos(chunkKey),
+                        PortalViewConfig.REMOTE_VIEW_TICKET_RADIUS
+                );
+                ticketIterator.remove();
+            }
+
+            for (ChunkPos pos : ordered) {
+                if (!acceptedChunks.contains(pos.toLong())) {
+                    pendingChunks.addLast(pos);
+                }
+            }
+            acceptedChunks.clear();
+            acceptedChunks.addAll(nextAccepted);
+            viewCenter = newViewCenter.toImmutable();
+            return true;
+        }
+
+        private static List<ChunkPos> buildOrderedChunks(BlockPos targetPos, BlockPos viewCenter, int radius) {
+            ChunkPos targetChunk = new ChunkPos(targetPos);
+            ChunkPos center = new ChunkPos(viewCenter);
+            Map<Long, ChunkPos> chunks = new LinkedHashMap<>();
+            chunks.put(targetChunk.toLong(), targetChunk);
+            for (int z = center.z - radius; z <= center.z + radius; z++) {
+                for (int x = center.x - radius; x <= center.x + radius; x++) {
+                    ChunkPos pos = new ChunkPos(x, z);
+                    chunks.put(pos.toLong(), pos);
+                }
+            }
+
+            List<ChunkPos> ordered = new ArrayList<>(chunks.values());
+            ordered.sort(Comparator
+                    .comparingInt((ChunkPos pos) -> pos.equals(targetChunk)
+                            ? -1
+                            : Math.max(Math.abs(pos.x - center.x), Math.abs(pos.z - center.z)))
+                    .thenComparingInt(pos -> Math.abs(pos.x - center.x) + Math.abs(pos.z - center.z)));
+            return ordered;
         }
     }
 }

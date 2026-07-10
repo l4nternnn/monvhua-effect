@@ -22,7 +22,7 @@ public class IrisPipelineManagerMirrorMixin {
 
 	@Inject(method = "preparePipeline", at = @At("HEAD"), cancellable = true)
 	private void monvhua$useVanillaPipelineForMirror(NamespacedId dimension, CallbackInfoReturnable<WorldRenderingPipeline> cir) {
-		if (FramebufferOverride.getOverride() != null) {
+		if (isAuxiliaryRender()) {
 			this.pipeline = MONVHUA_MIRROR_PIPELINE;
 			cir.setReturnValue(MONVHUA_MIRROR_PIPELINE);
 		}
@@ -30,15 +30,19 @@ public class IrisPipelineManagerMirrorMixin {
 
 	@Inject(method = "getPipelineNullable", at = @At("HEAD"), cancellable = true)
 	private void monvhua$getVanillaPipelineForMirror(CallbackInfoReturnable<WorldRenderingPipeline> cir) {
-		if (FramebufferOverride.getOverride() != null) {
+		if (isAuxiliaryRender()) {
 			cir.setReturnValue(MONVHUA_MIRROR_PIPELINE);
 		}
 	}
 
 	@Inject(method = "getPipeline", at = @At("HEAD"), cancellable = true)
 	private void monvhua$getOptionalVanillaPipelineForMirror(CallbackInfoReturnable<Optional<WorldRenderingPipeline>> cir) {
-		if (FramebufferOverride.getOverride() != null) {
+		if (isAuxiliaryRender()) {
 			cir.setReturnValue(Optional.of(MONVHUA_MIRROR_PIPELINE));
 		}
 	}
+
+    private static boolean isAuxiliaryRender() {
+        return FramebufferOverride.getOverride() != null;
+    }
 }

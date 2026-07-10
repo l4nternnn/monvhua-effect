@@ -113,8 +113,17 @@ public final class SurfaceGravityBasis {
     }
 
     public static Quaternionf modelRotation(Direction downDirection) {
-        Vec3d up = of(downDirection).up();
-        return new Quaternionf().rotateTo(0.0F, 1.0F, 0.0F, (float) up.x, (float) up.y, (float) up.z);
+        Basis basis = of(downDirection);
+        Vec3d xAxis = basis.right().multiply(-1.0D);
+        Vec3d up = basis.up();
+        Vec3d forward = basis.forward();
+        Matrix4f matrix = new Matrix4f(
+                (float) xAxis.x, (float) xAxis.y, (float) xAxis.z, 0.0F,
+                (float) up.x, (float) up.y, (float) up.z, 0.0F,
+                (float) forward.x, (float) forward.y, (float) forward.z, 0.0F,
+                0.0F, 0.0F, 0.0F, 1.0F
+        );
+        return matrix.getUnnormalizedRotation(new Quaternionf()).normalize();
     }
 
     public static Vec3d reject(Vec3d vector, Vec3d axis) {

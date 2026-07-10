@@ -12,6 +12,7 @@ public final class IrisMirrorCompat {
 	private static boolean initialized;
 	private static boolean available;
 	private static Method getPipelineManagerMethod;
+	private static Method isPackInUseQuickMethod;
 	private static Field pipelineField;
 
 	private IrisMirrorCompat() {
@@ -44,6 +45,18 @@ public final class IrisMirrorCompat {
 		}
 	}
 
+	public static boolean isShaderPackActive() {
+		if (!isAvailable() || isPackInUseQuickMethod == null) {
+			return false;
+		}
+		try {
+			return Boolean.TRUE.equals(isPackInUseQuickMethod.invoke(null));
+		} catch (ReflectiveOperationException e) {
+			MonvhuaMod.LOGGER.warn("[Monvhua] Failed to query Iris shader-pack state", e);
+			return false;
+		}
+	}
+
 	private static boolean isAvailable() {
 		if (initialized) return available;
 		initialized = true;
@@ -57,6 +70,7 @@ public final class IrisMirrorCompat {
 			Class<?> irisClass = Class.forName("net.irisshaders.iris.Iris");
 			Class<?> managerClass = Class.forName("net.irisshaders.iris.pipeline.PipelineManager");
 			getPipelineManagerMethod = irisClass.getMethod("getPipelineManager");
+			isPackInUseQuickMethod = irisClass.getMethod("isPackInUseQuick");
 			pipelineField = managerClass.getDeclaredField("pipeline");
 			pipelineField.setAccessible(true);
 			available = true;

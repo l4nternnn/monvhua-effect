@@ -5,11 +5,13 @@ import com.kuilunfuzhe.monvhua.features.gravity.GravityClient;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import com.kuilunfuzhe.monvhua.features.gravity.SurfaceGravityClientEngine;
 import com.kuilunfuzhe.monvhua.features.gravity.SurfaceGravityCollision;
+import com.kuilunfuzhe.monvhua.features.gravity.SurfaceGravityEngine;
 import net.minecraft.client.render.entity.state.EntityHitbox;
 import net.minecraft.client.render.entity.state.EntityHitboxAndView;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.LivingEntityRenderer;
+import net.minecraft.client.render.entity.state.BipedEntityRenderState;
 import net.minecraft.client.render.entity.state.LivingEntityRenderState;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;
@@ -17,6 +19,7 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -36,6 +39,7 @@ public abstract class GravityLivingEntityRendererMixin {
             state.pitch = -state.pitch;
             state.relativeHeadYaw = -state.relativeHeadYaw;
         }
+        monvhua$updateSurfaceGravityHeadAngles(entity, state, tickDelta);
         monvhua$updateSurfaceGravityHitbox(entity, state, tickDelta);
     }
 
@@ -94,5 +98,39 @@ public abstract class GravityLivingEntityRendererMixin {
                 1.0F
         );
         state.hitbox = new EntityHitboxAndView(look.x, look.y, look.z, ImmutableList.of(hitbox));
+    }
+
+    @Unique
+    private static void monvhua$updateSurfaceGravityHeadAngles(
+            Entity entity,
+            LivingEntityRenderState state,
+            float tickDelta
+    ) {
+        Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
+        SurfaceGravityEngine.SurfaceState surfaceState = GravityMagic.getSurfaceState(entity);
+        if (downDirection == null || surfaceState == null) {
+            return;
+        }
+
+        float bodyYaw = MathHelper.lerpAngleDegrees(
+                tickDelta,
+                surfaceState.lastLocalBodyYaw(),
+                surfaceState.localBodyYaw()
+        );
+        state.bodyYaw = bodyYaw + monvhua$surfaceRenderYawOffset(downDirection);
+        state.relativeHeadYaw = MathHelper.wrapDegrees(surfaceState.localYaw() - bodyYaw);
+        state.pitch = surfaceState.localPitch();
+        if (state instanceof BipedEntityRenderState bipedState) {
+            bipedState.leaningPitch = 0.0F;
+        }
+        if (state instanceof PlayerEntityRenderState playerState) {
+            playerState.applyFlyingRotation = false;
+            playerState.flyingRotation = 0.0F;
+        }
+    }
+
+    @Unique
+    private static float monvhua$surfaceRenderYawOffset(Direction downDirection) {
+        return 0.0F;
     }
 }
