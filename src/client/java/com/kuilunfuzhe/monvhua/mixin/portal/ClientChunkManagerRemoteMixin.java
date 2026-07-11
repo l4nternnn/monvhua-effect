@@ -36,13 +36,18 @@ public abstract class ClientChunkManagerRemoteMixin {
     private void monvhua$getRemotePortalChunk(int chunkX, int chunkZ, ChunkStatus leastStatus,
                                               boolean create,
                                               CallbackInfoReturnable<WorldChunk> cir) {
+        WorldChunk remote = PortalRemoteChunkCache.get(world, chunkX, chunkZ);
+        if (PortalFramebufferRenderer.isRenderingPortalView() && remote != null) {
+            cir.setReturnValue(remote);
+            return;
+        }
+
         // Remote Sodium workers finish after the portal pass, so this fallback must
         // remain available outside the render-thread scope.
         WorldChunk current = cir.getReturnValue();
         if (current != null && current != emptyChunk) {
             return;
         }
-        WorldChunk remote = PortalRemoteChunkCache.get(world, chunkX, chunkZ);
         if (remote != null) {
             cir.setReturnValue(remote);
         }

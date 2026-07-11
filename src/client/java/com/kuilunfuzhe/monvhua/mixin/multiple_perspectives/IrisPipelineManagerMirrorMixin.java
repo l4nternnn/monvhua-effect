@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.mixin.multiple_perspectives;
 
 import com.kuilunfuzhe.monvhua.features.mirror.FramebufferOverride;
+import com.kuilunfuzhe.monvhua.features.portal.client.PortalFramebufferOverride;
 import net.irisshaders.iris.pipeline.PipelineManager;
 import net.irisshaders.iris.pipeline.VanillaRenderingPipeline;
 import net.irisshaders.iris.pipeline.WorldRenderingPipeline;
@@ -43,6 +44,6 @@ public class IrisPipelineManagerMirrorMixin {
 	}
 
     private static boolean isAuxiliaryRender() {
-        return FramebufferOverride.getOverride() != null;
+        return FramebufferOverride.getOverride() != null || PortalFramebufferOverride.get() != null;
     }
 }

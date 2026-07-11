@@ -1,12 +1,15 @@
 package com.kuilunfuzhe.monvhua.compat;
 
 import com.kuilunfuzhe.monvhua.MonvhuaMod;
+import com.kuilunfuzhe.monvhua.features.portal.PortalViewConfig;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.fabricmc.fabric.api.event.Event;
 import net.fabricmc.loader.api.FabricLoader;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Distant Horizons compatibility layer.
@@ -37,6 +40,17 @@ public class DhCompat {
     private static Object originalAfterTranslucent;
     /** WorldRenderEvents 事件是否已被暂停 */
     private static boolean eventsSuspended;
+
+    private static final Object PORTAL_STATE_LOCK = new Object();
+    private static boolean portalBridgeUnavailable;
+    private static AtomicReference<Object> portalRenderStateRef;
+    private static Object portalRenderState;
+    private static Object previousRenderState;
+    private static Object lastMainRenderState;
+    private static Object portalQuadtree;
+    private static Constructor<?> dhBlockPos2DConstructor;
+    private static Method portalQuadtreeTickMethod;
+    private static int portalRenderDepth;
 
     public static void init() {
         dhLoaded = FabricLoader.getInstance().isModLoaded("distanthorizons");
@@ -77,6 +91,202 @@ public class DhCompat {
             resumeDhApiRendering();
             apiSuspended = false;
         }
+    }
+
+    /**
+     * Installs a persistent portal-specific DH render state for one remote render pass.
+     */
+    public static boolean beginPortalRender(double cameraX, double cameraZ) {
+        if (!PortalViewConfig.ENABLE_PORTAL_DH_LOD_BRIDGE || !dhLoaded || portalBridgeUnavailable) {
+            return false;
+        }
+
+        synchronized (PORTAL_STATE_LOCK) {
+            try {
+                if (portalRenderDepth > 0) {
+                    portalRenderDepth++;
+                    return true;
+                }
+                if (!ensurePortalRenderState()) {
+                    return false;
+                }
+
+                Object targetPos = dhBlockPos2DConstructor.newInstance(
+                        (int) Math.floor(cameraX),
+                        (int) Math.floor(cameraZ)
+                );
+                portalQuadtreeTickMethod.invoke(portalQuadtree, targetPos);
+
+                Object currentState = portalRenderStateRef.get();
+                if (currentState == portalRenderState) {
+                    if (lastMainRenderState == null
+                            || !portalRenderStateRef.compareAndSet(
+                                    portalRenderState,
+                                    lastMainRenderState
+                            )) {
+                        return false;
+                    }
+                    currentState = lastMainRenderState;
+                }
+                if (currentState == null) {
+                    return false;
+                }
+                if (!portalRenderStateRef.compareAndSet(currentState, portalRenderState)) {
+                    return false;
+                }
+
+                previousRenderState = currentState;
+                lastMainRenderState = currentState;
+                portalRenderDepth = 1;
+                return true;
+            } catch (ReflectiveOperationException | RuntimeException exception) {
+                disablePortalBridge("prepare portal LOD render state", exception);
+                return false;
+            }
+        }
+    }
+
+    public static void endPortalRender() {
+        synchronized (PORTAL_STATE_LOCK) {
+            if (portalRenderDepth <= 0) {
+                portalRenderDepth = 0;
+                return;
+            }
+            if (--portalRenderDepth > 0) {
+                return;
+            }
+            restorePreviousRenderState();
+        }
+    }
+
+    public static void resetPortalRenderState() {
+        synchronized (PORTAL_STATE_LOCK) {
+            restorePreviousRenderState();
+            closePortalRenderState();
+        }
+    }
+
+    private static boolean ensurePortalRenderState() throws ReflectiveOperationException {
+        if (portalRenderState != null && portalRenderStateRef != null) {
+            return true;
+        }
+
+        Object dhLevel = getCurrentDhClientLevel();
+        if (dhLevel == null) {
+            return false;
+        }
+
+        Object clientLevelModule = findField(dhLevel.getClass(), "clientside").get(dhLevel);
+        if (clientLevelModule == null) {
+            return false;
+        }
+
+        @SuppressWarnings("unchecked")
+        AtomicReference<Object> stateRef = (AtomicReference<Object>) findField(
+                clientLevelModule.getClass(),
+                "ClientRenderStateRef"
+        ).get(clientLevelModule);
+        if (stateRef == null || stateRef.get() == null) {
+            return false;
+        }
+
+        Object fullDataSourceProvider = findField(
+                clientLevelModule.getClass(),
+                "fullDataSourceProvider"
+        ).get(clientLevelModule);
+        Class<?> renderStateClass = Class.forName(
+                "com.seibel.distanthorizons.core.level.ClientLevelModule$ClientRenderState"
+        );
+        Object renderState = findConstructor(renderStateClass, 2)
+                .newInstance(dhLevel, fullDataSourceProvider);
+        Object quadtree = findField(renderStateClass, "quadtree").get(renderState);
+
+        Class<?> dhBlockPos2DClass = Class.forName(
+                "com.seibel.distanthorizons.core.pos.blockPos.DhBlockPos2D"
+        );
+
+        portalRenderStateRef = stateRef;
+        portalRenderState = renderState;
+        lastMainRenderState = stateRef.get();
+        portalQuadtree = quadtree;
+        dhBlockPos2DConstructor = dhBlockPos2DClass.getConstructor(int.class, int.class);
+        portalQuadtreeTickMethod = findMethod(quadtree.getClass(), "tryTick", 1);
+        return true;
+    }
+
+    private static Object getCurrentDhClientLevel() throws ReflectiveOperationException {
+        Class<?> sharedApiClass = Class.forName(
+                "com.seibel.distanthorizons.core.api.internal.SharedApi"
+        );
+        Object dhClientWorld = findMethod(sharedApiClass, "tryGetDhClientWorld", 0)
+                .invoke(null);
+        if (dhClientWorld == null) {
+            return null;
+        }
+
+        Class<?> singletonInjectorClass = Class.forName(
+                "com.seibel.distanthorizons.core.dependencyInjection.SingletonInjector"
+        );
+        Object singletonInjector = singletonInjectorClass.getField("INSTANCE").get(null);
+        Class<?> minecraftClientWrapperClass = Class.forName(
+                "com.seibel.distanthorizons.core.wrapperInterfaces.minecraft.IMinecraftClientWrapper"
+        );
+        Object minecraftClientWrapper = findMethod(singletonInjectorClass, "get", 1)
+                .invoke(singletonInjector, minecraftClientWrapperClass);
+        Object currentLevelWrapper = findMethod(
+                minecraftClientWrapper.getClass(),
+                "getWrappedClientLevel",
+                0
+        ).invoke(minecraftClientWrapper);
+        if (currentLevelWrapper == null) {
+            return null;
+        }
+
+        return findMethod(dhClientWorld.getClass(), "getClientLevel", 1)
+                .invoke(dhClientWorld, currentLevelWrapper);
+    }
+
+    private static void restorePreviousRenderState() {
+        Object restoreState = previousRenderState != null
+                ? previousRenderState
+                : lastMainRenderState;
+        if (portalRenderStateRef != null
+                && portalRenderState != null
+                && restoreState != null) {
+            portalRenderStateRef.compareAndSet(portalRenderState, restoreState);
+        }
+        previousRenderState = null;
+        portalRenderDepth = 0;
+    }
+
+    private static void closePortalRenderState() {
+        if (portalRenderState != null) {
+            try {
+                findMethod(portalRenderState.getClass(), "close", 0).invoke(portalRenderState);
+            } catch (ReflectiveOperationException exception) {
+                MonvhuaMod.LOGGER.warn(
+                        "[Monvhua] Failed to close Distant Horizons portal render state",
+                        exception
+                );
+            }
+        }
+        portalRenderStateRef = null;
+        portalRenderState = null;
+        lastMainRenderState = null;
+        portalQuadtree = null;
+        dhBlockPos2DConstructor = null;
+        portalQuadtreeTickMethod = null;
+    }
+
+    private static void disablePortalBridge(String stage, Exception exception) {
+        restorePreviousRenderState();
+        closePortalRenderState();
+        portalBridgeUnavailable = true;
+        MonvhuaMod.LOGGER.warn(
+                "[Monvhua] Failed to {}; disabling the Distant Horizons portal bridge",
+                stage,
+                exception
+        );
     }
 
     /**
@@ -223,5 +433,30 @@ public class DhCompat {
             current = current.getSuperclass();
         }
         throw new NoSuchMethodException(type.getName() + "." + name);
+    }
+
+    private static Field findField(Class<?> type, String name) throws NoSuchFieldException {
+        Class<?> current = type;
+        while (current != null) {
+            try {
+                Field field = current.getDeclaredField(name);
+                field.setAccessible(true);
+                return field;
+            } catch (NoSuchFieldException ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        throw new NoSuchFieldException(type.getName() + "." + name);
+    }
+
+    private static Constructor<?> findConstructor(Class<?> type, int parameterCount)
+            throws NoSuchMethodException {
+        for (Constructor<?> constructor : type.getConstructors()) {
+            if (constructor.getParameterCount() == parameterCount) {
+                constructor.setAccessible(true);
+                return constructor;
+            }
+        }
+        throw new NoSuchMethodException(type.getName() + " constructor/" + parameterCount);
     }
 }

@@ -35,11 +35,6 @@ public class WorldRendererHookMixin {
 		if (FramebufferOverride.getOverride() != null || PortalFramebufferOverride.get() != null) {
 			return;
 		}
-		PortalFramebufferRenderer.renderNearestPortal(
-			tickCounter,
-			camera,
-			projectionMatrix
-		);
 	}
 
 	@Inject(method = "render", at = @At("TAIL"))
@@ -58,6 +53,10 @@ public class WorldRendererHookMixin {
 		if (FramebufferOverride.getOverride() != null || PortalFramebufferOverride.get() != null) {
 			return;
 		}
+		PortalFramebufferRenderer.renderNearestPortal(
+			tickCounter,
+			camera
+		);
 		MirrorViewportRenderer.renderFullScreenMirror(tickCounter, fog, fogColor, camera, positionMatrix, projectionMatrix);
 		if (ClairvoyanceViewportRenderer.shouldRenderPreviewWorld()) {
 			ClairvoyanceViewportRenderer.renderPreviewWorld(tickCounter, fog, fogColor, camera, positionMatrix, projectionMatrix);

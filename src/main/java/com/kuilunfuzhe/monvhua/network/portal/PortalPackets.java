@@ -22,6 +22,7 @@ public final class PortalPackets {
     public static void registerS2C() {
         OpenEditorS2C.register();
         RemoteViewStateS2C.register();
+        RemoteHorizonS2C.register();
     }
 
     public static void registerC2S() {
@@ -36,7 +37,11 @@ public final class PortalPackets {
         ServerPlayNetworking.registerGlobalReceiver(DeleteGroupC2S.ID, (packet, context) ->
                 context.server().execute(() -> PortalManager.deleteGroup(context.player(), packet.groupId())));
         ServerPlayNetworking.registerGlobalReceiver(RequestRemoteViewC2S.ID, (packet, context) ->
-                context.server().execute(() -> PortalManager.requestRemoteView(context.player(), packet.sourcePos())));
+                context.server().execute(() -> PortalManager.requestRemoteView(
+                        context.player(),
+                        packet.sourcePos(),
+                        packet.viewCenter()
+                )));
     }
 
     public record RemoteViewStateS2C(boolean active, BlockPos targetPos, BlockPos viewCenter,
@@ -65,6 +70,70 @@ public final class PortalPackets {
             buf.writeBlockPos(viewCenter);
             buf.writeVarInt(radius);
             buf.writeVarLong(generation);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record RemoteHorizonS2C(long generation, BlockPos center, int stepBlocks, int gridRadius,
+                                   int minY, int maxY, int skyColor, int fogColor,
+                                   int[] heights, int[] colors)
+            implements CustomPayload {
+        public static final Id<RemoteHorizonS2C> ID =
+                new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "portal_remote_horizon"));
+        public static final PacketCodec<RegistryByteBuf, RemoteHorizonS2C> CODEC =
+                PacketCodec.of(RemoteHorizonS2C::write, RemoteHorizonS2C::new);
+        private static boolean registered;
+
+        public RemoteHorizonS2C {
+            generation = Math.max(0L, generation);
+            center = center == null ? BlockPos.ORIGIN : center.toImmutable();
+            stepBlocks = Math.max(1, stepBlocks);
+            gridRadius = Math.max(0, gridRadius);
+            int expected = Math.min(
+                    (gridRadius * 2 + 1) * (gridRadius * 2 + 1),
+                    PortalViewConfig.PORTAL_HORIZON_MAX_SAMPLES
+            );
+            heights = sanitizeArray(heights, expected);
+            colors = sanitizeArray(colors, expected);
+        }
+
+        private RemoteHorizonS2C(RegistryByteBuf buf) {
+            this(
+                    buf.readVarLong(),
+                    buf.readBlockPos(),
+                    buf.readVarInt(),
+                    buf.readVarInt(),
+                    buf.readVarInt(),
+                    buf.readVarInt(),
+                    buf.readInt(),
+                    buf.readInt(),
+                    readIntArray(buf),
+                    readIntArray(buf)
+            );
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeVarLong(generation);
+            buf.writeBlockPos(center);
+            buf.writeVarInt(stepBlocks);
+            buf.writeVarInt(gridRadius);
+            buf.writeVarInt(minY);
+            buf.writeVarInt(maxY);
+            buf.writeInt(skyColor);
+            buf.writeInt(fogColor);
+            writeIntArray(buf, heights);
+            writeIntArray(buf, colors);
         }
 
         public static void register() {
@@ -184,7 +253,7 @@ public final class PortalPackets {
         }
     }
 
-    public record RequestRemoteViewC2S(BlockPos sourcePos) implements CustomPayload {
+    public record RequestRemoteViewC2S(BlockPos sourcePos, BlockPos viewCenter) implements CustomPayload {
         public static final Id<RequestRemoteViewC2S> ID =
                 new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "portal_remote_view_request"));
         public static final PacketCodec<RegistryByteBuf, RequestRemoteViewC2S> CODEC =
@@ -193,14 +262,16 @@ public final class PortalPackets {
 
         public RequestRemoteViewC2S {
             sourcePos = sourcePos.toImmutable();
+            viewCenter = viewCenter == null ? sourcePos : viewCenter.toImmutable();
         }
 
         private RequestRemoteViewC2S(RegistryByteBuf buf) {
-            this(buf.readBlockPos());
+            this(buf.readBlockPos(), buf.readBlockPos());
         }
 
         private void write(RegistryByteBuf buf) {
             buf.writeBlockPos(sourcePos);
+            buf.writeBlockPos(viewCenter);
         }
 
         public static void register() {
@@ -240,6 +311,32 @@ public final class PortalPackets {
             counts[i] = Math.max(0, Math.min(2, buf.readVarInt()));
         }
         return counts;
+    }
+
+    private static int[] readIntArray(RegistryByteBuf buf) {
+        int count = Math.min(buf.readVarInt(), PortalViewConfig.PORTAL_HORIZON_MAX_SAMPLES);
+        int[] values = new int[count];
+        for (int i = 0; i < count; i++) {
+            values[i] = buf.readInt();
+        }
+        return values;
+    }
+
+    private static void writeIntArray(RegistryByteBuf buf, int[] values) {
+        int count = Math.min(values == null ? 0 : values.length, PortalViewConfig.PORTAL_HORIZON_MAX_SAMPLES);
+        buf.writeVarInt(count);
+        for (int i = 0; i < count; i++) {
+            buf.writeInt(values[i]);
+        }
+    }
+
+    private static int[] sanitizeArray(int[] values, int expected) {
+        int length = Math.min(expected, PortalViewConfig.PORTAL_HORIZON_MAX_SAMPLES);
+        int[] copy = new int[length];
+        if (values != null) {
+            System.arraycopy(values, 0, copy, 0, Math.min(length, values.length));
+        }
+        return copy;
     }
 
     private static String[] sanitizeGroups(String[] groups) {

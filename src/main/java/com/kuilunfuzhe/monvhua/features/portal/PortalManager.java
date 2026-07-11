@@ -18,6 +18,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.Heightmap;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.WorldChunk;
 
@@ -194,6 +195,10 @@ public final class PortalManager {
     }
 
     public static void requestRemoteView(ServerPlayerEntity player, BlockPos sourcePos) {
+        requestRemoteView(player, sourcePos, null);
+    }
+
+    public static void requestRemoteView(ServerPlayerEntity player, BlockPos sourcePos, BlockPos requestedViewCenter) {
         if (!(player.getWorld() instanceof ServerWorld world)
                 || Vec3d.ofCenter(sourcePos).squaredDistanceTo(player.getEyePos()) > REMOTE_REQUEST_DISTANCE_SQUARED) {
             return;
@@ -208,7 +213,8 @@ public final class PortalManager {
             closeRemoteView(player, REMOTE_VIEWS.remove(player.getUuid()));
             return;
         }
-        BlockPos viewCenter = mapRemoteViewCenter(player, source, target);
+        BlockPos mappedViewCenter = mapRemoteViewCenter(player, source, target);
+        BlockPos viewCenter = sanitizeRemoteViewCenter(mappedViewCenter, requestedViewCenter);
         int remoteRadius = PortalViewConfig.clampRemoteRadius(
                 world.getServer().getPlayerManager().getViewDistance()
         );
@@ -238,6 +244,7 @@ public final class PortalManager {
                 );
         REMOTE_VIEWS.put(player.getUuid(), subscription);
         sendRemoteViewState(player, subscription);
+        sendRemoteHorizon(player, subscription);
     }
 
     private static void sendRemoteViewState(ServerPlayerEntity player, RemoteViewSubscription subscription) {
@@ -547,7 +554,83 @@ public final class PortalManager {
                     );
                 }
             }
+
+            if (world.getTime() - subscription.lastHorizonTick >= PortalViewConfig.PORTAL_HORIZON_UPDATE_INTERVAL_TICKS) {
+                sendRemoteHorizon(player, subscription);
+            }
         }
+    }
+
+    private static void sendRemoteHorizon(ServerPlayerEntity player, RemoteViewSubscription subscription) {
+        if (player == null || player.networkHandler == null || subscription == null) {
+            return;
+        }
+
+        int gridRadius = PortalViewConfig.PORTAL_HORIZON_GRID_RADIUS;
+        int side = gridRadius * 2 + 1;
+        int sampleCount = Math.min(side * side, PortalViewConfig.PORTAL_HORIZON_MAX_SAMPLES);
+        int[] heights = new int[sampleCount];
+        int[] colors = new int[sampleCount];
+        int step = Math.max(1, PortalViewConfig.PORTAL_HORIZON_STEP_BLOCKS);
+        int minY = Integer.MAX_VALUE;
+        int maxY = Integer.MIN_VALUE;
+        int index = 0;
+
+        for (int dz = -gridRadius; dz <= gridRadius && index < sampleCount; dz++) {
+            for (int dx = -gridRadius; dx <= gridRadius && index < sampleCount; dx++) {
+                int x = subscription.viewCenter.getX() + dx * step;
+                int z = subscription.viewCenter.getZ() + dz * step;
+                int topY = sampleTopY(subscription.world, x, z);
+                heights[index] = topY;
+                colors[index] = terrainColor(topY, subscription.world.getSeaLevel());
+                minY = Math.min(minY, topY);
+                maxY = Math.max(maxY, topY);
+                index++;
+            }
+        }
+
+        if (minY == Integer.MAX_VALUE) {
+            minY = subscription.world.getBottomY();
+            maxY = subscription.world.getSeaLevel();
+        }
+
+        subscription.lastHorizonTick = subscription.world.getTime();
+        ServerPlayNetworking.send(player, new PortalPackets.RemoteHorizonS2C(
+                subscription.generation,
+                subscription.viewCenter,
+                step,
+                gridRadius,
+                minY,
+                maxY,
+                0xFF78A7FF,
+                0xFFC8D8EA,
+                heights,
+                colors
+        ));
+    }
+
+    private static int sampleTopY(ServerWorld world, int x, int z) {
+        try {
+            return world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x, z);
+        } catch (RuntimeException ignored) {
+            return world.getSeaLevel();
+        }
+    }
+
+    private static int terrainColor(int y, int seaLevel) {
+        if (y <= seaLevel - 2) {
+            return 0xFF2E6EA8;
+        }
+        if (y <= seaLevel + 1) {
+            return 0xFF8AA05D;
+        }
+        if (y >= 120) {
+            return 0xFFE7E7DF;
+        }
+        if (y >= 92) {
+            return 0xFF8A8468;
+        }
+        return 0xFF5F8F4E;
     }
 
     private static void sendRemoteChunk(ServerPlayerEntity player, RemoteViewSubscription subscription, ChunkPos pos) {
@@ -760,6 +843,19 @@ public final class PortalManager {
         return BlockPos.ofFloored(mapped.x, mapped.y, mapped.z);
     }
 
+    private static BlockPos sanitizeRemoteViewCenter(BlockPos mappedViewCenter, BlockPos requestedViewCenter) {
+        if (requestedViewCenter == null) {
+            return mappedViewCenter;
+        }
+        double maxDistance = PortalViewConfig.MAX_REMOTE_VIEW_RADIUS * 32.0D;
+        double dx = requestedViewCenter.getX() - mappedViewCenter.getX();
+        double dz = requestedViewCenter.getZ() - mappedViewCenter.getZ();
+        if (dx * dx + dz * dz > maxDistance * maxDistance) {
+            return mappedViewCenter;
+        }
+        return requestedViewCenter.toImmutable();
+    }
+
     private static Vec3d normal(Direction direction) {
         return new Vec3d(direction.getOffsetX(), direction.getOffsetY(), direction.getOffsetZ());
     }
@@ -821,6 +917,7 @@ public final class PortalManager {
         private BlockPos viewCenter;
         private long lastRequestTick;
         private long lastTicketRefreshTick;
+        private long lastHorizonTick;
 
         private RemoteViewSubscription(ServerWorld world, BlockPos targetPos, BlockPos viewCenter,
                                        int radius, long generation, long currentTick) {
@@ -831,6 +928,7 @@ public final class PortalManager {
             this.generation = generation;
             this.lastRequestTick = currentTick;
             this.lastTicketRefreshTick = currentTick;
+            this.lastHorizonTick = Long.MIN_VALUE / 2L;
 
             List<ChunkPos> ordered = buildOrderedChunks(this.targetPos, this.viewCenter, radius);
             for (ChunkPos pos : ordered) {

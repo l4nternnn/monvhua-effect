@@ -143,6 +143,14 @@ public final class PortalRemoteChunkCache {
         return world == clientWorld ? CHUNKS.size() : 0;
     }
 
+    public static int loadedChunkCount() {
+        return CHUNKS.size();
+    }
+
+    public static WorldChunk getLoadedChunk(int chunkX, int chunkZ) {
+        return CHUNKS.get(ChunkPos.toLong(chunkX, chunkZ));
+    }
+
     public static int getViewRadius() {
         return Math.max(2, viewRadius);
     }
@@ -150,6 +158,12 @@ public final class PortalRemoteChunkCache {
     public static void forEachLoadedChunk(BiConsumer<Integer, Integer> consumer) {
         for (WorldChunk chunk : CHUNKS.values()) {
             consumer.accept(chunk.getPos().x, chunk.getPos().z);
+        }
+    }
+
+    public static void forEachLoadedWorldChunk(Consumer<WorldChunk> consumer) {
+        for (WorldChunk chunk : CHUNKS.values()) {
+            consumer.accept(chunk);
         }
     }
 
@@ -165,6 +179,7 @@ public final class PortalRemoteChunkCache {
         targetPos = null;
         viewCenter = null;
         viewRadius = 0;
+        PortalHorizonCache.clear();
         PortalFramebufferRenderer.onRemoteViewChanged();
     }
 
