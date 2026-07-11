@@ -19,6 +19,7 @@ import org.jetbrains.annotations.Nullable;
 public class PortalBlockEntity extends BlockEntity {
     private BlockPos targetPos;
     private Direction targetFacing = Direction.NORTH;
+    private Vec3d targetCenter;
     private BlockPos origin;
     private int width = 1;
     private int height = 1;
@@ -71,7 +72,11 @@ public class PortalBlockEntity extends BlockEntity {
 
     @Nullable
     public PortalLinkData getLinkData() {
-        return targetPos == null ? null : new PortalLinkData(targetPos, targetFacing);
+        return targetPos == null ? null : new PortalLinkData(
+                targetPos,
+                targetFacing,
+                resolvedTargetCenter()
+        );
     }
 
     public Vec3d getPortalCenter() {
@@ -97,8 +102,13 @@ public class PortalBlockEntity extends BlockEntity {
     }
 
     public void setTarget(BlockPos pos, Direction facing, long activeAfterTick) {
+        setTarget(pos, facing, Vec3d.ofCenter(pos), activeAfterTick);
+    }
+
+    public void setTarget(BlockPos pos, Direction facing, Vec3d center, long activeAfterTick) {
         targetPos = pos.toImmutable();
         targetFacing = facing == null || facing.getAxis().isVertical() ? Direction.NORTH : facing;
+        targetCenter = center == null ? Vec3d.ofCenter(targetPos) : center;
         this.activeAfterTick = Math.max(0L, activeAfterTick);
         active = world == null || this.activeAfterTick <= world.getTime();
         sync();
@@ -107,6 +117,7 @@ public class PortalBlockEntity extends BlockEntity {
     public void clearTarget() {
         targetPos = null;
         targetFacing = Direction.NORTH;
+        targetCenter = null;
         activeAfterTick = 0L;
         active = false;
         sync();
@@ -165,6 +176,7 @@ public class PortalBlockEntity extends BlockEntity {
     protected void readData(ReadView view) {
         super.readData(view);
         targetPos = readPos(view, "target_pos");
+        targetCenter = readVec3d(view, "target_center");
         origin = readPos(view, "origin_pos");
         if (origin == null) {
             origin = pos.toImmutable();
@@ -185,6 +197,7 @@ public class PortalBlockEntity extends BlockEntity {
     protected void writeData(WriteView view) {
         super.writeData(view);
         writePos(view, "target_pos", targetPos);
+        writeVec3d(view, "target_center", targetPos == null ? null : resolvedTargetCenter());
         writePos(view, "origin_pos", getOrigin());
         view.put("target_facing", Codec.INT, targetFacing.getIndex());
         view.put("width", Codec.INT, getPortalWidth());
@@ -205,5 +218,28 @@ public class PortalBlockEntity extends BlockEntity {
             view.put(key, Codec.INT_STREAM.xmap(stream -> stream.toArray(), java.util.Arrays::stream),
                     new int[]{value.getX(), value.getY(), value.getZ()});
         }
+    }
+
+    @Nullable
+    private static Vec3d readVec3d(ReadView view, String key) {
+        java.util.List<Double> data = view.read(key, Codec.DOUBLE.listOf()).orElse(null);
+        return data != null && data.size() == 3 ? new Vec3d(data.get(0), data.get(1), data.get(2)) : null;
+    }
+
+    private static void writeVec3d(WriteView view, String key, @Nullable Vec3d value) {
+        if (value != null) {
+            view.put(key, Codec.DOUBLE.listOf(), java.util.List.of(value.x, value.y, value.z));
+        }
+    }
+
+    private Vec3d resolvedTargetCenter() {
+        Vec3d center = targetCenter;
+        if (center == null && world != null && targetPos != null) {
+            BlockEntity blockEntity = world.getBlockEntity(targetPos);
+            if (blockEntity instanceof PortalBlockEntity portal && portal.isController()) {
+                center = portal.getPortalCenter();
+            }
+        }
+        return center == null && targetPos != null ? Vec3d.ofCenter(targetPos) : center;
     }
 }

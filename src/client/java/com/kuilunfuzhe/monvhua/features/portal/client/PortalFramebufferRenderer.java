@@ -297,6 +297,7 @@ public final class PortalFramebufferRenderer {
             remoteRendererWorld = null;
             remoteFogRenderer = null;
             remoteProjectionMatrix = null;
+            PortalRemoteRenderContext.clearRemoteRendererAlive();
             REMOTE_SODIUM_CHUNKS.clear();
             QUEUED_REMOTE_SODIUM_CHUNKS.clear();
             PENDING_REMOTE_SODIUM_CHUNKS.clear();
@@ -305,15 +306,13 @@ public final class PortalFramebufferRenderer {
     }
 
     private static void requestRemoteView(PortalBlockEntity portal) {
-        if (portal == null || portal.getLinkData() == null) {
+        PortalLinkData link = portal == null ? null : portal.getLinkData();
+        if (link == null) {
             return;
         }
         MinecraftClient client = MinecraftClient.getInstance();
-        BlockEntity targetBlockEntity = client.world == null ? null : client.world.getBlockEntity(portal.getLinkData().targetPos());
-        if (!(targetBlockEntity instanceof PortalBlockEntity targetPortal) || !targetPortal.isController()) {
-            return;
-        }
-        CameraPose pose = transformCamera(client.gameRenderer.getCamera(), portal, targetPortal);
+        TargetPortalView targetView = targetView(client.world, link);
+        CameraPose pose = transformCamera(client.gameRenderer.getCamera(), portal, targetView);
         BlockPos sourcePos = portal.getPos();
         BlockPos viewCenter = remoteViewCenterFor(pose);
         boolean sameRequest = sourcePos.equals(lastRequestedSource) && viewCenter.equals(lastRequestedViewCenter);
@@ -377,19 +376,25 @@ public final class PortalFramebufferRenderer {
         if (link == null) {
             return;
         }
-        BlockEntity targetBlockEntity = client.world.getBlockEntity(link.targetPos());
-        if (!(targetBlockEntity instanceof PortalBlockEntity targetPortal) || !targetPortal.isController()) {
-            return;
-        }
+        TargetPortalView targetView = targetView(client.world, link);
 
         Resolution resolution = fullFrameResolution(client);
         SimpleFramebuffer framebuffer = slot.prepare(resolution);
-        CameraPose pose = transformCamera(frame.mainCamera(), sourcePortal, targetPortal);
+        CameraPose pose = transformCamera(frame.mainCamera(), sourcePortal, targetView);
         float aspect = resolution.width / (float) Math.max(1, resolution.height);
 
-        if (renderPortalScene(frame, framebuffer, pose, targetPortal, aspect)) {
-            slot.publish(link.targetPos(), frameIndex);
+        if (!renderPortalScene(frame, framebuffer, pose, targetView.portal(), aspect)) {
+            slot.freeze("render_scene_failed", frameIndex);
+            return;
         }
+
+        PublishDecision decision = livePublishDecision(client.world, link.targetPos());
+        if (!decision.publish()) {
+            slot.freeze(decision.detail(), frameIndex);
+            return;
+        }
+        slot.logStatus(decision.detail(), frameIndex);
+        slot.publish(link.targetPos(), frameIndex);
     }
 
     private static void renderPreview(RenderFrame frame, PortalBlockEntity portal,
@@ -415,31 +420,122 @@ public final class PortalFramebufferRenderer {
                 return renderScene(frame, targetFramebuffer, pose, aperturePortal, aspect);
             } catch (RuntimeException exception) {
                 logRenderFailure(frame.client(), "portal world renderer", exception);
+                return false;
             }
         }
         return IndependentPortalRenderer.render(targetFramebuffer, pose.position, pose.yaw, pose.pitch, aspect,
                 aperturePortal);
     }
 
+    private static PublishDecision livePublishDecision(ClientWorld world, BlockPos targetPos) {
+        if (world == null) {
+            return PublishDecision.block("missing_client_world");
+        }
+        if (!PortalRemoteChunkCache.isCurrentTarget(targetPos)) {
+            return PublishDecision.block("remote_target_mismatch target=" + targetPos
+                    + " cached=" + PortalRemoteChunkCache.getTargetPos()
+                    + " " + PortalRemoteChunkCache.debugSummary(world));
+        }
+        int loaded = PortalRemoteChunkCache.loadedChunkCount();
+        if (loaded <= 0) {
+            return PublishDecision.block("no_remote_chunks " + PortalRemoteChunkCache.debugSummary(world));
+        }
+
+        ChunkPos targetChunk = new ChunkPos(targetPos);
+        if (!PortalRemoteChunkCache.isRenderable(world, targetChunk.x, targetChunk.z)) {
+            return PublishDecision.block("missing_renderable_target_chunk chunk=" + targetChunk.x + "," + targetChunk.z
+                    + " targetAccepted=" + PortalRemoteChunkCache.accepts(world, targetChunk.x, targetChunk.z)
+                    + " targetFresh=" + PortalRemoteChunkCache.isFresh(world, targetChunk.x, targetChunk.z)
+                    + " " + PortalRemoteChunkCache.debugSummary(world));
+        }
+        boolean staleTarget = !PortalRemoteChunkCache.isFresh(world, targetChunk.x, targetChunk.z);
+
+        BlockPos centerPos = PortalRemoteChunkCache.getViewCenter();
+        if (centerPos == null) {
+            return PublishDecision.block("missing_view_center " + PortalRemoteChunkCache.debugSummary(world));
+        }
+        ChunkPos center = new ChunkPos(centerPos);
+        int radius = Math.max(0, PortalViewConfig.REMOTE_PUBLISH_CORE_RADIUS_CHUNKS);
+        int expected = 0;
+        int missingRenderable = 0;
+        int staleRenderable = staleTarget ? 1 : 0;
+        StringBuilder missingSamples = new StringBuilder();
+        for (int z = center.z - radius; z <= center.z + radius; z++) {
+            for (int x = center.x - radius; x <= center.x + radius; x++) {
+                expected++;
+                if (!PortalRemoteChunkCache.isRenderable(world, x, z)) {
+                    missingRenderable++;
+                    appendChunkSample(missingSamples, x, z);
+                } else if (!PortalRemoteChunkCache.isFresh(world, x, z)) {
+                    staleRenderable++;
+                }
+            }
+        }
+        if (missingRenderable > 0) {
+            return PublishDecision.block("missing_renderable_core_chunks missing=" + missingRenderable + "/" + expected
+                    + " center=" + center.x + "," + center.z
+                    + " radius=" + radius
+                    + " samples=" + missingSamples
+                    + " " + PortalRemoteChunkCache.debugSummary(world));
+        }
+        if (staleRenderable > 0) {
+            return PublishDecision.allow("using_stale_remote_chunks stale=" + staleRenderable
+                    + " core=" + expected
+                    + " fresh=" + PortalRemoteChunkCache.freshChunkCount()
+                    + " loaded=" + loaded
+                    + " accepted=" + PortalRemoteChunkCache.acceptedChunkCount()
+                    + " gen=" + PortalRemoteChunkCache.getGeneration());
+        }
+        return PublishDecision.allow(null);
+    }
+
+    private static void appendChunkSample(StringBuilder samples, int chunkX, int chunkZ) {
+        if (samples.length() > 0 && samples.toString().split(";").length >= 8) {
+            return;
+        }
+        if (!samples.isEmpty()) {
+            samples.append(';');
+        }
+        samples.append(chunkX).append(',').append(chunkZ);
+    }
+
     private static CameraPose transformCamera(Camera mainCamera,
                                               PortalBlockEntity sourcePortal,
-                                              PortalBlockEntity targetPortal) {
+                                              TargetPortalView targetPortal) {
         Vec3d mappedPosition = PortalTransform.mapPosition(
                 mainCamera.getPos(),
                 sourcePortal.getPortalCenter(),
                 sourcePortal.getFacing(),
-                targetPortal.getPortalCenter(),
-                targetPortal.getFacing()
+                targetPortal.center(),
+                targetPortal.facing()
         );
         float mappedYaw = PortalTransform.mapYaw(
                 mainCamera.getYaw(),
                 sourcePortal.getFacing(),
-                targetPortal.getFacing()
+                targetPortal.facing()
         );
         return new CameraPose(
                 mappedPosition,
                 mappedYaw,
                 mainCamera.getPitch()
+        );
+    }
+
+    private static TargetPortalView targetView(ClientWorld world, PortalLinkData link) {
+        if (world != null) {
+            BlockEntity blockEntity = world.getBlockEntity(link.targetPos());
+            if (blockEntity instanceof PortalBlockEntity portal && portal.isController()) {
+                return new TargetPortalView(
+                        portal.getPortalCenter(),
+                        portal.getFacing(),
+                        portal
+                );
+            }
+        }
+        return new TargetPortalView(
+                link.targetCenter(),
+                link.targetFacing(),
+                null
         );
     }
 
@@ -485,39 +581,40 @@ public final class PortalFramebufferRenderer {
                     ProjectionType.PERSPECTIVE
             );
 
-            PortalRemoteChunkCache.forEachLoadedChunk(PortalFramebufferRenderer::queueRemoteSodiumChunk);
-            if (remoteTerrainDirty || PortalRemoteChunkCache.loadedChunkCount() > 0) {
-                sceneRenderer.scheduleTerrainUpdate();
-                remoteTerrainDirty = false;
-            }
-            pumpRemoteSodiumChunks(client, sceneRenderer);
-
-            boolean thickFog = client.world.getDimensionEffects().useThickFog(
-                    MathHelper.floor(pose.position.x),
-                    MathHelper.floor(pose.position.z)
-            ) || client.inGameHud.getBossBarHud().shouldThickenFog();
-            sceneFogRenderer = getRemoteFogRenderer();
-            Vector4f sceneFogColor = sceneFogRenderer.applyFog(
-                    portalCamera,
-                    frame.viewDistanceChunks(),
-                    thickFog,
-                    tickCounter,
-                    client.gameRenderer.getSkyDarkness(tickCounter.getTickProgress(false)),
-                    client.world
-            );
-            GpuBufferSlice sceneFog = sceneFogRenderer.getFogBuffer(FogRenderer.FogType.WORLD);
-            clearPortalFramebuffer(targetFramebuffer, sceneFogColor);
-
-            sceneRenderer.setupFrustum(pose.position, view, projection);
-            portalDhStateInstalled = DhCompat.beginPortalRender(
-                    pose.position.x,
-                    pose.position.z
-            );
-            if (!portalDhStateInstalled && PortalViewConfig.SUSPEND_DH_DURING_PORTAL_RENDER) {
-                DhCompat.suspend();
-                dhSuspended = true;
-            }
+            PortalRemoteRenderContext.beginPortalPass();
             try {
+                PortalRemoteChunkCache.forEachLoadedChunk(PortalFramebufferRenderer::queueRemoteSodiumChunk);
+                if (remoteTerrainDirty || PortalRemoteChunkCache.loadedChunkCount() > 0) {
+                    sceneRenderer.scheduleTerrainUpdate();
+                    remoteTerrainDirty = false;
+                }
+                pumpRemoteSodiumChunks(client, sceneRenderer);
+
+                boolean thickFog = client.world.getDimensionEffects().useThickFog(
+                        MathHelper.floor(pose.position.x),
+                        MathHelper.floor(pose.position.z)
+                ) || client.inGameHud.getBossBarHud().shouldThickenFog();
+                sceneFogRenderer = getRemoteFogRenderer();
+                Vector4f sceneFogColor = sceneFogRenderer.applyFog(
+                        portalCamera,
+                        frame.viewDistanceChunks(),
+                        thickFog,
+                        tickCounter,
+                        client.gameRenderer.getSkyDarkness(tickCounter.getTickProgress(false)),
+                        client.world
+                );
+                GpuBufferSlice sceneFog = sceneFogRenderer.getFogBuffer(FogRenderer.FogType.WORLD);
+                clearPortalFramebuffer(targetFramebuffer, sceneFogColor);
+
+                sceneRenderer.setupFrustum(pose.position, view, projection);
+                portalDhStateInstalled = DhCompat.beginPortalRender(
+                        pose.position.x,
+                        pose.position.z
+                );
+                if (!portalDhStateInstalled && PortalViewConfig.SUSPEND_DH_DURING_PORTAL_RENDER) {
+                    DhCompat.suspend();
+                    dhSuspended = true;
+                }
                 sceneRenderer.render(
                         ObjectAllocator.TRIVIAL,
                         tickCounter,
@@ -530,6 +627,7 @@ public final class PortalFramebufferRenderer {
                         !thickFog
                 );
             } finally {
+                PortalRemoteRenderContext.endPortalPass();
                 if (dhSuspended) {
                     DhCompat.resume();
                     dhSuspended = false;
@@ -600,6 +698,7 @@ public final class PortalFramebufferRenderer {
             );
             remoteRendererWorld = client.world;
             remoteWorldRenderer.setWorld(client.world);
+            PortalRemoteRenderContext.markRemoteRendererAlive();
         } finally {
             creatingRemoteRenderer = false;
         }
@@ -800,26 +899,7 @@ public final class PortalFramebufferRenderer {
     }
 
     private static BlockPos remoteViewCenterFor(CameraPose pose) {
-        int radius = PortalRemoteChunkCache.getViewRadius();
-        if (radius < PortalViewConfig.DEFAULT_REMOTE_VIEW_RADIUS) {
-            radius = PortalViewConfig.DEFAULT_REMOTE_VIEW_RADIUS;
-        }
-        double distance = MathHelper.clamp(radius, PortalViewConfig.MIN_REMOTE_VIEW_RADIUS,
-                PortalViewConfig.MAX_REMOTE_VIEW_RADIUS) * 12.0D;
-        Vec3d forward = forwardVector(pose.yaw, pose.pitch);
-        Vec3d center = pose.position.add(forward.multiply(distance));
-        return BlockPos.ofFloored(center.x, center.y, center.z);
-    }
-
-    private static Vec3d forwardVector(float yaw, float pitch) {
-        double yawRadians = Math.toRadians(-yaw) - Math.PI;
-        double pitchRadians = Math.toRadians(-pitch);
-        double horizontal = -Math.cos(pitchRadians);
-        return new Vec3d(
-                Math.sin(yawRadians) * horizontal,
-                Math.sin(pitchRadians),
-                Math.cos(yawRadians) * horizontal
-        );
+        return BlockPos.ofFloored(pose.position);
     }
 
     private static ScreenBounds screenBoundsForPortal(RenderFrame frame, PortalBlockEntity portal) {
@@ -982,10 +1062,23 @@ public final class PortalFramebufferRenderer {
     private record CameraPose(Vec3d position, float yaw, float pitch) {
     }
 
+    private record TargetPortalView(Vec3d center, Direction facing, PortalBlockEntity portal) {
+    }
+
     private record Resolution(int width, int height) {
     }
 
     private record ScreenBounds(int x, int y, int width, int height) {
+    }
+
+    private record PublishDecision(boolean publish, String detail) {
+        private static PublishDecision allow(String detail) {
+            return new PublishDecision(true, detail);
+        }
+
+        private static PublishDecision block(String detail) {
+            return new PublishDecision(false, detail);
+        }
     }
 
     private static final class RenderSlot {
@@ -996,6 +1089,8 @@ public final class PortalFramebufferRenderer {
         private boolean ready;
         private BlockPos targetPos;
         private long lastAttemptFrame = Long.MIN_VALUE / 2L;
+        private long lastFreezeLogFrame = Long.MIN_VALUE / 2L;
+        private long lastStatusLogFrame = Long.MIN_VALUE / 2L;
 
         private RenderSlot(MinecraftClient client, PortalKey key, String kind) {
             this.client = client;
@@ -1008,13 +1103,34 @@ public final class PortalFramebufferRenderer {
                 buffer = new BufferHandle(textureId());
             }
             Resolution resolution = buffer.stabilize(requestedResolution);
-            return buffer.ensure(client, resolution.width, resolution.height);
+            return buffer.ensureBack(client, resolution.width, resolution.height);
         }
 
         private void publish(BlockPos targetPos, long renderedFrame) {
+            buffer.publish(client);
             ready = true;
             this.targetPos = targetPos == null ? null : targetPos.toImmutable();
             lastAttemptFrame = renderedFrame;
+        }
+
+        private void freeze(String reason, long frame) {
+            lastAttemptFrame = frame;
+            if (frame - lastFreezeLogFrame < PortalViewConfig.PORTAL_FREEZE_LOG_INTERVAL_TICKS) {
+                return;
+            }
+            lastFreezeLogFrame = frame;
+            MonvhuaMod.LOGGER.info("[Monvhua] Portal frame frozen; keeping last valid frame. kind={}, pos={}, ready={}, reason={}",
+                    kind, key.pos, ready, reason);
+        }
+
+        private void logStatus(String detail, long frame) {
+            if (detail == null || detail.isEmpty()
+                    || frame - lastStatusLogFrame < PortalViewConfig.PORTAL_FREEZE_LOG_INTERVAL_TICKS) {
+                return;
+            }
+            lastStatusLogFrame = frame;
+            MonvhuaMod.LOGGER.info("[Monvhua] Portal frame rendered from cached remote chunks. kind={}, pos={}, detail={}",
+                    kind, key.pos, detail);
         }
 
         private Identifier frontTextureId() {
@@ -1040,39 +1156,53 @@ public final class PortalFramebufferRenderer {
     private static final class BufferHandle {
         private final Identifier textureId;
         private PortalFramebufferTexture texture;
-        private SimpleFramebuffer framebuffer;
+        private SimpleFramebuffer frontFramebuffer;
+        private SimpleFramebuffer backFramebuffer;
 
         private BufferHandle(Identifier textureId) {
             this.textureId = textureId;
         }
 
-        private SimpleFramebuffer ensure(MinecraftClient client, int width, int height) {
-            if (framebuffer == null || framebuffer.textureWidth != width || framebuffer.textureHeight != height) {
-                if (framebuffer != null) {
-                    framebuffer.delete();
+        private SimpleFramebuffer ensureBack(MinecraftClient client, int width, int height) {
+            if (backFramebuffer == null || backFramebuffer.textureWidth != width || backFramebuffer.textureHeight != height) {
+                if (backFramebuffer != null) {
+                    backFramebuffer.delete();
                 }
-                framebuffer = new SimpleFramebuffer("monvhua_portal_slot", width, height, true);
+                backFramebuffer = new SimpleFramebuffer("monvhua_portal_slot_back", width, height, true);
             }
             if (texture == null) {
                 texture = new PortalFramebufferTexture();
-                texture.setFramebuffer(framebuffer);
+                texture.setFramebuffer(frontFramebuffer);
                 client.getTextureManager().registerTexture(textureId, texture);
-            } else {
-                texture.setFramebuffer(framebuffer);
             }
-            return framebuffer;
+            return backFramebuffer;
+        }
+
+        private void publish(MinecraftClient client) {
+            if (backFramebuffer == null) {
+                return;
+            }
+            SimpleFramebuffer previousFront = frontFramebuffer;
+            frontFramebuffer = backFramebuffer;
+            backFramebuffer = previousFront;
+            if (texture == null) {
+                texture = new PortalFramebufferTexture();
+                client.getTextureManager().registerTexture(textureId, texture);
+            }
+            texture.setFramebuffer(frontFramebuffer);
         }
 
         private Resolution stabilize(Resolution requested) {
-            if (framebuffer == null) {
+            SimpleFramebuffer stableFramebuffer = backFramebuffer != null ? backFramebuffer : frontFramebuffer;
+            if (stableFramebuffer == null) {
                 return requested;
             }
-            double widthChange = Math.abs(requested.width - framebuffer.textureWidth)
-                    / (double) Math.max(1, framebuffer.textureWidth);
-            double heightChange = Math.abs(requested.height - framebuffer.textureHeight)
-                    / (double) Math.max(1, framebuffer.textureHeight);
+            double widthChange = Math.abs(requested.width - stableFramebuffer.textureWidth)
+                    / (double) Math.max(1, stableFramebuffer.textureWidth);
+            double heightChange = Math.abs(requested.height - stableFramebuffer.textureHeight)
+                    / (double) Math.max(1, stableFramebuffer.textureHeight);
             if (Math.max(widthChange, heightChange) <= PortalViewConfig.SURFACE_RESIZE_HYSTERESIS) {
-                return new Resolution(framebuffer.textureWidth, framebuffer.textureHeight);
+                return new Resolution(stableFramebuffer.textureWidth, stableFramebuffer.textureHeight);
             }
             return requested;
         }
@@ -1081,9 +1211,13 @@ public final class PortalFramebufferRenderer {
             if (texture != null) {
                 texture.close();
             }
-            if (framebuffer != null) {
-                framebuffer.delete();
-                framebuffer = null;
+            if (frontFramebuffer != null) {
+                frontFramebuffer.delete();
+                frontFramebuffer = null;
+            }
+            if (backFramebuffer != null) {
+                backFramebuffer.delete();
+                backFramebuffer = null;
             }
         }
     }

@@ -38,6 +38,9 @@ public final class PortalClient {
                         packet.radius(),
                         packet.generation()
                 )));
+        ClientPlayNetworking.registerGlobalReceiver(PortalPackets.RemoteChunkS2C.ID, (packet, context) ->
+                context.client().execute(() ->
+                        PortalRemoteChunkCache.loadRemoteChunkPacket(context.client().world, packet)));
         ClientPlayNetworking.registerGlobalReceiver(PortalPackets.RemoteHorizonS2C.ID, (packet, context) ->
                 context.client().execute(() -> PortalHorizonCache.update(packet)));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->

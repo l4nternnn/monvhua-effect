@@ -11,8 +11,13 @@ public final class PortalViewConfig {
     public static final int REMOTE_DIRTY_DELAY_TICKS = 2;
 
     public static final int REMOTE_REQUEST_INTERVAL_FRAMES = 10;
+    public static final double REMOTE_VIEW_CENTER_LEAD_BLOCKS = 24.0D;
+    public static final int REMOTE_VIEW_RECENTER_HYSTERESIS_CHUNKS = 2;
     public static final int REMOTE_CHUNKS_PER_FRAME = 3;
     public static final int REMOTE_MAX_QUEUED_JOBS = 12;
+    public static final int REMOTE_PUBLISH_CORE_RADIUS_CHUNKS = 1;
+    public static final int PORTAL_FREEZE_LOG_INTERVAL_TICKS = 40;
+    public static final int REMOTE_STALE_RETAIN_RADIUS_CHUNKS = 20;
     public static final int REMOTE_RENDER_THREADS = 2;
     public static final int REMOTE_BUFFER_BUILDER_COUNT = 2;
     public static final int LIVE_VIEW_UPDATE_INTERVAL_FRAMES = 1;

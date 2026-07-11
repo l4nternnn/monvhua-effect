@@ -8,9 +8,11 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.network.packet.s2c.play.ChunkData;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.chunk.WorldChunk;
 
 public final class PortalPackets {
     private static final int MAX_GROUPS = 64;
@@ -23,6 +25,7 @@ public final class PortalPackets {
         OpenEditorS2C.register();
         RemoteViewStateS2C.register();
         RemoteHorizonS2C.register();
+        RemoteChunkS2C.register();
     }
 
     public static void registerC2S() {
@@ -134,6 +137,77 @@ public final class PortalPackets {
             buf.writeInt(fogColor);
             writeIntArray(buf, heights);
             writeIntArray(buf, colors);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public static final class RemoteChunkS2C implements CustomPayload {
+        public static final Id<RemoteChunkS2C> ID =
+                new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "portal_remote_chunk"));
+        public static final PacketCodec<RegistryByteBuf, RemoteChunkS2C> CODEC =
+                PacketCodec.of(RemoteChunkS2C::write, RemoteChunkS2C::new);
+        private static boolean registered;
+
+        private final long generation;
+        private final int chunkX;
+        private final int chunkZ;
+        private final ChunkData chunkData;
+
+        public RemoteChunkS2C(long generation, WorldChunk chunk) {
+            this(
+                    Math.max(0L, generation),
+                    chunk.getPos().x,
+                    chunk.getPos().z,
+                    new ChunkData(chunk)
+            );
+        }
+
+        private RemoteChunkS2C(long generation, int chunkX, int chunkZ, ChunkData chunkData) {
+            this.generation = Math.max(0L, generation);
+            this.chunkX = chunkX;
+            this.chunkZ = chunkZ;
+            this.chunkData = chunkData;
+        }
+
+        private RemoteChunkS2C(RegistryByteBuf buf) {
+            this.generation = Math.max(0L, buf.readVarLong());
+            this.chunkX = buf.readVarInt();
+            this.chunkZ = buf.readVarInt();
+            this.chunkData = new ChunkData(buf, this.chunkX, this.chunkZ);
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeVarLong(generation);
+            buf.writeVarInt(chunkX);
+            buf.writeVarInt(chunkZ);
+            chunkData.write(buf);
+        }
+
+        public long generation() {
+            return generation;
+        }
+
+        public int chunkX() {
+            return chunkX;
+        }
+
+        public int chunkZ() {
+            return chunkZ;
+        }
+
+        public ChunkData chunkData() {
+            return chunkData;
         }
 
         public static void register() {

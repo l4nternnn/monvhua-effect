@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.portal;
 
+import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.network.portal.PortalPackets;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -13,7 +14,6 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ChunkTicketType;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
-import net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
@@ -50,6 +50,10 @@ public final class PortalManager {
     private static final Set<BlockPos> CLEARING_PORTALS = ConcurrentHashMap.newKeySet();
     private static final ConcurrentHashMap<UUID, RemoteViewSubscription> REMOTE_VIEWS = new ConcurrentHashMap<>();
     private static long nextRemoteGeneration = 1L;
+    private static long lastRemoteRequestLogTick = Long.MIN_VALUE / 2L;
+    private static long lastRemoteTickLogTick = Long.MIN_VALUE / 2L;
+    private static long lastRemoteChunkSendLogTick = Long.MIN_VALUE / 2L;
+    private static long lastRemoteChunkSkipLogTick = Long.MIN_VALUE / 2L;
     private static boolean initialized;
 
     private PortalManager() {
@@ -225,7 +229,18 @@ public final class PortalManager {
                 && existing.targetPos.equals(target.getPos())
                 && existing.radius == remoteRadius) {
             existing.lastRequestTick = world.getTime();
-            if (existing.recenter(viewCenter)) {
+            boolean recentered = existing.recenter(viewCenter);
+            logRemoteViewRequest(
+                    player,
+                    source.getPos(),
+                    target.getPos(),
+                    mappedViewCenter,
+                    requestedViewCenter,
+                    viewCenter,
+                    existing,
+                    recentered ? "refresh_recenter" : "refresh_same_center"
+            );
+            if (recentered) {
                 sendRemoteViewState(player, existing);
             }
             return;
@@ -243,6 +258,16 @@ public final class PortalManager {
                         world.getTime()
                 );
         REMOTE_VIEWS.put(player.getUuid(), subscription);
+        logRemoteViewRequest(
+                player,
+                source.getPos(),
+                target.getPos(),
+                mappedViewCenter,
+                requestedViewCenter,
+                viewCenter,
+                subscription,
+                "new"
+        );
         sendRemoteViewState(player, subscription);
         sendRemoteHorizon(player, subscription);
     }
@@ -327,8 +352,8 @@ public final class PortalManager {
         registerPortal(world, first.getPos());
         registerPortal(world, second.getPos());
         long activeTick = world.getTime() + ACTIVATION_DELAY_TICKS;
-        first.setTarget(second.getPos(), second.getFacing(), activeTick);
-        second.setTarget(first.getPos(), first.getFacing(), activeTick);
+        first.setTarget(second.getPos(), second.getFacing(), second.getPortalCenter(), activeTick);
+        second.setTarget(first.getPos(), first.getFacing(), first.getPortalCenter(), activeTick);
     }
 
     private static PortalBlockEntity getController(ServerWorld world, BlockPos pos) {
@@ -527,11 +552,16 @@ public final class PortalManager {
                 continue;
             }
 
+            int initialBefore = subscription.pendingChunks.size();
+            int initialSent = 0;
             int initialBudget = PortalViewConfig.REMOTE_INITIAL_CHUNKS_PER_TICK;
             while (initialBudget-- > 0 && !subscription.pendingChunks.isEmpty()) {
                 sendRemoteChunk(player, subscription, subscription.pendingChunks.removeFirst());
+                initialSent++;
             }
 
+            int dirtyBefore = subscription.dirtyChunks.size();
+            int dirtySent = 0;
             int dirtyBudget = PortalViewConfig.REMOTE_DIRTY_CHUNKS_PER_TICK;
             Iterator<Map.Entry<Long, Long>> dirtyIterator = subscription.dirtyChunks.entrySet().iterator();
             while (dirtyBudget > 0 && dirtyIterator.hasNext()) {
@@ -542,7 +572,10 @@ public final class PortalManager {
                 dirtyIterator.remove();
                 sendRemoteChunk(player, subscription, new ChunkPos(dirty.getKey()));
                 dirtyBudget--;
+                dirtySent++;
             }
+
+            logRemoteViewTick(player, subscription, initialBefore, initialSent, dirtyBefore, dirtySent);
 
             if (world.getTime() - subscription.lastTicketRefreshTick >= 100L) {
                 subscription.lastTicketRefreshTick = world.getTime();
@@ -634,7 +667,11 @@ public final class PortalManager {
     }
 
     private static void sendRemoteChunk(ServerPlayerEntity player, RemoteViewSubscription subscription, ChunkPos pos) {
-        if (player == null || player.networkHandler == null || !subscription.contains(pos.toLong())) {
+        if (player == null || player.networkHandler == null) {
+            return;
+        }
+        if (!subscription.contains(pos.toLong())) {
+            logRemoteChunkSkipped(player, subscription, pos, "outside_subscription_accept_set");
             return;
         }
         subscription.world.getChunkManager().addTicket(
@@ -644,18 +681,28 @@ public final class PortalManager {
         );
         subscription.ticketedChunks.add(pos.toLong());
         WorldChunk chunk = subscription.world.getChunk(pos.x, pos.z);
-        player.networkHandler.sendPacket(new ChunkDataS2CPacket(
-                chunk,
-                subscription.world.getChunkManager().getLightingProvider(),
-                null,
-                null
-        ));
+        ServerPlayNetworking.send(player, new PortalPackets.RemoteChunkS2C(subscription.generation, chunk));
+        logRemoteChunkSent(player, subscription, pos, chunk);
     }
 
     private static void closeRemoteView(ServerPlayerEntity player, RemoteViewSubscription subscription) {
         if (subscription == null) {
             return;
         }
+        MonvhuaMod.LOGGER.info(
+                "[Monvhua] Portal remote view closed: player={} gen={} target={} targetChunk={} center={} centerChunk={} radius={} accepted={} pending={} dirty={} ticketed={}",
+                playerName(player),
+                subscription.generation,
+                subscription.targetPos,
+                chunkString(subscription.targetPos),
+                subscription.viewCenter,
+                chunkString(subscription.viewCenter),
+                subscription.radius,
+                subscription.acceptedChunks.size(),
+                subscription.pendingChunks.size(),
+                subscription.dirtyChunks.size(),
+                subscription.ticketedChunks.size()
+        );
         for (long ticketed : subscription.ticketedChunks) {
             subscription.world.getChunkManager().removeTicket(
                     ChunkTicketType.PORTAL,
@@ -672,6 +719,150 @@ public final class PortalManager {
                     subscription.generation
             ));
         }
+    }
+
+    private static void logRemoteViewRequest(ServerPlayerEntity player, BlockPos sourcePos, BlockPos targetPos,
+                                             BlockPos mappedViewCenter, BlockPos requestedViewCenter,
+                                             BlockPos sanitizedViewCenter, RemoteViewSubscription subscription,
+                                             String action) {
+        long tick = subscription.world.getTime();
+        boolean important = "new".equals(action) || "refresh_recenter".equals(action);
+        if (!important && !shouldRemoteServerLog(tick, lastRemoteRequestLogTick)) {
+            return;
+        }
+        lastRemoteRequestLogTick = tick;
+        MonvhuaMod.LOGGER.info(
+                "[Monvhua] Portal remote request {}: player={} tick={} gen={} source={} sourceChunk={} target={} targetChunk={} mappedCenter={} mappedChunk={} requestedCenter={} requestedChunk={} viewCenter={} centerChunk={} radius={} accepted={} pending={} dirty={} ticketed={}",
+                action,
+                playerName(player),
+                tick,
+                subscription.generation,
+                sourcePos,
+                chunkString(sourcePos),
+                targetPos,
+                chunkString(targetPos),
+                mappedViewCenter,
+                chunkString(mappedViewCenter),
+                requestedViewCenter,
+                chunkString(requestedViewCenter),
+                sanitizedViewCenter,
+                chunkString(sanitizedViewCenter),
+                subscription.radius,
+                subscription.acceptedChunks.size(),
+                subscription.pendingChunks.size(),
+                subscription.dirtyChunks.size(),
+                subscription.ticketedChunks.size()
+        );
+    }
+
+    private static void logRemoteViewTick(ServerPlayerEntity player, RemoteViewSubscription subscription,
+                                          int initialBefore, int initialSent,
+                                          int dirtyBefore, int dirtySent) {
+        long tick = subscription.world.getTime();
+        if (!shouldRemoteServerLog(tick, lastRemoteTickLogTick)) {
+            return;
+        }
+        lastRemoteTickLogTick = tick;
+        MonvhuaMod.LOGGER.info(
+                "[Monvhua] Portal remote tick: player={} tick={} gen={} targetChunk={} centerChunk={} radius={} initialSent={}/{} dirtySent={}/{} pendingAfter={} dirtyAfter={} ticketed={}",
+                playerName(player),
+                tick,
+                subscription.generation,
+                chunkString(subscription.targetPos),
+                chunkString(subscription.viewCenter),
+                subscription.radius,
+                initialSent,
+                initialBefore,
+                dirtySent,
+                dirtyBefore,
+                subscription.pendingChunks.size(),
+                subscription.dirtyChunks.size(),
+                subscription.ticketedChunks.size()
+        );
+    }
+
+    private static void logRemoteChunkSent(ServerPlayerEntity player, RemoteViewSubscription subscription,
+                                           ChunkPos pos, WorldChunk chunk) {
+        long tick = subscription.world.getTime();
+        boolean probeChunk = isProbeRemoteChunk(subscription, pos);
+        if (!probeChunk && !shouldRemoteServerLog(tick, lastRemoteChunkSendLogTick)) {
+            return;
+        }
+        if (!probeChunk) {
+            lastRemoteChunkSendLogTick = tick;
+        }
+        MonvhuaMod.LOGGER.info(
+                "[Monvhua] Portal remote chunk sent: player={} tick={} gen={} chunk={} probe={} targetChunk={} centerChunk={} radius={} accepted={} pending={} dirty={} ticketed={} sections={}",
+                playerName(player),
+                tick,
+                subscription.generation,
+                chunkString(pos),
+                probeChunk,
+                chunkString(subscription.targetPos),
+                chunkString(subscription.viewCenter),
+                subscription.radius,
+                subscription.acceptedChunks.size(),
+                subscription.pendingChunks.size(),
+                subscription.dirtyChunks.size(),
+                subscription.ticketedChunks.size(),
+                chunk.getSectionArray().length
+        );
+    }
+
+    private static void logRemoteChunkSkipped(ServerPlayerEntity player, RemoteViewSubscription subscription,
+                                              ChunkPos pos, String reason) {
+        long tick = subscription.world.getTime();
+        if (!shouldRemoteServerLog(tick, lastRemoteChunkSkipLogTick)) {
+            return;
+        }
+        lastRemoteChunkSkipLogTick = tick;
+        MonvhuaMod.LOGGER.info(
+                "[Monvhua] Portal remote chunk skipped: player={} tick={} gen={} chunk={} reason={} targetChunk={} centerChunk={} radius={} accepted={} pending={} dirty={} ticketed={}",
+                playerName(player),
+                tick,
+                subscription.generation,
+                chunkString(pos),
+                reason,
+                chunkString(subscription.targetPos),
+                chunkString(subscription.viewCenter),
+                subscription.radius,
+                subscription.acceptedChunks.size(),
+                subscription.pendingChunks.size(),
+                subscription.dirtyChunks.size(),
+                subscription.ticketedChunks.size()
+        );
+    }
+
+    private static boolean isProbeRemoteChunk(RemoteViewSubscription subscription, ChunkPos pos) {
+        ChunkPos targetChunk = new ChunkPos(subscription.targetPos);
+        if (targetChunk.equals(pos)) {
+            return true;
+        }
+        ChunkPos centerChunk = new ChunkPos(subscription.viewCenter);
+        int radius = Math.max(0, PortalViewConfig.REMOTE_PUBLISH_CORE_RADIUS_CHUNKS);
+        return Math.max(Math.abs(pos.x - centerChunk.x), Math.abs(pos.z - centerChunk.z)) <= radius;
+    }
+
+    private static boolean shouldRemoteServerLog(long tick, long lastTick) {
+        return lastTick == Long.MIN_VALUE / 2L
+                || tick - lastTick >= PortalViewConfig.PORTAL_FREEZE_LOG_INTERVAL_TICKS
+                || tick < lastTick;
+    }
+
+    private static String playerName(ServerPlayerEntity player) {
+        return player == null ? "null" : player.getName().getString();
+    }
+
+    private static String chunkString(BlockPos pos) {
+        if (pos == null) {
+            return "null";
+        }
+        ChunkPos chunk = new ChunkPos(pos);
+        return chunk.x + "," + chunk.z;
+    }
+
+    private static String chunkString(ChunkPos pos) {
+        return pos == null ? "null" : pos.x + "," + pos.z;
     }
 
     private static void tickPortalActivation(ServerWorld world) {
@@ -945,6 +1136,13 @@ public final class PortalManager {
             ChunkPos previousCenter = new ChunkPos(viewCenter);
             ChunkPos nextCenter = new ChunkPos(newViewCenter);
             if (previousCenter.equals(nextCenter)) {
+                return false;
+            }
+            int chunkDistance = Math.max(
+                    Math.abs(previousCenter.x - nextCenter.x),
+                    Math.abs(previousCenter.z - nextCenter.z)
+            );
+            if (chunkDistance < PortalViewConfig.REMOTE_VIEW_RECENTER_HYSTERESIS_CHUNKS) {
                 return false;
             }
 
