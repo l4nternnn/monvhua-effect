@@ -51,7 +51,7 @@ public class PaintPaperImportScreen extends Screen {
     private String status = "";
 
     public PaintPaperImportScreen() {
-        super(Text.literal("Paint Paper Import"));
+        super(Text.literal("图片导入"));
     }
 
     @Override
@@ -149,11 +149,11 @@ public class PaintPaperImportScreen extends Screen {
         drawBorder(context, x, y, LIST_WIDTH, listHeight());
 
         if (folder == null) {
-            context.drawText(textRenderer, Text.literal("No local world folder"), x + 8, y + 8, 0xFFE6E6E6, false);
+            context.drawText(textRenderer, Text.literal("没有本地世界文件夹"), x + 8, y + 8, 0xFFE6E6E6, false);
             return;
         }
         if (images.isEmpty()) {
-            context.drawText(textRenderer, Text.literal("No images in graffiti"), x + 8, y + 8, 0xFFE6E6E6, false);
+            context.drawText(textRenderer, Text.literal("graffiti 文件夹内没有图片"), x + 8, y + 8, 0xFFE6E6E6, false);
             context.drawText(textRenderer, Text.literal(folder.toString()), x + 8, y + 22, 0xFF9A9AA4, false);
             return;
         }
@@ -184,7 +184,7 @@ public class PaintPaperImportScreen extends Screen {
 
         ImageEntry entry = selectedEntry();
         if (entry == null) {
-            context.drawText(textRenderer, Text.literal("Select an image"), x + 58, y + 100, 0xFFE6E6E6, false);
+            context.drawText(textRenderer, Text.literal("请选择图片"), x + 58, y + 100, 0xFFE6E6E6, false);
             return;
         }
 
@@ -199,7 +199,7 @@ public class PaintPaperImportScreen extends Screen {
         int infoX = previewX() + PREVIEW_SIZE + 16;
         int y = previewY();
         ImageEntry entry = selectedEntry();
-        context.drawText(textRenderer, Text.literal("Scale"), infoX, y, 0xFFFFFFFF, false);
+        context.drawText(textRenderer, Text.literal("缩放"), infoX, y, 0xFFFFFFFF, false);
         context.drawText(textRenderer, Text.literal(formatScale(scale) + "x"), infoX, y + 14, 0xFFE6E6E6, false);
 
         if (entry != null) {
@@ -207,15 +207,15 @@ public class PaintPaperImportScreen extends Screen {
             int scaledHeight = Math.max(1, (int) Math.round(entry.height() * scale));
             int paperColumns = Math.max(1, (scaledWidth + 399) / 400);
             int paperRows = Math.max(1, (scaledHeight + 399) / 400);
-            context.drawText(textRenderer, Text.literal("Image " + entry.width() + "x" + entry.height()), infoX, y + 38, 0xFFB8B8C2, false);
-            context.drawText(textRenderer, Text.literal("Scaled " + scaledWidth + "x" + scaledHeight), infoX, y + 52, 0xFFB8B8C2, false);
-            context.drawText(textRenderer, Text.literal("Papers " + paperColumns + "x" + paperRows), infoX, y + 66, 0xFFB8B8C2, false);
+            context.drawText(textRenderer, Text.literal("原图 " + entry.width() + "x" + entry.height()), infoX, y + 38, 0xFFB8B8C2, false);
+            context.drawText(textRenderer, Text.literal("缩放后 " + scaledWidth + "x" + scaledHeight), infoX, y + 52, 0xFFB8B8C2, false);
+            context.drawText(textRenderer, Text.literal("纸张 " + paperColumns + "x" + paperRows), infoX, y + 66, 0xFFB8B8C2, false);
         }
 
-        drawButton(context, refreshX(), buttonY(), 58, 18, "Refresh", true);
+        drawButton(context, refreshX(), buttonY(), 58, 18, "刷新", true);
         drawButton(context, minusX(), buttonY(), 22, 18, "-", true);
         drawButton(context, plusX(), buttonY(), 22, 18, "+", true);
-        drawButton(context, importX(), buttonY(), 64, 18, importing ? "Busy" : "Import", entry != null && !importing);
+        drawButton(context, importX(), buttonY(), 64, 18, importing ? "处理中" : "导入", entry != null && !importing);
         if (!status.isEmpty()) {
             context.drawText(textRenderer, Text.literal(status), infoX, buttonY() - 18, 0xFFE6E6E6, false);
         }
@@ -251,16 +251,16 @@ public class PaintPaperImportScreen extends Screen {
         try {
             long size = Files.size(entry.path());
             if (size > MAX_UPLOAD_BYTES) {
-                status = "Image too large, max 8 MiB";
+                status = "图片过大，最大 8 MiB";
                 return;
             }
             imageBytes = Files.readAllBytes(entry.path());
         } catch (IOException e) {
-            status = "Failed to read image: " + e.getMessage();
+            status = "读取图片失败: " + e.getMessage();
             return;
         }
         importing = true;
-        status = "Uploading...";
+        status = "正在上传...";
         SafeClientNetworking.send(new PaintOverlayPackets.ImportPaintPaperC2S(entry.name(), scale, imageBytes));
     }
 

@@ -88,7 +88,8 @@ public final class PaintOverlayClient {
     private static final Map<PaintOverlayStore.FaceKey, List<SuppressedEditorHistoryUpdate>> SUPPRESSED_EDITOR_HISTORY_UPDATES = new HashMap<>();
     private static GLFWScrollCallbackI previousScrollCallback;
     private static boolean scrollCallbackRegistered = false;
-    private static int selectedRadius = 1;
+    private static int selectedBrushRadius = 1;
+    private static int selectedEraserRadius = 1;
     private static int selectedPaperSize = PaintOverlayFeature.DEFAULT_PAPER_SIZE;
     private static int selectedColor = 0xFFFF2A4F;
     private static int selectedBrushSlot = 0;
@@ -104,6 +105,10 @@ public final class PaintOverlayClient {
     private static int editorHistoryCursor;
     private static int editorHistorySequence = 1;
     private static PendingEditorHistoryStep pendingEditorHistory;
+    private static List<EditorHidePreview> editorHidePreviews = List.of();
+    private static List<EditorPixelPreview> editorPixelPreviews = List.of();
+    private static List<EditorPreview> editorPreviews = List.of();
+    private static List<EditorGeometryPreview> editorGeometryPreviews = List.of();
 
     private PaintOverlayClient() {
     }
@@ -164,6 +169,8 @@ public final class PaintOverlayClient {
                 context.client().execute(() -> applyFullSync(packet.faces())));
         ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.FaceUpdateS2C.ID, (packet, context) ->
                 context.client().execute(() -> applyFace(packet.faceData())));
+        ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.FaceRegionPatchS2C.ID, (packet, context) ->
+                context.client().execute(() -> applyRegionPatch(packet.patch(), true)));
         ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PlayerPaintStrokeS2C.ID, (packet, context) ->
                 context.client().execute(() -> applyPlayerPaint(packet)));
         ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PlayerPaintDataS2C.ID, (packet, context) ->
@@ -300,7 +307,11 @@ public final class PaintOverlayClient {
     }
 
     public static int selectedRadius() {
-        return selectedRadius;
+        return selectedBrushRadius;
+    }
+
+    public static int selectedRadius(EditorTool tool) {
+        return tool == EditorTool.ERASER ? selectedEraserRadius : selectedBrushRadius;
     }
 
     public static int selectedPaperSize() {
@@ -333,12 +344,91 @@ public final class PaintOverlayClient {
     }
 
     public static void setSelectedRadius(int radius) {
+        setSelectedRadius(EditorTool.BRUSH, radius);
+    }
+
+    public static void setSelectedRadius(EditorTool tool, int radius) {
         int nextRadius = MathHelper.clamp(radius, PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_RADIUS);
-        if (nextRadius == selectedRadius) {
-            return;
+        if (tool == EditorTool.ERASER) {
+            if (nextRadius == selectedEraserRadius) {
+                return;
+            }
+            selectedEraserRadius = nextRadius;
+        } else {
+            if (nextRadius == selectedBrushRadius) {
+                return;
+            }
+            selectedBrushRadius = nextRadius;
         }
-        selectedRadius = nextRadius;
-        syncSettings();
+        syncSettings(tool);
+    }
+
+    public static void syncSelectedRadius(EditorTool tool) {
+        if (tool == EditorTool.BRUSH || tool == EditorTool.ERASER) {
+            syncSettings(tool);
+        }
+    }
+
+    public static void setEditorPreview(EditorPreview preview) {
+        editorHidePreviews = List.of();
+        editorPixelPreviews = List.of();
+        editorPreviews = preview == null ? List.of() : List.of(preview);
+        editorGeometryPreviews = List.of();
+    }
+
+    public static void setEditorPreviews(List<EditorPreview> previews) {
+        editorHidePreviews = List.of();
+        editorPixelPreviews = List.of();
+        editorPreviews = previews == null || previews.isEmpty() ? List.of() : List.copyOf(previews);
+        editorGeometryPreviews = List.of();
+    }
+
+    public static void setEditorGeometryPreviews(List<EditorGeometryPreview> geometryPreviews) {
+        editorHidePreviews = List.of();
+        editorPixelPreviews = List.of();
+        editorPreviews = List.of();
+        editorGeometryPreviews = geometryPreviews == null || geometryPreviews.isEmpty() ? List.of() : List.copyOf(geometryPreviews);
+    }
+
+    public static void setEditorPreviewLayers(List<EditorPixelPreview> pixelPreviews, List<EditorPreview> previews) {
+        editorHidePreviews = List.of();
+        editorPixelPreviews = pixelPreviews == null || pixelPreviews.isEmpty() ? List.of() : List.copyOf(pixelPreviews);
+        editorPreviews = previews == null || previews.isEmpty() ? List.of() : List.copyOf(previews);
+        editorGeometryPreviews = List.of();
+    }
+
+    public static void setEditorPreviewLayers(List<EditorHidePreview> hidePreviews,
+                                              List<EditorPixelPreview> pixelPreviews,
+                                              List<EditorPreview> previews) {
+        editorHidePreviews = hidePreviews == null || hidePreviews.isEmpty() ? List.of() : List.copyOf(hidePreviews);
+        editorPixelPreviews = pixelPreviews == null || pixelPreviews.isEmpty() ? List.of() : List.copyOf(pixelPreviews);
+        editorPreviews = previews == null || previews.isEmpty() ? List.of() : List.copyOf(previews);
+        editorGeometryPreviews = List.of();
+    }
+
+    public static void setEditorPreviewLayers(List<EditorHidePreview> hidePreviews,
+                                              List<EditorPixelPreview> pixelPreviews,
+                                              List<EditorPreview> previews,
+                                              List<EditorGeometryPreview> geometryPreviews) {
+        editorHidePreviews = hidePreviews == null || hidePreviews.isEmpty() ? List.of() : List.copyOf(hidePreviews);
+        editorPixelPreviews = pixelPreviews == null || pixelPreviews.isEmpty() ? List.of() : List.copyOf(pixelPreviews);
+        editorPreviews = previews == null || previews.isEmpty() ? List.of() : List.copyOf(previews);
+        editorGeometryPreviews = geometryPreviews == null || geometryPreviews.isEmpty() ? List.of() : List.copyOf(geometryPreviews);
+    }
+
+    public static void clearEditorPreview() {
+        editorHidePreviews = List.of();
+        editorPixelPreviews = List.of();
+        editorPreviews = List.of();
+        editorGeometryPreviews = List.of();
+    }
+
+    public static EditorPreview blockEditorPreview(PaintOverlayStore.FaceKey key, int minX, int minY, int maxX, int maxY,
+                                                   int color, boolean solid, boolean handles) {
+        if (key == null) {
+            return null;
+        }
+        return new EditorPreview(key, minX, minY, maxX, maxY, color, solid, handles);
     }
 
     public static void setSelectedPaperSize(int size) {
@@ -447,7 +537,7 @@ public final class PaintOverlayClient {
 
     public static void render(WorldRenderContext context) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.world == null || CHUNK_MESHES.isEmpty()) {
+        if (client.world == null) {
             return;
         }
 
@@ -476,13 +566,234 @@ public final class PaintOverlayClient {
         int remainingVertices = MAX_FRAME_PAINT_VERTICES;
         for (VisibleChunk visible : visibleChunks) {
             ChunkMesh mesh = visible.mesh();
-            MeshData meshData = selectRenderMesh(mesh, visible.distanceSquared(), remainingVertices);
+            MeshData meshData = editorHidePreviews.isEmpty()
+                    ? selectRenderMesh(mesh, visible.distanceSquared(), remainingVertices)
+                    : selectRenderMeshWithEditorHide(mesh, remainingVertices);
             if (meshData.isEmpty()) {
                 continue;
             }
             drawMesh(vertices, matrix, mesh.originX() - camera.x, -camera.y, mesh.originZ() - camera.z, meshData.positions(), meshData.colors(), meshData.normals());
             remainingVertices -= meshData.vertexCount();
         }
+        renderEditorPreview(vertices, matrix, camera);
+    }
+
+    private static void renderEditorPreview(VertexConsumer vertices, Matrix4f matrix, Vec3d camera) {
+        if (editorHidePreviews.isEmpty() && editorPixelPreviews.isEmpty()
+                && editorPreviews.isEmpty() && editorGeometryPreviews.isEmpty()) {
+            return;
+        }
+        for (EditorPixelPreview preview : editorPixelPreviews) {
+            if (preview == null || preview.key() == null || preview.pixels() == null) {
+                continue;
+            }
+            MeshData mesh = buildPixelPreviewMesh(preview);
+            if (mesh.isEmpty()) {
+                continue;
+            }
+            BlockPos pos = preview.key().pos();
+            drawMesh(vertices, matrix, pos.getX() - camera.x, pos.getY() - camera.y, pos.getZ() - camera.z,
+                    mesh.positions(), mesh.colors(), mesh.normals());
+        }
+        for (EditorPreview preview : editorPreviews) {
+            if (preview == null || preview.key() == null) {
+                continue;
+            }
+            MeshData mesh = buildPreviewMesh(preview);
+            if (mesh.isEmpty()) {
+                continue;
+            }
+            BlockPos pos = preview.key().pos();
+            drawMesh(vertices, matrix, pos.getX() - camera.x, pos.getY() - camera.y, pos.getZ() - camera.z,
+                    mesh.positions(), mesh.colors(), mesh.normals());
+        }
+        for (EditorGeometryPreview preview : editorGeometryPreviews) {
+            if (preview == null || preview.key() == null) {
+                continue;
+            }
+            MeshData mesh = buildGeometryPreviewMesh(preview);
+            if (mesh.isEmpty()) {
+                continue;
+            }
+            BlockPos pos = preview.key().pos();
+            drawMesh(vertices, matrix, pos.getX() - camera.x, pos.getY() - camera.y, pos.getZ() - camera.z,
+                    mesh.positions(), mesh.colors(), mesh.normals());
+        }
+    }
+
+    private static MeshData buildHidePreviewMesh(EditorHidePreview preview) {
+        return EMPTY_MESH;
+    }
+
+    private static MeshData buildPreviewMesh(EditorPreview preview) {
+        MeshBuilder builder = new MeshBuilder();
+        int minX = MathHelper.clamp(Math.min(preview.minX(), preview.maxX()), 0, PaintOverlayStore.SIZE - 1);
+        int minY = MathHelper.clamp(Math.min(preview.minY(), preview.maxY()), 0, PaintOverlayStore.SIZE - 1);
+        int maxX = MathHelper.clamp(Math.max(preview.minX(), preview.maxX()), minX, PaintOverlayStore.SIZE - 1);
+        int maxY = MathHelper.clamp(Math.max(preview.minY(), preview.maxY()), minY, PaintOverlayStore.SIZE - 1);
+        if (preview.handles() && minX == maxX && minY == maxY) {
+            appendHandle(builder, preview.key().face(), minX, minY);
+            return new MeshData(builder.positions(), builder.colors(), builder.normals());
+        }
+        if (minY == maxY && minX != maxX) {
+            if (preview.solid()) {
+                appendRect(builder, preview.key().face(), minX, minY, maxX + 1, minY + 1, 0xEEE9F4FF);
+            } else {
+                appendDashedHorizontal(builder, preview.key().face(), minX, maxX, minY, 0xEE79C8FF, dashOffset(), 0);
+            }
+            return new MeshData(builder.positions(), builder.colors(), builder.normals());
+        }
+        if (minX == maxX && minY != maxY) {
+            if (preview.solid()) {
+                appendRect(builder, preview.key().face(), minX, minY, minX + 1, maxY + 1, 0xEEE9F4FF);
+            } else {
+                appendDashedVertical(builder, preview.key().face(), minY, maxY, minX, 0xEE79C8FF, dashOffset(), 0);
+            }
+            return new MeshData(builder.positions(), builder.colors(), builder.normals());
+        }
+        if (preview.solid()) {
+            int line = 0xEEE9F4FF;
+            appendRect(builder, preview.key().face(), minX, minY, maxX + 1, minY + 1, line);
+            appendRect(builder, preview.key().face(), minX, maxY, maxX + 1, maxY + 1, line);
+            appendRect(builder, preview.key().face(), minX, minY, minX + 1, maxY + 1, line);
+            appendRect(builder, preview.key().face(), maxX, minY, maxX + 1, maxY + 1, line);
+        } else {
+            appendDashedOutline(builder, preview.key().face(), minX, minY, maxX, maxY, 0xEE79C8FF);
+        }
+        if (preview.handles()) {
+            appendHandle(builder, preview.key().face(), minX, minY);
+            appendHandle(builder, preview.key().face(), maxX, minY);
+            appendHandle(builder, preview.key().face(), minX, maxY);
+            appendHandle(builder, preview.key().face(), maxX, maxY);
+        }
+        return new MeshData(builder.positions(), builder.colors(), builder.normals());
+    }
+
+    private static MeshData buildPixelPreviewMesh(EditorPixelPreview preview) {
+        MeshBuilder builder = new MeshBuilder();
+        int width = preview.width();
+        int height = preview.height();
+        int[] pixels = preview.pixels();
+        if (width <= 0 || height <= 0 || pixels.length < width * height) {
+            return EMPTY_MESH;
+        }
+        for (int y = 0; y < height; y++) {
+            int runStart = -1;
+            int runColor = 0;
+            for (int x = 0; x <= width; x++) {
+                int color = x < width ? pixels[y * width + x] : 0;
+                if (color != 0 && color == runColor) {
+                    continue;
+                }
+                if (runStart >= 0) {
+                    int x0 = preview.startX() + runStart;
+                    int x1 = preview.startX() + x;
+                    int y0 = preview.startY() + y;
+                    appendRect(builder, preview.key().face(), x0, y0, x1, y0 + 1, runColor);
+                }
+                runStart = color == 0 ? -1 : x;
+                runColor = color;
+            }
+        }
+        return new MeshData(builder.positions(), builder.colors(), builder.normals());
+    }
+
+    private static MeshData buildGeometryPreviewMesh(EditorGeometryPreview preview) {
+        MeshBuilder builder = new MeshBuilder();
+        double minX = Math.min(preview.minX(), preview.maxX());
+        double minY = Math.min(preview.minY(), preview.maxY());
+        double maxX = Math.max(preview.minX(), preview.maxX());
+        double maxY = Math.max(preview.minY(), preview.maxY());
+        if (maxX <= minX || maxY <= minY) {
+            return EMPTY_MESH;
+        }
+        if (preview.solid()) {
+            appendPlaneRectD(builder, preview.key(), minX, minY, maxX, maxY, preview.color());
+        } else {
+            appendDashedPlaneRectD(builder, preview.key(), minX, minY, maxX, maxY, preview.color());
+        }
+        return new MeshData(builder.positions(), builder.colors(), builder.normals());
+    }
+
+    private static void appendDashedPlaneRectD(MeshBuilder builder, PaintOverlayStore.FaceKey anchor,
+                                               double minX, double minY, double maxX, double maxY, int color) {
+        double width = maxX - minX;
+        double height = maxY - minY;
+        double offset = dashOffset();
+        if (width >= height) {
+            for (double x = minX - offset; x < maxX; x += 8.0D) {
+                double x0 = Math.max(minX, x);
+                double x1 = Math.min(maxX, x + 4.0D);
+                if (x1 > x0) {
+                    appendPlaneRectD(builder, anchor, x0, minY, x1, maxY, color);
+                }
+            }
+        } else {
+            for (double y = minY - offset; y < maxY; y += 8.0D) {
+                double y0 = Math.max(minY, y);
+                double y1 = Math.min(maxY, y + 4.0D);
+                if (y1 > y0) {
+                    appendPlaneRectD(builder, anchor, minX, y0, maxX, y1, color);
+                }
+            }
+        }
+    }
+
+    private static void appendPlaneRectD(MeshBuilder builder, PaintOverlayStore.FaceKey anchor,
+                                         double minU, double minV, double maxU, double maxV, int color) {
+        if (anchor == null) {
+            return;
+        }
+        Vec3d origin = Vec3d.of(anchor.pos());
+        Vec3d a = editorPlanePoint(anchor, minU, minV).subtract(origin);
+        Vec3d b = editorPlanePoint(anchor, maxU, minV).subtract(origin);
+        Vec3d c = editorPlanePoint(anchor, maxU, maxV).subtract(origin);
+        Vec3d d = editorPlanePoint(anchor, minU, maxV).subtract(origin);
+        float normalX = anchor.face().getOffsetX();
+        float normalY = anchor.face().getOffsetY();
+        float normalZ = anchor.face().getOffsetZ();
+        builder.vertex((float) a.x, (float) a.y, (float) a.z, color, normalX, normalY, normalZ);
+        builder.vertex((float) b.x, (float) b.y, (float) b.z, color, normalX, normalY, normalZ);
+        builder.vertex((float) c.x, (float) c.y, (float) c.z, color, normalX, normalY, normalZ);
+        builder.vertex((float) d.x, (float) d.y, (float) d.z, color, normalX, normalY, normalZ);
+    }
+
+    private static void appendDashedOutline(MeshBuilder builder, Direction face, int minX, int minY, int maxX, int maxY, int color) {
+        int perimeter = Math.max(1, (maxX - minX + 1) * 2 + (maxY - minY + 1) * 2);
+        int offset = dashOffset();
+        appendDashedHorizontal(builder, face, minX, maxX, minY, color, offset, 0);
+        appendDashedHorizontal(builder, face, minX, maxX, maxY, color, offset, maxX - minX + 1);
+        appendDashedVertical(builder, face, minY, maxY, minX, color, offset, perimeter / 2);
+        appendDashedVertical(builder, face, minY, maxY, maxX, color, offset, perimeter / 2 + maxY - minY + 1);
+    }
+
+    private static int dashOffset() {
+        return (int) ((System.currentTimeMillis() / 90L) % 8L);
+    }
+
+    private static void appendDashedHorizontal(MeshBuilder builder, Direction face, int minX, int maxX, int y, int color, int offset, int phase) {
+        for (int x = minX; x <= maxX; x++) {
+            if (((x - minX + phase + offset) / 4) % 2 == 0) {
+                appendRect(builder, face, x, y, x + 1, y + 1, color);
+            }
+        }
+    }
+
+    private static void appendDashedVertical(MeshBuilder builder, Direction face, int minY, int maxY, int x, int color, int offset, int phase) {
+        for (int y = minY; y <= maxY; y++) {
+            if (((y - minY + phase + offset) / 4) % 2 == 0) {
+                appendRect(builder, face, x, y, x + 1, y + 1, color);
+            }
+        }
+    }
+
+    private static void appendHandle(MeshBuilder builder, Direction face, int x, int y) {
+        int size = 2;
+        int x0 = MathHelper.clamp(x - size, 0, PaintOverlayStore.SIZE - 1);
+        int y0 = MathHelper.clamp(y - size, 0, PaintOverlayStore.SIZE - 1);
+        int x1 = MathHelper.clamp(x + size + 1, x0 + 1, PaintOverlayStore.SIZE);
+        int y1 = MathHelper.clamp(y + size + 1, y0 + 1, PaintOverlayStore.SIZE);
+        appendRect(builder, face, x0, y0, x1, y1, 0xFFFFFFFF);
     }
 
     private static void registerScrollCallback(MinecraftClient client) {
@@ -523,12 +834,8 @@ public final class PaintOverlayClient {
         if (!isHoldingPaintTool(client)) {
             return false;
         }
-        int nextRadius = MathHelper.clamp(selectedRadius + delta, 1, 8);
-        if (nextRadius == selectedRadius) {
-            return true;
-        }
-        selectedRadius = nextRadius;
-        syncSettings();
+        EditorTool tool = isHoldingEraser(client) ? EditorTool.ERASER : EditorTool.BRUSH;
+        setSelectedRadius(tool, selectedRadius(tool) + delta);
         return true;
     }
 
@@ -575,7 +882,7 @@ public final class PaintOverlayClient {
             repeatedStrokeTicks = 0;
             SafeClientNetworking.send(new PaintOverlayPackets.ModelPaintStrokeC2S(
                     modelHit.entityId(), modelHit.surface(), modelHit.face(), modelHit.x(), modelHit.y(), clear));
-            client.player.sendMessage(Text.literal("model paint " + modelHit.surface() + " " + modelHit.face().asString()
+            client.player.sendMessage(Text.literal("模型绘画 " + modelHit.surface() + " " + modelHit.face().asString()
                     + " (" + modelHit.x() + "," + modelHit.y() + ")"), true);
             return;
         }
@@ -587,7 +894,7 @@ public final class PaintOverlayClient {
         if (playerHit != null) {
             boolean clear = eraser && eraserFaceMode;
             int color = clear ? 0 : selectedColor();
-            int radius = selectedRadius();
+            int radius = selectedRadius(eraser ? EditorTool.ERASER : EditorTool.BRUSH);
             PlayerStrokeKey key = new PlayerStrokeKey(playerHit.entityId(), playerHit.surface(), playerHit.face(), playerHit.x(), playerHit.y(), clear);
             repeatedStrokeTicks++;
             if (key.equals(lastStrokeKey) && repeatedStrokeTicks < REPEATED_STROKE_SKIP_CALLS) {
@@ -655,7 +962,7 @@ public final class PaintOverlayClient {
 
         setSelectedColor(color);
         recordPickedColor(color);
-        client.player.sendMessage(Text.literal("Pick " + toHex(color)), true);
+        client.player.sendMessage(Text.literal("取色 " + toHex(color)), true);
     }
 
     public static void handleBrushPickInputAtScreenPoint(MinecraftClient client, double mouseX, double mouseY, int width, int height) {
@@ -672,14 +979,14 @@ public final class PaintOverlayClient {
                     || client.world.getBlockState(hit.getBlockPos()).getBlock() != PaintItems.PAINT_BUCKET_BLOCK
                     || !(client.world.getBlockEntity(hit.getBlockPos()) instanceof PaintBucketBlockEntity bucket)
                     || !bucket.isFilled()) {
-                client.player.sendMessage(Text.literal("Aim at a filled paint bucket"), true);
+                client.player.sendMessage(Text.literal("请对准装有颜料的桶"), true);
                 return;
             }
             int color = 0xFF000000 | bucket.getColor();
             setSelectedColor(color);
             recordPickedColor(color);
             SafeClientNetworking.send(new PaintOverlayPackets.LoadBrushFromBucketC2S(hit.getBlockPos()));
-            client.player.sendMessage(Text.literal("Load brush " + toHex(color)), true);
+            client.player.sendMessage(Text.literal("载入画笔颜色 " + toHex(color)), true);
             return;
         }
 
@@ -700,7 +1007,7 @@ public final class PaintOverlayClient {
         }
         setSelectedColor(color);
         recordPickedColor(color);
-        client.player.sendMessage(Text.literal("Pick " + toHex(color)), true);
+        client.player.sendMessage(Text.literal("取色 " + toHex(color)), true);
     }
 
     public static void performEditorUse(MinecraftClient client, EditorTool tool) {
@@ -734,8 +1041,9 @@ public final class PaintOverlayClient {
                 int[] before = ModelPaintData.copyFacePixels(beforeRoot, modelHit.surface(), modelHit.face(), slim);
                 NbtCompound afterRoot = beforeRoot.copy();
                 int color = clear ? 0 : selectedColor();
+                int radius = selectedRadius(tool);
                 boolean changed = ModelPaintData.paint(afterRoot, modelHit.surface(), modelHit.face(), modelHit.x(), modelHit.y(),
-                        selectedRadius(), color, clear, slim);
+                        radius, color, clear, slim);
                 if (changed) {
                     int[] after = ModelPaintData.copyFacePixels(afterRoot, modelHit.surface(), modelHit.face(), slim);
                     beginEditorModelHistory(tool, clear, historyKey);
@@ -756,7 +1064,7 @@ public final class PaintOverlayClient {
         if (playerHit != null && (tool == EditorTool.BRUSH || tool == EditorTool.ERASER)) {
             boolean clear = tool == EditorTool.ERASER && eraserFaceMode;
             int color = clear ? 0 : selectedColor();
-            int radius = selectedRadius();
+            int radius = selectedRadius(tool);
             PlayerStrokeKey key = new PlayerStrokeKey(playerHit.entityId(), playerHit.surface(), playerHit.face(), playerHit.x(), playerHit.y(), clear);
             repeatedStrokeTicks++;
             if (key.equals(lastStrokeKey) && repeatedStrokeTicks < REPEATED_STROKE_SKIP_CALLS) {
@@ -838,6 +1146,171 @@ public final class PaintOverlayClient {
         lastStrokeKey = null;
         repeatedStrokeTicks = 0;
         closePendingEditorHistory();
+    }
+
+    public static EditorHit editorHitAtScreenPoint(MinecraftClient client, double mouseX, double mouseY, int width, int height) {
+        if (client == null || client.player == null) {
+            return null;
+        }
+        Ray ray = screenRay(client, mouseX, mouseY, width, height);
+        BlockHitResult hit = ray == null ? crosshairBlockHit(client) : raycastBlock(client, ray);
+        if (hit == null || hit.getType() != HitResult.Type.BLOCK) {
+            return null;
+        }
+        BlockPos pos = hit.getBlockPos();
+        if (client.world != null && (client.world.getBlockState(pos).getBlock() == ModBlocks.DRAWING_BOARD
+                || client.world.getBlockState(pos).getBlock() == PaintItems.PAINT_BUCKET_BLOCK)) {
+            return null;
+        }
+        int[] pixel = PaintBrushItem.getPixel(hit.getPos(), pos, hit.getSide());
+        PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(pos, hit.getSide());
+        return new EditorHit(key, pixel[0], pixel[1]);
+    }
+
+    public static EditorHit editorPlaneHitAtScreenPoint(MinecraftClient client, double mouseX, double mouseY,
+                                                        int width, int height, PaintOverlayStore.FaceKey anchor) {
+        if (client == null || client.player == null || anchor == null) {
+            return null;
+        }
+        Ray ray = screenRay(client, mouseX, mouseY, width, height);
+        if (ray == null) {
+            return null;
+        }
+        Direction face = anchor.face();
+        Vec3d normal = new Vec3d(face.getOffsetX(), face.getOffsetY(), face.getOffsetZ());
+        Vec3d direction = ray.direction();
+        double denominator = direction.dotProduct(normal);
+        if (Math.abs(denominator) < 1.0E-6D) {
+            return null;
+        }
+        Vec3d planePoint = faceSurfacePoint(anchor);
+        double distance = planePoint.subtract(ray.start()).dotProduct(normal) / denominator;
+        if (distance < 0.0D || distance > EDITOR_RAY_DISTANCE) {
+            return null;
+        }
+        Vec3d hitPos = ray.start().add(direction.multiply(distance));
+        Vec3d insidePos = hitPos.subtract(normal.multiply(OFFSET + 1.0E-5D));
+        BlockPos pos = BlockPos.ofFloored(insidePos.x, insidePos.y, insidePos.z);
+        int[] pixel = PaintBrushItem.getPixel(insidePos, pos, face);
+        return new EditorHit(new PaintOverlayStore.FaceKey(pos, face), pixel[0], pixel[1]);
+    }
+
+    public static ScreenPoint projectEditorPlanePixel(MinecraftClient client, PaintOverlayStore.FaceKey anchor,
+                                                      int u, int v, int width, int height) {
+        return projectEditorPlanePoint(client, anchor, u + 0.5D, v + 0.5D, width, height);
+    }
+
+    public static ScreenPoint projectEditorPlanePoint(MinecraftClient client, PaintOverlayStore.FaceKey anchor,
+                                                      double u, double v, int width, int height) {
+        if (client == null || client.player == null || anchor == null || width <= 0 || height <= 0) {
+            return null;
+        }
+        Vec3d world = editorPlanePoint(anchor, u, v);
+        Vec3d projected = client.gameRenderer.project(world);
+        if (projected.z < -1.0D || projected.z > 1.0D) {
+            return null;
+        }
+        double screenX = width * (projected.x + 1.0D) * 0.5D;
+        double screenY = height * (1.0D - projected.y) * 0.5D;
+        return new ScreenPoint(screenX, screenY, projected.z);
+    }
+
+    private static Vec3d editorPlanePixelCenter(PaintOverlayStore.FaceKey anchor, int u, int v) {
+        return editorPlanePoint(anchor, u + 0.5D, v + 0.5D);
+    }
+
+    private static Vec3d editorPlanePoint(PaintOverlayStore.FaceKey anchor, double u, double v) {
+        int size = PaintOverlayStore.SIZE;
+        int blockU = (int) Math.floor(u / size);
+        int blockV = (int) Math.floor(v / size);
+        double cellU = (u - blockU * size) * STEP;
+        double cellV = (v - blockV * size) * STEP;
+        BlockPos pos = switch (anchor.face()) {
+            case UP, DOWN -> new BlockPos(blockU, anchor.pos().getY(), blockV);
+            case NORTH, SOUTH -> new BlockPos(blockU, blockV, anchor.pos().getZ());
+            case WEST, EAST -> new BlockPos(anchor.pos().getX(), blockV, blockU);
+        };
+        return switch (anchor.face()) {
+            case UP -> new Vec3d(pos.getX() + cellU, pos.getY() + 1.0D + OFFSET, pos.getZ() + cellV);
+            case DOWN -> new Vec3d(pos.getX() + cellU, pos.getY() - OFFSET, pos.getZ() + cellV);
+            case NORTH -> new Vec3d(pos.getX() + cellU, pos.getY() + cellV, pos.getZ() - OFFSET);
+            case SOUTH -> new Vec3d(pos.getX() + cellU, pos.getY() + cellV, pos.getZ() + 1.0D + OFFSET);
+            case WEST -> new Vec3d(pos.getX() - OFFSET, pos.getY() + cellV, pos.getZ() + cellU);
+            case EAST -> new Vec3d(pos.getX() + 1.0D + OFFSET, pos.getY() + cellV, pos.getZ() + cellU);
+        };
+    }
+
+    private static Vec3d faceSurfacePoint(PaintOverlayStore.FaceKey key) {
+        BlockPos pos = key.pos();
+        return switch (key.face()) {
+            case UP -> new Vec3d(pos.getX(), pos.getY() + 1.0D + OFFSET, pos.getZ());
+            case DOWN -> new Vec3d(pos.getX(), pos.getY() - OFFSET, pos.getZ());
+            case NORTH -> new Vec3d(pos.getX(), pos.getY(), pos.getZ() - OFFSET);
+            case SOUTH -> new Vec3d(pos.getX(), pos.getY(), pos.getZ() + 1.0D + OFFSET);
+            case WEST -> new Vec3d(pos.getX() - OFFSET, pos.getY(), pos.getZ());
+            case EAST -> new Vec3d(pos.getX() + 1.0D + OFFSET, pos.getY(), pos.getZ());
+        };
+    }
+
+    public static int[] copyEditorFacePixels(PaintOverlayStore.FaceKey key) {
+        return copyFacePixels(key);
+    }
+
+    public static boolean submitEditorRegionPatch(PaintOverlayStore.FaceKey key, int startX, int startY, int patchWidth, int patchHeight,
+                                                  int[] patchPixels, String label) {
+        if (key == null || patchPixels == null || patchWidth <= 0 || patchHeight <= 0) {
+            return false;
+        }
+        PaintOverlayPackets.FaceRegionPatch patch = new PaintOverlayPackets.FaceRegionPatch(
+                key.pos(), key.face(), startX, startY, patchWidth, patchHeight, patchPixels);
+        int[] before = copyFacePixels(key);
+        int[] after = mergePatch(before, patch);
+        if (Arrays.equals(before, after)) {
+            return false;
+        }
+        beginEditorPatchHistory(label, key);
+        recordEditorFaceUpdate(key, before, after);
+        applyRegionPatch(patch, false);
+        SafeClientNetworking.send(new PaintOverlayPackets.PaintRegionPatchC2S(patch));
+        closePendingEditorHistory();
+        finishPendingEditorHistoryIfIdle(true);
+        return true;
+    }
+
+    public static boolean submitEditorRegionPatches(List<EditorRegionPatch> patches, String label) {
+        if (patches == null || patches.isEmpty()) {
+            return false;
+        }
+        List<PaintOverlayPackets.FaceRegionPatch> changed = new ArrayList<>();
+        for (EditorRegionPatch editorPatch : patches) {
+            if (editorPatch == null || editorPatch.key() == null || editorPatch.pixels() == null
+                    || editorPatch.width() <= 0 || editorPatch.height() <= 0) {
+                continue;
+            }
+            PaintOverlayPackets.FaceRegionPatch patch = new PaintOverlayPackets.FaceRegionPatch(
+                    editorPatch.key().pos(), editorPatch.key().face(),
+                    editorPatch.startX(), editorPatch.startY(), editorPatch.width(), editorPatch.height(), editorPatch.pixels());
+            int[] before = copyFacePixels(editorPatch.key());
+            int[] after = mergePatch(before, patch);
+            if (!Arrays.equals(before, after)) {
+                changed.add(patch);
+            }
+        }
+        if (changed.isEmpty()) {
+            return false;
+        }
+        beginEditorBatchPatchHistory(label, changed);
+        for (PaintOverlayPackets.FaceRegionPatch patch : changed) {
+            PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(patch.pos(), patch.face());
+            int[] before = copyFacePixels(key);
+            int[] after = mergePatch(before, patch);
+            recordEditorFaceUpdate(key, before, after);
+            applyRegionPatch(patch, false);
+            SafeClientNetworking.send(new PaintOverlayPackets.PaintRegionPatchC2S(patch));
+        }
+        closePendingEditorHistory();
+        finishPendingEditorHistoryIfIdle(true);
+        return true;
     }
 
     public static void undoEditorStroke(MinecraftClient client) {
@@ -945,9 +1418,27 @@ public final class PaintOverlayClient {
             return null;
         }
         Camera camera = client.gameRenderer.getCamera();
-        float factorX = (float) MathHelper.clamp((mouseX / width - 0.5D) * 2.0D, -1.0D, 1.0D);
-        float factorY = (float) MathHelper.clamp((0.5D - mouseY / height) * 2.0D, -1.0D, 1.0D);
-        return camera.getProjection().getPosition(factorX, factorY).normalize();
+        double ndcX = MathHelper.clamp((mouseX / width - 0.5D) * 2.0D, -1.0D, 1.0D);
+        double ndcY = MathHelper.clamp((0.5D - mouseY / height) * 2.0D, -1.0D, 1.0D);
+        Vec3d cameraPos = camera.getPos();
+        Vec3d forward = new Vec3d(camera.getHorizontalPlane()).normalize();
+        Vec3d right = new Vec3d(camera.getDiagonalPlane()).normalize();
+        Vec3d up = new Vec3d(camera.getVerticalPlane()).normalize();
+        double sampleDistance = 8.0D;
+        Vec3d centerWorld = cameraPos.add(forward.multiply(sampleDistance));
+        Vec3d center = client.gameRenderer.project(centerWorld);
+        Vec3d rightPoint = client.gameRenderer.project(centerWorld.add(right.multiply(sampleDistance)));
+        Vec3d upPoint = client.gameRenderer.project(centerWorld.add(up.multiply(sampleDistance)));
+        double rightScale = rightPoint.x - center.x;
+        double upScale = upPoint.y - center.y;
+        if (!Double.isFinite(rightScale) || !Double.isFinite(upScale)
+                || Math.abs(rightScale) <= 1.0E-6D || Math.abs(upScale) <= 1.0E-6D) {
+            return camera.getProjection().getPosition((float) ndcX, (float) ndcY).normalize();
+        }
+        Vec3d target = centerWorld
+                .add(right.multiply((ndcX - center.x) / rightScale * sampleDistance))
+                .add(up.multiply((ndcY - center.y) / upScale * sampleDistance));
+        return target.subtract(cameraPos).normalize();
     }
 
     public static void panEditorView(MinecraftClient client, double deltaX, double deltaY) {
@@ -1039,10 +1530,33 @@ public final class PaintOverlayClient {
         pendingEditorHistory.touch(expectedKeys);
     }
 
+    private static void beginEditorPatchHistory(String label, PaintOverlayStore.FaceKey key) {
+        Set<EditorHistoryTarget> expectedKeys = Set.of(EditorHistoryTarget.block(key));
+        if (pendingEditorHistory == null || pendingEditorHistory.closed()) {
+            finishPendingEditorHistoryIfIdle(true);
+            pendingEditorHistory = new PendingEditorHistoryStep(editorHistorySequence++, label == null || label.isBlank() ? "编辑器修改" : label, expectedKeys);
+            return;
+        }
+        pendingEditorHistory.touch(expectedKeys);
+    }
+
+    private static void beginEditorBatchPatchHistory(String label, List<PaintOverlayPackets.FaceRegionPatch> patches) {
+        Set<EditorHistoryTarget> expectedKeys = new HashSet<>();
+        for (PaintOverlayPackets.FaceRegionPatch patch : patches) {
+            expectedKeys.add(EditorHistoryTarget.block(new PaintOverlayStore.FaceKey(patch.pos(), patch.face())));
+        }
+        if (pendingEditorHistory == null || pendingEditorHistory.closed()) {
+            finishPendingEditorHistoryIfIdle(true);
+            pendingEditorHistory = new PendingEditorHistoryStep(editorHistorySequence++, label == null || label.isBlank() ? "编辑器修改" : label, expectedKeys);
+            return;
+        }
+        pendingEditorHistory.touch(expectedKeys);
+    }
+
     private static Set<EditorHistoryTarget> expectedEditorHistoryKeys(EditorTool tool, boolean clearFace, BlockPos pos, Direction face) {
         Set<EditorHistoryTarget> keys = new HashSet<>();
         if (tool == EditorTool.ERASER && clearFace) {
-            int blockRadius = Math.max(0, MathHelper.clamp(selectedRadius, PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_RADIUS) - 1);
+            int blockRadius = Math.max(0, MathHelper.clamp(selectedRadius(tool), PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_RADIUS) - 1);
             for (int a = -blockRadius; a <= blockRadius; a++) {
                 for (int b = -blockRadius; b <= blockRadius; b++) {
                     if (a * a + b * b <= blockRadius * blockRadius) {
@@ -1066,12 +1580,12 @@ public final class PaintOverlayClient {
 
     private static String editorHistoryLabel(EditorTool tool, boolean clearFace) {
         if (tool == EditorTool.ERASER) {
-            return clearFace ? "Editor clear face" : "Editor erase";
+            return clearFace ? "编辑器清除整面" : "编辑器擦除";
         }
         if (tool == EditorTool.BRUSH) {
-            return "Editor paint";
+            return "编辑器绘制";
         }
-        return "Editor action";
+        return "编辑器操作";
     }
 
     private static void closePendingEditorHistory() {
@@ -1357,14 +1871,14 @@ public final class PaintOverlayClient {
     private static void selectRecentColorSlot(MinecraftClient client, int slot) {
         if (slot < 0 || slot >= RECENT_COLORS.size()) {
             if (client.player != null) {
-                client.player.sendMessage(Text.literal("Color slot " + (slot + 1) + " is empty"), true);
+                client.player.sendMessage(Text.literal("色槽 " + (slot + 1) + " 为空"), true);
             }
             return;
         }
         int color = RECENT_COLORS.get(slot);
         setSelectedColor(color);
         if (client.player != null) {
-            client.player.sendMessage(Text.literal("Pick " + toHex(color)), true);
+            client.player.sendMessage(Text.literal("取色 " + toHex(color)), true);
         }
     }
 
@@ -1433,7 +1947,7 @@ public final class PaintOverlayClient {
     private static void toggleEraserMode(MinecraftClient client) {
         eraserFaceMode = !eraserFaceMode;
         if (client.player != null) {
-            client.player.sendMessage(Text.literal(eraserFaceMode ? "Eraser: face" : "Eraser: pixel"), true);
+            client.player.sendMessage(Text.literal(eraserFaceMode ? "橡皮: 整面" : "橡皮: 像素"), true);
         }
     }
 
@@ -1444,9 +1958,10 @@ public final class PaintOverlayClient {
         }
 
         boolean paper = isHoldingPaintPaper(client);
-        String radiusText = paper ? "P " + selectedPaperSize + "x" + selectedPaperSize : "R " + selectedRadius;
         boolean eraser = isHoldingEraser(client);
-        String colorText = paper ? "PAPER" : (eraser ? (eraserFaceMode ? "FACE" : "PIXEL") : toHex(selectedColor));
+        String radiusText = paper ? "纸 " + selectedPaperSize + "x" + selectedPaperSize
+                : "R " + selectedRadius(eraser ? EditorTool.ERASER : EditorTool.BRUSH);
+        String colorText = paper ? "纸张" : (eraser ? (eraserFaceMode ? "整面" : "像素") : toHex(selectedColor));
         int width = 96;
         int height = 30;
         int hotbarLeft = context.getScaledWindowWidth() / 2 - 91;
@@ -1592,7 +2107,11 @@ public final class PaintOverlayClient {
     }
 
     private static void syncSettings() {
-        SafeClientNetworking.send(new PaintOverlayPackets.BrushSettingsC2S(selectedColor, selectedRadius));
+        syncSettings(EditorTool.BRUSH);
+    }
+
+    private static void syncSettings(EditorTool tool) {
+        SafeClientNetworking.send(new PaintOverlayPackets.BrushSettingsC2S(selectedColor, selectedRadius(tool)));
     }
 
     private static void syncPaperSize() {
@@ -1691,6 +2210,46 @@ public final class PaintOverlayClient {
         if (recordHistory && !Arrays.equals(before, after)) {
             recordEditorFaceUpdate(key, before, after);
         }
+    }
+
+    private static void applyRegionPatch(PaintOverlayPackets.FaceRegionPatch patch, boolean recordHistory) {
+        PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(patch.pos(), patch.face());
+        int[] before = recordHistory ? copyFacePixels(key) : null;
+        int[] after = mergePatch(copyFacePixels(key), patch);
+        if (recordHistory && Arrays.equals(before, after)) {
+            return;
+        }
+        ChunkPos chunkPos = chunkPos(key.pos());
+        if (!hasPixels(after)) {
+            FACE_PIXELS.remove(key);
+            removeFaceMesh(key, chunkPos);
+        } else {
+            FACE_PIXELS.put(key, after);
+            putFaceMesh(key, buildMesh(key, after), chunkPos);
+        }
+        rebuildChunkMesh(chunkPos);
+        if (recordHistory && !Arrays.equals(before, after)) {
+            recordEditorFaceUpdate(key, before, after);
+        }
+    }
+
+    private static int[] mergePatch(int[] base, PaintOverlayPackets.FaceRegionPatch patch) {
+        int[] after = copyPixels(base);
+        int[] patchPixels = patch.pixels();
+        for (int y = 0; y < patch.height(); y++) {
+            for (int x = 0; x < patch.width(); x++) {
+                int sourceIndex = y * patch.width() + x;
+                int targetX = patch.startX() + x;
+                int targetY = patch.startY() + y;
+                if (sourceIndex < 0 || sourceIndex >= patchPixels.length
+                        || targetX < 0 || targetX >= PaintOverlayStore.SIZE
+                        || targetY < 0 || targetY >= PaintOverlayStore.SIZE) {
+                    continue;
+                }
+                after[targetY * PaintOverlayStore.SIZE + targetX] = patchPixels[sourceIndex];
+            }
+        }
+        return after;
     }
 
     private static int[] copyFacePixels(PaintOverlayStore.FaceKey key) {
@@ -1989,6 +2548,87 @@ public final class PaintOverlayClient {
         return EMPTY_MESH;
     }
 
+    private static MeshData selectRenderMeshWithEditorHide(ChunkMesh chunkMesh, int remainingVertices) {
+        ChunkPos chunkPos = new ChunkPos(chunkMesh.originX() >> 4, chunkMesh.originZ() >> 4);
+        Set<PaintOverlayStore.FaceKey> keys = CHUNK_FACE_KEYS.get(chunkPos);
+        if (keys == null || keys.isEmpty()) {
+            return EMPTY_MESH;
+        }
+        List<FaceMeshPart> parts = new ArrayList<>();
+        int vertexCount = 0;
+        for (PaintOverlayStore.FaceKey key : keys) {
+            FaceMesh faceMesh = FACE_MESHES.get(key);
+            if (faceMesh == null) {
+                continue;
+            }
+            MeshData mesh = hiddenEditorPixelsFor(key)
+                    ? buildFaceMesh(key.face(), copyPixelsWithEditorHide(key), 1)
+                    : faceMesh.full();
+            if (mesh.isEmpty()) {
+                continue;
+            }
+            vertexCount += mesh.vertexCount();
+            if (vertexCount > remainingVertices) {
+                return EMPTY_MESH;
+            }
+            parts.add(new FaceMeshPart(key.pos(), mesh));
+        }
+        if (vertexCount == 0) {
+            return EMPTY_MESH;
+        }
+        float[] positions = new float[vertexCount * 3];
+        int[] colors = new int[vertexCount];
+        float[] normals = new float[vertexCount * 3];
+        int vertexIndex = 0;
+        for (FaceMeshPart part : parts) {
+            MeshData mesh = part.mesh();
+            float offsetX = part.pos().getX() - chunkMesh.originX();
+            float offsetY = part.pos().getY();
+            float offsetZ = part.pos().getZ() - chunkMesh.originZ();
+            for (int i = 0; i < mesh.colors().length; i++) {
+                int sourcePositionIndex = i * 3;
+                int targetPositionIndex = vertexIndex * 3;
+                positions[targetPositionIndex] = offsetX + mesh.positions()[sourcePositionIndex];
+                positions[targetPositionIndex + 1] = offsetY + mesh.positions()[sourcePositionIndex + 1];
+                positions[targetPositionIndex + 2] = offsetZ + mesh.positions()[sourcePositionIndex + 2];
+                normals[targetPositionIndex] = mesh.normals()[sourcePositionIndex];
+                normals[targetPositionIndex + 1] = mesh.normals()[sourcePositionIndex + 1];
+                normals[targetPositionIndex + 2] = mesh.normals()[sourcePositionIndex + 2];
+                colors[vertexIndex] = mesh.colors()[i];
+                vertexIndex++;
+            }
+        }
+        return new MeshData(positions, colors, normals);
+    }
+
+    private static boolean hiddenEditorPixelsFor(PaintOverlayStore.FaceKey key) {
+        for (EditorHidePreview preview : editorHidePreviews) {
+            if (preview != null && key.equals(preview.key())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int[] copyPixelsWithEditorHide(PaintOverlayStore.FaceKey key) {
+        int[] pixels = copyFacePixels(key);
+        for (EditorHidePreview preview : editorHidePreviews) {
+            if (preview == null || !key.equals(preview.key())) {
+                continue;
+            }
+            int minX = MathHelper.clamp(Math.min(preview.minX(), preview.maxX()), 0, PaintOverlayStore.SIZE - 1);
+            int minY = MathHelper.clamp(Math.min(preview.minY(), preview.maxY()), 0, PaintOverlayStore.SIZE - 1);
+            int maxX = MathHelper.clamp(Math.max(preview.minX(), preview.maxX()), minX, PaintOverlayStore.SIZE - 1);
+            int maxY = MathHelper.clamp(Math.max(preview.minY(), preview.maxY()), minY, PaintOverlayStore.SIZE - 1);
+            for (int y = minY; y <= maxY; y++) {
+                for (int x = minX; x <= maxX; x++) {
+                    pixels[y * PaintOverlayStore.SIZE + x] = 0;
+                }
+            }
+        }
+        return pixels;
+    }
+
     private static double squaredDistanceToBox(Vec3d point, Box box) {
         double dx = point.x < box.minX ? box.minX - point.x : Math.max(point.x - box.maxX, 0.0D);
         double dy = point.y < box.minY ? box.minY - point.y : Math.max(point.y - box.maxY, 0.0D);
@@ -2043,6 +2683,9 @@ public final class PaintOverlayClient {
     }
 
     private record FaceMesh(BlockPos pos, Box bounds, MeshData full, MeshData medium, MeshData far) {
+    }
+
+    private record FaceMeshPart(BlockPos pos, MeshData mesh) {
     }
 
     private record ChunkMesh(int originX, int originZ, Box bounds, MeshData full, MeshData medium, MeshData far) {
@@ -2248,12 +2891,70 @@ public final class PaintOverlayClient {
     private record PlayerStrokeKey(int entityId, String surface, Direction face, int x, int y, boolean clear) {
     }
 
+    private static int editorPlaneU(PaintOverlayStore.FaceKey key, int x) {
+        if (key == null) {
+            return x;
+        }
+        int size = PaintOverlayStore.SIZE;
+        BlockPos pos = key.pos();
+        return switch (key.face()) {
+            case UP, DOWN, SOUTH -> pos.getX() * size + x;
+            case NORTH -> pos.getX() * size + (size - 1 - x);
+            case WEST -> pos.getZ() * size + x;
+            case EAST -> pos.getZ() * size + (size - 1 - x);
+        };
+    }
+
+    private static int editorPlaneV(PaintOverlayStore.FaceKey key, int y) {
+        if (key == null) {
+            return y;
+        }
+        int size = PaintOverlayStore.SIZE;
+        BlockPos pos = key.pos();
+        return switch (key.face()) {
+            case UP -> pos.getZ() * size + y;
+            case DOWN -> pos.getZ() * size + (size - 1 - y);
+            case NORTH, SOUTH, WEST, EAST -> pos.getY() * size + (size - 1 - y);
+        };
+    }
+
+    public record EditorHit(PaintOverlayStore.FaceKey key, int x, int y, int planeU, int planeV) {
+        public EditorHit(PaintOverlayStore.FaceKey key, int x, int y) {
+            this(key, x, y, editorPlaneU(key, x), editorPlaneV(key, y));
+        }
+    }
+
+    public record ScreenPoint(double x, double y, double depth) {
+    }
+
+    public record EditorPreview(PaintOverlayStore.FaceKey key, int minX, int minY, int maxX, int maxY,
+                                int color, boolean solid, boolean handles) {
+    }
+
+    public record EditorGeometryPreview(PaintOverlayStore.FaceKey key,
+                                        double minX, double minY, double maxX, double maxY,
+                                        int color, boolean solid) {
+    }
+
+    public record EditorHidePreview(PaintOverlayStore.FaceKey key, int minX, int minY, int maxX, int maxY) {
+    }
+
+    public record EditorPixelPreview(PaintOverlayStore.FaceKey key, int startX, int startY, int width, int height,
+                                     int[] pixels) {
+    }
+
+    public record EditorRegionPatch(PaintOverlayStore.FaceKey key, int startX, int startY, int width, int height,
+                                    int[] pixels) {
+    }
+
     public enum EditorTool {
         NONE(0),
         BRUSH(1),
         ERASER(2),
         PAPER(3),
-        PRESET(0);
+        PRESET(0),
+        SELECT(0),
+        SHAPE(0);
 
         private final int networkId;
 

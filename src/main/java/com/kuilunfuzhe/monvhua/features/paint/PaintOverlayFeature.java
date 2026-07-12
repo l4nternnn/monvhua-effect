@@ -81,6 +81,8 @@ public final class PaintOverlayFeature {
                 context.server().execute(() -> handleEditorPaperUse(context.player(), packet)));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.RestoreFaceC2S.ID, (packet, context) ->
                 context.server().execute(() -> handleRestoreFace(context.player(), packet)));
+        ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PaintRegionPatchC2S.ID, (packet, context) ->
+                context.server().execute(() -> handlePaintRegionPatch(context.player(), packet)));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.RestoreModelFaceC2S.ID, (packet, context) ->
                 context.server().execute(() -> handleRestoreModelFace(context.player(), packet)));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.ModelPaintStrokeC2S.ID, (packet, context) ->
@@ -190,6 +192,21 @@ public final class PaintOverlayFeature {
             return;
         }
         setFacePixels(world, face.pos(), face.face(), face.pixels());
+    }
+
+    private static void handlePaintRegionPatch(ServerPlayerEntity player, PaintOverlayPackets.PaintRegionPatchC2S packet) {
+        if (!(player.getWorld() instanceof ServerWorld world) || !hasPaintEditorAccess(player)) {
+            return;
+        }
+        PaintOverlayPackets.FaceRegionPatch patch = packet.patch();
+        if (Vec3d.ofCenter(patch.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
+            return;
+        }
+        if (world.getBlockState(patch.pos()).getBlock() == ModBlocks.DRAWING_BOARD
+                || world.getBlockState(patch.pos()).getBlock() == PaintItems.PAINT_BUCKET_BLOCK) {
+            return;
+        }
+        applyRegionPatch(world, patch);
     }
 
     private static void handleRestoreModelFace(ServerPlayerEntity player, PaintOverlayPackets.RestoreModelFaceC2S packet) {
@@ -711,6 +728,37 @@ public final class PaintOverlayFeature {
         return true;
     }
 
+    public static boolean applyRegionPatch(ServerWorld world, PaintOverlayPackets.FaceRegionPatch patch) {
+        PaintOverlayStore store = PaintOverlayStore.get(world);
+        int[] before = store.getPixels(patch.pos(), patch.face());
+        int[] after = before.clone();
+        int[] patchPixels = patch.pixels();
+        boolean changed = false;
+        for (int y = 0; y < patch.height(); y++) {
+            for (int x = 0; x < patch.width(); x++) {
+                int sourceIndex = y * patch.width() + x;
+                int targetX = patch.startX() + x;
+                int targetY = patch.startY() + y;
+                if (sourceIndex < 0 || sourceIndex >= patchPixels.length
+                        || targetX < 0 || targetX >= PaintOverlayStore.SIZE
+                        || targetY < 0 || targetY >= PaintOverlayStore.SIZE) {
+                    continue;
+                }
+                int targetIndex = targetY * PaintOverlayStore.SIZE + targetX;
+                int color = patchPixels[sourceIndex];
+                if (after[targetIndex] != color) {
+                    after[targetIndex] = color;
+                    changed = true;
+                }
+            }
+        }
+        if (!changed || !store.setPixels(patch.pos(), patch.face(), after)) {
+            return false;
+        }
+        broadcastRegionPatch(world, patch);
+        return true;
+    }
+
     private static void sendNearbyFullSync(ServerPlayerEntity player) {
         if (!(player.getWorld() instanceof ServerWorld world)) {
             return;
@@ -728,6 +776,15 @@ public final class PaintOverlayFeature {
                 new PaintOverlayPackets.FaceData(pos, face, pixels));
         for (ServerPlayerEntity player : world.getPlayers()) {
             if (isNear(player, pos)) {
+                ServerPlayNetworking.send(player, packet);
+            }
+        }
+    }
+
+    private static void broadcastRegionPatch(ServerWorld world, PaintOverlayPackets.FaceRegionPatch patch) {
+        PaintOverlayPackets.FaceRegionPatchS2C packet = new PaintOverlayPackets.FaceRegionPatchS2C(patch);
+        for (ServerPlayerEntity player : world.getPlayers()) {
+            if (isNear(player, patch.pos())) {
                 ServerPlayNetworking.send(player, packet);
             }
         }

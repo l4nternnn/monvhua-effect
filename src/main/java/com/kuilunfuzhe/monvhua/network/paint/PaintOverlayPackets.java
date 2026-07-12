@@ -24,6 +24,7 @@ public final class PaintOverlayPackets {
     public static void registerS2C() {
         FullSyncS2C.register();
         FaceUpdateS2C.register();
+        FaceRegionPatchS2C.register();
         PlayerPaintStrokeS2C.register();
         PlayerPaintDataS2C.register();
         ClearPlayerPaintS2C.register();
@@ -40,6 +41,7 @@ public final class PaintOverlayPackets {
         EditorModelPaintStrokeC2S.register();
         EditorPaperUseC2S.register();
         RestoreFaceC2S.register();
+        PaintRegionPatchC2S.register();
         RestoreModelFaceC2S.register();
         ModelPaintStrokeC2S.register();
         PlayerPaintStrokeC2S.register();
@@ -77,6 +79,56 @@ public final class PaintOverlayPackets {
             buf.writeBlockPos(pos);
             buf.writeVarInt(face.getIndex());
             buf.writeVarInt(PaintOverlayStore.FACE_PIXELS);
+            for (int pixel : pixels) {
+                buf.writeInt(pixel);
+            }
+        }
+    }
+
+    public record FaceRegionPatch(BlockPos pos, Direction face, int startX, int startY, int width, int height, int[] pixels) {
+        private static final int MAX_PATCH_PIXELS = PaintOverlayStore.FACE_PIXELS;
+
+        public FaceRegionPatch {
+            pos = pos.toImmutable();
+            face = face == null ? Direction.UP : face;
+            startX = MathHelper.clamp(startX, 0, PaintOverlayStore.SIZE - 1);
+            startY = MathHelper.clamp(startY, 0, PaintOverlayStore.SIZE - 1);
+            width = MathHelper.clamp(width, 1, PaintOverlayStore.SIZE - startX);
+            height = MathHelper.clamp(height, 1, PaintOverlayStore.SIZE - startY);
+            int expected = Math.min(MAX_PATCH_PIXELS, width * height);
+            int[] clean = new int[expected];
+            if (pixels != null) {
+                System.arraycopy(pixels, 0, clean, 0, Math.min(pixels.length, clean.length));
+            }
+            pixels = clean;
+        }
+
+        private static FaceRegionPatch read(RegistryByteBuf buf) {
+            BlockPos pos = buf.readBlockPos();
+            Direction face = Direction.byIndex(buf.readVarInt());
+            int startX = buf.readVarInt();
+            int startY = buf.readVarInt();
+            int width = buf.readVarInt();
+            int height = buf.readVarInt();
+            int length = Math.max(0, buf.readVarInt());
+            int[] pixels = new int[Math.min(length, MAX_PATCH_PIXELS)];
+            for (int i = 0; i < length; i++) {
+                int pixel = buf.readInt();
+                if (i < pixels.length) {
+                    pixels[i] = pixel;
+                }
+            }
+            return new FaceRegionPatch(pos, face, startX, startY, width, height, pixels);
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeBlockPos(pos);
+            buf.writeVarInt(face.getIndex());
+            buf.writeVarInt(startX);
+            buf.writeVarInt(startY);
+            buf.writeVarInt(width);
+            buf.writeVarInt(height);
+            buf.writeVarInt(pixels.length);
             for (int pixel : pixels) {
                 buf.writeInt(pixel);
             }
@@ -297,6 +349,32 @@ public final class PaintOverlayPackets {
         public static void register() {
             if (!registered) {
                 PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record FaceRegionPatchS2C(FaceRegionPatch patch) implements CustomPayload {
+        public static final Id<FaceRegionPatchS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "paint_region_patch_sync"));
+        public static final PacketCodec<RegistryByteBuf, FaceRegionPatchS2C> CODEC = PacketCodec.of(FaceRegionPatchS2C::write, FaceRegionPatchS2C::new);
+        private static boolean registered = false;
+
+        private FaceRegionPatchS2C(RegistryByteBuf buf) {
+            this(FaceRegionPatch.read(buf));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            patch.write(buf);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
                 registered = true;
             }
         }
@@ -697,6 +775,32 @@ public final class PaintOverlayPackets {
 
         private void write(RegistryByteBuf buf) {
             faceData.write(buf);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record PaintRegionPatchC2S(FaceRegionPatch patch) implements CustomPayload {
+        public static final Id<PaintRegionPatchC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "paint_region_patch"));
+        public static final PacketCodec<RegistryByteBuf, PaintRegionPatchC2S> CODEC = PacketCodec.of(PaintRegionPatchC2S::write, PaintRegionPatchC2S::new);
+        private static boolean registered = false;
+
+        private PaintRegionPatchC2S(RegistryByteBuf buf) {
+            this(FaceRegionPatch.read(buf));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            patch.write(buf);
         }
 
         public static void register() {
