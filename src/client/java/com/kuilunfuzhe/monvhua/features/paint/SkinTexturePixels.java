@@ -107,7 +107,7 @@ public final class SkinTexturePixels {
         }
 
         int[] paintedArgb = Arrays.copyOf(base.argb, base.argb.length);
-        if (!applyModelPaint(paintedArgb, base.width, base.height, faces, slim)) {
+        if (!applyModelPaint(paintedArgb, base.argb, base.width, base.height, faces, slim)) {
             return new PaintedSkinTexture(textureId, base);
         }
 
@@ -168,7 +168,7 @@ public final class SkinTexturePixels {
         return hash;
     }
 
-    private static boolean applyModelPaint(int[] targetArgb, int imageWidth, int imageHeight,
+    private static boolean applyModelPaint(int[] targetArgb, int[] originalArgb, int imageWidth, int imageHeight,
                                            List<ModelPaintData.ModelFace> faces, boolean slim) {
         boolean changed = false;
         for (ModelPaintData.ModelFace face : faces) {
@@ -177,6 +177,7 @@ public final class SkinTexturePixels {
                 continue;
             }
             TextureFace underlayFace = underlayTextureFaceFor(face.surface(), face.face(), slim);
+            TextureFace mirroredOuterFace = mirroredOuterTextureFaceFor(face.surface(), face.face(), slim);
             int paintWidth = Math.max(1, face.width());
             int paintHeight = Math.max(1, face.height());
             for (int y = 0; y < paintHeight; y++) {
@@ -187,6 +188,10 @@ public final class SkinTexturePixels {
                     }
                     if (paintTexturePixel(targetArgb, imageWidth, imageHeight, textureFace, x, y,
                             paintWidth, paintHeight, color, underlayFace)) {
+                        changed = true;
+                    }
+                    if (mirroredOuterFace != null && paintOpaqueTexturePixel(targetArgb, originalArgb,
+                            imageWidth, imageHeight, mirroredOuterFace, x, y, paintWidth, paintHeight, color)) {
                         changed = true;
                     }
                 }
@@ -217,6 +222,34 @@ public final class SkinTexturePixels {
                 int index = py * imageWidth + px;
                 int base = targetArgb[index];
                 int blended = blendOver(visibleBase(base, targetArgb, imageWidth, imageHeight, face, underlayFace, px, py), color);
+                if (targetArgb[index] != blended) {
+                    targetArgb[index] = blended;
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
+    private static boolean paintOpaqueTexturePixel(int[] targetArgb, int[] maskArgb, int imageWidth, int imageHeight,
+                                                   TextureFace face, int x, int y, int paintWidth, int paintHeight,
+                                                   int color) {
+        float u0 = (face.x() + x * face.width() / (float) paintWidth) / 64.0F;
+        float u1 = (face.x() + (x + 1) * face.width() / (float) paintWidth) / 64.0F;
+        float v0 = (face.y() + y * face.height() / (float) paintHeight) / 64.0F;
+        float v1 = (face.y() + (y + 1) * face.height() / (float) paintHeight) / 64.0F;
+        int px0 = clamp((int) Math.floor(u0 * imageWidth), 0, imageWidth - 1);
+        int px1 = clamp((int) Math.ceil(u1 * imageWidth) - 1, 0, imageWidth - 1);
+        int py0 = clamp((int) Math.floor(v0 * imageHeight), 0, imageHeight - 1);
+        int py1 = clamp((int) Math.ceil(v1 * imageHeight) - 1, 0, imageHeight - 1);
+        boolean changed = false;
+        for (int py = py0; py <= py1; py++) {
+            for (int px = px0; px <= px1; px++) {
+                int index = py * imageWidth + px;
+                if (index < 0 || index >= maskArgb.length || ((maskArgb[index] >>> 24) & 0xFF) == 0) {
+                    continue;
+                }
+                int blended = blendOver(targetArgb[index], color);
                 if (targetArgb[index] != blended) {
                     targetArgb[index] = blended;
                     changed = true;
@@ -291,6 +324,15 @@ public final class SkinTexturePixels {
         }
         Direction textureDirection = parsedSurface.sourceFace() != null ? parsedSurface.sourceFace() : face;
         return surfaceTexture.face(textureDirection);
+    }
+
+    private static TextureFace mirroredOuterTextureFaceFor(String surface, Direction face, boolean slim) {
+        ParsedSurface parsedSurface = ParsedSurface.parse(surface);
+        if (parsedSurface == null || parsedSurface.outer()) {
+            return null;
+        }
+        SurfaceTexture surfaceTexture = surfaceTexture(parsedSurface.baseSurface(), true, slim);
+        return surfaceTexture == null ? null : surfaceTexture.face(face);
     }
 
     private static SurfaceTexture surfaceTexture(String surface, boolean outer, boolean slim) {
