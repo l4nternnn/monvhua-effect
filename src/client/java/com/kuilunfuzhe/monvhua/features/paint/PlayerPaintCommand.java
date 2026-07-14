@@ -22,8 +22,8 @@ import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
 public final class PlayerPaintCommand {
-    private static final String COMMAND = "clearentitypaint";
-    private static final String ALIAS = "clearplayerpaint";
+    private static final String COMMAND = "clearentitypaint_清除实体画迹";
+    private static final String ALIAS = "clearplayerpaint_清除玩家画迹";
 
     private PlayerPaintCommand() {
     }

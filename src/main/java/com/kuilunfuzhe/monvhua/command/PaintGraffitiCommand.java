@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -56,62 +57,108 @@ public final class PaintGraffitiCommand {
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher,
                                 CommandRegistryAccess registryAccess,
                                 CommandManager.RegistrationEnvironment environment) {
-        dispatcher.register(CommandManager.literal("monvhua-graffiti")
+        dispatcher.register(graffitiRoot("monvhua-graffiti_绘画"));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> graffitiRoot(String name) {
+        return CommandManager.literal(name)
                 .requires(source -> source.hasPermissionLevel(2))
-                .then(CommandManager.literal("folder")
-                        .executes(context -> showFolder(context.getSource())))
-                .then(CommandManager.literal("import")
+                .then(folderCommand("folder_文件夹"))
+                .then(importCommand("import_导入"))
+                .then(importScaledCommand("import_scaled_缩放导入"))
+                .then(nonFullBlockPaintCommand("allow_non_full_blocks_非完整方块绘画"))
+                .then(clearCommand("clear_清除"));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> folderCommand(String name) {
+        return CommandManager.literal(name)
+                .executes(context -> showFolder(context.getSource()));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> importCommand(String name) {
+        return CommandManager.literal(name)
+                .then(CommandManager.argument("file", StringArgumentType.greedyString())
+                        .executes(context -> importImage(context.getSource(), StringArgumentType.getString(context, "file"), 1.0D)));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> importScaledCommand(String name) {
+        return CommandManager.literal(name)
+                .then(CommandManager.argument("scale", DoubleArgumentType.doubleArg(0.05D, 8.0D))
                         .then(CommandManager.argument("file", StringArgumentType.greedyString())
-                                .executes(context -> importImage(context.getSource(), StringArgumentType.getString(context, "file"), 1.0D))))
-                .then(CommandManager.literal("import_scaled")
-                        .then(CommandManager.argument("scale", DoubleArgumentType.doubleArg(0.05D, 8.0D))
-                                .then(CommandManager.argument("file", StringArgumentType.greedyString())
-                                        .executes(context -> importImage(
-                                                context.getSource(),
-                                                StringArgumentType.getString(context, "file"),
-                                                DoubleArgumentType.getDouble(context, "scale"))))))
-                .then(CommandManager.literal("clear")
-                        .then(clearGridCommand("grid"))
-                        .then(clearGridCommand("block-方块"))
-                        .then(clearChunkCommand())));
+                                .executes(context -> importImage(
+                                        context.getSource(),
+                                        StringArgumentType.getString(context, "file"),
+                                        DoubleArgumentType.getDouble(context, "scale")))));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> clearCommand(String name) {
+        return CommandManager.literal(name)
+                        .then(clearGridCommand("grid_网格"))
+                        .then(clearGridCommand("block_方块"))
+                        .then(clearChunkCommand("chunk_区块"));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> nonFullBlockPaintCommand(String name) {
+        return CommandManager.literal(name)
+                .executes(context -> showNonFullBlockPaintStatus(context.getSource()))
+                .then(CommandManager.literal("on_开启")
+                        .executes(context -> setNonFullBlockPaintAllowed(context.getSource(), true)))
+                .then(CommandManager.literal("off_关闭")
+                        .executes(context -> setNonFullBlockPaintAllowed(context.getSource(), false)))
+                .then(CommandManager.argument("allowed", BoolArgumentType.bool())
+                        .executes(context -> setNonFullBlockPaintAllowed(
+                                context.getSource(),
+                                BoolArgumentType.getBool(context, "allowed"))));
+    }
+
+    private static int showNonFullBlockPaintStatus(ServerCommandSource source) {
+        boolean allowed = PaintOverlayFeature.isNonFullBlockPaintingAllowed();
+        source.sendFeedback(() -> Text.literal("非完整方块绘画: " + (allowed ? "允许" : "禁止")), false);
+        return 1;
+    }
+
+    private static int setNonFullBlockPaintAllowed(ServerCommandSource source, boolean allowed) {
+        PaintOverlayFeature.setNonFullBlockPaintingAllowed(allowed);
+        source.sendFeedback(() -> Text.literal("非完整方块绘画已" + (allowed ? "开启: 半砖/楼梯等可绘画" : "关闭: 仅完整方块可绘画")), true);
+        return 1;
     }
 
     private static LiteralArgumentBuilder<ServerCommandSource> clearGridCommand(String name) {
         return CommandManager.literal(name)
-                .then(CommandManager.argument("radius-半径", IntegerArgumentType.integer(0, MAX_GRID_CLEAR_RADIUS))
+                .then(CommandManager.argument("radius_半径", IntegerArgumentType.integer(0, MAX_GRID_CLEAR_RADIUS))
                         .executes(context -> clearGrid(context, sourceBlockPos(context.getSource())))
-                        .then(CommandManager.argument("center", BlockPosArgumentType.blockPos())
-                                .executes(context -> clearGrid(context, BlockPosArgumentType.getLoadedBlockPos(context, "center")))));
+                        .then(CommandManager.argument("center_中心", BlockPosArgumentType.blockPos())
+                                .executes(context -> clearGrid(context, BlockPosArgumentType.getLoadedBlockPos(context, "center_中心")))));
     }
 
-    private static LiteralArgumentBuilder<ServerCommandSource> clearChunkCommand() {
-        return CommandManager.literal("chunk")
-                .then(CommandManager.argument("radius", IntegerArgumentType.integer(0, MAX_CHUNK_CLEAR_RADIUS))
+    private static LiteralArgumentBuilder<ServerCommandSource> clearChunkCommand(String name) {
+        return CommandManager.literal(name)
+                .then(CommandManager.argument("radius_半径", IntegerArgumentType.integer(0, MAX_CHUNK_CLEAR_RADIUS))
                         .executes(context -> clearChunk(context, sourceBlockPos(context.getSource())))
-                        .then(CommandManager.argument("center", BlockPosArgumentType.blockPos())
-                                .executes(context -> clearChunk(context, BlockPosArgumentType.getLoadedBlockPos(context, "center")))));
+                        .then(CommandManager.argument("center_中心", BlockPosArgumentType.blockPos())
+                                .executes(context -> clearChunk(context, BlockPosArgumentType.getLoadedBlockPos(context, "center_中心")))));
     }
 
     private static int clearGrid(CommandContext<ServerCommandSource> context, BlockPos center) {
-        int radius = IntegerArgumentType.getInteger(context, "radius");
+        int radius = IntegerArgumentType.getInteger(context, "radius_半径");
         ServerWorld world = context.getSource().getWorld();
         int removed = clearStoredFaces(world, face -> isInsideGridRadius(face.pos(), center, radius));
         context.getSource().sendFeedback(
-                () -> Text.literal("Cleared " + removed + " paint face(s) in grid radius " + radius
-                        + " around " + center.toShortString() + "."),
+                () -> Text.literal("已清除 " + removed + " 个画迹面，网格半径 " + radius
+                        + "，中心 " + center.toShortString()),
                 true
         );
         return removed;
     }
 
     private static int clearChunk(CommandContext<ServerCommandSource> context, BlockPos center) {
-        int radius = IntegerArgumentType.getInteger(context, "radius");
+        int radius = IntegerArgumentType.getInteger(context, "radius_半径");
         ServerWorld world = context.getSource().getWorld();
         ChunkPos centerChunk = new ChunkPos(center.getX() >> 4, center.getZ() >> 4);
         int removed = clearStoredFaces(world, face -> isInsideChunkRadius(face.pos(), centerChunk, radius));
         context.getSource().sendFeedback(
-                () -> Text.literal("Cleared " + removed + " paint face(s) in chunk radius " + radius
-                        + " around chunk [" + centerChunk.x + ", " + centerChunk.z + "]."),
+                () -> Text.literal("已清除 " + removed + " 个画迹面，区块半径 " + radius
+                        + "，中心区块 [" + centerChunk.x + ", " + centerChunk.z + "]"),
                 true
         );
         return removed;
@@ -151,10 +198,10 @@ public final class PaintGraffitiCommand {
         try {
             Files.createDirectories(folder);
         } catch (IOException e) {
-            source.sendError(Text.literal("Failed to create graffiti folder: " + e.getMessage()));
+            source.sendError(Text.literal("创建涂鸦文件夹失败: " + e.getMessage()));
             return 0;
         }
-        source.sendFeedback(() -> Text.literal("Graffiti folder: " + folder), false);
+        source.sendFeedback(() -> Text.literal("涂鸦文件夹: " + folder), false);
         return 1;
     }
 
@@ -163,7 +210,7 @@ public final class PaintGraffitiCommand {
         try {
             player = source.getPlayerOrThrow();
         } catch (Exception e) {
-            source.sendError(Text.literal("This command must be run by a player."));
+            source.sendError(Text.literal("此命令只能由玩家执行。"));
             return 0;
         }
 
@@ -171,22 +218,22 @@ public final class PaintGraffitiCommand {
         try {
             Files.createDirectories(folder);
         } catch (IOException e) {
-            source.sendError(Text.literal("Failed to create graffiti folder: " + e.getMessage()));
+            source.sendError(Text.literal("创建涂鸦文件夹失败: " + e.getMessage()));
             return 0;
         }
         Path imagePath = folder.resolve(filename).normalize();
         if (!imagePath.startsWith(folder)) {
-            source.sendError(Text.literal("Image path must stay inside the graffiti folder."));
+            source.sendError(Text.literal("图片路径必须位于涂鸦文件夹内。"));
             return 0;
         }
         if (!Files.isRegularFile(imagePath)) {
-            source.sendError(Text.literal("Image not found: " + imagePath));
+            source.sendError(Text.literal("找不到图片: " + imagePath));
             return 0;
         }
 
         MinecraftServer server = source.getServer();
         UUID playerId = player.getUuid();
-        source.sendFeedback(() -> Text.literal("Started importing " + imagePath.getFileName() + " at " + formatScale(scale) + "x..."), false);
+        source.sendFeedback(() -> Text.literal("开始导入 " + imagePath.getFileName() + "，缩放 " + formatScale(scale) + "x..."), false);
         CompletableFuture.supplyAsync(() -> loadImport(imagePath, scale))
                 .thenAccept(result -> server.execute(() -> finishImport(server, playerId, result)));
         return 1;

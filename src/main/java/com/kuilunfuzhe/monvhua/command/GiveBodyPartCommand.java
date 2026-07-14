@@ -27,18 +27,18 @@ public class GiveBodyPartCommand {
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher,
                                 CommandRegistryAccess registryAccess,
                                 CommandManager.RegistrationEnvironment environment) {
-        dispatcher.register(CommandManager.literal("clairvoyance-肢体|获取")
+        dispatcher.register(CommandManager.literal("clairvoyance-body-give_肢体获取")
                 .requires(source -> source.hasPermissionLevel(2))
                 .then(CommandManager.argument("target", EntityArgumentType.player())
                         // 原始：从指定玩家获取肢体
                         .then(CommandManager.argument("source", EntityArgumentType.player())
-                                .then(CommandManager.literal("all")
+                                .then(CommandManager.literal("all_全部")
                                         .executes(ctx -> giveAllParts(
                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                 EntityArgumentType.getPlayer(ctx, "source"),
                                                 defaultSlim()
                                         ))
-                                        .then(CommandManager.literal("slim")
+                                        .then(CommandManager.literal("slim_纤细")
                                                 .executes(ctx -> giveAllParts(
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         EntityArgumentType.getPlayer(ctx, "source"),
@@ -46,14 +46,14 @@ public class GiveBodyPartCommand {
                                                 ))
                                         )
                                 )
-                                .then(CommandManager.literal("torso")
+                                .then(CommandManager.literal("torso_躯干")
                                         .executes(ctx -> giveBodyPart(
                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                 EntityArgumentType.getPlayer(ctx, "source"),
                                                 "torso",
                                                 defaultSlim()
                                         ))
-                                        .then(CommandManager.literal("slim")
+                                        .then(CommandManager.literal("slim_纤细")
                                                 .executes(ctx -> giveBodyPart(
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         EntityArgumentType.getPlayer(ctx, "source"),
@@ -62,14 +62,14 @@ public class GiveBodyPartCommand {
                                                 ))
                                         )
                                 )
-                                .then(CommandManager.literal("left_arm")
+                                .then(CommandManager.literal("left_arm_左臂")
                                         .executes(ctx -> giveBodyPart(
                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                 EntityArgumentType.getPlayer(ctx, "source"),
                                                 "left_arm",
                                                 defaultSlim()
                                         ))
-                                        .then(CommandManager.literal("slim")
+                                        .then(CommandManager.literal("slim_纤细")
                                                 .executes(ctx -> giveBodyPart(
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         EntityArgumentType.getPlayer(ctx, "source"),
@@ -78,14 +78,14 @@ public class GiveBodyPartCommand {
                                                 ))
                                         )
                                 )
-                                .then(CommandManager.literal("right_arm")
+                                .then(CommandManager.literal("right_arm_右臂")
                                         .executes(ctx -> giveBodyPart(
                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                 EntityArgumentType.getPlayer(ctx, "source"),
                                                 "right_arm",
                                                 defaultSlim()
                                         ))
-                                        .then(CommandManager.literal("slim")
+                                        .then(CommandManager.literal("slim_纤细")
                                                 .executes(ctx -> giveBodyPart(
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         EntityArgumentType.getPlayer(ctx, "source"),
@@ -94,14 +94,14 @@ public class GiveBodyPartCommand {
                                                 ))
                                         )
                                 )
-                                .then(CommandManager.literal("left_leg")
+                                .then(CommandManager.literal("left_leg_左腿")
                                         .executes(ctx -> giveBodyPart(
                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                 EntityArgumentType.getPlayer(ctx, "source"),
                                                 "left_leg",
                                                 defaultSlim()
                                         ))
-                                        .then(CommandManager.literal("slim")
+                                        .then(CommandManager.literal("slim_纤细")
                                                 .executes(ctx -> giveBodyPart(
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         EntityArgumentType.getPlayer(ctx, "source"),
@@ -110,14 +110,14 @@ public class GiveBodyPartCommand {
                                                 ))
                                         )
                                 )
-                                .then(CommandManager.literal("right_leg")
+                                .then(CommandManager.literal("right_leg_右腿")
                                         .executes(ctx -> giveBodyPart(
                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                 EntityArgumentType.getPlayer(ctx, "source"),
                                                 "right_leg",
                                                 defaultSlim()
                                         ))
-                                        .then(CommandManager.literal("slim")
+                                        .then(CommandManager.literal("slim_纤细")
                                                 .executes(ctx -> giveBodyPart(
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         EntityArgumentType.getPlayer(ctx, "source"),
@@ -126,7 +126,7 @@ public class GiveBodyPartCommand {
                                                 ))
                                         )
                                 )
-                                .then(CommandManager.literal("head")
+                                .then(CommandManager.literal("head_头")
                                         .executes(ctx -> giveBodyPart(
                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                 EntityArgumentType.getPlayer(ctx, "source"),
@@ -136,16 +136,16 @@ public class GiveBodyPartCommand {
                                 )
                         )
                         // 新增：使用内置皮肤
-                        .then(CommandManager.literal("localskin")
+                        .then(CommandManager.literal("localskin_内置")
                                 .then(CommandManager.argument("skinName", StringArgumentType.string())
                                         .suggests((context, builder) -> CommandSource.suggestMatching(LOCAL_SKINS, builder))
-                                        .then(CommandManager.literal("all")
+                                        .then(CommandManager.literal("all_全部")
                                                 .executes(ctx -> giveAllLocalSkinParts(
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         StringArgumentType.getString(ctx, "skinName"),
                                                         defaultSlim()
                                                 ))
-                                                .then(CommandManager.literal("slim")
+                                                .then(CommandManager.literal("slim_纤细")
                                                         .executes(ctx -> giveAllLocalSkinParts(
                                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                                 StringArgumentType.getString(ctx, "skinName"),
@@ -153,14 +153,14 @@ public class GiveBodyPartCommand {
                                                         ))
                                                 )
                                         )
-                                        .then(CommandManager.literal("torso")
+                                        .then(CommandManager.literal("torso_躯干")
                                                 .executes(ctx -> giveLocalSkinPart(
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         StringArgumentType.getString(ctx, "skinName"),
                                                         "torso",
                                                         defaultSlim()
                                                 ))
-                                                .then(CommandManager.literal("slim")
+                                                .then(CommandManager.literal("slim_纤细")
                                                         .executes(ctx -> giveLocalSkinPart(
                                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                                 StringArgumentType.getString(ctx, "skinName"),
@@ -169,14 +169,14 @@ public class GiveBodyPartCommand {
                                                         ))
                                                 )
                                         )
-                                        .then(CommandManager.literal("left_arm")
+                                        .then(CommandManager.literal("left_arm_左臂")
                                                 .executes(ctx -> giveLocalSkinPart(
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         StringArgumentType.getString(ctx, "skinName"),
                                                         "left_arm",
                                                         defaultSlim()
                                                 ))
-                                                .then(CommandManager.literal("slim")
+                                                .then(CommandManager.literal("slim_纤细")
                                                         .executes(ctx -> giveLocalSkinPart(
                                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                                 StringArgumentType.getString(ctx, "skinName"),
@@ -185,14 +185,14 @@ public class GiveBodyPartCommand {
                                                         ))
                                                 )
                                         )
-                                        .then(CommandManager.literal("right_arm")
+                                        .then(CommandManager.literal("right_arm_右臂")
                                                 .executes(ctx -> giveLocalSkinPart(
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         StringArgumentType.getString(ctx, "skinName"),
                                                         "right_arm",
                                                         defaultSlim()
                                                 ))
-                                                .then(CommandManager.literal("slim")
+                                                .then(CommandManager.literal("slim_纤细")
                                                         .executes(ctx -> giveLocalSkinPart(
                                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                                 StringArgumentType.getString(ctx, "skinName"),
@@ -201,14 +201,14 @@ public class GiveBodyPartCommand {
                                                         ))
                                                 )
                                         )
-                                        .then(CommandManager.literal("left_leg")
+                                        .then(CommandManager.literal("left_leg_左腿")
                                                 .executes(ctx -> giveLocalSkinPart(
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         StringArgumentType.getString(ctx, "skinName"),
                                                         "left_leg",
                                                         defaultSlim()
                                                 ))
-                                                .then(CommandManager.literal("slim")
+                                                .then(CommandManager.literal("slim_纤细")
                                                         .executes(ctx -> giveLocalSkinPart(
                                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                                 StringArgumentType.getString(ctx, "skinName"),
@@ -217,14 +217,14 @@ public class GiveBodyPartCommand {
                                                         ))
                                                 )
                                         )
-                                        .then(CommandManager.literal("right_leg")
+                                        .then(CommandManager.literal("right_leg_右腿")
                                                 .executes(ctx -> giveLocalSkinPart(
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         StringArgumentType.getString(ctx, "skinName"),
                                                         "right_leg",
                                                         defaultSlim()
                                                 ))
-                                                .then(CommandManager.literal("slim")
+                                                .then(CommandManager.literal("slim_纤细")
                                                         .executes(ctx -> giveLocalSkinPart(
                                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                                 StringArgumentType.getString(ctx, "skinName"),
@@ -233,14 +233,14 @@ public class GiveBodyPartCommand {
                                                         ))
                                                 )
                                         )
-                                        .then(CommandManager.literal("head")
+                                        .then(CommandManager.literal("head_头")
                                                 .executes(ctx -> giveLocalSkinPart(
                                                         EntityArgumentType.getPlayer(ctx, "target"),
                                                         StringArgumentType.getString(ctx, "skinName"),
                                                         "head",
                                                         defaultSlim()
                                                 ))
-                                                .then(CommandManager.literal("slim")
+                                                .then(CommandManager.literal("slim_纤细")
                                                         .executes(ctx -> giveLocalSkinPart(
                                                                 EntityArgumentType.getPlayer(ctx, "target"),
                                                                 StringArgumentType.getString(ctx, "skinName"),

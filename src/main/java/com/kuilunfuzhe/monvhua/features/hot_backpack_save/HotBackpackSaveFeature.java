@@ -108,10 +108,7 @@ public final class HotBackpackSaveFeature {
     }
 
     public static void registerCommands(CommandDispatcher<ServerCommandSource> dispatcher, Object registryAccess, Object environment) {
-        dispatcher.register(CommandManager.literal("monvhua_player_archive_save")
-                .requires(source -> source.hasPermissionLevel(2))
-                .executes(context -> saveSpecialPlayersCommand(context.getSource())));
-        dispatcher.register(CommandManager.literal("monvhua玩家存档保存")
+        dispatcher.register(CommandManager.literal("monvhua-player-archive-save_玩家存档保存")
                 .requires(source -> source.hasPermissionLevel(2))
                 .executes(context -> saveSpecialPlayersCommand(context.getSource())));
     }

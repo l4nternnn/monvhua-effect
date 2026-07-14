@@ -43,6 +43,7 @@ public class ModItemGroups {
                             entries.add(mirror_of_then_and_now.MIRROR_ITEM);
                             entries.add(ImitateItem.IMITATE_ITEM);
                             entries.add(PaintItems.PAINT_BRUSH);
+                            entries.add(PaintItems.PAINT_SPRAY_CAN);
                             entries.add(PaintItems.ERASER);
                             entries.add(PaintItems.PAINT_PAPER);
                             entries.add(PaintItems.PAINT_BUCKET);

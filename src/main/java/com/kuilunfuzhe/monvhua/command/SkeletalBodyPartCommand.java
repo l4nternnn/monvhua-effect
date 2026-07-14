@@ -15,7 +15,7 @@ public class SkeletalBodyPartCommand {
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher,
                                 CommandRegistryAccess registryAccess,
                                 CommandManager.RegistrationEnvironment environment) {
-        dispatcher.register(CommandManager.literal("monvhua-skeletal-pose")
+        dispatcher.register(CommandManager.literal("monvhua-skeletal-pose_骨骼姿态")
                 .requires(source -> source.hasPermissionLevel(2))
                 .then(CommandManager.argument("pos", BlockPosArgumentType.blockPos())
                         .then(CommandManager.argument("pitch", FloatArgumentType.floatArg(-180.0F, 180.0F))

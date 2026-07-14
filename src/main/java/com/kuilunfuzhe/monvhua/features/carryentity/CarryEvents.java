@@ -199,31 +199,31 @@ public class CarryEvents {
 		// stamina drain rate commands. carry-xp-rate is kept as a compatibility alias.
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 			registerCarryTransformCommands(dispatcher);
-			dispatcher.register(CommandManager.literal("carry-stamina-rate")
+			dispatcher.register(CommandManager.literal("carry-stamina-rate_搬运耐力倍率")
 					.requires(source -> source.hasPermissionLevel(2))
 					.then(CommandManager.argument("amount", IntegerArgumentType.integer(0, 100))
 							.executes(ctx -> setCarryStaminaDrainRate(ctx, IntegerArgumentType.getInteger(ctx, "amount"))))
 					.executes(ctx -> showCarryStaminaDrainRate(ctx)));
-			dispatcher.register(CommandManager.literal("carry-xp-rate")
+			dispatcher.register(CommandManager.literal("carry-xp-rate_搬运经验倍率")
 					.requires(source -> source.hasPermissionLevel(2))
 					.then(CommandManager.argument("amount", IntegerArgumentType.integer(0, 100))
 							.executes(ctx -> setCarryStaminaDrainRate(ctx, IntegerArgumentType.getInteger(ctx, "amount"))))
 					.executes(ctx -> showCarryStaminaDrainRate(ctx)));
-			dispatcher.register(CommandManager.literal("carry-pose")
+			dispatcher.register(CommandManager.literal("carry-pose_搬运姿势")
 					.requires(source -> source.getEntity() instanceof ServerPlayerEntity)
-					.then(CommandManager.literal("princess")
+					.then(CommandManager.literal("princess_公主抱")
 							.executes(ctx -> setCarryPoseMode(ctx, CarryManager.CarryPoseMode.PRINCESS)))
-					.then(CommandManager.literal("drag")
+					.then(CommandManager.literal("drag_拖拽")
 							.executes(ctx -> setCarryPoseMode(ctx, CarryManager.CarryPoseMode.DRAG)))
-					.then(CommandManager.literal("toggle")
+					.then(CommandManager.literal("toggle_切换")
 							.executes(ctx -> toggleCarryPoseMode(ctx)))
 					.executes(ctx -> showCarryPoseMode(ctx)));
 		});
 	}
 
 	private static void registerCarryTransformCommands(CommandDispatcher<ServerCommandSource> dispatcher) {
-		dispatcher.register(buildCarryTransformCommand("monvhua_carry_pose_transform", CarryTransformPackets.TARGET_POSE));
-		dispatcher.register(buildCarryTransformCommand("monvhua_carry_view_transform", CarryTransformPackets.TARGET_VIEW));
+		dispatcher.register(buildCarryTransformCommand("monvhua-carry-pose-transform_搬运姿势变换", CarryTransformPackets.TARGET_POSE));
+		dispatcher.register(buildCarryTransformCommand("monvhua-carry-view-transform_搬运视角变换", CarryTransformPackets.TARGET_VIEW));
 	}
 
 	private static LiteralArgumentBuilder<ServerCommandSource> buildCarryTransformCommand(String name, int target) {
@@ -232,8 +232,8 @@ public class CarryEvents {
 				CarryTransformPackets.POSE_PRINCESS,
 				target
 		);
-		root.then(addCarryTransformActions(CommandManager.literal("princess"), CarryTransformPackets.POSE_PRINCESS, target));
-		root.then(addCarryTransformActions(CommandManager.literal("drag"), CarryTransformPackets.POSE_DRAG, target));
+		root.then(addCarryTransformActions(CommandManager.literal("princess_公主抱"), CarryTransformPackets.POSE_PRINCESS, target));
+		root.then(addCarryTransformActions(CommandManager.literal("drag_拖拽"), CarryTransformPackets.POSE_DRAG, target));
 		return root;
 	}
 
@@ -243,9 +243,9 @@ public class CarryEvents {
 			int target
 	) {
 		return root
-				.then(buildCarryTransformAction("set", poseMode, target, CarryTransformPackets.ACTION_SET))
-				.then(buildCarryTransformAction("add", poseMode, target, CarryTransformPackets.ACTION_ADD))
-				.then(CommandManager.literal("reset")
+				.then(buildCarryTransformAction("set_设置", poseMode, target, CarryTransformPackets.ACTION_SET))
+				.then(buildCarryTransformAction("add_追加", poseMode, target, CarryTransformPackets.ACTION_ADD))
+				.then(CommandManager.literal("reset_重置")
 						.executes(ctx -> resetCarryTransform(ctx, poseMode, target)))
 				.executes(ctx -> showCarryTransform(ctx, poseMode, target));
 	}
@@ -345,7 +345,7 @@ public class CarryEvents {
 			return 0;
 		}
 		CarryManager.CarryPoseMode mode = CarryManager.getCarryPoseMode(player);
-		ctx.getSource().sendMessage(Text.literal("Carry pose: " + mode.displayName() + " (/carry-pose princess|drag|toggle)"));
+		ctx.getSource().sendMessage(Text.literal("Carry pose: " + mode.displayName() + " (/carry-pose_搬运姿势 princess_公主抱|drag_拖拽|toggle_切换)"));
 		return 1;
 	}
 

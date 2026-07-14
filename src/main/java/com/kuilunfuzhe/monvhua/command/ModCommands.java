@@ -12,7 +12,7 @@ import static net.minecraft.server.command.CommandManager.literal;
 
 /**
  * 模组命令注册入口，负责将所有命令注册到 Brigadier 命令分发器。
- * 当前仅包含测试用的 placemannequin 命令。
+ * 当前仅包含测试用的 placemannequin_放置测试模型 命令。
  */
 public class ModCommands {
     /**
@@ -20,7 +20,7 @@ public class ModCommands {
      * @param dispatcher Minecraft 服务端命令分发器
      */
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
-        dispatcher.register(literal("placemannequin")
+        dispatcher.register(literal("placemannequin_放置测试模型")
                 .executes(ModCommands::placeMannequin));
     }
 

@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.kuilunfuzhe.monvhua.MonvhuaMod;
@@ -34,59 +35,42 @@ public class ClairvoyanceCommand {
      * @param environment 注册环境
      */
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher, CommandRegistryAccess registryAccess, CommandManager.RegistrationEnvironment environment) {
-        dispatcher.register(CommandManager.literal("clairvoyance")
-                .then(CommandManager.literal("clearanchors_清除千里眼锚点")
-                        // 清除自己的锚点
-                        .executes(ctx -> clearOwnAnchors(ctx))
-                        // 清除指定玩家的锚点（需要 OP）
-                        .then(CommandManager.argument("player", StringArgumentType.word())
-                                .requires(source -> source.hasPermissionLevel(2))
-                                .executes(ctx -> clearOtherAnchors(ctx, StringArgumentType.getString(ctx, "player")))
-                        )
-                        // 清除所有锚点（需要 OP）
-                        .then(CommandManager.literal("all")
-                                .requires(source -> source.hasPermissionLevel(2))
-                                .executes(ctx -> clearAllAnchors(ctx.getSource()))
-                        )
-                )
-                .then(CommandManager.literal("viewmode_切换相机系统")
-                        .then(CommandManager.literal("legacy——旧版客户端")
-                                .executes(ctx -> setViewMode(ctx, "legacy"))
-                        )
-                        .then(CommandManager.literal("modern——新版服务端")
-                                .executes(ctx -> setViewMode(ctx, "modern"))
-                        )
-                        .then(CommandManager.literal("viewport")
-                                .executes(ctx -> setViewMode(ctx, "viewport"))
-                        )
-                        .executes(ctx -> {
-                            ServerPlayerEntity player = ctx.getSource().getPlayer();
-                            String current = MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "viewport");
-                            String modeName = getViewModeDisplayName(current);
-                            player.sendMessage(Text.literal("§6当前观看模式: " + modeName), false);
-                            player.sendMessage(Text.literal("§7使用 /clairvoyance viewmode <legacy|modern|viewport> 切换"), false);
-                            return 1;
-                        })
-                )
-                .then(CommandManager.literal("viewmode")
-                        .then(CommandManager.literal("legacy")
-                                .executes(ctx -> setViewMode(ctx, "legacy"))
-                        )
-                        .then(CommandManager.literal("modern")
-                                .executes(ctx -> setViewMode(ctx, "modern"))
-                        )
-                        .then(CommandManager.literal("viewport")
-                                .executes(ctx -> setViewMode(ctx, "viewport"))
-                        )
-                        .executes(ctx -> {
-                            ServerPlayerEntity player = ctx.getSource().getPlayer();
-                            String current = MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "viewport");
-                            player.sendMessage(Text.literal("current clairvoyance view mode: " + getViewModeDisplayName(current)), false);
-                            player.sendMessage(Text.literal("Use /clairvoyance viewmode <legacy|modern|viewport>"), false);
-                            return 1;
-                        })
-                )
-        );
+        dispatcher.register(clairvoyanceRoot("clairvoyance_千里眼"));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> clairvoyanceRoot(String name) {
+        return CommandManager.literal(name)
+                .then(clearAnchorsCommand("clearanchors_清除锚点"))
+                .then(viewModeCommand("viewmode_观看模式"));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> clearAnchorsCommand(String name) {
+        return CommandManager.literal(name)
+                .executes(ClairvoyanceCommand::clearOwnAnchors)
+                .then(CommandManager.argument("player", StringArgumentType.word())
+                        .requires(source -> source.hasPermissionLevel(2))
+                        .executes(ctx -> clearOtherAnchors(ctx, StringArgumentType.getString(ctx, "player"))))
+                .then(CommandManager.literal("all_全部")
+                        .requires(source -> source.hasPermissionLevel(2))
+                        .executes(ctx -> clearAllAnchors(ctx.getSource())));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> viewModeCommand(String name) {
+        return CommandManager.literal(name)
+                .then(CommandManager.literal("legacy_旧版")
+                        .executes(ctx -> setViewMode(ctx, "legacy")))
+                .then(CommandManager.literal("modern_新版")
+                        .executes(ctx -> setViewMode(ctx, "modern")))
+                .then(CommandManager.literal("viewport_预览")
+                        .executes(ctx -> setViewMode(ctx, "viewport")))
+                .executes(ctx -> {
+                    ServerPlayerEntity player = ctx.getSource().getPlayer();
+                    String current = MonvhuaMod.VIEW_MODE_PREFERENCE.getOrDefault(player.getUuid(), "viewport");
+                    String modeName = getViewModeDisplayName(current);
+                    player.sendMessage(Text.literal("§6当前观看模式: " + modeName), false);
+                    player.sendMessage(Text.literal("§7使用 /clairvoyance_千里眼 viewmode_观看模式 <legacy_旧版|modern_新版|viewport_预览> 切换"), false);
+                    return 1;
+                });
     }
 
     /**

@@ -118,7 +118,7 @@ public class Gazeguidance {
 
 		// 命令
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
-				dispatcher.register(CommandManager.literal("clairvoyance")
+				dispatcher.register(CommandManager.literal("clairvoyance_千里眼")
 						.then(CommandManager.literal("resetcooldown_重置冷却")
 								.executes(context -> {
 									PlayerEntity player = context.getSource().getPlayer();
@@ -154,7 +154,7 @@ public class Gazeguidance {
 						)
 
 						// 在 CommandRegistrationCallback 内部添加以下两个 then
-						.then(CommandManager.literal("toggleimages__开|关图片")
+						.then(CommandManager.literal("toggleimages_开关图片")
 								.requires(source -> source.hasPermissionLevel(2))
 								.then(CommandManager.argument("target", EntityArgumentType.player())
 										.executes(context -> {
@@ -175,7 +175,7 @@ public class Gazeguidance {
 										})
 								)
 						)
-						.then(CommandManager.literal("toggleparticles__开|关粒子")
+						.then(CommandManager.literal("toggleparticles_开关粒子")
 								.requires(source -> source.hasPermissionLevel(2))
 								.then(CommandManager.argument("target", EntityArgumentType.player())
 										.executes(context -> {

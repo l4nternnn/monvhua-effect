@@ -388,15 +388,29 @@ public class BodyPoseEditorScreen extends Screen {
 			return;
 		}
 		String command;
+		String partCommand = givePartCommandToken(selectedPart);
 		if (selectedSkinSource == SkinSource.PLAYER && !selectedPlayerName.isBlank()) {
-			command = "clairvoyance-肢体|获取 @s " + selectedPlayerName + " " + selectedPart;
+			command = "clairvoyance-body-give_肢体获取 @s " + selectedPlayerName + " " + partCommand;
 		} else {
-			command = "clairvoyance-肢体|获取 @s localskin " + selectedSkin + " " + selectedPart;
+			command = "clairvoyance-body-give_肢体获取 @s localskin_内置 " + selectedSkin + " " + partCommand;
 		}
 		if (slimModel && (selectedSkinSource != SkinSource.PLAYER || !selectedPart.equals("head"))) {
-			command += " slim";
+			command += " slim_纤细";
 		}
 		this.client.player.networkHandler.sendChatCommand(command);
+	}
+
+	private static String givePartCommandToken(String part) {
+		return switch (part) {
+			case "all" -> "all_全部";
+			case "torso" -> "torso_躯干";
+			case "left_arm" -> "left_arm_左臂";
+			case "right_arm" -> "right_arm_右臂";
+			case "left_leg" -> "left_leg_左腿";
+			case "right_leg" -> "right_leg_右腿";
+			case "head" -> "head_头";
+			default -> part;
+		};
 	}
 
 	private void placePosedBody(boolean backpackEnabled) {

@@ -76,13 +76,13 @@ public final class TextAreaHudClient {
     }
 
     private static void registerCommands(CommandDispatcher<FabricClientCommandSource> dispatcher, Object registryAccess) {
-        dispatcher.register(ClientCommandManager.literal("monvhua_textarea_reset")
+        dispatcher.register(ClientCommandManager.literal("monvhua-textarea-reset_文字区域重置")
                 .executes(context -> {
                     resetPlaybackCounts();
                     context.getSource().sendFeedback(Text.literal("§a文字区域播放次数已刷新"));
                     return 1;
                 }));
-        dispatcher.register(ClientCommandManager.literal("monvhua_text_reset")
+        dispatcher.register(ClientCommandManager.literal("monvhua-text-reset_文字重置")
                 .executes(context -> {
                     resetPlaybackCounts();
                     context.getSource().sendFeedback(Text.literal("§a文字区域播放次数已刷新"));

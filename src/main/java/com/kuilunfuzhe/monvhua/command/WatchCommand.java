@@ -4,6 +4,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
@@ -33,39 +34,43 @@ public class WatchCommand {
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher,
                                 CommandRegistryAccess registryAccess,
                                 CommandManager.RegistrationEnvironment environment) {
-        dispatcher.register(CommandManager.literal("watch")
+        dispatcher.register(watchRoot("watch_观看"));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> watchRoot(String name) {
+        return CommandManager.literal(name)
                 .then(CommandManager.argument("target", StringArgumentType.string())
                         .suggests((context, builder) -> CommandSource.suggestMatching(getAllEntityNames(context.getSource()), builder))
                         .executes(WatchCommand::executeWatchByName))
                 .executes(WatchCommand::executeWatchLooking)
-                .then(CommandManager.literal("angle")
-                        .then(CommandManager.argument("yaw", FloatArgumentType.floatArg())
-                                .then(CommandManager.argument("pitch", FloatArgumentType.floatArg())
-                                        .then(CommandManager.argument("distance", DoubleArgumentType.doubleArg(0.5, 10.0))
-                                                .executes(ctx -> {
-                                                    ServerPlayerEntity player = ctx.getSource().getPlayer();
-                                                    float yaw = FloatArgumentType.getFloat(ctx, "yaw");
-                                                    float pitch = FloatArgumentType.getFloat(ctx, "pitch");
-                                                    double distance = DoubleArgumentType.getDouble(ctx, "distance");
-                                                    CameraWatchManager.setOffset(player, yaw, pitch, distance);
-                                                    player.sendMessage(Text.literal(String.format("§a相机偏移已设置: yaw=%.1f° pitch=%.1f° distance=%.1f", yaw, pitch, distance)), false);
-                                                    // 如果当前正在观看，立即重新计算一次相机位置（可选）
-                                                    if (CameraWatchManager.isWatching(player)) {
-                                                        // 触发一次立即更新（下一 tick 自动更新）
-                                                    }
-                                                    return 1;
-                                                }))
-                                        .then(CommandManager.literal("reset")
-                                                .executes(ctx -> {
-                                                    ServerPlayerEntity player = ctx.getSource().getPlayer();
-                                                    CameraWatchManager.resetOffset(player);
-                                                    player.sendMessage(Text.literal("§a相机偏移已重置为默认值"), false);
-                                                    return 1;
-                                                }))))
-                ));
+                .then(angleCommand("angle_角度"));
+    }
 
+    private static LiteralArgumentBuilder<ServerCommandSource> angleCommand(String name) {
+        return CommandManager.literal(name)
+                .then(CommandManager.argument("yaw", FloatArgumentType.floatArg())
+                        .then(CommandManager.argument("pitch", FloatArgumentType.floatArg())
+                                .then(CommandManager.argument("distance", DoubleArgumentType.doubleArg(0.5, 10.0))
+                                        .executes(ctx -> {
+                                            ServerPlayerEntity player = ctx.getSource().getPlayer();
+                                            float yaw = FloatArgumentType.getFloat(ctx, "yaw");
+                                            float pitch = FloatArgumentType.getFloat(ctx, "pitch");
+                                            double distance = DoubleArgumentType.getDouble(ctx, "distance");
+                                            CameraWatchManager.setOffset(player, yaw, pitch, distance);
+                                            player.sendMessage(Text.literal(String.format("§a相机偏移已设置: yaw=%.1f° pitch=%.1f° distance=%.1f", yaw, pitch, distance)), false);
+                                            return 1;
+                                        }))
+                                .then(resetAngleCommand("reset_重置"))));
+    }
 
-
+    private static LiteralArgumentBuilder<ServerCommandSource> resetAngleCommand(String name) {
+        return CommandManager.literal(name)
+                .executes(ctx -> {
+                    ServerPlayerEntity player = ctx.getSource().getPlayer();
+                    CameraWatchManager.resetOffset(player);
+                    player.sendMessage(Text.literal("§a相机偏移已重置为默认值"), false);
+                    return 1;
+                });
     }
 
     /**

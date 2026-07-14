@@ -4,6 +4,7 @@ import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
@@ -19,76 +20,96 @@ public final class GravityCommand {
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher,
                                 net.minecraft.registry.RegistryWrapper.WrapperLookup registryAccess,
                                 CommandManager.RegistrationEnvironment environment) {
-        dispatcher.register(CommandManager.literal("monvhua-gravity")
+        dispatcher.register(gravityRoot("monvhua-gravity_重力"));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> gravityRoot(String name) {
+        return CommandManager.literal(name)
                 .requires(source -> source.hasPermissionLevel(2))
-                .then(CommandManager.literal("logic")
-                        .then(CommandManager.literal("force")
-                                .executes(context -> setLogic(context, GravityMagic.LogicMode.FORCE)))
-                        .then(CommandManager.literal("surface")
-                                .executes(context -> setLogic(context, GravityMagic.LogicMode.SURFACE)))
-                        .then(CommandManager.literal("toggle")
-                                .executes(GravityCommand::toggleLogic))
-                        .then(CommandManager.literal("show")
-                                .executes(GravityCommand::showLogic)))
-                .then(CommandManager.literal("area")
-                        .then(CommandManager.literal("create")
-                                .then(CommandManager.argument("radius", IntegerArgumentType.integer(1, 256))
-                                        .then(CommandManager.argument("time", StringArgumentType.word())
-                                                .executes(context -> createArea(context, GravityMagic.DEFAULT_AREA_HEIGHT)))
-                                        .then(CommandManager.argument("height", IntegerArgumentType.integer(1, 256))
-                                                .then(CommandManager.argument("time", StringArgumentType.word())
-                                                        .executes(context -> createArea(context, IntegerArgumentType.getInteger(context, "height")))))))
-                        .then(CommandManager.literal("clear")
-                                .then(CommandManager.literal("nearest")
-                                        .executes(GravityCommand::clearNearest))
-                                .then(CommandManager.literal("all")
-                                        .executes(GravityCommand::clearAll)))));
+                .then(logicCommand("logic_逻辑"))
+                .then(areaCommand("area_区域"));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> logicCommand(String name) {
+        return CommandManager.literal(name)
+                .then(CommandManager.literal("force_强制")
+                        .executes(context -> setLogic(context, GravityMagic.LogicMode.FORCE)))
+                .then(CommandManager.literal("surface_表面")
+                        .executes(context -> setLogic(context, GravityMagic.LogicMode.SURFACE)))
+                .then(CommandManager.literal("toggle_切换")
+                        .executes(GravityCommand::toggleLogic))
+                .then(CommandManager.literal("show_显示")
+                        .executes(GravityCommand::showLogic));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> areaCommand(String name) {
+        return CommandManager.literal(name)
+                .then(createAreaCommand("create_创建"))
+                .then(clearAreaCommand("clear_清除"));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> createAreaCommand(String name) {
+        return CommandManager.literal(name)
+                .then(CommandManager.argument("radius", IntegerArgumentType.integer(1, 256))
+                        .then(CommandManager.argument("time", StringArgumentType.word())
+                                .executes(context -> createArea(context, GravityMagic.DEFAULT_AREA_HEIGHT)))
+                        .then(CommandManager.argument("height", IntegerArgumentType.integer(1, 256))
+                                .then(CommandManager.argument("time", StringArgumentType.word())
+                                        .executes(context -> createArea(context, IntegerArgumentType.getInteger(context, "height"))))));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> clearAreaCommand(String name) {
+        return CommandManager.literal(name)
+                .then(CommandManager.literal("nearest_最近")
+                        .executes(GravityCommand::clearNearest))
+                .then(CommandManager.literal("all_全部")
+                        .executes(GravityCommand::clearAll));
     }
 
     private static int setLogic(CommandContext<ServerCommandSource> context, GravityMagic.LogicMode mode) {
         ServerPlayerEntity player = context.getSource().getPlayer();
         if (player == null) {
-            context.getSource().sendError(Text.literal("This command requires a player."));
+            context.getSource().sendError(Text.literal("此命令只能由玩家执行。"));
             return 0;
         }
 
         GravityMagic.LogicMode next = GravityMagic.setLogicMode(player, mode);
-        context.getSource().sendFeedback(() -> Text.literal("§a[Gravity] Logic mode: " + logicName(next)), true);
+        context.getSource().sendFeedback(() -> Text.literal("§a[重力] 逻辑模式: " + logicName(next)), true);
         return 1;
     }
 
     private static int toggleLogic(CommandContext<ServerCommandSource> context) {
         ServerPlayerEntity player = context.getSource().getPlayer();
         if (player == null) {
-            context.getSource().sendError(Text.literal("This command requires a player."));
+            context.getSource().sendError(Text.literal("此命令只能由玩家执行。"));
             return 0;
         }
 
         GravityMagic.LogicMode next = GravityMagic.toggleLogicMode(player);
-        context.getSource().sendFeedback(() -> Text.literal("§a[Gravity] Logic mode: " + logicName(next)), true);
+        context.getSource().sendFeedback(() -> Text.literal("§a[重力] 逻辑模式: " + logicName(next)), true);
         return 1;
     }
 
     private static int showLogic(CommandContext<ServerCommandSource> context) {
         ServerPlayerEntity player = context.getSource().getPlayer();
         if (player == null) {
-            context.getSource().sendError(Text.literal("This command requires a player."));
+            context.getSource().sendError(Text.literal("此命令只能由玩家执行。"));
             return 0;
         }
 
         GravityMagic.LogicMode mode = GravityMagic.getLogicMode(player);
-        context.getSource().sendFeedback(() -> Text.literal("§b[Gravity] Logic mode: " + logicName(mode)), false);
+        context.getSource().sendFeedback(() -> Text.literal("§b[重力] 逻辑模式: " + logicName(mode)), false);
         return 1;
     }
 
     private static String logicName(GravityMagic.LogicMode mode) {
-        return mode == GravityMagic.LogicMode.SURFACE ? "surface" : "force";
+        return mode == GravityMagic.LogicMode.SURFACE ? "表面" : "强制";
     }
 
     private static int createArea(CommandContext<ServerCommandSource> context, int height) {
         ServerPlayerEntity player = context.getSource().getPlayer();
         if (player == null) {
-            context.getSource().sendError(Text.literal("This command requires a player."));
+            context.getSource().sendError(Text.literal("此命令只能由玩家执行。"));
             return 0;
         }
 
@@ -96,7 +117,7 @@ public final class GravityCommand {
         String time = StringArgumentType.getString(context, "time");
         int ticks = parseTicks(time);
         if (ticks == 0) {
-            context.getSource().sendError(Text.literal("time must be seconds or wuxian."));
+            context.getSource().sendError(Text.literal("时间必须是秒数、wuxian 或 无限。"));
             return 0;
         }
 
@@ -105,10 +126,10 @@ public final class GravityCommand {
         double gravity = GravityMagic.getSelectedGravity(player);
         GravityMagic.addAreaGravity(world, center, radius, height, ticks, gravity);
 
-        String duration = ticks == GravityMagic.INFINITE_AREA_TICKS ? "wuxian" : ticks / 20 + "s";
+        String duration = ticks == GravityMagic.INFINITE_AREA_TICKS ? "无限" : ticks / 20 + "秒";
         context.getSource().sendFeedback(
-                () -> Text.literal("\u00a7a[Gravity] Created inverted area at "
-                        + center.toShortString() + " r=" + radius + " h=" + height + " time=" + duration),
+                () -> Text.literal("\u00a7a[重力] 已创建反转区域: "
+                        + center.toShortString() + " 半径=" + radius + " 高度=" + height + " 时间=" + duration),
                 true
         );
         return 1;
@@ -117,37 +138,37 @@ public final class GravityCommand {
     private static int clearNearest(CommandContext<ServerCommandSource> context) {
         ServerPlayerEntity player = context.getSource().getPlayer();
         if (player == null) {
-            context.getSource().sendError(Text.literal("This command requires a player."));
+            context.getSource().sendError(Text.literal("此命令只能由玩家执行。"));
             return 0;
         }
 
         int removed = GravityMagic.clearNearestAreaGravity((ServerWorld) player.getWorld(), player.getPos());
         if (removed == 0) {
-            context.getSource().sendError(Text.literal("No inverted area found in this dimension."));
+            context.getSource().sendError(Text.literal("当前维度没有可清除的反转区域。"));
             return 0;
         }
 
-        context.getSource().sendFeedback(() -> Text.literal("\u00a7a[Gravity] Cleared nearest inverted area."), true);
+        context.getSource().sendFeedback(() -> Text.literal("\u00a7a[重力] 已清除最近的反转区域。"), true);
         return removed;
     }
 
     private static int clearAll(CommandContext<ServerCommandSource> context) {
         ServerPlayerEntity player = context.getSource().getPlayer();
         if (player == null) {
-            context.getSource().sendError(Text.literal("This command requires a player."));
+            context.getSource().sendError(Text.literal("此命令只能由玩家执行。"));
             return 0;
         }
 
         int removed = GravityMagic.clearAllAreaGravity((ServerWorld) player.getWorld());
         context.getSource().sendFeedback(
-                () -> Text.literal("\u00a7a[Gravity] Cleared " + removed + " inverted area(s) in this dimension."),
+                () -> Text.literal("\u00a7a[重力] 已清除当前维度 " + removed + " 个反转区域。"),
                 true
         );
         return removed;
     }
 
     private static int parseTicks(String value) {
-        if ("wuxian".equalsIgnoreCase(value)) {
+        if ("wuxian".equalsIgnoreCase(value) || "无限".equals(value)) {
             return GravityMagic.INFINITE_AREA_TICKS;
         }
 

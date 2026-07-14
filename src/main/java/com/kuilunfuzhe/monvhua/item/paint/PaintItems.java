@@ -19,6 +19,7 @@ import net.minecraft.util.Identifier;
 
 public final class PaintItems {
     public static final PaintBrushItem PAINT_BRUSH;
+    public static final PaintBrushItem PAINT_SPRAY_CAN;
     public static final PaintEraserItem ERASER;
     public static final PaintPaperItem PAINT_PAPER;
     public static final Block PAINT_BUCKET_BLOCK;
@@ -29,6 +30,12 @@ public final class PaintItems {
         RegistryKey<Item> brushKey = RegistryKey.of(RegistryKeys.ITEM, brushId);
         PAINT_BRUSH = new PaintBrushItem(new Item.Settings()
                 .registryKey(brushKey)
+                .maxCount(1));
+
+        Identifier sprayCanId = Identifier.of(MonvhuaMod.MOD_ID, "paint_spray_can");
+        RegistryKey<Item> sprayCanKey = RegistryKey.of(RegistryKeys.ITEM, sprayCanId);
+        PAINT_SPRAY_CAN = new PaintBrushItem(new Item.Settings()
+                .registryKey(sprayCanKey)
                 .maxCount(1));
 
         Identifier eraserId = Identifier.of(MonvhuaMod.MOD_ID, "eraser");
@@ -63,6 +70,7 @@ public final class PaintItems {
 
     public static void initialize() {
         Registry.register(Registries.ITEM, Identifier.of(MonvhuaMod.MOD_ID, "paint_brush"), PAINT_BRUSH);
+        Registry.register(Registries.ITEM, Identifier.of(MonvhuaMod.MOD_ID, "paint_spray_can"), PAINT_SPRAY_CAN);
         Registry.register(Registries.ITEM, Identifier.of(MonvhuaMod.MOD_ID, "eraser"), ERASER);
         Registry.register(Registries.ITEM, Identifier.of(MonvhuaMod.MOD_ID, "paint_paper"), PAINT_PAPER);
         Registry.register(Registries.BLOCK, Identifier.of(MonvhuaMod.MOD_ID, "paint_bucket"), PAINT_BUCKET_BLOCK);
@@ -70,6 +78,7 @@ public final class PaintItems {
         PaintBucketBlockEntities.initialize();
         ItemGroupEvents.modifyEntriesEvent(ItemGroups.TOOLS).register(entries -> {
             entries.add(PAINT_BRUSH);
+            entries.add(PAINT_SPRAY_CAN);
             entries.add(ERASER);
             entries.add(PAINT_PAPER);
             entries.add(PAINT_BUCKET);

@@ -89,6 +89,7 @@ public final class PaintOverlayClient {
     private static GLFWScrollCallbackI previousScrollCallback;
     private static boolean scrollCallbackRegistered = false;
     private static int selectedBrushRadius = 1;
+    private static int selectedSprayRadius = 4;
     private static int selectedEraserRadius = 1;
     private static int selectedPaperSize = PaintOverlayFeature.DEFAULT_PAPER_SIZE;
     private static int selectedColor = 0xFFFF2A4F;
@@ -311,7 +312,13 @@ public final class PaintOverlayClient {
     }
 
     public static int selectedRadius(EditorTool tool) {
-        return tool == EditorTool.ERASER ? selectedEraserRadius : selectedBrushRadius;
+        if (tool == EditorTool.ERASER) {
+            return selectedEraserRadius;
+        }
+        if (tool == EditorTool.SPRAY) {
+            return selectedSprayRadius;
+        }
+        return selectedBrushRadius;
     }
 
     public static int selectedPaperSize() {
@@ -348,12 +355,17 @@ public final class PaintOverlayClient {
     }
 
     public static void setSelectedRadius(EditorTool tool, int radius) {
-        int nextRadius = MathHelper.clamp(radius, PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_RADIUS);
+        int nextRadius = MathHelper.clamp(radius, PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_MANUAL_RADIUS);
         if (tool == EditorTool.ERASER) {
             if (nextRadius == selectedEraserRadius) {
                 return;
             }
             selectedEraserRadius = nextRadius;
+        } else if (tool == EditorTool.SPRAY) {
+            if (nextRadius == selectedSprayRadius) {
+                return;
+            }
+            selectedSprayRadius = nextRadius;
         } else {
             if (nextRadius == selectedBrushRadius) {
                 return;
@@ -364,7 +376,7 @@ public final class PaintOverlayClient {
     }
 
     public static void syncSelectedRadius(EditorTool tool) {
-        if (tool == EditorTool.BRUSH || tool == EditorTool.ERASER) {
+        if (tool == EditorTool.BRUSH || tool == EditorTool.SPRAY || tool == EditorTool.ERASER) {
             syncSettings(tool);
         }
     }
@@ -834,7 +846,7 @@ public final class PaintOverlayClient {
         if (!isHoldingPaintTool(client)) {
             return false;
         }
-        EditorTool tool = isHoldingEraser(client) ? EditorTool.ERASER : EditorTool.BRUSH;
+        EditorTool tool = isHoldingEraser(client) ? EditorTool.ERASER : (isHoldingSprayCan(client) ? EditorTool.SPRAY : EditorTool.BRUSH);
         setSelectedRadius(tool, selectedRadius(tool) + delta);
         return true;
     }
@@ -864,6 +876,7 @@ public final class PaintOverlayClient {
             return;
         }
         boolean eraser = isHoldingEraser(client);
+        boolean spray = !eraser && isHoldingSprayCan(client);
         PaintModelOverlayClient.ModelHit modelHit = PaintModelOverlayClient.raycastCombinedBody(client);
         if (eraser && useStarted && shouldToggleEraserMode(client, modelHit)) {
             toggleEraserMode(client);
@@ -871,7 +884,7 @@ public final class PaintOverlayClient {
             repeatedStrokeTicks = 0;
             return;
         }
-        if (modelHit != null) {
+        if (!spray && modelHit != null) {
             boolean clear = eraser && eraserFaceMode;
             ModelStrokeKey key = new ModelStrokeKey(modelHit.entityId(), modelHit.surface(), modelHit.face(), modelHit.x(), modelHit.y(), clear);
             repeatedStrokeTicks++;
@@ -882,7 +895,7 @@ public final class PaintOverlayClient {
             repeatedStrokeTicks = 0;
             SafeClientNetworking.send(new PaintOverlayPackets.ModelPaintStrokeC2S(
                     modelHit.entityId(), modelHit.surface(), modelHit.face(), modelHit.x(), modelHit.y(), clear));
-            client.player.sendMessage(Text.literal("模型绘画 " + modelHit.surface() + " " + modelHit.face().asString()
+            client.player.sendMessage(Text.literal("模型绘画 " + modelHit.surface() + " " + directionLabel(modelHit.face())
                     + " (" + modelHit.x() + "," + modelHit.y() + ")"), true);
             return;
         }
@@ -891,7 +904,7 @@ public final class PaintOverlayClient {
         if (playerHit == null) {
             playerHit = fallbackCrosshairPlayerHit(client);
         }
-        if (playerHit != null) {
+        if (!spray && playerHit != null) {
             boolean clear = eraser && eraserFaceMode;
             int color = clear ? 0 : selectedColor();
             int radius = selectedRadius(eraser ? EditorTool.ERASER : EditorTool.BRUSH);
@@ -937,6 +950,9 @@ public final class PaintOverlayClient {
         }
         lastStrokeKey = key;
         repeatedStrokeTicks = 0;
+        if (spray) {
+            syncSettings(EditorTool.SPRAY);
+        }
         SafeClientNetworking.send(new PaintOverlayPackets.PaintStrokeC2S(pos, face, pixel[0], pixel[1], clear));
     }
 
@@ -1121,6 +1137,9 @@ public final class PaintOverlayClient {
         lastStrokeKey = key;
         repeatedStrokeTicks = 0;
         beginEditorHistory(tool, clear, pos, face);
+        if (tool == EditorTool.SPRAY) {
+            syncSettings(EditorTool.SPRAY);
+        }
         SafeClientNetworking.send(new PaintOverlayPackets.EditorPaintStrokeC2S(pos, face, pixel[0], pixel[1], tool.networkId(), clear));
     }
 
@@ -1556,7 +1575,7 @@ public final class PaintOverlayClient {
     private static Set<EditorHistoryTarget> expectedEditorHistoryKeys(EditorTool tool, boolean clearFace, BlockPos pos, Direction face) {
         Set<EditorHistoryTarget> keys = new HashSet<>();
         if (tool == EditorTool.ERASER && clearFace) {
-            int blockRadius = Math.max(0, MathHelper.clamp(selectedRadius(tool), PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_RADIUS) - 1);
+            int blockRadius = Math.max(0, MathHelper.clamp(selectedRadius(tool), PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_MANUAL_RADIUS) - 1);
             for (int a = -blockRadius; a <= blockRadius; a++) {
                 for (int b = -blockRadius; b <= blockRadius; b++) {
                     if (a * a + b * b <= blockRadius * blockRadius) {
@@ -1584,6 +1603,9 @@ public final class PaintOverlayClient {
         }
         if (tool == EditorTool.BRUSH) {
             return "编辑器绘制";
+        }
+        if (tool == EditorTool.SPRAY) {
+            return "编辑器喷漆";
         }
         return "编辑器操作";
     }
@@ -1959,9 +1981,10 @@ public final class PaintOverlayClient {
 
         boolean paper = isHoldingPaintPaper(client);
         boolean eraser = isHoldingEraser(client);
+        boolean spray = !eraser && isHoldingSprayCan(client);
         String radiusText = paper ? "纸 " + selectedPaperSize + "x" + selectedPaperSize
-                : "R " + selectedRadius(eraser ? EditorTool.ERASER : EditorTool.BRUSH);
-        String colorText = paper ? "纸张" : (eraser ? (eraserFaceMode ? "整面" : "像素") : toHex(selectedColor));
+                : "半径 " + selectedRadius(eraser ? EditorTool.ERASER : (spray ? EditorTool.SPRAY : EditorTool.BRUSH));
+        String colorText = paper ? "纸张" : (eraser ? (eraserFaceMode ? "整面" : "像素") : (spray ? "喷漆 " + toHex(selectedColor) : toHex(selectedColor)));
         int width = 96;
         int height = 30;
         int hotbarLeft = context.getScaledWindowWidth() / 2 - 91;
@@ -2040,6 +2063,13 @@ public final class PaintOverlayClient {
         return isPaintBrush(client.player.getMainHandStack()) || isPaintBrush(client.player.getOffHandStack());
     }
 
+    private static boolean isHoldingSprayCan(MinecraftClient client) {
+        if (client.player == null) {
+            return false;
+        }
+        return isSprayCan(client.player.getMainHandStack()) || isSprayCan(client.player.getOffHandStack());
+    }
+
     private static String formatPaintPercent(double remaining) {
         double percent = Math.clamp(remaining * 100.0D / PaintBrushItem.MAX_PAINT_PIXELS, 0.0D, 100.0D);
         if (Math.abs(percent - Math.rint(percent)) < 0.05D) {
@@ -2062,7 +2092,11 @@ public final class PaintOverlayClient {
     }
 
     private static boolean isPaintBrush(ItemStack stack) {
-        return stack.getItem() == PaintItems.PAINT_BRUSH;
+        return stack.getItem() == PaintItems.PAINT_BRUSH || stack.getItem() == PaintItems.PAINT_SPRAY_CAN;
+    }
+
+    private static boolean isSprayCan(ItemStack stack) {
+        return stack.getItem() == PaintItems.PAINT_SPRAY_CAN;
     }
 
     private static boolean isHoldingEraser(MinecraftClient client) {
@@ -2124,6 +2158,17 @@ public final class PaintOverlayClient {
 
     private static String toHex(int color) {
         return String.format("#%06X", color & 0xFFFFFF);
+    }
+
+    private static String directionLabel(Direction face) {
+        return switch (face) {
+            case DOWN -> "下";
+            case UP -> "上";
+            case NORTH -> "北";
+            case SOUTH -> "南";
+            case WEST -> "西";
+            case EAST -> "东";
+        };
     }
 
     private static void applyFullSync(List<PaintOverlayPackets.FaceData> faces) {
@@ -2952,6 +2997,7 @@ public final class PaintOverlayClient {
         BRUSH(1),
         ERASER(2),
         PAPER(3),
+        SPRAY(4),
         PRESET(0),
         SELECT(0),
         SHAPE(0);
@@ -2967,4 +3013,3 @@ public final class PaintOverlayClient {
         }
     }
 }
-

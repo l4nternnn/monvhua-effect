@@ -108,7 +108,7 @@ public final class ModelPaintData {
                 ? sanitizePixels(list.getCompound(index).flatMap(entry -> entry.getIntArray("pixels")).orElse(new int[0]), size.width(), size.height())
                 : new int[size.pixelCount()];
         int normalizedColor = color;
-        radius = MathHelper.clamp(radius, 1, PaintOverlayFeature.MAX_RADIUS);
+        radius = MathHelper.clamp(radius, PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_MANUAL_RADIUS);
         int radiusSquared = radius * radius;
         boolean changed = false;
         int changedPixels = 0;

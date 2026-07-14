@@ -37,15 +37,20 @@ public class PaintEditorScreen extends Screen {
     private static final int BRUSH_RECENT_Y = 304;
     private static final int BRUSH_FAVORITE_X_OFFSET = 86;
     private static final int BRUSH_RADIUS_Y = 408;
+    private static final int BRUSH_MODE_BUTTON_X_OFFSET = 90;
     private static final int ERASER_RADIUS_Y = 82;
     private static final int ERASER_MODE_Y = 118;
     private static final int ERASER_HISTORY_Y = 176;
     private static final int RADIUS_TRACK_X_OFFSET = 34;
     private static final int RADIUS_TRACK_WIDTH = 88;
+    private static final int RADIUS_FIELD_WIDTH = 38;
     private static final int SHAPE_MODE_Y = 76;
-    private static final int SHAPE_COLOR_Y = 330;
-    private static final int SHAPE_ALPHA_Y = 442;
-    private static final int SHAPE_STROKE_Y = 482;
+    private static final int SHAPE_MODE_ROW_HEIGHT = 22;
+    private static final int SHAPE_MODE_VISIBLE_ROWS = 3;
+    private static final int SHAPE_MODE_LIST_HEIGHT = SHAPE_MODE_VISIBLE_ROWS * SHAPE_MODE_ROW_HEIGHT;
+    private static final int SHAPE_COLOR_Y = 166;
+    private static final int SHAPE_ALPHA_Y = 278;
+    private static final int SHAPE_STROKE_Y = 318;
     private static final int MIN_SHAPE_STROKE = 1;
     private static final int MAX_SHAPE_STROKE = 32;
     private static final int HISTORY_ROW_HEIGHT = 17;
@@ -89,17 +94,22 @@ public class PaintEditorScreen extends Screen {
     private PaintOverlayClient.EditorTool selectedTool = PaintOverlayClient.EditorTool.NONE;
     private NativeImageBackedTexture colorMapTexture;
     private TextFieldWidget hexField;
+    private TextFieldWidget radiusField;
     private float hue = 0.97F;
     private float saturation = 0.84F;
     private float value = 1.0F;
     private float uploadedHue = -1.0F;
     private boolean updatingHexField;
+    private boolean updatingRadiusField;
+    private PaintOverlayClient.EditorTool radiusFieldTool = PaintOverlayClient.EditorTool.NONE;
     private boolean pickingColor;
     private boolean draggingAlpha;
     private boolean draggingRadius;
     private PaintOverlayClient.EditorTool draggingRadiusTool = PaintOverlayClient.EditorTool.NONE;
     private boolean draggingShapeStroke;
     private int shapeStrokeWidth = 1;
+    private boolean brushSprayMode;
+    private int shapeModeScroll;
     private boolean rightUsing;
     private boolean leftLooking;
     private boolean rightPanning;
@@ -245,7 +255,13 @@ public class PaintEditorScreen extends Screen {
         hexField.setMaxLength(7);
         hexField.setTextPredicate(PaintEditorScreen::isValidHexInput);
         hexField.setChangedListener(this::onHexChanged);
+        radiusField = addDrawableChild(new TextFieldWidget(textRenderer, rightX + 50, BRUSH_RADIUS_Y - 13, RADIUS_FIELD_WIDTH, 18, Text.literal("尺寸")));
+        radiusField.setMaxLength(3);
+        radiusField.setTextPredicate(PaintEditorScreen::isValidRadiusInput);
+        radiusField.setChangedListener(this::onRadiusChanged);
+        radiusField.visible = false;
         updateHexField();
+        updateRadiusField();
         loadPresetDraftsFromBrush();
         uploadColorMapIfNeeded();
     }
@@ -287,7 +303,7 @@ public class PaintEditorScreen extends Screen {
             client.player.setVelocity(0.0D, 0.0D, 0.0D);
         }
         if (rightUsing) {
-            PaintOverlayClient.performEditorUseAtScreenPoint(client, selectedTool, lastMouseX, lastMouseY, width, height);
+            PaintOverlayClient.performEditorUseAtScreenPoint(client, activeEditorTool(), lastMouseX, lastMouseY, width, height);
         }
     }
 
@@ -367,7 +383,7 @@ public class PaintEditorScreen extends Screen {
                     && selectedTool != PaintOverlayClient.EditorTool.SHAPE
                     && !isShiftDown()) {
                 rightUsing = true;
-                PaintOverlayClient.performEditorUseAtScreenPoint(client, selectedTool, mouseX, mouseY, width, height);
+                PaintOverlayClient.performEditorUseAtScreenPoint(client, activeEditorTool(), mouseX, mouseY, width, height);
                 return true;
             }
             if (selectedTool == PaintOverlayClient.EditorTool.NONE
@@ -385,6 +401,9 @@ public class PaintEditorScreen extends Screen {
         }
         closeHistoryContextMenu();
         if (hexField != null && hexField.visible && hexField.isMouseOver(mouseX, mouseY)) {
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
+        if (radiusField != null && radiusField.visible && radiusField.isMouseOver(mouseX, mouseY)) {
             return super.mouseClicked(mouseX, mouseY, button);
         }
         if (handleLeftPanelClick(mouseX, mouseY) || handleRightPanelClick(mouseX, mouseY)) {
@@ -407,6 +426,9 @@ public class PaintEditorScreen extends Screen {
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
         if (hexField != null && hexField.visible && hexField.isFocused()) {
+            return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        }
+        if (radiusField != null && radiusField.visible && radiusField.isFocused()) {
             return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
         }
         if (pickingColor && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
@@ -462,6 +484,9 @@ public class PaintEditorScreen extends Screen {
         if (hexField != null && hexField.visible && hexField.isFocused() && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             return super.mouseReleased(mouseX, mouseY, button);
         }
+        if (radiusField != null && radiusField.visible && radiusField.isFocused() && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            return super.mouseReleased(mouseX, mouseY, button);
+        }
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             if ((selectedTool == PaintOverlayClient.EditorTool.SELECT || selectedTool == PaintOverlayClient.EditorTool.SHAPE)
                     && dragMode != DragMode.NONE) {
@@ -514,7 +539,7 @@ public class PaintEditorScreen extends Screen {
             double t = (double) step / (double) steps;
             PaintOverlayClient.performEditorUseAtScreenPoint(
                     client,
-                    selectedTool,
+                    activeEditorTool(),
                     MathHelper.lerp(t, startX, mouseX),
                     MathHelper.lerp(t, startY, mouseY),
                     width,
@@ -651,6 +676,9 @@ public class PaintEditorScreen extends Screen {
         if (hexField != null && hexField.visible && hexField.keyPressed(keyCode, scanCode, modifiers)) {
             return true;
         }
+        if (radiusField != null && radiusField.visible && radiusField.keyPressed(keyCode, scanCode, modifiers)) {
+            return true;
+        }
         if (keyCode == GLFW.GLFW_KEY_B || keyCode == GLFW.GLFW_KEY_ESCAPE) {
             PaintOverlayClient.markPaintEditorKeyConsumed();
             close();
@@ -711,6 +739,14 @@ public class PaintEditorScreen extends Screen {
     }
 
     private void toggleTool(PaintOverlayClient.EditorTool tool) {
+        if (tool == PaintOverlayClient.EditorTool.SPRAY) {
+            selectedTool = PaintOverlayClient.EditorTool.BRUSH;
+            brushSprayMode = true;
+            selectMenuOpen = false;
+            dragMode = DragMode.NONE;
+            PaintOverlayClient.syncSelectedRadius(PaintOverlayClient.EditorTool.SPRAY);
+            return;
+        }
         selectedTool = selectedTool == tool ? PaintOverlayClient.EditorTool.NONE : tool;
         selectMenuOpen = false;
         dragMode = DragMode.NONE;
@@ -719,7 +755,9 @@ public class PaintEditorScreen extends Screen {
 
     @Override
     public boolean charTyped(char chr, int modifiers) {
-        return hexField != null && hexField.visible && hexField.charTyped(chr, modifiers) || super.charTyped(chr, modifiers);
+        return hexField != null && hexField.visible && hexField.charTyped(chr, modifiers)
+                || radiusField != null && radiusField.visible && radiusField.charTyped(chr, modifiers)
+                || super.charTyped(chr, modifiers);
     }
 
     @Override
@@ -795,10 +833,14 @@ public class PaintEditorScreen extends Screen {
         context.drawText(textRenderer, Text.literal("画板"), x + 16, 16, TEXT_PRIMARY, false);
         context.drawText(textRenderer, Text.literal(selectedToolName()), x + 16, 28, TEXT_SECONDARY, false);
         if (hexField != null) {
-            hexField.visible = selectedTool == PaintOverlayClient.EditorTool.BRUSH;
+            hexField.visible = selectedTool == PaintOverlayClient.EditorTool.BRUSH || selectedTool == PaintOverlayClient.EditorTool.SPRAY;
+        }
+        if (radiusField != null) {
+            radiusField.visible = false;
         }
         switch (selectedTool) {
             case BRUSH -> drawBrushPanel(context, x + 16);
+            case SPRAY -> drawBrushPanel(context, x + 16);
             case ERASER -> drawEraserPanel(context, x + 16);
             case PAPER -> drawPaperPanel(context, x + 16);
             case PRESET -> drawPresetEditorPanel(context, x + 16, mouseX, mouseY);
@@ -809,8 +851,11 @@ public class PaintEditorScreen extends Screen {
     }
 
     private void drawBrushPanel(DrawContext context, int x) {
+        boolean spray = activeBrushTool() == PaintOverlayClient.EditorTool.SPRAY;
+        PaintOverlayClient.EditorTool radiusTool = spray ? PaintOverlayClient.EditorTool.SPRAY : PaintOverlayClient.EditorTool.BRUSH;
         drawSection(context, x - 8, 48, 166, 228);
-        drawSectionTitle(context, x, 56, "颜色");
+        drawSectionTitle(context, x, 56, "画笔");
+        drawToggle(context, x + BRUSH_MODE_BUTTON_X_OFFSET, 55, 56, 18, "喷漆", spray);
         drawColorMap(context, x, BRUSH_COLOR_Y);
         drawHueBar(context, x + MAP_SIZE + 8, BRUSH_COLOR_Y);
         drawColorCursor(context, x, BRUSH_COLOR_Y);
@@ -825,8 +870,15 @@ public class PaintEditorScreen extends Screen {
         drawSection(context, x - 8, 284, 166, 94);
         drawRecent(context, x, BRUSH_RECENT_Y);
         drawFavorites(context, x + BRUSH_FAVORITE_X_OFFSET, BRUSH_RECENT_Y);
-        drawSection(context, x - 8, 390, 166, 46);
-        drawRadiusControls(context, x, BRUSH_RADIUS_Y, PaintOverlayClient.EditorTool.BRUSH);
+        drawSection(context, x - 8, 390, 166, spray ? 58 : 46);
+        drawRadiusControls(context, x, BRUSH_RADIUS_Y, radiusTool);
+        if (spray) {
+            context.drawText(textRenderer, Text.literal("中心浓，边缘淡"), x, BRUSH_RADIUS_Y + 28, TEXT_SECONDARY, false);
+        }
+    }
+
+    private void drawSprayPanel(DrawContext context, int x) {
+        drawBrushPanel(context, x);
     }
 
     private void drawEraserPanel(DrawContext context, int x) {
@@ -899,16 +951,9 @@ public class PaintEditorScreen extends Screen {
     }
 
     private void drawShapePanel(DrawContext context, int x, int mouseX, int mouseY) {
-        drawSection(context, x - 8, 48, 166, 468);
+        drawSection(context, x - 8, 48, 166, 306);
         drawSectionTitle(context, x, 56, "形状");
-        int y = SHAPE_MODE_Y;
-        for (ShapeMode mode : ShapeMode.values()) {
-            boolean active = shapeMode == mode;
-            boolean hover = isInside(x, y, 118, 18, mouseX, mouseY);
-            drawControlSurface(context, x, y, 118, 18, active, hover);
-            context.drawText(textRenderer, Text.literal(mode.label), x + 8, y + 5, active ? TEXT_PRIMARY : TEXT_SECONDARY, false);
-            y += 22;
-        }
+        drawShapeModeList(context, x, mouseX, mouseY);
         context.drawText(textRenderer, Text.literal("颜色"), x, SHAPE_COLOR_Y - 14, TEXT_PRIMARY, false);
         drawColorMap(context, x, SHAPE_COLOR_Y);
         drawHueBar(context, x + MAP_SIZE + 8, SHAPE_COLOR_Y);
@@ -918,6 +963,60 @@ public class PaintEditorScreen extends Screen {
         context.drawText(textRenderer, Text.literal(toHex(color)), x + 122, SHAPE_COLOR_Y + 32, TEXT_PRIMARY, false);
         drawAlphaSlider(context, x, SHAPE_ALPHA_Y);
         drawShapeStrokeControls(context, x, SHAPE_STROKE_Y);
+    }
+
+    private void drawShapeModeList(DrawContext context, int x, int mouseX, int mouseY) {
+        ShapeMode[] modes = ShapeMode.values();
+        shapeModeScroll = MathHelper.clamp(shapeModeScroll, 0, maxShapeModeScroll());
+        int rows = Math.min(SHAPE_MODE_VISIBLE_ROWS, modes.length);
+        for (int row = 0; row < rows; row++) {
+            int index = shapeModeScroll + row;
+            if (index >= modes.length) {
+                break;
+            }
+            ShapeMode mode = modes[index];
+            int y = SHAPE_MODE_Y + row * SHAPE_MODE_ROW_HEIGHT;
+            boolean active = shapeMode == mode;
+            boolean hover = isInside(x, y, 118, 18, mouseX, mouseY);
+            drawControlSurface(context, x, y, 118, 18, active, hover);
+            context.drawText(textRenderer, Text.literal(mode.label), x + 8, y + 5, active ? TEXT_PRIMARY : TEXT_SECONDARY, false);
+        }
+        int maxScroll = maxShapeModeScroll();
+        if (maxScroll > 0) {
+            int barX = x + 126;
+            int barY = SHAPE_MODE_Y;
+            int barH = SHAPE_MODE_LIST_HEIGHT - 4;
+            context.fill(barX, barY, barX + 4, barY + barH, 0x6634404A);
+            int thumbH = Math.max(12, barH * rows / modes.length);
+            int thumbY = barY + Math.round((barH - thumbH) * (shapeModeScroll / (float) maxScroll));
+            context.fill(barX, thumbY, barX + 4, thumbY + thumbH, ACCENT);
+        }
+    }
+
+    private int maxShapeModeScroll() {
+        return Math.max(0, ShapeMode.values().length - SHAPE_MODE_VISIBLE_ROWS);
+    }
+
+    private boolean isInsideShapeModeList(int x, double mouseX, double mouseY) {
+        return isInside(x, SHAPE_MODE_Y - 2, 132, SHAPE_MODE_LIST_HEIGHT, mouseX, mouseY);
+    }
+
+    private ShapeMode shapeModeAt(double mouseX, double mouseY, int x) {
+        ShapeMode[] modes = ShapeMode.values();
+        shapeModeScroll = MathHelper.clamp(shapeModeScroll, 0, maxShapeModeScroll());
+        int rows = Math.min(SHAPE_MODE_VISIBLE_ROWS, modes.length);
+        for (int row = 0; row < rows; row++) {
+            int index = shapeModeScroll + row;
+            int y = SHAPE_MODE_Y + row * SHAPE_MODE_ROW_HEIGHT;
+            if (index < modes.length && isInside(x, y, 118, 18, mouseX, mouseY)) {
+                return modes[index];
+            }
+        }
+        return null;
+    }
+
+    private void scrollShapeModeList(int direction) {
+        shapeModeScroll = MathHelper.clamp(shapeModeScroll + direction, 0, maxShapeModeScroll());
     }
 
     private boolean handleHistoryContextMenuClick(double mouseX, double mouseY, int button) {
@@ -1143,14 +1242,16 @@ public class PaintEditorScreen extends Screen {
         int radius = PaintOverlayClient.selectedRadius(tool);
         int trackX = x + RADIUS_TRACK_X_OFFSET;
         int trackY = y + 8;
-        float t = (radius - PaintOverlayFeature.MIN_RADIUS)
+        int sliderRadius = MathHelper.clamp(radius, PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_RADIUS);
+        float t = (sliderRadius - PaintOverlayFeature.MIN_RADIUS)
                 / (float) (PaintOverlayFeature.MAX_RADIUS - PaintOverlayFeature.MIN_RADIUS);
         int knobX = trackX + Math.round(t * RADIUS_TRACK_WIDTH);
         boolean hoverTrack = isInside(trackX - 6, y - 4, RADIUS_TRACK_WIDTH + 12, 26, lastMouseX, lastMouseY);
         drawSmallButton(context, x, y, 22, 18, "-");
         context.fill(trackX, trackY, trackX + RADIUS_TRACK_WIDTH, trackY + 2, 0x664C5968);
         context.fill(trackX, trackY, knobX, trackY + 2, ACCENT);
-        context.drawText(textRenderer, Text.literal("尺寸 " + radius), trackX, y - 8, TEXT_SECONDARY, false);
+        context.drawText(textRenderer, Text.literal("尺寸"), trackX, y - 8, TEXT_SECONDARY, false);
+        syncRadiusField(tool, trackX + 34, y - 13);
         if (hoverTrack || draggingRadius && draggingRadiusTool == tool) {
             drawFilledCircle(context, knobX, trackY + 1, 5, 0xFFFFFFFF);
             drawFilledCircle(context, knobX, trackY + 1, 3, ACCENT);
@@ -1207,22 +1308,8 @@ public class PaintEditorScreen extends Screen {
             return false;
         }
         switch (selectedTool) {
-            case BRUSH -> {
-                if (pickColor(mouseX, mouseY, false)) {
-                    pickingColor = true;
-                    return true;
-                }
-                if (handleAlphaSliderClick(mouseX, mouseY, x)) {
-                    draggingAlpha = true;
-                    return true;
-                }
-                if (handleSwatches(mouseX, mouseY, x)) {
-                    return true;
-                }
-                if (handleRadiusClick(mouseX, mouseY, x, BRUSH_RADIUS_Y, PaintOverlayClient.EditorTool.BRUSH)) {
-                    return true;
-                }
-                return true;
+            case BRUSH, SPRAY -> {
+                return handleBrushPanelClick(mouseX, mouseY, x);
             }
             case ERASER -> {
                 if (handleRadiusClick(mouseX, mouseY, x, ERASER_RADIUS_Y, PaintOverlayClient.EditorTool.ERASER)) {
@@ -1271,13 +1358,10 @@ public class PaintEditorScreen extends Screen {
                 if (handleShapeStrokeClick(mouseX, mouseY, x, SHAPE_STROKE_Y)) {
                     return true;
                 }
-                int y = SHAPE_MODE_Y;
-                for (ShapeMode mode : ShapeMode.values()) {
-                    if (isInside(x, y, 118, 18, mouseX, mouseY)) {
-                        shapeMode = mode;
-                        return true;
-                    }
-                    y += 22;
+                ShapeMode clickedMode = shapeModeAt(mouseX, mouseY, x);
+                if (clickedMode != null) {
+                    shapeMode = clickedMode;
+                    return true;
                 }
                 return true;
             }
@@ -1291,13 +1375,40 @@ public class PaintEditorScreen extends Screen {
         return true;
     }
 
+    private boolean handleBrushPanelClick(double mouseX, double mouseY, int x) {
+        if (isInside(x + BRUSH_MODE_BUTTON_X_OFFSET, 55, 56, 18, mouseX, mouseY)) {
+            brushSprayMode = !brushSprayMode;
+            PaintOverlayClient.syncSelectedRadius(activeBrushTool());
+            return true;
+        }
+        if (pickColor(mouseX, mouseY, false)) {
+            pickingColor = true;
+            return true;
+        }
+        if (handleAlphaSliderClick(mouseX, mouseY, x)) {
+            draggingAlpha = true;
+            return true;
+        }
+        if (handleSwatches(mouseX, mouseY, x)) {
+            return true;
+        }
+        if (handleRadiusClick(mouseX, mouseY, x, BRUSH_RADIUS_Y, activeBrushTool())) {
+            return true;
+        }
+        return true;
+    }
+
     private boolean handleRadiusClick(double mouseX, double mouseY, int x, int y, PaintOverlayClient.EditorTool tool) {
         if (isInside(x, y, 22, 18, mouseX, mouseY)) {
             PaintOverlayClient.setSelectedRadius(tool, PaintOverlayClient.selectedRadius(tool) - 1);
+            radiusFieldTool = tool;
+            updateRadiusField();
             return true;
         }
         if (isInside(x + 130, y, 22, 18, mouseX, mouseY)) {
             PaintOverlayClient.setSelectedRadius(tool, PaintOverlayClient.selectedRadius(tool) + 1);
+            radiusFieldTool = tool;
+            updateRadiusField();
             return true;
         }
         if (isInside(x + RADIUS_TRACK_X_OFFSET - 6, y - 4, RADIUS_TRACK_WIDTH + 12, 26, mouseX, mouseY)) {
@@ -1343,6 +1454,8 @@ public class PaintEditorScreen extends Screen {
         float t = MathHelper.clamp((float) ((mouseX - x) / RADIUS_TRACK_WIDTH), 0.0F, 1.0F);
         int radius = Math.round(MathHelper.lerp(t, PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_RADIUS));
         PaintOverlayClient.setSelectedRadius(tool, radius);
+        radiusFieldTool = tool;
+        updateRadiusField();
     }
 
     private void updateShapeStrokeFromMouse(double mouseX) {
@@ -1411,15 +1524,17 @@ public class PaintEditorScreen extends Screen {
         int delta = verticalAmount > 0.0D ? 1 : -1;
         int x = rightX() + 16;
         return switch (selectedTool) {
-            case BRUSH -> {
+            case BRUSH, SPRAY -> {
                 if (isInside(x, BRUSH_ALPHA_Y - 6, 118, 22, mouseX, mouseY)) {
                     PaintOverlayClient.setSelectedAlpha(PaintOverlayClient.selectedAlpha() + delta * 8);
                     yield true;
                 }
-                if (isInside(x - 8, 390, 166, 46, mouseX, mouseY)
+                PaintOverlayClient.EditorTool brushTool = activeBrushTool();
+                int sectionHeight = brushTool == PaintOverlayClient.EditorTool.SPRAY ? 58 : 46;
+                if (isInside(x - 8, 390, 166, sectionHeight, mouseX, mouseY)
                         || isInside(x, BRUSH_RADIUS_Y - 12, 90, 34, mouseX, mouseY)) {
-                    PaintOverlayClient.setSelectedRadius(PaintOverlayClient.EditorTool.BRUSH,
-                            PaintOverlayClient.selectedRadius(PaintOverlayClient.EditorTool.BRUSH) + delta);
+                    PaintOverlayClient.setSelectedRadius(brushTool,
+                            PaintOverlayClient.selectedRadius(brushTool) + delta);
                     yield true;
                 }
                 yield false;
@@ -1450,10 +1565,11 @@ public class PaintEditorScreen extends Screen {
                     setShapeStrokeWidth(shapeStrokeWidth + delta);
                     yield true;
                 }
-                ShapeMode[] modes = ShapeMode.values();
-                int index = Math.floorMod(shapeMode.ordinal() + delta, modes.length);
-                shapeMode = modes[index];
-                yield true;
+                if (isInsideShapeModeList(x, mouseX, mouseY)) {
+                    scrollShapeModeList(verticalAmount > 0.0D ? -1 : 1);
+                    yield true;
+                }
+                yield false;
             }
             case SELECT -> false;
             case PRESET -> false;
@@ -1652,6 +1768,43 @@ public class PaintEditorScreen extends Screen {
         updatingHexField = true;
         hexField.setText(toHex(PaintOverlayClient.selectedColor()));
         updatingHexField = false;
+    }
+
+    private void syncRadiusField(PaintOverlayClient.EditorTool tool, int x, int y) {
+        if (radiusField == null) {
+            return;
+        }
+        radiusField.visible = true;
+        radiusField.setPosition(x, y);
+        radiusField.setWidth(RADIUS_FIELD_WIDTH);
+        if (radiusFieldTool != tool || !radiusField.isFocused()) {
+            radiusFieldTool = tool;
+            updateRadiusField();
+        }
+    }
+
+    private void onRadiusChanged(String text) {
+        if (updatingRadiusField || radiusFieldTool == PaintOverlayClient.EditorTool.NONE || text.isBlank()) {
+            return;
+        }
+        try {
+            int value = Integer.parseInt(text);
+            int clamped = MathHelper.clamp(value, PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_MANUAL_RADIUS);
+            PaintOverlayClient.setSelectedRadius(radiusFieldTool, clamped);
+            if (value != clamped) {
+                updateRadiusField();
+            }
+        } catch (NumberFormatException ignored) {
+        }
+    }
+
+    private void updateRadiusField() {
+        if (radiusField == null || radiusFieldTool == PaintOverlayClient.EditorTool.NONE) {
+            return;
+        }
+        updatingRadiusField = true;
+        radiusField.setText(String.valueOf(PaintOverlayClient.selectedRadius(radiusFieldTool)));
+        updatingRadiusField = false;
     }
 
     private void uploadColorMapIfNeeded() {
@@ -3195,7 +3348,8 @@ public class PaintEditorScreen extends Screen {
 
     private String selectedToolName() {
         return switch (selectedTool) {
-            case BRUSH -> "画笔";
+            case BRUSH -> brushSprayMode ? "画笔 · 喷漆" : "画笔";
+            case SPRAY -> "喷漆";
             case ERASER -> "橡皮";
             case PAPER -> "纸张";
             case PRESET -> "预设";
@@ -3203,6 +3357,16 @@ public class PaintEditorScreen extends Screen {
             case SHAPE -> "形状";
             case NONE -> "视角";
         };
+    }
+
+    private PaintOverlayClient.EditorTool activeEditorTool() {
+        return selectedTool == PaintOverlayClient.EditorTool.BRUSH ? activeBrushTool() : selectedTool;
+    }
+
+    private PaintOverlayClient.EditorTool activeBrushTool() {
+        return selectedTool == PaintOverlayClient.EditorTool.SPRAY || brushSprayMode
+                ? PaintOverlayClient.EditorTool.SPRAY
+                : PaintOverlayClient.EditorTool.BRUSH;
     }
 
     private int rightX() {
@@ -3224,6 +3388,18 @@ public class PaintEditorScreen extends Screen {
         }
         for (int i = 0; i < digits.length(); i++) {
             if (Character.digit(digits.charAt(i), 16) < 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isValidRadiusInput(String text) {
+        if (text.length() > 3) {
+            return false;
+        }
+        for (int i = 0; i < text.length(); i++) {
+            if (!Character.isDigit(text.charAt(i))) {
                 return false;
             }
         }

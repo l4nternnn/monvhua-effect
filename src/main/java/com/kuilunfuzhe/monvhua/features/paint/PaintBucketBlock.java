@@ -78,7 +78,8 @@ public class PaintBucketBlock extends BlockWithEntity {
             toggleCarry(serverPlayer, pos);
             return ActionResult.SUCCESS;
         }
-        if (player.getMainHandStack().getItem() == PaintItems.PAINT_BRUSH) {
+        if (player.getMainHandStack().getItem() == PaintItems.PAINT_BRUSH
+                || player.getMainHandStack().getItem() == PaintItems.PAINT_SPRAY_CAN) {
             return ActionResult.SUCCESS;
         }
         if (world.isClient() && player.isCreative() && PaintBucketClientBridge.open(pos)) {

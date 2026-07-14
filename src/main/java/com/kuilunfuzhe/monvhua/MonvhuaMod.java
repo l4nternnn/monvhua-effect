@@ -546,7 +546,7 @@ public class MonvhuaMod implements ModInitializer {
         CommandRegistrationCallback.EVENT.register(PlayerListRestrictCommand::register);
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(CommandManager.literal("clairvoyance-肢体|合并")
+            dispatcher.register(CommandManager.literal("clairvoyance-body-merge_肢体合并")
                     .requires(source -> source.hasPermissionLevel(2))
                     .executes(context -> {
                         ServerPlayerEntity player = context.getSource().getPlayer();
@@ -554,11 +554,11 @@ public class MonvhuaMod implements ModInitializer {
                         return BodyPartManager.mergeBodyParts(player);
                     })
             );
-            dispatcher.register(CommandManager.literal("clairvoyance-肢体|清除背包实体")
+            dispatcher.register(CommandManager.literal("clairvoyance-body-clear-inventory-entities_清除背包实体")
                     .requires(source -> source.hasPermissionLevel(2))
                     .executes(context -> clearBodyBackpackInteractions(context.getSource(), 4.0D))
-                    .then(CommandManager.argument("radius", DoubleArgumentType.doubleArg(0.5D, 64.0D))
-                            .executes(context -> clearBodyBackpackInteractions(context.getSource(), DoubleArgumentType.getDouble(context, "radius")))
+                    .then(CommandManager.argument("radius_半径", DoubleArgumentType.doubleArg(0.5D, 64.0D))
+                            .executes(context -> clearBodyBackpackInteractions(context.getSource(), DoubleArgumentType.getDouble(context, "radius_半径")))
                     )
             );
         });

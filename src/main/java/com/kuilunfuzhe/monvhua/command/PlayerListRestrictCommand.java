@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.command;
 import com.kuilunfuzhe.monvhua.network.playerlist.PlayerListRestrictS2CPacket;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.command.CommandManager;
@@ -33,11 +34,15 @@ public final class PlayerListRestrictCommand {
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher,
                                 net.minecraft.registry.RegistryWrapper.WrapperLookup registryAccess,
                                 CommandManager.RegistrationEnvironment environment) {
-        dispatcher.register(CommandManager.literal("restrict")
+        dispatcher.register(restrictRoot("restrict_限制"));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> restrictRoot(String name) {
+        return CommandManager.literal(name)
                 .requires(source -> source.hasPermissionLevel(2))
-                .then(CommandManager.literal("playerlist")
+                .then(CommandManager.literal("playerlist_玩家列表")
                         .then(CommandManager.argument("value", BoolArgumentType.bool())
-                                .executes(PlayerListRestrictCommand::execute))));
+                                .executes(PlayerListRestrictCommand::execute)));
     }
 
     /**

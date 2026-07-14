@@ -37,32 +37,32 @@ public class MirrorCommand {
 	public static void register(CommandDispatcher<ServerCommandSource> dispatcher,
 	                            CommandRegistryAccess registryAccess,
 	                            CommandManager.RegistrationEnvironment environment) {
-		dispatcher.register(CommandManager.literal("clairvoyance-mirror")
+		dispatcher.register(CommandManager.literal("clairvoyance-mirror_镜像")
 			.requires(source -> source.hasPermissionLevel(2))
-			.then(CommandManager.literal("set")
+			.then(CommandManager.literal("set_设置")
 				.then(CommandManager.argument("slot", IntegerArgumentType.integer(1, 2))
-					.then(CommandManager.literal("hsPos-设定点")
+					.then(CommandManager.literal("hspos_设定点")
 						.then(CommandManager.argument("pos", Vec3ArgumentType.vec3())
 							.executes(ctx -> executeSetHsPos(ctx.getSource(),
 								IntegerArgumentType.getInteger(ctx, "slot"),
 								Vec3ArgumentType.getVec3(ctx, "pos")))))
-					.then(CommandManager.literal("mapPos-映射点")
+					.then(CommandManager.literal("mappos_映射点")
 						.then(CommandManager.argument("pos", Vec3ArgumentType.vec3())
 							.executes(ctx -> executeSetMapPos(ctx.getSource(),
 								IntegerArgumentType.getInteger(ctx, "slot"),
 								Vec3ArgumentType.getVec3(ctx, "pos")))))
-					.then(CommandManager.literal("radius-半径")
+					.then(CommandManager.literal("radius_半径")
 						.then(CommandManager.argument("radius", DoubleArgumentType.doubleArg(1.0, 200.0))
 							.executes(ctx -> executeSetRadius(ctx.getSource(),
 								IntegerArgumentType.getInteger(ctx, "slot"),
 								DoubleArgumentType.getDouble(ctx, "radius")))))))
-			.then(CommandManager.literal("remove-移除")
+			.then(CommandManager.literal("remove_移除")
 				.then(CommandManager.argument("slot", IntegerArgumentType.integer(1, 2))
 					.executes(ctx -> executeRemove(ctx.getSource(),
 						IntegerArgumentType.getInteger(ctx, "slot")))))
-			.then(CommandManager.literal("list-列出所有")
+			.then(CommandManager.literal("list_列出所有")
 				.executes(ctx -> executeList(ctx.getSource())))
-			.then(CommandManager.literal("clear-清除")
+			.then(CommandManager.literal("clear_清除")
 				.executes(ctx -> executeClear(ctx.getSource())))
 		);
 	}
@@ -132,7 +132,7 @@ public class MirrorCommand {
 		source.sendMessage(Text.literal("§6镜像视图: " + (active ? "§a开启" : "§7关闭") + " §7剩余使用次数: §f" + usesLeft));
 
 		if (!anyActive) {
-			source.sendMessage(Text.literal("§7使用 /clairvoyance-mirror set <1|2> {hsPos|mapPos|radius} <值> 设置镜面"));
+			source.sendMessage(Text.literal("§7使用 /clairvoyance-mirror_镜像 set_设置 <1|2> {hspos_设定点|mappos_映射点|radius_半径} <值> 设置镜面"));
 		}
 		return 1;
 	}
@@ -172,7 +172,7 @@ public class MirrorCommand {
 		MirrorDataStore.PlayerData data = MirrorDataStore.getOrCreate(uuid);
 
 		if (!hasAnySlot(data)) {
-			player.sendMessage(Text.literal("§c请先使用 /clairvoyance-mirror set <1|2> {hsPos|mapPos|radius} <值> 设置至少一个镜面"), false);
+			player.sendMessage(Text.literal("§c请先使用 /clairvoyance-mirror_镜像 set_设置 <1|2> {hspos_设定点|mappos_映射点|radius_半径} <值> 设置至少一个镜面"), false);
 			return;
 		}
 
@@ -233,7 +233,7 @@ public class MirrorCommand {
 		// Validate slots
 		MirrorDataStore.PlayerData data = MirrorDataStore.getOrCreate(uuid);
 		if (!hasAnySlot(data)) {
-			player.sendMessage(Text.literal("§c请先使用 /clairvoyance-mirror set 指令设置镜面"), false);
+			player.sendMessage(Text.literal("§c请先使用 /clairvoyance-mirror_镜像 set_设置 指令设置镜面"), false);
 			return;
 		}
 

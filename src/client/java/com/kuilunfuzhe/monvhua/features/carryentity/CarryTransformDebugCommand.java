@@ -24,9 +24,9 @@ import java.util.Locale;
 
 public final class CarryTransformDebugCommand {
 	private static final Logger LOGGER = LoggerFactory.getLogger(CarryTransformDebugCommand.class);
-	private static final String COMMAND_NAME = "monvhua_carry_debug_transform";
-	private static final String POSE_TRANSFORM_COMMAND = "monvhua_carry_pose_transform";
-	private static final String VIEW_TRANSFORM_COMMAND = "monvhua_carry_view_transform";
+	private static final String COMMAND_NAME = "monvhua-carry-debug-transform_搬运调试变换";
+	private static final String POSE_TRANSFORM_COMMAND = "monvhua-carry-pose-transform_搬运姿势变换";
+	private static final String VIEW_TRANSFORM_COMMAND = "monvhua-carry-view-transform_搬运视角变换";
 
 	private CarryTransformDebugCommand() {
 	}
@@ -48,8 +48,8 @@ public final class CarryTransformDebugCommand {
 				CarryTransformPackets.POSE_PRINCESS,
 				target
 		);
-		root.then(addTransformActions(ClientCommandManager.literal("princess"), CarryTransformPackets.POSE_PRINCESS, target));
-		root.then(addTransformActions(ClientCommandManager.literal("drag"), CarryTransformPackets.POSE_DRAG, target));
+		root.then(addTransformActions(ClientCommandManager.literal("princess_公主抱"), CarryTransformPackets.POSE_PRINCESS, target));
+		root.then(addTransformActions(ClientCommandManager.literal("drag_拖拽"), CarryTransformPackets.POSE_DRAG, target));
 		return root;
 	}
 
@@ -59,9 +59,9 @@ public final class CarryTransformDebugCommand {
 			int target
 	) {
 		return root
-				.then(buildTransformAction("set", poseMode, target, CarryTransformPackets.ACTION_SET))
-				.then(buildTransformAction("add", poseMode, target, CarryTransformPackets.ACTION_ADD))
-				.then(ClientCommandManager.literal("reset")
+				.then(buildTransformAction("set_设置", poseMode, target, CarryTransformPackets.ACTION_SET))
+				.then(buildTransformAction("add_追加", poseMode, target, CarryTransformPackets.ACTION_ADD))
+				.then(ClientCommandManager.literal("reset_重置")
 						.executes(context -> sendTransformUpdate(
 								context.getSource(),
 								poseMode,
