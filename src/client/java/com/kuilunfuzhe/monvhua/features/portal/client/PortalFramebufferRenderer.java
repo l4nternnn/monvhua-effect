@@ -62,8 +62,7 @@ public final class PortalFramebufferRenderer {
     private static long frameIndex;
     private static int lastFailureLogTick = Integer.MIN_VALUE;
     private static BlockPos lastRequestedSource;
-    private static BlockPos lastRequestedViewCenter;
-    private static long lastRemoteRequestFrame = Long.MIN_VALUE / 2L;
+    private static final Map<BlockPos, RemoteRequestState> REMOTE_REQUESTS = new LinkedHashMap<>();
     private static boolean remoteTerrainDirty;
     private static WorldRenderer remoteWorldRenderer;
     private static BufferBuilderStorage remoteBufferBuilders;
@@ -164,15 +163,20 @@ public final class PortalFramebufferRenderer {
         int budget = frame.renderBudget();
         int updateInterval = PortalViewConfig.LIVE_VIEW_UPDATE_INTERVAL_FRAMES;
         candidates.sort(PortalFramebufferRenderer::compareCandidates);
-        Candidate remoteViewCandidate = candidates.getFirst();
+        int remoteViewCandidateIndex = 0;
         if (lastRequestedSource != null) {
-            for (Candidate candidate : candidates) {
-                if (lastRequestedSource.equals(candidate.portal.getPos())) {
-                    remoteViewCandidate = candidate;
+            for (int index = 0; index < candidates.size(); index++) {
+                if (lastRequestedSource.equals(candidates.get(index).portal.getPos())) {
+                    remoteViewCandidateIndex = index;
                     break;
                 }
             }
         }
+        if (remoteViewCandidateIndex > 0) {
+            Candidate remoteViewCandidate = candidates.remove(remoteViewCandidateIndex);
+            candidates.add(0, remoteViewCandidate);
+        }
+        Candidate remoteViewCandidate = candidates.getFirst();
         requestRemoteView(remoteViewCandidate.portal);
 
         try {
@@ -315,15 +319,16 @@ public final class PortalFramebufferRenderer {
         CameraPose pose = transformCamera(client.gameRenderer.getCamera(), portal, targetView);
         BlockPos sourcePos = portal.getPos();
         BlockPos viewCenter = remoteViewCenterFor(pose);
-        boolean sameRequest = sourcePos.equals(lastRequestedSource) && viewCenter.equals(lastRequestedViewCenter);
+        RemoteRequestState previous = REMOTE_REQUESTS.get(sourcePos);
+        boolean sameRequest = previous != null && viewCenter.equals(previous.viewCenter());
         if (sameRequest
-                && frameIndex - lastRemoteRequestFrame < PortalViewConfig.REMOTE_REQUEST_INTERVAL_FRAMES) {
+                && frameIndex - previous.frame() < PortalViewConfig.REMOTE_REQUEST_INTERVAL_FRAMES) {
             return;
         }
         lastRequestedSource = sourcePos.toImmutable();
-        lastRequestedViewCenter = viewCenter.toImmutable();
-        lastRemoteRequestFrame = frameIndex;
-        ClientPlayNetworking.send(new PortalPackets.RequestRemoteViewC2S(lastRequestedSource, lastRequestedViewCenter));
+        BlockPos immutableViewCenter = viewCenter.toImmutable();
+        REMOTE_REQUESTS.put(lastRequestedSource, new RemoteRequestState(immutableViewCenter, frameIndex));
+        ClientPlayNetworking.send(new PortalPackets.RequestRemoteViewC2S(lastRequestedSource, immutableViewCenter));
     }
 
     private static boolean processPendingCapture(RenderFrame frame) {
@@ -376,6 +381,7 @@ public final class PortalFramebufferRenderer {
         if (link == null) {
             return;
         }
+        PortalRemoteChunkCache.activate(sourcePortal.getPos());
         TargetPortalView targetView = targetView(client.world, link);
 
         Resolution resolution = fullFrameResolution(client);
@@ -581,7 +587,7 @@ public final class PortalFramebufferRenderer {
                     ProjectionType.PERSPECTIVE
             );
 
-            PortalRemoteRenderContext.beginPortalPass();
+            PortalRemoteRenderContext.beginPortalPass(PortalRemoteChunkCache.getActiveSourcePos());
             try {
                 PortalRemoteChunkCache.forEachLoadedChunk(PortalFramebufferRenderer::queueRemoteSodiumChunk);
                 if (remoteTerrainDirty || PortalRemoteChunkCache.loadedChunkCount() > 0) {
@@ -1051,6 +1057,9 @@ public final class PortalFramebufferRenderer {
     }
 
     private record Candidate(PortalKey key, PortalBlockEntity portal, double priority) {
+    }
+
+    private record RemoteRequestState(BlockPos viewCenter, long frame) {
     }
 
     private record RenderFrame(MinecraftClient client, RenderTickCounter tickCounter,

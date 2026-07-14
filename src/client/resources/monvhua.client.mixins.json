@@ -40,6 +40,7 @@
 		"portal.ClientChunkManagerRemoteMixin",
 		"portal.ClientPortalLightUpdateMixin",
 		"portal.SodiumChunkBuilderThreadLimitMixin",
+		"portal.SodiumChunkJobRemoteContextMixin",
 		"portal.SodiumWorldRendererAccessor",
 		"multiple_perspectives.BlockRenderLayerGroupFramebufferMixin",
 		"carrymodelpose.ModelPartCarryPoseMixin",

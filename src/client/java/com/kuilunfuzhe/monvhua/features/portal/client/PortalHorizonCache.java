@@ -5,9 +5,12 @@ import com.kuilunfuzhe.monvhua.network.portal.PortalPackets;
 import net.minecraft.util.math.BlockPos;
 
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 
 public final class PortalHorizonCache {
-    private static HorizonData current;
+    private static final Map<BlockPos, HorizonData> DATA_BY_SOURCE = new HashMap<>();
+    private static BlockPos activeSourcePos;
     private static long lastLogTimeMs;
 
     private PortalHorizonCache() {
@@ -17,11 +20,12 @@ public final class PortalHorizonCache {
         if (packet == null) {
             return;
         }
-        HorizonData previous = current;
+        BlockPos sourcePos = packet.sourcePos().toImmutable();
+        HorizonData previous = DATA_BY_SOURCE.get(sourcePos);
         if (previous != null && packet.generation() < previous.generation()) {
             return;
         }
-        current = new HorizonData(
+        HorizonData current = new HorizonData(
                 packet.generation(),
                 packet.center(),
                 packet.stepBlocks(),
@@ -33,6 +37,7 @@ public final class PortalHorizonCache {
                 packet.heights(),
                 packet.colors()
         );
+        DATA_BY_SOURCE.put(sourcePos, current);
         logReceived(current);
     }
 
@@ -55,11 +60,24 @@ public final class PortalHorizonCache {
     }
 
     public static HorizonData current() {
-        return current;
+        return activeSourcePos == null ? null : DATA_BY_SOURCE.get(activeSourcePos);
+    }
+
+    public static void activate(BlockPos sourcePos) {
+        activeSourcePos = sourcePos == null ? null : sourcePos.toImmutable();
+    }
+
+    public static void clear(BlockPos sourcePos) {
+        if (sourcePos == null) {
+            return;
+        }
+        BlockPos immutableSource = sourcePos.toImmutable();
+        DATA_BY_SOURCE.remove(immutableSource);
     }
 
     public static void clear() {
-        current = null;
+        DATA_BY_SOURCE.clear();
+        activeSourcePos = null;
     }
 
     public record HorizonData(long generation, BlockPos center, int stepBlocks, int gridRadius,

@@ -47,7 +47,7 @@ public final class PortalPackets {
                 )));
     }
 
-    public record RemoteViewStateS2C(boolean active, BlockPos targetPos, BlockPos viewCenter,
+    public record RemoteViewStateS2C(boolean active, BlockPos sourcePos, BlockPos targetPos, BlockPos viewCenter,
                                      int radius, long generation)
             implements CustomPayload {
         public static final Id<RemoteViewStateS2C> ID =
@@ -57,6 +57,7 @@ public final class PortalPackets {
         private static boolean registered;
 
         public RemoteViewStateS2C {
+            sourcePos = sourcePos == null ? BlockPos.ORIGIN : sourcePos.toImmutable();
             targetPos = targetPos == null ? BlockPos.ORIGIN : targetPos.toImmutable();
             viewCenter = viewCenter == null ? targetPos : viewCenter.toImmutable();
             radius = PortalViewConfig.clampRemoteRadius(radius);
@@ -64,11 +65,13 @@ public final class PortalPackets {
         }
 
         private RemoteViewStateS2C(RegistryByteBuf buf) {
-            this(buf.readBoolean(), buf.readBlockPos(), buf.readBlockPos(), buf.readVarInt(), buf.readVarLong());
+            this(buf.readBoolean(), buf.readBlockPos(), buf.readBlockPos(), buf.readBlockPos(),
+                    buf.readVarInt(), buf.readVarLong());
         }
 
         private void write(RegistryByteBuf buf) {
             buf.writeBoolean(active);
+            buf.writeBlockPos(sourcePos);
             buf.writeBlockPos(targetPos);
             buf.writeBlockPos(viewCenter);
             buf.writeVarInt(radius);
@@ -88,7 +91,7 @@ public final class PortalPackets {
         }
     }
 
-    public record RemoteHorizonS2C(long generation, BlockPos center, int stepBlocks, int gridRadius,
+    public record RemoteHorizonS2C(BlockPos sourcePos, long generation, BlockPos center, int stepBlocks, int gridRadius,
                                    int minY, int maxY, int skyColor, int fogColor,
                                    int[] heights, int[] colors)
             implements CustomPayload {
@@ -99,6 +102,7 @@ public final class PortalPackets {
         private static boolean registered;
 
         public RemoteHorizonS2C {
+            sourcePos = sourcePos == null ? BlockPos.ORIGIN : sourcePos.toImmutable();
             generation = Math.max(0L, generation);
             center = center == null ? BlockPos.ORIGIN : center.toImmutable();
             stepBlocks = Math.max(1, stepBlocks);
@@ -113,6 +117,7 @@ public final class PortalPackets {
 
         private RemoteHorizonS2C(RegistryByteBuf buf) {
             this(
+                    buf.readBlockPos(),
                     buf.readVarLong(),
                     buf.readBlockPos(),
                     buf.readVarInt(),
@@ -127,6 +132,7 @@ public final class PortalPackets {
         }
 
         private void write(RegistryByteBuf buf) {
+            buf.writeBlockPos(sourcePos);
             buf.writeVarLong(generation);
             buf.writeBlockPos(center);
             buf.writeVarInt(stepBlocks);
@@ -159,13 +165,15 @@ public final class PortalPackets {
                 PacketCodec.of(RemoteChunkS2C::write, RemoteChunkS2C::new);
         private static boolean registered;
 
+        private final BlockPos sourcePos;
         private final long generation;
         private final int chunkX;
         private final int chunkZ;
         private final ChunkData chunkData;
 
-        public RemoteChunkS2C(long generation, WorldChunk chunk) {
+        public RemoteChunkS2C(BlockPos sourcePos, long generation, WorldChunk chunk) {
             this(
+                    sourcePos,
                     Math.max(0L, generation),
                     chunk.getPos().x,
                     chunk.getPos().z,
@@ -173,7 +181,8 @@ public final class PortalPackets {
             );
         }
 
-        private RemoteChunkS2C(long generation, int chunkX, int chunkZ, ChunkData chunkData) {
+        private RemoteChunkS2C(BlockPos sourcePos, long generation, int chunkX, int chunkZ, ChunkData chunkData) {
+            this.sourcePos = sourcePos == null ? BlockPos.ORIGIN : sourcePos.toImmutable();
             this.generation = Math.max(0L, generation);
             this.chunkX = chunkX;
             this.chunkZ = chunkZ;
@@ -181,6 +190,7 @@ public final class PortalPackets {
         }
 
         private RemoteChunkS2C(RegistryByteBuf buf) {
+            this.sourcePos = buf.readBlockPos().toImmutable();
             this.generation = Math.max(0L, buf.readVarLong());
             this.chunkX = buf.readVarInt();
             this.chunkZ = buf.readVarInt();
@@ -188,10 +198,15 @@ public final class PortalPackets {
         }
 
         private void write(RegistryByteBuf buf) {
+            buf.writeBlockPos(sourcePos);
             buf.writeVarLong(generation);
             buf.writeVarInt(chunkX);
             buf.writeVarInt(chunkZ);
             chunkData.write(buf);
+        }
+
+        public BlockPos sourcePos() {
+            return sourcePos;
         }
 
         public long generation() {

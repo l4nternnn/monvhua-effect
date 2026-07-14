@@ -48,7 +48,7 @@ public final class PortalManager {
     private static final ConcurrentHashMap<UUID, Integer> COOLDOWNS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, PortalGroup> GROUPS = new ConcurrentHashMap<>();
     private static final Set<BlockPos> CLEARING_PORTALS = ConcurrentHashMap.newKeySet();
-    private static final ConcurrentHashMap<UUID, RemoteViewSubscription> REMOTE_VIEWS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<RemoteViewKey, RemoteViewSubscription> REMOTE_VIEWS = new ConcurrentHashMap<>();
     private static long nextRemoteGeneration = 1L;
     private static long lastRemoteRequestLogTick = Long.MIN_VALUE / 2L;
     private static long lastRemoteTickLogTick = Long.MIN_VALUE / 2L;
@@ -203,18 +203,19 @@ public final class PortalManager {
     }
 
     public static void requestRemoteView(ServerPlayerEntity player, BlockPos sourcePos, BlockPos requestedViewCenter) {
+        RemoteViewKey remoteViewKey = new RemoteViewKey(player.getUuid(), sourcePos);
         if (!(player.getWorld() instanceof ServerWorld world)
                 || Vec3d.ofCenter(sourcePos).squaredDistanceTo(player.getEyePos()) > REMOTE_REQUEST_DISTANCE_SQUARED) {
             return;
         }
         PortalBlockEntity source = getController(world, sourcePos);
         if (source == null || !source.isActive() || source.getLinkData() == null) {
-            closeRemoteView(player, REMOTE_VIEWS.remove(player.getUuid()));
+            closeRemoteView(player, REMOTE_VIEWS.remove(remoteViewKey));
             return;
         }
         PortalBlockEntity target = getController(world, source.getLinkData().targetPos());
         if (target == null || !target.isController()) {
-            closeRemoteView(player, REMOTE_VIEWS.remove(player.getUuid()));
+            closeRemoteView(player, REMOTE_VIEWS.remove(remoteViewKey));
             return;
         }
         BlockPos mappedViewCenter = mapRemoteViewCenter(player, source, target);
@@ -223,7 +224,7 @@ public final class PortalManager {
                 world.getServer().getPlayerManager().getViewDistance()
         );
 
-        RemoteViewSubscription existing = REMOTE_VIEWS.get(player.getUuid());
+        RemoteViewSubscription existing = REMOTE_VIEWS.get(remoteViewKey);
         if (existing != null
                 && existing.world == world
                 && existing.targetPos.equals(target.getPos())
@@ -245,19 +246,20 @@ public final class PortalManager {
             }
             return;
         }
-        closeRemoteView(player, REMOTE_VIEWS.remove(player.getUuid()));
+        closeRemoteView(player, REMOTE_VIEWS.remove(remoteViewKey));
 
         long generation = nextRemoteGeneration++;
         RemoteViewSubscription subscription =
                 new RemoteViewSubscription(
                         world,
+                        source.getPos(),
                         target.getPos(),
                         viewCenter,
                         remoteRadius,
                         generation,
                         world.getTime()
                 );
-        REMOTE_VIEWS.put(player.getUuid(), subscription);
+        REMOTE_VIEWS.put(remoteViewKey, subscription);
         logRemoteViewRequest(
                 player,
                 source.getPos(),
@@ -275,6 +277,7 @@ public final class PortalManager {
     private static void sendRemoteViewState(ServerPlayerEntity player, RemoteViewSubscription subscription) {
         ServerPlayNetworking.send(player, new PortalPackets.RemoteViewStateS2C(
                 true,
+                subscription.sourcePos,
                 subscription.targetPos,
                 subscription.viewCenter,
                 subscription.radius,
@@ -536,14 +539,14 @@ public final class PortalManager {
     }
 
     private static void tickRemoteViews(ServerWorld world) {
-        Iterator<Map.Entry<UUID, RemoteViewSubscription>> iterator = REMOTE_VIEWS.entrySet().iterator();
+        Iterator<Map.Entry<RemoteViewKey, RemoteViewSubscription>> iterator = REMOTE_VIEWS.entrySet().iterator();
         while (iterator.hasNext()) {
-            Map.Entry<UUID, RemoteViewSubscription> entry = iterator.next();
+            Map.Entry<RemoteViewKey, RemoteViewSubscription> entry = iterator.next();
             RemoteViewSubscription subscription = entry.getValue();
             if (subscription.world != world) {
                 continue;
             }
-            ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(entry.getKey());
+            ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(entry.getKey().playerId());
             if (player == null
                     || player.getWorld() != world
                     || world.getTime() - subscription.lastRequestTick > PortalViewConfig.REMOTE_VIEW_TIMEOUT_TICKS) {
@@ -629,6 +632,7 @@ public final class PortalManager {
 
         subscription.lastHorizonTick = subscription.world.getTime();
         ServerPlayNetworking.send(player, new PortalPackets.RemoteHorizonS2C(
+                subscription.sourcePos,
                 subscription.generation,
                 subscription.viewCenter,
                 step,
@@ -681,7 +685,11 @@ public final class PortalManager {
         );
         subscription.ticketedChunks.add(pos.toLong());
         WorldChunk chunk = subscription.world.getChunk(pos.x, pos.z);
-        ServerPlayNetworking.send(player, new PortalPackets.RemoteChunkS2C(subscription.generation, chunk));
+        ServerPlayNetworking.send(player, new PortalPackets.RemoteChunkS2C(
+                subscription.sourcePos,
+                subscription.generation,
+                chunk
+        ));
         logRemoteChunkSent(player, subscription, pos, chunk);
     }
 
@@ -713,6 +721,7 @@ public final class PortalManager {
         if (player != null && player.networkHandler != null) {
             ServerPlayNetworking.send(player, new PortalPackets.RemoteViewStateS2C(
                     false,
+                    subscription.sourcePos,
                     BlockPos.ORIGIN,
                     BlockPos.ORIGIN,
                     0,
@@ -1098,6 +1107,7 @@ public final class PortalManager {
 
     private static final class RemoteViewSubscription {
         private final ServerWorld world;
+        private final BlockPos sourcePos;
         private final BlockPos targetPos;
         private final int radius;
         private final long generation;
@@ -1110,9 +1120,10 @@ public final class PortalManager {
         private long lastTicketRefreshTick;
         private long lastHorizonTick;
 
-        private RemoteViewSubscription(ServerWorld world, BlockPos targetPos, BlockPos viewCenter,
+        private RemoteViewSubscription(ServerWorld world, BlockPos sourcePos, BlockPos targetPos, BlockPos viewCenter,
                                        int radius, long generation, long currentTick) {
             this.world = world;
+            this.sourcePos = sourcePos.toImmutable();
             this.targetPos = targetPos.toImmutable();
             this.viewCenter = viewCenter.toImmutable();
             this.radius = radius;
@@ -1199,6 +1210,12 @@ public final class PortalManager {
                             : Math.max(Math.abs(pos.x - center.x), Math.abs(pos.z - center.z)))
                     .thenComparingInt(pos -> Math.abs(pos.x - center.x) + Math.abs(pos.z - center.z)));
             return ordered;
+        }
+    }
+
+    private record RemoteViewKey(UUID playerId, BlockPos sourcePos) {
+        private RemoteViewKey {
+            sourcePos = sourcePos.toImmutable();
         }
     }
 }

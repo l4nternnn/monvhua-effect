@@ -33,6 +33,7 @@ public final class PortalClient {
         ClientPlayNetworking.registerGlobalReceiver(PortalPackets.RemoteViewStateS2C.ID, (packet, context) ->
                 context.client().execute(() -> PortalRemoteChunkCache.updateView(
                         packet.active(),
+                        packet.sourcePos(),
                         packet.targetPos(),
                         packet.viewCenter(),
                         packet.radius(),
