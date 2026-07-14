@@ -907,7 +907,8 @@ public class BodyPartManager {
 
 	public static boolean updatePlacedCombinedDisplayPose(ServerPlayerEntity player, int entityId, String poseMode,
 			float[] poseValues, float[] bendValues, List<PlaceTrueSkeletalBodyC2SPacket.BonePose> trueSkeletalBones,
-			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale) {
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll,
+			float modelScale, boolean liveUpdate) {
 		if (!(player.getWorld().getEntityById(entityId) instanceof ItemDisplayEntity display)) {
 			player.sendMessage(Text.literal("Target body model was not found"), true);
 			return false;
@@ -919,6 +920,20 @@ public class BodyPartManager {
 		}
 		NbtComponent component = stack.get(DataComponentTypes.CUSTOM_DATA);
 		NbtCompound nbt = component != null ? component.copyNbt() : new NbtCompound();
+		writeCombinedBodyPoseData(nbt, poseMode, poseValues, bendValues, trueSkeletalBones,
+				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
+		stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
+		display.setItemStack(stack);
+		if (!liveUpdate) {
+			player.sendMessage(Text.literal("Updated placed body model pose"), true);
+		}
+		return true;
+	}
+
+	public static void writeCombinedBodyPoseData(NbtCompound nbt, String poseMode,
+			float[] poseValues, float[] bendValues, List<PlaceTrueSkeletalBodyC2SPacket.BonePose> trueSkeletalBones,
+			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll,
+			float modelScale) {
 		clearPoseData(nbt);
 		if ("true_skeletal".equals(poseMode)) {
 			writeTrueSkeletalPoseValues(nbt, trueSkeletalBones);
@@ -927,10 +942,6 @@ public class BodyPartManager {
 			writeBendValues(nbt, bendValues);
 		}
 		writePlacementTransform(nbt, offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale);
-		stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
-		display.setItemStack(stack);
-		player.sendMessage(Text.literal("Updated placed body model pose"), true);
-		return true;
 	}
 
 	private static void clearPoseData(NbtCompound nbt) {

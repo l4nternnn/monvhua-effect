@@ -1,7 +1,9 @@
 package com.kuilunfuzhe.monvhua.gui.body.bodypose;
 
 import com.kuilunfuzhe.monvhua.features.block.body.BodyModelSelectionCatalog;
+import com.kuilunfuzhe.monvhua.features.block.body.BodyPartManager;
 import com.kuilunfuzhe.monvhua.config.BodyPoseDefaultsConfig;
+import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
 import com.kuilunfuzhe.monvhua.model.CombinedBodyModelData;
 import com.kuilunfuzhe.monvhua.model.ModModelLayers;
 import com.kuilunfuzhe.monvhua.model.TorsoBendFollower;
@@ -11,6 +13,7 @@ import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlaceTrueSkeletalBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.UpdateBodyPoseDefaultsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.UpdatePlacedBodyPoseC2SPacket;
+import com.kuilunfuzhe.monvhua.mixin.DisplayEntityAccessor;
 import com.kuilunfuzhe.monvhua.renderer.bodypose.skeletal.BodyPoseSkeletalPreviewRenderer;
 import icyllis.modernui.core.Context;
 import icyllis.modernui.core.Core;
@@ -23,6 +26,7 @@ import icyllis.modernui.graphics.drawable.ShapeDrawable;
 import icyllis.modernui.graphics.drawable.StateListDrawable;
 import icyllis.modernui.mc.MinecraftSurfaceView;
 import icyllis.modernui.mc.MuiModApi;
+import icyllis.modernui.mc.ScreenCallback;
 import icyllis.modernui.text.Editable;
 import icyllis.modernui.text.TextWatcher;
 import icyllis.modernui.view.KeyEvent;
@@ -63,6 +67,7 @@ import net.minecraft.util.math.AffineTransformation;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix3x2fStack;
+import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
@@ -72,14 +77,14 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
- * Modern UI 身体姿势编辑器 Fragment。
- * 三栏布局：左栏皮肤/玩家选择/操作 | 中栏3D预览 | 右栏部位/姿势控制。
+ * Modern UI 身体姿势编辑�?Fragment�?
+ * 三栏布局：左栏皮�?玩家选择/操作 | 中栏3D预览 | 右栏部位/姿势控制�?
  */
 public class BodyPoseEditorFragment extends Fragment {
 
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
     //  常量
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
 
     private static final float ROTATION_STEP_DEGREES = 5.0F;
     private static final float PREVIEW_CHEST_PIVOT_Y = 8.0F;
@@ -120,14 +125,18 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final long TRANSFORM_REPEAT_INTERVAL_MS = 65L;
     private static final long WORLD_PREVIEW_KEY_DEBOUNCE_MS = 200L;
     private static final float MOVE_AXIS_LENGTH = 4.0F / 3.0F;
-    private static final float MOVE_AXIS_HIT_RADIUS = 3.4F;
+    private static final float MOVE_AXIS_HIT_RADIUS = 10.0F;
     private static final float ROTATION_RING_RADIUS = 2.45F / 3.0F;
-    private static final float ROTATION_RING_HIT_RADIUS = 3.0F;
+    private static final float ROTATION_RING_HIT_RADIUS = 10.0F;
     private static final int ROTATION_RING_SEGMENTS = 48;
+    private static final float SCREEN_GIZMO_AXIS_PIXELS = 72.0F;
+    private static final float SCREEN_GIZMO_RING_RADIUS_PIXELS = 54.0F;
+    private static final float SCREEN_GIZMO_HIT_RADIUS_PIXELS = 28.0F;
     private static final int GROUND_GRID_SIZE = 21;
     private static final float GROUND_GRID_HALF_SIZE = GROUND_GRID_SIZE * 0.5F;
     private static final float GROUND_GRID_CELL = 1.0F;
     private static final float GROUND_GRID_Y = 1.05F;
+    private static final int LEFT_PANEL_WIDTH = 255;
     private static final int RIGHT_PANEL_WIDTH = 500;
     private static final int PLAYER_LIST_VISIBLE_ROWS = 6;
     private static final int ITEM_LIST_VISIBLE_ROWS = 8;
@@ -169,9 +178,9 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final float BUTTON_NORMAL_SCALE = 1.0F;
     private static final String DEFAULT_PRESET_NAME = "预设";
 
-    // ═══════════════════════════════════════════════════════
-    //  静态状态 — 跨会话保持
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
+    //  静态状�?�?跨会话保�?
+    // ══════════════════════════════════════════════════════�?
 
     private static String selectedSkin = BodyModelSelectionCatalog.LOCAL_SKINS[0];
     private static String selectedPlayerName = "";
@@ -200,18 +209,36 @@ public class BodyPoseEditorFragment extends Fragment {
     private static double fixedWorldY;
     private static double fixedWorldZ;
     private static long lastWorldPreviewModeToggleTimeMs;
+    private static boolean worldPlacementViewControlActive;
 
-    /** 当前活跃实例，供外部类（mixin、world renderer）访问 */
+    private static final ScreenCallback NON_PAUSING_CALLBACK = new ScreenCallback() {
+        @Override
+        public boolean isPauseScreen() {
+            return false;
+        }
+
+        @Override
+        public boolean hasDefaultBackground() {
+            return false;
+        }
+    };
+
+    /** 当前活跃实例，供外部类（mixin、world renderer）访�?*/
     public static BodyPoseEditorFragment activeInstance;
 
-    // ═══════════════════════════════════════════════════════
-    //  实例字段 — 编辑器状态
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
+    //  实例字段 �?编辑器状�?
+    // ══════════════════════════════════════════════════════�?
 
     private View rootView;
+    private View centerPanel;
+    private View viewportInfoBar;
+    private View previewControlBar;
+    private View doneButton;
     private MinecraftSurfaceView surfaceView;
+    private View worldPlacementTouchView;
 
-    // 预览状态
+    // 预览状�?
     private float previewPitch = 0.0F;
     private float previewYaw;
     private float previewRoll;
@@ -233,6 +260,8 @@ public class BodyPoseEditorFragment extends Fragment {
     private boolean draggingPreview;
     private boolean draggingRightPreview;
     private boolean previewTransformDirty;
+    private boolean worldPlacementTransformDirty;
+    private PaintOverlayClient.ScreenPanAnchor worldPlacementPanAnchor;
     private boolean skipNextCtrlPollToggle;
     private volatile boolean previewInvalidationQueued;
     private int activePreviewButton;
@@ -248,7 +277,7 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     };
 
-    // 列表状态
+    // 列表状�?
     private boolean playerListOpen;
     private boolean itemListOpen;
     private int itemListScroll;
@@ -260,7 +289,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private static PlayerEntityModel worldPreviewModelDefault;
     private static PlayerEntityModel worldPreviewModelSlim;
 
-    // 渲染尺寸缓存（由 onDraw 更新）
+    // 渲染尺寸缓存（由 onDraw 更新�?
     private float previewScale;
     private float previewCenterX;
     private float previewCenterY;
@@ -332,15 +361,26 @@ public class BodyPoseEditorFragment extends Fragment {
     private int poseHistorySequence;
     private int selectedPoseHistoryIndex = -1;
     private boolean suppressPoseHistory;
+    private long lastLivePlacedBodyPoseUpdateMs;
+    private long lastLocalPlacedBodyPoseRefreshMs;
 
-    // ═══════════════════════════════════════════════════════
-    //  静态方法 — 打开编辑器
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
+    //  静态方�?�?打开编辑�?
+    // ══════════════════════════════════════════════════════�?
 
     public static void open() {
         reeditTargetEntityId = -1;
         loadPresetStore();
         applyActivePageState();
+        applyStoredWorldPreviewMode();
+        openEditorScreen();
+    }
+
+    public static void openWorldPlacementEditor() {
+        reeditTargetEntityId = -1;
+        loadPresetStore();
+        applyActivePageState();
+        activateWorldPlacementModeAtPlayer(true);
         openEditorScreen();
     }
 
@@ -358,6 +398,7 @@ public class BodyPoseEditorFragment extends Fragment {
         resetEditorOpenState();
         reeditTargetEntityId = target.entityId();
         loadEditorStateFromCombinedBodyStack(target.stack());
+        activateWorldPlacementModeAt(target.pos(), true);
         saveCurrentPageStateStatic();
         openEditorScreen();
         client.player.sendMessage(Text.literal("已载入已放置躯体姿态"), true);
@@ -370,6 +411,7 @@ public class BodyPoseEditorFragment extends Fragment {
         poseEditMode = poseEditModeFromConfig(BodyPoseDefaultsConfig.getDefaultPoseMode());
         showWholePreview = true;
         worldPreviewEnabled = true;
+        applyStoredWorldPreviewMode();
         EDITOR_ITEMS.clear();
         reeditTargetEntityId = -1;
     }
@@ -377,7 +419,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private static void openEditorScreen() {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) return;
-        Screen screen = MuiModApi.get().createScreen(new BodyPoseEditorFragment());
+        Screen screen = MuiModApi.get().createScreen(new BodyPoseEditorFragment(), NON_PAUSING_CALLBACK);
         client.setScreen(screen);
     }
 
@@ -409,11 +451,11 @@ public class BodyPoseEditorFragment extends Fragment {
         }
 
         if (targetedEntity instanceof ItemDisplayEntity display && isCombinedBodyDisplay(display)) {
-            return new ReeditTarget(display.getId(), display.getItemStack().copy());
+            return new ReeditTarget(display.getId(), display.getItemStack().copy(), display.getPos());
         }
         if (targetedEntity instanceof InteractionEntity interaction) {
             ItemDisplayEntity display = findNearestCombinedBodyDisplay(client, interaction.getPos());
-            return display != null ? new ReeditTarget(display.getId(), display.getItemStack().copy()) : null;
+            return display != null ? new ReeditTarget(display.getId(), display.getItemStack().copy(), display.getPos()) : null;
         }
         return null;
     }
@@ -565,9 +607,9 @@ public class BodyPoseEditorFragment extends Fragment {
         wholeBodyScale = clampPreview(nbt.getFloat("pose_model_scale", 1.0F), MODEL_SCALE_MIN, MODEL_SCALE_MAX);
     }
 
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
     //  Fragment 生命周期
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
 
     private static void loadPresetStore() {
         presetStore = BodyPosePresetStore.load();
@@ -794,23 +836,24 @@ public class BodyPoseEditorFragment extends Fragment {
     public View onCreateView(icyllis.modernui.view.LayoutInflater inflater, ViewGroup container,
                              icyllis.modernui.util.DataSet savedInstanceState) {
         Context ctx = getContext();
+        activeInstance = this;
 
         LinearLayout root = new LinearLayout(ctx);
         root.setOrientation(LinearLayout.HORIZONTAL);
         root.setBackground(new ColorDrawable(0xCC000000));
         root.setFocusable(true);
         root.setFocusableInTouchMode(true);
-        root.setOnKeyListener((view, keyCode, event) -> handleEditorKey(keyCode, event));
+        root.setOnKeyListener((view, keyCode, event) -> handleEditorKey(view, keyCode, event));
 
-        // 左栏：皮肤/玩家选择
+        // 左栏：皮�?玩家选择
         View left = createLeftPanel(ctx);
-        root.addView(left, new LinearLayout.LayoutParams(255, -1));
+        root.addView(left, new LinearLayout.LayoutParams(LEFT_PANEL_WIDTH, -1));
 
-        // 中栏：3D 预览 + 控制
+        // 中栏�?D 预览 + 控制
         View center = createCenterPanel(ctx);
         root.addView(center, new LinearLayout.LayoutParams(0, -1, 1f));
 
-        // 右栏：部位/姿势控制
+        // 右栏：部�?姿势控制
         View right = createRightPanel(ctx);
         root.addView(right, new LinearLayout.LayoutParams(RIGHT_PANEL_WIDTH, -1));
 
@@ -819,7 +862,7 @@ public class BodyPoseEditorFragment extends Fragment {
         return root;
     }
 
-    private boolean handleEditorKey(int keyCode, KeyEvent event) {
+    private boolean handleEditorKey(View source, int keyCode, KeyEvent event) {
         if (keyCode == GLFW.GLFW_KEY_LEFT_CONTROL || keyCode == GLFW.GLFW_KEY_RIGHT_CONTROL) {
             if (event.getAction() == KeyEvent.ACTION_UP) {
                 if (!ctrlShortcutUsed && ctrlGizmoToggleKeyDown) {
@@ -838,8 +881,12 @@ public class BodyPoseEditorFragment extends Fragment {
             }
             return false;
         }
+        boolean textInput = source instanceof EditText;
+        boolean worldPlacementKeySink = isWorldPlacementOverlayActive()
+                && !textInput
+                && keyCode != GLFW.GLFW_KEY_ESCAPE;
         if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() != 0) {
-            return false;
+            return worldPlacementKeySink;
         }
         if (isCtrlDown()) {
             if (keyCode == GLFW.GLFW_KEY_Z) {
@@ -861,7 +908,14 @@ public class BodyPoseEditorFragment extends Fragment {
             beginRenameSelectedTarget();
             return true;
         }
-        return false;
+        return worldPlacementKeySink || (!textInput && isChatRelatedKey(keyCode));
+    }
+
+    public static boolean isChatRelatedKey(int keyCode) {
+        return keyCode == GLFW.GLFW_KEY_T
+                || keyCode == GLFW.GLFW_KEY_SLASH
+                || keyCode == GLFW.GLFW_KEY_ENTER
+                || keyCode == GLFW.GLFW_KEY_KP_ENTER;
     }
 
     @Override
@@ -869,6 +923,7 @@ public class BodyPoseEditorFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
         view.requestFocus();
         view.post(() -> {
+            applyWorldPlacementOverlayVisibility();
             refreshButtonLabels();
             refreshNumericValueBindings();
             view.requestLayout();
@@ -881,12 +936,18 @@ public class BodyPoseEditorFragment extends Fragment {
     public void onResume() {
         super.onResume();
         activeInstance = this;
+        applyWorldPlacementOverlayVisibility();
+        refreshButtonLabels();
+        refreshNumericValueBindings();
+        invalidatePreview();
     }
 
     @Override
     public void onPause() {
         super.onPause();
         saveCurrentPageState();
+        stopWorldPlacementViewControls(MinecraftClient.getInstance());
+        worldPreviewEnabled = false;
         activeInstance = null;
     }
 
@@ -905,12 +966,13 @@ public class BodyPoseEditorFragment extends Fragment {
         renameField = null;
         previewSurfaceWidth = 0;
         previewSurfaceHeight = 0;
+        worldPreviewEnabled = false;
         activeInstance = null;
     }
 
-    // ═══════════════════════════════════════════════════════
-    //  左栏 — 皮肤 / 玩家选择
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
+    //  左栏 �?皮肤 / 玩家选择
+    // ══════════════════════════════════════════════════════�?
 
     private View createLeftPanel(Context ctx) {
         ScrollView scrollView = new ScrollView(ctx);
@@ -1109,7 +1171,7 @@ public class BodyPoseEditorFragment extends Fragment {
         int poseCount = countChangedPoses(state.partPoses) + countChangedPoses(state.skeletalPoses) + countChangedPoses(state.trueSkeletalPoses);
         String skin = "PLAYER".equals(state.selectedSkinSource) && state.selectedPlayerName != null && !state.selectedPlayerName.isBlank()
                 ? state.selectedPlayerName : state.selectedSkin;
-        return truncate(skin, 10) + " | " + state.poseEditMode + " | " + poseCount + " 处";
+        return truncate(skin, 10) + " | " + state.poseEditMode + " | " + poseCount + " 个";
     }
 
     private int countChangedPoses(Map<String, BodyPosePresetStore.PoseData> poses) {
@@ -1541,7 +1603,7 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private void addEditorPage() {
         if (presetStore.pages.size() >= BodyPosePresetStore.MAX_PAGES) {
-            showActionbar("最多只能创建6个模型界面");
+            showActionbar("最多只能创建 " + BodyPosePresetStore.MAX_PAGES + " 个模型界面");
             return;
         }
         saveCurrentPageState();
@@ -1758,7 +1820,7 @@ public class BodyPoseEditorFragment extends Fragment {
 
         int visibleRows = Math.min(PLAYER_LIST_VISIBLE_ROWS, Math.max(1, entries.size()));
         for (int row = 0; row < visibleRows; row++) {
-            int index = row; // 简化：不实现滚动以保持简单
+            int index = row; // 简化：不实现滚动以保持简�?
             if (index >= entries.size()) break;
             PlayerListEntry entry = entries.get(index);
             String name = getPlayerName(entry);
@@ -1792,7 +1854,7 @@ public class BodyPoseEditorFragment extends Fragment {
             selectedSkin = localSkins.get(0);
         }
 
-        // 每行2个皮肤按钮
+        // 每行2个皮肤按�?
         int cols = 2;
         LinearLayout currentRow = null;
         for (int i = 0; i < localSkins.size(); i++) {
@@ -1819,9 +1881,9 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    //  中栏 — 3D 预览 + 控制
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
+    //  中栏 �?3D 预览 + 控制
+    // ══════════════════════════════════════════════════════�?
 
     private Button createStyledButton(Context ctx) {
         Button button = new Button(ctx);
@@ -1831,7 +1893,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void installEditorKeyHandler(View view) {
-        view.setOnKeyListener((v, keyCode, event) -> handleEditorKey(keyCode, event));
+        view.setOnKeyListener((v, keyCode, event) -> handleEditorKey(v, keyCode, event));
     }
 
     private void styleButton(Button button) {
@@ -2003,6 +2065,9 @@ public class BodyPoseEditorFragment extends Fragment {
         poseHistoryButton = createStyledButton(ctx);
         panel.addView(poseHistoryButton, new LinearLayout.LayoutParams(-1, -2));
 
+        worldPreviewToggleButton = createStyledButton(ctx);
+        panel.addView(worldPreviewToggleButton, new LinearLayout.LayoutParams(-1, -2));
+
         installLeftActionHandlers();
     }
 
@@ -2029,7 +2094,7 @@ public class BodyPoseEditorFragment extends Fragment {
         if (placeButton != null) {
             placeButton.setOnClickListener(v -> {
                 if (reeditTargetEntityId >= 0) {
-                    updatePlacedBodyPose();
+                    updatePlacedBodyPose(false);
                 } else {
                     placePosedBody(false);
                 }
@@ -2061,17 +2126,19 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private View createCenterPanel(Context ctx) {
         LinearLayout panel = new LinearLayout(ctx);
+        centerPanel = panel;
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(4, 0, 4, 0);
         panel.setBackground(new ColorDrawable(ROOT_BACKGROUND_COLOR));
 
-        // 信息栏
+        // 信息�?
         TextView infoBar = new TextView(ctx);
         infoBar.setId(View.generateViewId());
         infoBar.setText("Viewport");
         infoBar.setTextColor(0xFFCAD3DE);
         infoBar.setTextSize(12);
         infoBar.setPadding(6, 5, 0, 3);
+        viewportInfoBar = infoBar;
         panel.addView(infoBar, blockParams());
 
         pageTabsContainer = new LinearLayout(ctx);
@@ -2086,16 +2153,31 @@ public class BodyPoseEditorFragment extends Fragment {
         surfaceView.setRenderer(new PreviewRenderer());
         surfaceView.setFocusable(true);
         surfaceView.setFocusableInTouchMode(true);
-        surfaceView.setOnKeyListener((view, keyCode, event) -> handleEditorKey(keyCode, event));
+        surfaceView.setOnKeyListener((view, keyCode, event) -> handleEditorKey(view, keyCode, event));
         surfaceView.setOnTouchListener(new PreviewTouchListener());
         surfaceView.setOnGenericMotionListener(this::handlePreviewGenericMotion);
-        panel.addView(surfaceView, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        // 预览控制按钮栏
+        FrameLayout previewHost = new FrameLayout(ctx);
+        previewHost.addView(surfaceView, new FrameLayout.LayoutParams(-1, -1));
+
+        worldPlacementTouchView = new WorldPlacementOverlayView(ctx);
+        worldPlacementTouchView.setFocusable(true);
+        worldPlacementTouchView.setFocusableInTouchMode(true);
+        worldPlacementTouchView.setVisibility(View.GONE);
+        worldPlacementTouchView.setOnKeyListener((view, keyCode, event) -> handleEditorKey(view, keyCode, event));
+        worldPlacementTouchView.setOnTouchListener(new WorldPlacementTouchListener());
+        worldPlacementTouchView.setOnGenericMotionListener(this::handleWorldPlacementGenericMotion);
+        worldPlacementTouchView.setOnHoverListener(this::handleWorldPlacementHover);
+        previewHost.addView(worldPlacementTouchView, new FrameLayout.LayoutParams(-1, -1));
+
+        panel.addView(previewHost, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        // 预览控制按钮�?
         LinearLayout ctrlBar = new LinearLayout(ctx);
         ctrlBar.setOrientation(LinearLayout.HORIZONTAL);
         ctrlBar.setPadding(2, 2, 2, 2);
         ctrlBar.setBackground(createPanelShape(PANEL_SECTION_FILL_COLOR, PANEL_BORDER_COLOR));
+        previewControlBar = ctrlBar;
 
         showWholeButton = createStyledButton(ctx);
         ctrlBar.addView(showWholeButton, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -2106,8 +2188,6 @@ public class BodyPoseEditorFragment extends Fragment {
         coordMovableButton = createStyledButton(ctx);
         ctrlBar.addView(coordMovableButton, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        worldPreviewToggleButton = createStyledButton(ctx);
-        ctrlBar.addView(worldPreviewToggleButton, new LinearLayout.LayoutParams(0, -2, 1f));
 
         panel.addView(ctrlBar, blockParams());
 
@@ -2117,9 +2197,11 @@ public class BodyPoseEditorFragment extends Fragment {
         Button doneBtn = createStyledButton(ctx);
         doneBtn.setText("关闭-一般直接按esc");
         doneBtn.setOnClickListener(v -> closeEditorScreen());
+        doneButton = doneBtn;
         panel.addView(doneBtn, blockParams());
 
         refreshButtonLabels();
+        applyWorldPlacementOverlayVisibility();
         return panel;
     }
 
@@ -2147,9 +2229,40 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    //  右栏 — 部位 / 姿势控制
-    // ═══════════════════════════════════════════════════════
+    private void applyWorldPlacementOverlayVisibility() {
+        boolean overlay = isWorldPlacementOverlayActive();
+        if (rootView != null) {
+            rootView.setBackground(overlay ? null : new ColorDrawable(0xCC000000));
+        }
+        if (centerPanel != null) {
+            centerPanel.setBackground(overlay ? null : new ColorDrawable(ROOT_BACKGROUND_COLOR));
+        }
+        setViewVisible(viewportInfoBar, !overlay);
+        setViewVisible(pageTabsContainer, !overlay);
+        setViewVisible(surfaceView, !overlay);
+        setViewVisible(previewControlBar, !overlay);
+        setViewVisible(doneButton, !overlay);
+        setViewVisible(worldPlacementTouchView, overlay);
+        if (overlay) {
+            clearGizmoInteractionState();
+            if (worldPlacementTouchView != null) {
+                worldPlacementTouchView.requestFocus();
+            }
+        } else {
+            stopWorldPlacementViewControls(MinecraftClient.getInstance());
+            invalidatePreview();
+        }
+    }
+
+    private static void setViewVisible(View view, boolean visible) {
+        if (view != null) {
+            view.setVisibility(visible ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════�?
+    //  右栏 �?部位 / 姿势控制
+    // ══════════════════════════════════════════════════════�?
 
     private View createRightPanel(Context ctx) {
         LinearLayout panel = new LinearLayout(ctx);
@@ -2518,10 +2631,12 @@ public class BodyPoseEditorFragment extends Fragment {
         previewInvalidationQueued = true;
         boolean posted = postToUiThread(() -> {
             previewInvalidationQueued = false;
-            if (surfaceView != view) {
-                return;
+            if (surfaceView == view) {
+                view.invalidate();
             }
-            view.invalidate();
+            if (worldPlacementTouchView != null) {
+                worldPlacementTouchView.invalidate();
+            }
         });
         if (!posted) {
             previewInvalidationQueued = false;
@@ -2973,7 +3088,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private void addAllBendControls(Context ctx) {
         if (poseEditMode != PoseEditMode.SKELETAL) return;
         addSectionLabel(poseControlsContainer, ctx, "子肢体旋转");
-        addBendGroup(ctx, "腰", "torso");
+        addBendGroup(ctx, "躯干", "torso");
         addBendGroup(ctx, "左肘", "left_arm");
         addBendGroup(ctx, "右肘", "right_arm");
         addBendGroup(ctx, "左膝", "left_leg");
@@ -3080,9 +3195,9 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    //  预览渲染器 (MinecraftSurfaceView)
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
+    //  预览渲染�?(MinecraftSurfaceView)
+    // ══════════════════════════════════════════════════════�?
 
     private class PreviewRenderer implements MinecraftSurfaceView.Renderer {
         @Override
@@ -3098,7 +3213,7 @@ public class BodyPoseEditorFragment extends Fragment {
             int h = Math.max(1, (int) Math.round(previewSurfaceHeight / previewGuiScale));
             if (w <= 0 || h <= 0) return;
             updatePreviewScreenOrigin();
-            // 计算预览区域（填充整个视图带边距）
+            // 计算预览区域（填充整个视图带边距�?
             int pad = 4;
             previewAreaLeft = pad;
             previewAreaRight = w - pad;
@@ -3106,6 +3221,17 @@ public class BodyPoseEditorFragment extends Fragment {
             previewAreaBottom = h - pad;
             int pWidth = previewAreaRight - previewAreaLeft;
             int pHeight = previewAreaBottom - previewAreaTop;
+
+            if (isWorldPlacementOverlayActive()) {
+                previewScale = getPreviewBaseScale(pWidth, pHeight) * previewZoom;
+                previewCenterX = (previewAreaLeft + previewAreaRight) * 0.5F + previewPanX;
+                previewCenterY = (previewAreaTop + previewAreaBottom) * 0.5F + previewPanY;
+                updateGizmoModeToggleKey();
+                updateGizmoCenter();
+                updateHoveredPreviewGizmo(mouseX - previewScreenLeft, mouseY - previewScreenTop);
+                renderModelTransformGizmos(dCtx);
+                return;
+            }
 
             renderBlockbenchViewportBackground(dCtx, pWidth, pHeight);
 
@@ -3116,28 +3242,17 @@ public class BodyPoseEditorFragment extends Fragment {
             dCtx.drawCenteredTextWithShadow(MinecraftClient.getInstance().textRenderer,
                     selectedPart, (previewAreaLeft + previewAreaRight) / 2, previewAreaTop + 18, 0xB8B8B8);
 
-            // 缩放与中心
+            // 缩放与中�?
             previewScale = getPreviewBaseScale(pWidth, pHeight) * previewZoom;
             previewCenterX = (previewAreaLeft + previewAreaRight) * 0.5F + previewPanX;
             previewCenterY = (previewAreaTop + previewAreaBottom) * 0.5F + previewPanY;
             updateGizmoModeToggleKey();
             updateGizmoCenter();
 
-            // 更新 hover 状态
+            // 更新 hover 状�?
             float localMouseX = mouseX - previewScreenLeft;
             float localMouseY = mouseY - previewScreenTop;
-            boolean rotationMode = isRotationGizmoMode();
-            if (rotationMode) {
-                hoveredMoveAxis = MoveAxis.NONE;
-                hoveredRotationAxis = draggingRotationAxis != RotationAxis.NONE
-                        ? draggingRotationAxis
-                        : findRotationRing(localMouseX, localMouseY);
-            } else {
-                hoveredRotationAxis = RotationAxis.NONE;
-                hoveredMoveAxis = draggingMoveAxis != MoveAxis.NONE
-                        ? draggingMoveAxis
-                        : findMoveAxis(localMouseX, localMouseY);
-            }
+            updateHoveredPreviewGizmo(localMouseX, localMouseY);
 
             // 地面网格
             if (showCoordinateAxes) {
@@ -3150,10 +3265,34 @@ public class BodyPoseEditorFragment extends Fragment {
             // 玩家模型
             renderPlayerPreview(dCtx);
 
-            if (showCoordinateAxes) {
+            if (shouldShowPreviewTransformGizmo()) {
                 renderModelTransformGizmos(dCtx);
             }
         }
+    }
+
+    private void updateHoveredPreviewGizmo(float localMouseX, float localMouseY) {
+        if (!shouldShowPreviewTransformGizmo()) {
+            hoveredMoveAxis = MoveAxis.NONE;
+            hoveredRotationAxis = RotationAxis.NONE;
+            return;
+        }
+        boolean rotationMode = isRotationGizmoMode();
+        if (rotationMode) {
+            hoveredMoveAxis = MoveAxis.NONE;
+            hoveredRotationAxis = draggingRotationAxis != RotationAxis.NONE
+                    ? draggingRotationAxis
+                    : findRotationRing(localMouseX, localMouseY);
+        } else {
+            hoveredRotationAxis = RotationAxis.NONE;
+            hoveredMoveAxis = draggingMoveAxis != MoveAxis.NONE
+                    ? draggingMoveAxis
+                    : findMoveAxis(localMouseX, localMouseY);
+        }
+    }
+
+    private boolean shouldShowPreviewTransformGizmo() {
+        return showCoordinateAxes || isWorldPlacementOverlayActive();
     }
 
     private void renderBlockbenchViewportBackground(DrawContext context, int width, int height) {
@@ -3185,9 +3324,9 @@ public class BodyPoseEditorFragment extends Fragment {
         context.drawBorder(previewAreaLeft, previewAreaTop, width, height, VIEWPORT_BORDER_COLOR);
     }
 
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
     //  预览触摸事件处理
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
 
     private boolean handlePreviewGenericMotion(View view, MotionEvent event) {
         if (event.getActionMasked() != MotionEvent.ACTION_SCROLL) return false;
@@ -3216,6 +3355,55 @@ public class BodyPoseEditorFragment extends Fragment {
             scroll = -event.getAxisValue(MotionEvent.AXIS_Y);
         }
         return scroll;
+    }
+
+    private boolean handleWorldPlacementGenericMotion(View view, MotionEvent event) {
+        if (event.getActionMasked() != MotionEvent.ACTION_SCROLL) return false;
+        float scroll = getScrollAmount(event);
+        if (Math.abs(scroll) < 0.001F || hasActiveGizmoStep()) return false;
+        float x = toWorldPlacementGuiCoord(event.getX());
+        float y = toWorldPlacementGuiCoord(event.getY());
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null) return false;
+        updateWorldPlacementScreenOrigin();
+        PaintOverlayClient.moveEditorViewTowardScreenPoint(client,
+                previewScreenLeft + x, previewScreenTop + y,
+                client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight(),
+                scroll * 0.45D);
+        return true;
+    }
+
+    private boolean handleWorldPlacementHover(View view, MotionEvent event) {
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_HOVER_ENTER || action == MotionEvent.ACTION_HOVER_MOVE) {
+            if (isWorldPlacementViewDragActive()) {
+                clearGizmoHoverState();
+                invalidatePreview();
+                return true;
+            }
+            float x = toWorldPlacementGuiCoord(event.getX());
+            float y = toWorldPlacementGuiCoord(event.getY());
+            updateGizmoCenter();
+            updateHoveredScreenGizmo(x, y);
+            invalidatePreview();
+            return true;
+        }
+        if (action == MotionEvent.ACTION_HOVER_EXIT) {
+            hoveredMoveAxis = MoveAxis.NONE;
+            hoveredRotationAxis = RotationAxis.NONE;
+            invalidatePreview();
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isWorldPlacementViewDragActive() {
+        return draggingPreview || draggingRightPreview;
+    }
+
+    private void clearGizmoHoverState() {
+        hoveredMoveAxis = MoveAxis.NONE;
+        hoveredRotationAxis = RotationAxis.NONE;
     }
 
     private boolean isRotationGizmoMode() {
@@ -3348,6 +3536,19 @@ public class BodyPoseEditorFragment extends Fragment {
         return new Vector3f(getActiveOffsetX(), getActiveOffsetY(), getActiveOffsetZ());
     }
 
+    private Vector3f resolveWorldPlacementGizmoCenterLocal() {
+        if (usesSelectedPartGizmoTarget()) {
+            return resolveGizmoCenter();
+        }
+        if (hasSelectedItemModel()) {
+            return new Vector3f(
+                    getActiveOffsetX() - modelOffsetX,
+                    getActiveOffsetY() - modelOffsetY,
+                    getActiveOffsetZ() - modelOffsetZ);
+        }
+        return new Vector3f();
+    }
+
     private Vector3f getStaticPartGizmoCenter(String part) {
         Vector3f center = switch (part) {
             case "head" -> new Vector3f(0.0F, 1.0F, 0.0F);
@@ -3386,9 +3587,613 @@ public class BodyPoseEditorFragment extends Fragment {
                 || draggingRotationAxis != RotationAxis.NONE;
     }
 
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
     //  预览渲染方法
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
+
+    private void updateWorldPlacementScreenOrigin() {
+        View view = worldPlacementTouchView;
+        if (view == null) {
+            previewScreenLeft = 0;
+            previewScreenTop = 0;
+            return;
+        }
+        view.getLocationInWindow(previewSurfaceLocation);
+        double scale = getWorldPlacementCoordinateScale();
+        previewScreenLeft = (int) Math.round(previewSurfaceLocation[0] / scale);
+        previewScreenTop = (int) Math.round(previewSurfaceLocation[1] / scale);
+    }
+
+    private double getWorldPlacementCoordinateScale() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null) {
+            return Math.max(1.0D, previewGuiScale);
+        }
+        View root = rootView != null ? rootView : worldPlacementTouchView;
+        int rootWidth = root != null ? root.getWidth() : 0;
+        int rootHeight = root != null ? root.getHeight() : 0;
+        int scaledWidth = Math.max(1, client.getWindow().getScaledWidth());
+        int scaledHeight = Math.max(1, client.getWindow().getScaledHeight());
+        if (rootWidth > scaledWidth * 1.5D || rootHeight > scaledHeight * 1.5D) {
+            return Math.max(1.0D, client.getWindow().getScaleFactor());
+        }
+        return 1.0D;
+    }
+
+    private float toWorldPlacementGuiCoord(float value) {
+        return (float) (value / getWorldPlacementCoordinateScale());
+    }
+
+    private class WorldPlacementOverlayView extends View {
+        private WorldPlacementOverlayView(Context context) {
+            super(context);
+            setWillNotDraw(false);
+            setBackground(null);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+        }
+    }
+
+    private void drawWorldPlacementScreenGizmos(Canvas canvas) {
+        Paint paint = Paint.obtain();
+        try {
+            paint.setStroke(true);
+            paint.setStrokeCap(Paint.CAP_ROUND);
+            paint.setStrokeWidth(2.0F);
+            if (isRotationGizmoMode()) {
+                drawScreenRotationRing(canvas, paint, RotationAxis.PITCH, 0xD0FF4646);
+                drawScreenRotationRing(canvas, paint, RotationAxis.YAW, 0xD046E646);
+                drawScreenRotationRing(canvas, paint, RotationAxis.ROLL, 0xD05A6EFF);
+            } else {
+                drawScreenMoveAxis(canvas, paint, MoveAxis.X, 0xF5FF3232);
+                drawScreenMoveAxis(canvas, paint, MoveAxis.Y, 0xF532DC32);
+                drawScreenMoveAxis(canvas, paint, MoveAxis.Z, 0xF53C50FF);
+            }
+            paint.setStroke(false);
+            paint.setColor(0xFFFFFFFF);
+            canvas.drawCircle(screenGizmoCenterX(), screenGizmoCenterY(), 4.0F, paint);
+        } finally {
+            paint.recycle();
+        }
+    }
+
+    private void drawScreenMoveAxis(Canvas canvas, Paint paint, MoveAxis axis, int color) {
+        ScreenPoint center = screenGizmoCenter();
+        ScreenPoint end = screenMoveAxisEnd(axis);
+        boolean highlighted = axis == draggingMoveAxis
+                || (draggingMoveAxis == MoveAxis.NONE && axis == hoveredMoveAxis);
+        paint.setColor(highlighted ? 0xFFFFFF5A : color);
+        paint.setStrokeWidth(highlighted ? 3.0F : 2.0F);
+        canvas.drawLine(center.x, center.y, end.x, end.y, paint);
+        paint.setStroke(false);
+        canvas.drawCircle(end.x, end.y, highlighted ? 5.0F : 4.0F, paint);
+        paint.setStroke(true);
+    }
+
+    private void drawScreenRotationRing(Canvas canvas, Paint paint, RotationAxis axis, int color) {
+        boolean highlighted = axis == draggingRotationAxis
+                || (draggingRotationAxis == RotationAxis.NONE && axis == hoveredRotationAxis);
+        paint.setColor(highlighted ? 0xFFFFFF5A : color);
+        paint.setStrokeWidth(highlighted ? 3.0F : 2.0F);
+        ScreenPoint previous = screenRotationRingPoint(axis, 0);
+        for (int i = 1; i <= ROTATION_RING_SEGMENTS; i++) {
+            ScreenPoint current = screenRotationRingPoint(axis, i);
+            canvas.drawLine(previous.x, previous.y, current.x, current.y, paint);
+            previous = current;
+        }
+    }
+
+    private ScreenPoint screenGizmoCenter() {
+        return projectWorldPlacementGizmoPoint(0.0F, 0.0F, 0.0F, false);
+    }
+
+    private float screenGizmoCenterX() {
+        return screenGizmoCenter().x;
+    }
+
+    private float screenGizmoCenterY() {
+        return screenGizmoCenter().y;
+    }
+
+    private ScreenPoint screenMoveAxisEnd(MoveAxis axis) {
+        return switch (axis) {
+            case X -> projectWorldPlacementGizmoPoint(MOVE_AXIS_LENGTH, 0.0F, 0.0F, true);
+            case Y -> projectWorldPlacementGizmoPoint(0.0F, MOVE_AXIS_LENGTH, 0.0F, true);
+            case Z -> projectWorldPlacementGizmoPoint(0.0F, 0.0F, MOVE_AXIS_LENGTH, true);
+            default -> screenGizmoCenter();
+        };
+    }
+
+    private ScreenPoint screenRotationRingPoint(RotationAxis axis, int segment) {
+        float angle = (float) (Math.PI * 2.0D * segment / ROTATION_RING_SEGMENTS);
+        Vector3f local = worldPlacementRotationRingLocalPoint(axis, angle);
+        return axis == RotationAxis.NONE
+                ? screenGizmoCenter()
+                : projectWorldPlacementGizmoPoint(local.x, local.y, local.z, true);
+    }
+
+    private Vector3f worldPlacementRotationRingLocalPoint(RotationAxis axis, float angle) {
+        float cos = (float) Math.cos(angle);
+        float sin = (float) Math.sin(angle);
+        float radius = ROTATION_RING_RADIUS;
+        return switch (axis) {
+            case PITCH -> new Vector3f(0.0F, cos * radius, sin * radius);
+            case YAW -> new Vector3f(cos * radius, 0.0F, sin * radius);
+            case ROLL -> new Vector3f(cos * radius, sin * radius, 0.0F);
+            default -> new Vector3f();
+        };
+    }
+
+    private ScreenPoint projectWorldPlacementGizmoPoint(float x, float y, float z, boolean rotateWithModel) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.player == null || client.getWindow() == null) {
+            return fallbackWorldPlacementScreenPoint();
+        }
+        updateWorldPlacementScreenOrigin();
+        Vector3f local = worldPlacementGizmoLocalToWorldOffset(x, y, z, rotateWithModel);
+        Vec3d projected = client.gameRenderer.project(worldPlacementBase(client).add(local.x, local.y, local.z));
+        if (projected == null
+                || !Double.isFinite(projected.x)
+                || !Double.isFinite(projected.y)) {
+            return fallbackWorldPlacementScreenPoint();
+        }
+        double width = Math.max(1, client.getWindow().getScaledWidth());
+        double height = Math.max(1, client.getWindow().getScaledHeight());
+        return new ScreenPoint(
+                (float) (((projected.x + 1.0D) * 0.5D * width) - previewScreenLeft),
+                (float) (((1.0D - projected.y) * 0.5D * height) - previewScreenTop));
+    }
+
+    private Vec3d worldPlacementBase(MinecraftClient client) {
+        Vec3d editingPosition = getEditingPlacedBodyPosition();
+        if (editingPosition != null) {
+            return editingPosition;
+        }
+        return worldPreviewMode == PreviewMode.FIXED
+                ? new Vec3d(fixedWorldX, fixedWorldY, fixedWorldZ)
+                : client.player.getPos();
+    }
+
+    private Vector3f worldPlacementGizmoLocalToWorldOffset(float x, float y, float z, boolean rotateWithModel) {
+        Vector3f center = resolveWorldPlacementGizmoCenterLocal();
+        return worldPlacementTransformMatrix(true, false)
+                .transformPosition(center.x + x, center.y + y, center.z + z, new Vector3f());
+    }
+
+    private Matrix4f worldPlacementTransformMatrix(boolean rotateWithModel, boolean includeScale) {
+        boolean trueSkeletalMode = isTrueSkeletalPoseMode();
+        Matrix4f matrix = new Matrix4f()
+                .rotateY((float) Math.PI)
+                .translate(-0.5F, -0.5F, -0.5F)
+                .translate(0.5F, 0.0F, 0.5F)
+                .rotateY((float) Math.PI)
+                .scale(-1.0F, -1.0F, 1.0F);
+        if (trueSkeletalMode) {
+            matrix.scale(1.0F, -1.0F, 1.0F);
+        }
+        matrix.translate(modelOffsetX, modelOffsetY, modelOffsetZ);
+        if (rotateWithModel) {
+            matrix.rotateX((float) Math.toRadians(trueSkeletalMode ? -modelPitch : modelPitch));
+            matrix.rotateY((float) Math.toRadians(trueSkeletalMode ? modelYaw : -modelYaw));
+            matrix.rotateZ((float) Math.toRadians(trueSkeletalMode ? -modelRoll : modelRoll));
+        }
+        if (includeScale) {
+            matrix.scale(wholeBodyScale, wholeBodyScale, wholeBodyScale);
+        }
+        return matrix;
+    }
+
+    private Vec3d worldPlacementGizmoWorldPoint(MinecraftClient client, float x, float y, float z, boolean rotateWithModel) {
+        Vector3f local = worldPlacementGizmoLocalToWorldOffset(x, y, z, rotateWithModel);
+        return worldPlacementBase(client).add(local.x, local.y, local.z);
+    }
+
+    private Box worldPlacementApproxModelBox(MinecraftClient client) {
+        Matrix4f matrix = worldPlacementTransformMatrix(true, true);
+        Vec3d base = worldPlacementBase(client);
+        double minX = Double.POSITIVE_INFINITY;
+        double minY = Double.POSITIVE_INFINITY;
+        double minZ = Double.POSITIVE_INFINITY;
+        double maxX = Double.NEGATIVE_INFINITY;
+        double maxY = Double.NEGATIVE_INFINITY;
+        double maxZ = Double.NEGATIVE_INFINITY;
+        float[] xs = {-0.55F, 0.55F};
+        float[] ys = {-0.55F, 1.60F};
+        float[] zs = {-0.35F, 0.35F};
+        for (float x : xs) {
+            for (float y : ys) {
+                for (float z : zs) {
+                    Vector3f point = matrix.transformPosition(x, y, z, new Vector3f());
+                    double wx = base.x + point.x;
+                    double wy = base.y + point.y;
+                    double wz = base.z + point.z;
+                    minX = Math.min(minX, wx);
+                    minY = Math.min(minY, wy);
+                    minZ = Math.min(minZ, wz);
+                    maxX = Math.max(maxX, wx);
+                    maxY = Math.max(maxY, wy);
+                    maxZ = Math.max(maxZ, wz);
+                }
+            }
+        }
+        return new Box(minX, minY, minZ, maxX, maxY, maxZ).expand(0.04D);
+    }
+
+    private ScreenPoint fallbackWorldPlacementScreenPoint() {
+        double scale = getWorldPlacementCoordinateScale();
+        return new ScreenPoint(
+                worldPlacementTouchView != null ? (float) (worldPlacementTouchView.getWidth() / scale * 0.5D) : 0.0F,
+                worldPlacementTouchView != null ? (float) (worldPlacementTouchView.getHeight() / scale * 0.5D) : 0.0F);
+    }
+
+    private boolean isWorldPlacementGizmoPointVisible(float x, float y, float z, boolean rotateWithModel) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.player == null || client.gameRenderer == null) {
+            return true;
+        }
+        Vec3d camera = client.gameRenderer.getCamera().getPos();
+        Vec3d point = worldPlacementGizmoWorldPoint(client, x, y, z, rotateWithModel);
+        if (camera.distanceTo(point) < 0.001D) {
+            return true;
+        }
+        Optional<Vec3d> hit = worldPlacementApproxModelBox(client).raycast(camera, point);
+        if (hit.isEmpty()) {
+            return true;
+        }
+        return camera.distanceTo(hit.get()) + 0.03D >= camera.distanceTo(point);
+    }
+
+    private boolean isScreenMoveAxisVisible(MoveAxis axis) {
+        for (float sample : new float[]{0.35F, 0.65F, 1.0F}) {
+            float distance = MOVE_AXIS_LENGTH * sample;
+            boolean visible = switch (axis) {
+                case X -> isWorldPlacementGizmoPointVisible(distance, 0.0F, 0.0F, true);
+                case Y -> isWorldPlacementGizmoPointVisible(0.0F, distance, 0.0F, true);
+                case Z -> isWorldPlacementGizmoPointVisible(0.0F, 0.0F, distance, true);
+                default -> false;
+            };
+            if (visible) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isScreenRotationRingSegmentVisible(RotationAxis axis, int segment) {
+        float angle = (float) (Math.PI * 2.0D * (segment - 0.5D) / ROTATION_RING_SEGMENTS);
+        Vector3f local = worldPlacementRotationRingLocalPoint(axis, angle);
+        return isWorldPlacementGizmoPointVisible(local.x, local.y, local.z, true);
+    }
+
+    private MoveAxis findScreenMoveAxis(double px, double py) {
+        double bestDist = SCREEN_GIZMO_HIT_RADIUS_PIXELS;
+        MoveAxis best = MoveAxis.NONE;
+        ScreenPoint center = screenGizmoCenter();
+        for (MoveAxis axis : new MoveAxis[]{MoveAxis.X, MoveAxis.Y, MoveAxis.Z}) {
+            if (!isScreenMoveAxisVisible(axis)) {
+                continue;
+            }
+            double dist = distanceToSegment(px, py, center, screenMoveAxisEnd(axis));
+            if (dist <= bestDist) {
+                bestDist = dist;
+                best = axis;
+            }
+        }
+        if (best == MoveAxis.NONE) {
+            for (MoveAxis axis : new MoveAxis[]{MoveAxis.X, MoveAxis.Y, MoveAxis.Z}) {
+                double dist = distanceToSegment(px, py, center, screenMoveAxisEnd(axis));
+                if (dist <= bestDist) {
+                    bestDist = dist;
+                    best = axis;
+                }
+            }
+        }
+        return best;
+    }
+
+    private RotationAxis findScreenRotationRing(double px, double py) {
+        double bestDist = SCREEN_GIZMO_HIT_RADIUS_PIXELS;
+        RotationAxis best = RotationAxis.NONE;
+        for (RotationAxis axis : new RotationAxis[]{RotationAxis.PITCH, RotationAxis.YAW, RotationAxis.ROLL}) {
+            double dist = distanceToScreenRotationRing(px, py, axis);
+            if (dist <= bestDist) {
+                bestDist = dist;
+                best = axis;
+            }
+        }
+        return best;
+    }
+
+    private double distanceToScreenRotationRing(double px, double py, RotationAxis axis) {
+        double best = Double.MAX_VALUE;
+        ScreenPoint previous = screenRotationRingPoint(axis, 0);
+        boolean hadVisibleSegment = false;
+        for (int i = 1; i <= ROTATION_RING_SEGMENTS; i++) {
+            ScreenPoint current = screenRotationRingPoint(axis, i);
+            if (isScreenRotationRingSegmentVisible(axis, i)) {
+                hadVisibleSegment = true;
+                best = Math.min(best, distanceToSegment(px, py, previous, current));
+            }
+            previous = current;
+        }
+        if (!hadVisibleSegment) {
+            previous = screenRotationRingPoint(axis, 0);
+            for (int i = 1; i <= ROTATION_RING_SEGMENTS; i++) {
+                ScreenPoint current = screenRotationRingPoint(axis, i);
+                best = Math.min(best, distanceToSegment(px, py, previous, current));
+                previous = current;
+            }
+        }
+        return best;
+    }
+
+    private void updateHoveredScreenGizmo(float x, float y) {
+        if (isRotationGizmoMode()) {
+            hoveredMoveAxis = MoveAxis.NONE;
+            hoveredRotationAxis = draggingRotationAxis != RotationAxis.NONE
+                    ? draggingRotationAxis
+                    : findScreenRotationRing(x, y);
+        } else {
+            hoveredRotationAxis = RotationAxis.NONE;
+            hoveredMoveAxis = draggingMoveAxis != MoveAxis.NONE
+                    ? draggingMoveAxis
+                    : findScreenMoveAxis(x, y);
+        }
+    }
+
+    private void beginScreenMoveGizmoDrag(MoveAxis axis, float mouseX, float mouseY) {
+        if (axis == MoveAxis.NONE) {
+            return;
+        }
+        dragStartMouseX = mouseX;
+        dragStartMouseY = mouseY;
+        dragStartMoveOffset = usesSelectedPartGizmoTarget()
+                ? getSelectedPoseOffset(axis)
+                : getActiveOffset(axis);
+        draggingMoveAxis = axis;
+        draggingRotationAxis = RotationAxis.NONE;
+        draggingPreview = false;
+        draggingRightPreview = false;
+    }
+
+    private void beginScreenRotationGizmoDrag(RotationAxis axis, float mouseX, float mouseY) {
+        if (axis == RotationAxis.NONE) {
+            return;
+        }
+        dragStartMouseX = mouseX;
+        dragStartMouseY = mouseY;
+        draggingRotationAxis = axis;
+        draggingMoveAxis = MoveAxis.NONE;
+        draggingPreview = false;
+        draggingRightPreview = false;
+    }
+
+    private void dragScreenGizmoOffset(MoveAxis axis, double mouseX, double mouseY) {
+        ScreenPoint center = screenGizmoCenter();
+        ScreenPoint end = screenMoveAxisEnd(axis);
+        double axisX = end.x - center.x;
+        double axisY = end.y - center.y;
+        double axisLengthSq = axisX * axisX + axisY * axisY;
+        if (axisLengthSq < 0.001D) {
+            return;
+        }
+        double deltaX = mouseX - dragStartMouseX;
+        double deltaY = mouseY - dragStartMouseY;
+        float deltaUnits = (float) ((deltaX * axisX + deltaY * axisY) / axisLengthSq * MOVE_AXIS_LENGTH);
+        if (usesSelectedPartGizmoTarget() && poseEditMode == PoseEditMode.TRUE_SKELETAL) {
+            deltaUnits = trueSkeletalModelOffset(deltaUnits);
+        }
+        float previous = usesSelectedPartGizmoTarget()
+                ? getSelectedPoseOffset(axis)
+                : getActiveOffset(axis);
+        float target = dragStartMoveOffset + deltaUnits;
+        if (usesSelectedPartGizmoTarget()) {
+            setSelectedPoseOffset(axis, target);
+        } else {
+            setActiveOffset(axis, target);
+        }
+        float next = usesSelectedPartGizmoTarget()
+                ? getSelectedPoseOffset(axis)
+                : getActiveOffset(axis);
+        if (Math.abs(next - previous) > 0.0001F) {
+            previewTransformDirty = true;
+        }
+    }
+
+    private void dragScreenGizmoRotation(RotationAxis axis, double mouseX, double mouseY, double deltaX, double deltaY) {
+        if (axis == RotationAxis.NONE) {
+            return;
+        }
+        ScreenPoint center = screenGizmoCenter();
+        double previousAngle = Math.atan2(mouseY - deltaY - center.y, mouseX - deltaX - center.x);
+        double currentAngle = Math.atan2(mouseY - center.y, mouseX - center.x);
+        float degrees = -normalizeDegrees((float) Math.toDegrees(currentAngle - previousAngle));
+        degrees *= getRotationAxisDragSign(axis);
+        if (usesSelectedPartGizmoTarget()) {
+            switch (axis) {
+                case PITCH -> setSelectedPoseValue(Axis.PITCH, getSelectedPoseValue(Axis.PITCH) - degrees);
+                case YAW -> setSelectedPoseValue(Axis.YAW, getSelectedPoseValue(Axis.YAW) + degrees);
+                case ROLL -> setSelectedPoseValue(Axis.ROLL, getSelectedPoseValue(Axis.ROLL) - degrees);
+                default -> {
+                }
+            }
+        } else {
+            switch (axis) {
+                case PITCH -> setActiveRotation(Axis.PITCH, getActiveRotation(Axis.PITCH) - degrees);
+                case YAW -> setActiveRotation(Axis.YAW, getActiveRotation(Axis.YAW) + degrees);
+                case ROLL -> setActiveRotation(Axis.ROLL, getActiveRotation(Axis.ROLL) - degrees);
+                default -> {
+                }
+            }
+        }
+        previewTransformDirty = true;
+    }
+
+    private class WorldPlacementTouchListener implements View.OnTouchListener {
+        private float lastX;
+        private float lastY;
+        private int activeButton;
+
+        @Override
+        public boolean onTouch(View v, MotionEvent event) {
+            float x = toWorldPlacementGuiCoord(event.getX());
+            float y = toWorldPlacementGuiCoord(event.getY());
+            int action = event.getActionMasked();
+            switch (action) {
+                case MotionEvent.ACTION_SCROLL -> {
+                    return handleWorldPlacementGenericMotion(v, event);
+                }
+                case MotionEvent.ACTION_DOWN, MotionEvent.ACTION_BUTTON_PRESS -> {
+                    lastX = x;
+                    lastY = y;
+                    activeButton = getWorldPlacementButton(event, action);
+                    previewTransformDirty = false;
+                    worldPlacementPanAnchor = null;
+                    clearActiveGizmoDrag();
+                    if (worldPlacementTouchView != null) {
+                        worldPlacementTouchView.requestFocus();
+                    }
+                    updateGizmoCenter();
+                    if (activeButton == MotionEvent.BUTTON_SECONDARY) {
+                        if (hasActiveGizmoStep()) {
+                            cancelGizmoStep();
+                            return true;
+                        }
+                        draggingPreview = false;
+                        draggingRightPreview = true;
+                        worldPlacementPanAnchor = createWorldPlacementPanAnchor(x, y);
+                        return true;
+                    }
+                    if (activeButton == MotionEvent.BUTTON_PRIMARY) {
+                        if (isRotationGizmoMode()) {
+                            RotationAxis rotationAxis = findScreenRotationRing(x, y);
+                            if (rotationAxis != RotationAxis.NONE) {
+                                beginScreenRotationGizmoDrag(rotationAxis, x, y);
+                                return true;
+                            }
+                        } else {
+                            MoveAxis moveAxis = findScreenMoveAxis(x, y);
+                            if (moveAxis != MoveAxis.NONE) {
+                                beginScreenMoveGizmoDrag(moveAxis, x, y);
+                                return true;
+                            }
+                        }
+                        draggingPreview = true;
+                        draggingRightPreview = false;
+                        clearActiveGizmoDrag();
+                        clearGizmoHoverState();
+                        return true;
+                    }
+                    return true;
+                }
+                case MotionEvent.ACTION_MOVE -> {
+                    float dX = x - lastX;
+                    float dY = y - lastY;
+                    boolean primaryDown = activeButton == MotionEvent.BUTTON_PRIMARY
+                            || event.isButtonPressed(MotionEvent.BUTTON_PRIMARY);
+                    boolean secondaryDown = activeButton == MotionEvent.BUTTON_SECONDARY
+                            || event.isButtonPressed(MotionEvent.BUTTON_SECONDARY);
+                    if (secondaryDown && hasActiveGizmoStep()) {
+                        cancelGizmoStep();
+                        return true;
+                    }
+                    if (primaryDown && draggingRotationAxis != RotationAxis.NONE) {
+                        dragScreenGizmoRotation(draggingRotationAxis, x, y, dX, dY);
+                    } else if (primaryDown && draggingMoveAxis != MoveAxis.NONE) {
+                        dragScreenGizmoOffset(draggingMoveAxis, x, y);
+                    } else if (primaryDown && draggingPreview) {
+                        PaintOverlayClient.rotateEditorView(MinecraftClient.getInstance(), dX, dY, 0.18F);
+                    } else if (secondaryDown && draggingRightPreview) {
+                        panWorldPlacementViewTo(x, y);
+                    }
+                    updateGizmoCenter();
+                    if (isWorldPlacementViewDragActive()) {
+                        clearGizmoHoverState();
+                    } else {
+                        updateHoveredScreenGizmo(x, y);
+                    }
+                    lastX = x;
+                    lastY = y;
+                    if (previewTransformDirty) {
+                        refreshNumericValueBindings();
+                        updatePlacedBodyPoseLive();
+                    }
+                    invalidatePreview();
+                    return true;
+                }
+                case MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_OUTSIDE,
+                        MotionEvent.ACTION_HOVER_EXIT, MotionEvent.ACTION_BUTTON_RELEASE -> {
+                    boolean changed = previewTransformDirty;
+                    boolean movedAxis = draggingMoveAxis != MoveAxis.NONE;
+                    boolean rotatedAxis = draggingRotationAxis != RotationAxis.NONE;
+                    draggingPreview = false;
+                    draggingRightPreview = false;
+                    if (draggingMoveAxis != MoveAxis.NONE || draggingRotationAxis != RotationAxis.NONE) {
+                        clearActiveGizmoDrag();
+                    }
+                    if (changed) {
+                        saveCurrentPageState();
+                        refreshNumericValueBindings();
+                        recordPoseHistoryStep(movedAxis ? "\u79fb\u52a8\u8f74" : rotatedAxis ? "\u65cb\u8f6c\u73af" : "\u8c03\u6574");
+                    }
+                    activeButton = 0;
+                    previewTransformDirty = false;
+                    worldPlacementPanAnchor = null;
+                    updateGizmoCenter();
+                    updateHoveredScreenGizmo(x, y);
+                    invalidatePreview();
+                    return true;
+                }
+                default -> {
+                    updateHoveredScreenGizmo(x, y);
+                    invalidatePreview();
+                    return false;
+                }
+            }
+        }
+
+        private PaintOverlayClient.ScreenPanAnchor createWorldPlacementPanAnchor(float x, float y) {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client == null || client.getWindow() == null) {
+                return null;
+            }
+            updateWorldPlacementScreenOrigin();
+            return PaintOverlayClient.createEditorPanAnchor(client,
+                    previewScreenLeft + x, previewScreenTop + y,
+                    client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight());
+        }
+
+        private void panWorldPlacementViewTo(float x, float y) {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client == null || client.getWindow() == null) {
+                return;
+            }
+            if (worldPlacementPanAnchor == null) {
+                worldPlacementPanAnchor = createWorldPlacementPanAnchor(lastX, lastY);
+            }
+            updateWorldPlacementScreenOrigin();
+            PaintOverlayClient.panEditorViewToScreenPoint(client, worldPlacementPanAnchor,
+                    previewScreenLeft + x, previewScreenTop + y,
+                    client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight());
+        }
+
+        private int getWorldPlacementButton(MotionEvent event, int action) {
+            int actionButton = event.getActionButton();
+            if (actionButton == MotionEvent.BUTTON_PRIMARY || actionButton == MotionEvent.BUTTON_SECONDARY) {
+                return actionButton;
+            }
+            if (event.isButtonPressed(MotionEvent.BUTTON_PRIMARY)) {
+                return MotionEvent.BUTTON_PRIMARY;
+            }
+            if (event.isButtonPressed(MotionEvent.BUTTON_SECONDARY)) {
+                return MotionEvent.BUTTON_SECONDARY;
+            }
+            return action == MotionEvent.ACTION_DOWN ? MotionEvent.BUTTON_PRIMARY : 0;
+        }
+    }
 
     private class PreviewTouchListener implements View.OnTouchListener {
         private float lastX;
@@ -3499,7 +4304,7 @@ public class BodyPoseEditorFragment extends Fragment {
                     if (changed) {
                         saveCurrentPageState();
                         refreshNumericValueBindings();
-                        recordPoseHistoryStep(movedAxis ? "移动轴" : rotatedAxis ? "旋转轴" : "调整");
+                        recordPoseHistoryStep(movedAxis ? "移动轴" : rotatedAxis ? "旋转环" : "调整");
                     }
                     previewTransformDirty = false;
                     activePreviewButton = 0;
@@ -4012,9 +4817,9 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
     //  3D 投影数学
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
 
     private ScreenPoint projectGizmoPoint(float x, float y, float z) {
         if (usesSelectedPartGizmoTarget()) {
@@ -4147,17 +4952,18 @@ public class BodyPoseEditorFragment extends Fragment {
                 depth);
     }
 
-    // ═══════════════════════════════════════════════════════
-    //  Hit 检测
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
+    //  Hit 检�?
+    // ══════════════════════════════════════════════════════�?
 
     private boolean isInsidePreviewArea(float px, float py) {
+        int topInset = isWorldPlacementOverlayActive() ? 4 : 28;
         return px >= previewAreaLeft + 4 && px <= previewAreaRight - 4
-                && py >= previewAreaTop + 28 && py <= previewAreaBottom - 4;
+                && py >= previewAreaTop + topInset && py <= previewAreaBottom - 4;
     }
 
     private MoveAxis findMoveAxis(double px, double py) {
-        if (!showCoordinateAxes) return MoveAxis.NONE;
+        if (!shouldShowPreviewTransformGizmo()) return MoveAxis.NONE;
         if (!isInsidePreviewArea((float) px, (float) py)) return MoveAxis.NONE;
         float ox = currentGizmoCenter.x;
         float oy = currentGizmoCenter.y;
@@ -4176,7 +4982,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private RotationAxis findRotationRing(double px, double py) {
-        if (!showCoordinateAxes) return RotationAxis.NONE;
+        if (!shouldShowPreviewTransformGizmo()) return RotationAxis.NONE;
         if (!isInsidePreviewArea((float) px, (float) py)) return RotationAxis.NONE;
         double bestDist = ROTATION_RING_HIT_RADIUS;
         RotationAxis best = RotationAxis.NONE;
@@ -4359,9 +5165,9 @@ public class BodyPoseEditorFragment extends Fragment {
         return (float) (value / previewGuiScale);
     }
 
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
     //  模型管理
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
 
     private PlayerEntityModel getPreviewModel() {
         MinecraftClient client = MinecraftClient.getInstance();
@@ -4605,9 +5411,9 @@ public class BodyPoseEditorFragment extends Fragment {
         part.zScale *= scale;
     }
 
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
     //  按钮标签刷新
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
 
     private void refreshButtonLabels() {
         // 皮肤按钮
@@ -4626,7 +5432,7 @@ public class BodyPoseEditorFragment extends Fragment {
             boolean isSelected = part.equals(selectedPart);
             stylePartButton(btn, part, isSelected);
         }
-        // 姿势按钮启用状态
+        // 姿势按钮启用状�?
         boolean canEditPose = !selectedPart.equals("all");
         for (Button btn : poseButtons) {
             btn.setEnabled(canEditPose);
@@ -4704,13 +5510,13 @@ public class BodyPoseEditorFragment extends Fragment {
             coordMovableButton.setText("跟随 " + (coordinateAxesMovable ? "开" : "关"));
         }
         if (worldPreviewToggleButton != null) {
-            worldPreviewToggleButton.setText("模式 " + (worldPreviewMode == PreviewMode.FOLLOW_PLAYER ? "预览" : "放置"));
+            worldPreviewToggleButton.setText("当前模式 " + (worldPreviewMode == PreviewMode.FOLLOW_PLAYER ? "本地预览编辑" : "世界预览编辑"));
         }
     }
 
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
     //  动作命令 / 网络
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
 
     private void saveDefaultSlimModel() {
         BodyPoseDefaultsConfig.setDefaultSlimModel(slimModel);
@@ -4824,7 +5630,11 @@ public class BodyPoseEditorFragment extends Fragment {
                 createSkeletalBendValueArray()));
     }
 
-    private void updatePlacedBodyPose() {
+    private void updatePlacedBodyPose(boolean closeAfter) {
+        updatePlacedBodyPose(closeAfter, false);
+    }
+
+    private void updatePlacedBodyPose(boolean closeAfter, boolean liveUpdate) {
         if (reeditTargetEntityId < 0) {
             return;
         }
@@ -4835,12 +5645,71 @@ public class BodyPoseEditorFragment extends Fragment {
                 : createSkeletalPoseValueArray();
         float[] bendValues = poseEditMode == PoseEditMode.SKELETAL ? createSkeletalBendValueArray() : null;
         List<PlaceTrueSkeletalBodyC2SPacket.BonePose> bones = trueSkeletal ? createTrueSkeletalBonePoseList() : List.of();
+        String poseMode = trueSkeletal ? "true_skeletal" : "skeletal";
+        updatePlacedBodyPoseLocally(poseMode, poseValues, bendValues, bones);
         ClientPlayNetworking.send(new UpdatePlacedBodyPoseC2SPacket(reeditTargetEntityId,
-                trueSkeletal ? "true_skeletal" : "skeletal",
+                poseMode,
                 poseValues, bendValues, bones,
                 modelOffsetX, modelOffsetY, modelOffsetZ,
-                modelPitch, modelYaw, modelRoll, wholeBodyScale));
-        closeEditorScreen();
+                modelPitch, modelYaw, modelRoll, wholeBodyScale, liveUpdate));
+        if (closeAfter) {
+            closeEditorScreen();
+        }
+    }
+
+    private void updatePlacedBodyPoseLocally(String poseMode, float[] poseValues, float[] bendValues,
+                                             List<PlaceTrueSkeletalBodyC2SPacket.BonePose> bones) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.world == null) {
+            return;
+        }
+        Entity entity = client.world.getEntityById(reeditTargetEntityId);
+        if (!(entity instanceof ItemDisplayEntity display)) {
+            return;
+        }
+        ItemStack stack = display.getItemStack().copy();
+        if (!isCombinedBodyStack(stack)) {
+            return;
+        }
+        NbtComponent component = stack.get(DataComponentTypes.CUSTOM_DATA);
+        NbtCompound nbt = component != null ? component.copyNbt() : new NbtCompound();
+        BodyPartManager.writeCombinedBodyPoseData(nbt, poseMode, poseValues, bendValues, bones,
+                modelOffsetX, modelOffsetY, modelOffsetZ,
+                modelPitch, modelYaw, modelRoll, wholeBodyScale);
+        stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
+        display.setItemStack(stack);
+        ((DisplayEntityAccessor) display).monvhua$refreshData(false, 1.0F);
+    }
+
+    private void refreshPlacedBodyPoseLocalPreview() {
+        if (reeditTargetEntityId < 0 || !isWorldPlacementOverlayActive()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastLocalPlacedBodyPoseRefreshMs < 16L) {
+            return;
+        }
+        lastLocalPlacedBodyPoseRefreshMs = now;
+
+        boolean trueSkeletal = poseEditMode == PoseEditMode.TRUE_SKELETAL;
+        float[] poseValues = poseEditMode == PoseEditMode.STATIC_PART
+                ? createStaticPoseValueArray()
+                : createSkeletalPoseValueArray();
+        float[] bendValues = poseEditMode == PoseEditMode.SKELETAL ? createSkeletalBendValueArray() : null;
+        List<PlaceTrueSkeletalBodyC2SPacket.BonePose> bones = trueSkeletal ? createTrueSkeletalBonePoseList() : List.of();
+        updatePlacedBodyPoseLocally(trueSkeletal ? "true_skeletal" : "skeletal", poseValues, bendValues, bones);
+    }
+
+    private void updatePlacedBodyPoseLive() {
+        if (reeditTargetEntityId < 0 || !isWorldPlacementOverlayActive()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastLivePlacedBodyPoseUpdateMs < 35L) {
+            return;
+        }
+        lastLivePlacedBodyPoseUpdateMs = now;
+        updatePlacedBodyPose(false, true);
     }
 
     private void placeEditorItems() {
@@ -4874,6 +5743,7 @@ public class BodyPoseEditorFragment extends Fragment {
         BodyPoseEditorFragment inst = activeInstance;
         if (inst != null) {
             inst.saveCurrentPageState();
+            inst.updatePlacedBodyPose(false);
         }
         MinecraftClient client = MinecraftClient.getInstance();
         if (client != null) {
@@ -4881,8 +5751,49 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
+    private static void applyStoredWorldPreviewMode() {
+        worldPreviewMode = previewModeFromConfig(BodyPoseDefaultsConfig.getDefaultWorldPreviewMode());
+        worldPreviewEnabled = true;
+    }
+
+    private static PreviewMode previewModeFromConfig(String value) {
+        return switch (BodyPoseDefaultsConfig.normalizeWorldPreviewMode(value)) {
+            case BodyPoseDefaultsConfig.WORLD_PREVIEW_FOLLOW_PLAYER -> PreviewMode.FOLLOW_PLAYER;
+            default -> PreviewMode.FIXED;
+        };
+    }
+
+    private static String getWorldPreviewModeConfigId() {
+        return worldPreviewMode == PreviewMode.FOLLOW_PLAYER
+                ? BodyPoseDefaultsConfig.WORLD_PREVIEW_FOLLOW_PLAYER
+                : BodyPoseDefaultsConfig.WORLD_PREVIEW_FIXED;
+    }
+
+    private static void persistWorldPreviewMode() {
+        BodyPoseDefaultsConfig.setDefaultWorldPreviewMode(getWorldPreviewModeConfigId());
+    }
+
+    private static void activateWorldPlacementModeAtPlayer(boolean persist) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        Vec3d pos = client != null && client.player != null ? client.player.getPos() : new Vec3d(fixedWorldX, fixedWorldY, fixedWorldZ);
+        activateWorldPlacementModeAt(pos, persist);
+    }
+
+    private static void activateWorldPlacementModeAt(Vec3d pos, boolean persist) {
+        worldPreviewMode = PreviewMode.FIXED;
+        worldPreviewEnabled = true;
+        if (pos != null) {
+            fixedWorldX = pos.x;
+            fixedWorldY = pos.y;
+            fixedWorldZ = pos.z;
+        }
+        if (persist) {
+            persistWorldPreviewMode();
+        }
+    }
     private void toggleWorldPreviewMode() {
         toggleWorldPreviewModeStatic(true);
+        applyWorldPlacementOverlayVisibility();
         refreshButtonLabels();
     }
 
@@ -4897,14 +5808,16 @@ public class BodyPoseEditorFragment extends Fragment {
                 fixedWorldZ = client.player.getZ();
             }
             worldPreviewEnabled = true;
-            if (closeScreenOnFixed && client != null && client.currentScreen != null) {
-                client.execute(() -> client.setScreen(null));
-            }
         } else {
             worldPreviewMode = PreviewMode.FOLLOW_PLAYER;
             if (activeInstance == null) {
                 worldPreviewEnabled = false;
             }
+        }
+        persistWorldPreviewMode();
+        BodyPoseEditorFragment inst = activeInstance;
+        if (inst != null) {
+            inst.applyWorldPlacementOverlayVisibility();
         }
     }
 
@@ -4919,13 +5832,67 @@ public class BodyPoseEditorFragment extends Fragment {
         }
         toggleWorldPreviewModeStatic(true);
         if (inst != null && inst.rootView != null) {
+            inst.applyWorldPlacementOverlayVisibility();
             inst.refreshButtonLabels();
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    //  外部访问 API（静态方法，供 BodyPoseWorldPreviewRenderer 等使用）
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
+    //  外部访问 API（静态方法，�?BodyPoseWorldPreviewRenderer 等使用）
+    // ══════════════════════════════════════════════════════�?
+
+    public static void tickWorldPlacementOverlay(MinecraftClient client) {
+        if (!isWorldPlacementOverlayActive()) {
+            stopWorldPlacementViewControls(client);
+            return;
+        }
+        if (client == null || client.player == null || client.getWindow() == null) {
+            return;
+        }
+        worldPlacementViewControlActive = true;
+        PaintOverlayClient.enterPaintEditor(client);
+        BodyPoseEditorFragment inst = activeInstance;
+        if (inst != null) {
+            inst.refreshPlacedBodyPoseLocalPreview();
+        }
+        long handle = client.getWindow().getHandle();
+        double forward = 0.0D;
+        double strafe = 0.0D;
+        double vertical = 0.0D;
+        if (GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_W) == GLFW.GLFW_PRESS) {
+            forward += 0.36D;
+        }
+        if (GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_S) == GLFW.GLFW_PRESS) {
+            forward -= 0.36D;
+        }
+        if (GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_A) == GLFW.GLFW_PRESS) {
+            strafe -= 0.36D;
+        }
+        if (GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_D) == GLFW.GLFW_PRESS) {
+            strafe += 0.36D;
+        }
+        if (client.options.jumpKey.isPressed() || GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_SPACE) == GLFW.GLFW_PRESS) {
+            vertical += 0.36D;
+        }
+        if (client.options.sneakKey.isPressed()
+                || GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS) {
+            vertical -= 0.36D;
+        }
+        if (forward != 0.0D || strafe != 0.0D || vertical != 0.0D) {
+            PaintOverlayClient.setEditorViewVelocity(client, forward, strafe, vertical);
+        } else {
+            client.player.setVelocity(Vec3d.ZERO);
+        }
+    }
+
+    private static void stopWorldPlacementViewControls(MinecraftClient client) {
+        if (!worldPlacementViewControlActive) {
+            return;
+        }
+        worldPlacementViewControlActive = false;
+        PaintOverlayClient.exitPaintEditor(client != null ? client : MinecraftClient.getInstance());
+    }
 
     public static boolean isWorldPreviewActive() {
         return worldPreviewEnabled && (activeInstance != null || worldPreviewMode == PreviewMode.FIXED);
@@ -4940,6 +5907,30 @@ public class BodyPoseEditorFragment extends Fragment {
         return isWorldPreviewActive() && showCoordinateAxes;
     }
 
+    public static boolean isEditingPlacedBodyInWorldPlacement() {
+        return reeditTargetEntityId >= 0 && isWorldPlacementOverlayActive();
+    }
+
+    public static Vec3d getEditingPlacedBodyPosition() {
+        if (reeditTargetEntityId < 0) {
+            return null;
+        }
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.world == null) {
+            return null;
+        }
+        Entity entity = client.world.getEntityById(reeditTargetEntityId);
+        return entity != null ? entity.getPos() : null;
+    }
+
+    public static boolean isWorldPlacementOverlayActive() {
+        return worldPreviewMode == PreviewMode.FIXED && activeInstance != null;
+    }
+
+    public static int getWorldPlacementChatOffset() {
+        return isWorldPlacementOverlayActive() ? LEFT_PANEL_WIDTH : 0;
+    }
+
     public static boolean isWorldAxesMovable() {
         return coordinateAxesMovable;
     }
@@ -4951,6 +5942,11 @@ public class BodyPoseEditorFragment extends Fragment {
     public static float getWorldModelYaw() { return modelYaw; }
     public static float getWorldModelRoll() { return modelRoll; }
     public static float getWorldBodyScale() { return wholeBodyScale; }
+
+    public static Vector3f getWorldPlacementGizmoCenterLocal() {
+        BodyPoseEditorFragment inst = activeInstance;
+        return inst != null ? inst.resolveWorldPlacementGizmoCenterLocal() : new Vector3f();
+    }
 
     public static boolean isTrueSkeletalPoseMode() {
         return poseEditMode == PoseEditMode.TRUE_SKELETAL;
@@ -5203,7 +6199,7 @@ public class BodyPoseEditorFragment extends Fragment {
         return previews;
     }
 
-    // ── 实例方法（供 mixin 通过 activeInstance 访问） ──
+    // ── 实例方法（供 mixin 通过 activeInstance 访问�?──
 
     public boolean isShowingCoordinateAxes() { return showCoordinateAxes; }
     public boolean isCoordinateAxesMovable() { return coordinateAxesMovable; }
@@ -5237,9 +6233,9 @@ public class BodyPoseEditorFragment extends Fragment {
         };
     }
 
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
     //  物品 / 变换管理
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
 
     private boolean hasSelectedItemModel() {
         return selectedEditorItemIndex >= 0 && selectedEditorItemIndex < EDITOR_ITEMS.size();
@@ -5328,9 +6324,9 @@ public class BodyPoseEditorFragment extends Fragment {
     private void setActiveYaw(float v) { if (hasSelectedItemModel()) { EDITOR_ITEMS.get(selectedEditorItemIndex).yaw = v; } else { modelYaw = v; } }
     private void setActiveRoll(float v) { if (hasSelectedItemModel()) { EDITOR_ITEMS.get(selectedEditorItemIndex).roll = v; } else { modelRoll = v; } }
 
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
     //  姿势管理
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
 
     private static Map<String, PartPose> createPartPoses() {
         Map<String, PartPose> poses = new HashMap<>();
@@ -5668,9 +6664,9 @@ public class BodyPoseEditorFragment extends Fragment {
         values[offset + 2] = pose.bendRoll;
     }
 
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
     //  玩家 / 皮肤工具
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
 
     private static List<String> getLocalSkins() {
         List<String> skins = new ArrayList<>();
@@ -5751,9 +6747,9 @@ public class BodyPoseEditorFragment extends Fragment {
         stacks.add(stack);
     }
 
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
     //  工具方法
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
 
     private static String getDefaultSelectedPart() {
         for (String part : BodyModelSelectionCatalog.PARTS) {
@@ -5813,9 +6809,9 @@ public class BodyPoseEditorFragment extends Fragment {
         return s.substring(0, max - 3) + "...";
     }
 
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
     //  内部枚举
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
 
     private enum Axis { PITCH, YAW, ROLL }
     private enum MoveAxis { NONE, X, Y, Z }
@@ -5839,9 +6835,9 @@ public class BodyPoseEditorFragment extends Fragment {
         PLAYER
     }
 
-    // ═══════════════════════════════════════════════════════
-    //  内部数据类
-    // ═══════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════�?
+    //  内部数据�?
+    // ══════════════════════════════════════════════════════�?
 
     private record NumericAxisSpec(Supplier<Float> getter,
                                    Consumer<Float> setter,
@@ -6078,7 +7074,7 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
-    private record ReeditTarget(int entityId, ItemStack stack) {
+    private record ReeditTarget(int entityId, ItemStack stack, Vec3d pos) {
     }
 
     private static final class ScreenPoint {

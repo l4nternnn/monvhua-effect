@@ -13,7 +13,7 @@ public record UpdatePlacedBodyPoseC2SPacket(int entityId, String poseMode, float
                                             List<PlaceTrueSkeletalBodyC2SPacket.BonePose> bones,
                                             float offsetX, float offsetY, float offsetZ,
                                             float rotationPitch, float rotationYaw, float rotationRoll,
-                                            float modelScale) implements CustomPayload {
+                                            float modelScale, boolean liveUpdate) implements CustomPayload {
     public static final Id<UpdatePlacedBodyPoseC2SPacket> ID =
             new Id<>(Identifier.of("monvhua", "update_placed_body_pose"));
     public static final PacketCodec<RegistryByteBuf, UpdatePlacedBodyPoseC2SPacket> CODEC =
@@ -32,7 +32,7 @@ public record UpdatePlacedBodyPoseC2SPacket(int entityId, String poseMode, float
     private UpdatePlacedBodyPoseC2SPacket(RegistryByteBuf buf) {
         this(buf.readVarInt(), buf.readString(), readPoseValues(buf), readBendValues(buf), readBones(buf),
                 buf.readFloat(), buf.readFloat(), buf.readFloat(),
-                buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat());
+                buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readBoolean());
     }
 
     private void write(RegistryByteBuf buf) {
@@ -64,6 +64,7 @@ public record UpdatePlacedBodyPoseC2SPacket(int entityId, String poseMode, float
         buf.writeFloat(rotationYaw);
         buf.writeFloat(rotationRoll);
         buf.writeFloat(modelScale);
+        buf.writeBoolean(liveUpdate);
     }
 
     private static float[] readPoseValues(RegistryByteBuf buf) {

@@ -45,6 +45,7 @@ public class ClientTickHandler {
             ThroughClientManager.tick();
             AreaSelectClientManager.tick(client);
             ActionEditorFragment.tickActive();
+            BodyPoseEditorFragment.tickWorldPlacementOverlay(client);
             if (client.player == null) return;
             if (PaintOverlayClient.isPaintEditorActive(client)) {
                 return;
@@ -61,7 +62,7 @@ public class ClientTickHandler {
                 }
                 if (!PaintOverlayClient.tryOpenColorScreen(client) && client.player.isCreative()) {
                     if (!BodyPoseEditorFragment.tryOpenFromTargetedEditorEntity()) {
-                        BodyPoseEditorFragment.open();
+                        BodyPoseEditorFragment.openWorldPlacementEditor();
                     }
                 }
             }

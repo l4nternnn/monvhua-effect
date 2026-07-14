@@ -15,6 +15,8 @@ public final class BodyPoseDefaultsConfig {
     public static final String MODE_STATIC_PART = "static_part";
     public static final String MODE_SKELETAL = "skeletal";
     public static final String MODE_TRUE_SKELETAL = "true_skeletal";
+    public static final String WORLD_PREVIEW_FOLLOW_PLAYER = "follow_player";
+    public static final String WORLD_PREVIEW_FIXED = "fixed";
 
     private static final Path CONFIG_PATH = FabricLoader.getInstance().getConfigDir().resolve("monvhua_body_pose_defaults.json");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -22,6 +24,7 @@ public final class BodyPoseDefaultsConfig {
 
     private boolean defaultSlimModel = true;
     private String defaultPoseMode = MODE_TRUE_SKELETAL;
+    private String defaultWorldPreviewMode = WORLD_PREVIEW_FIXED;
 
     private BodyPoseDefaultsConfig() {
     }
@@ -41,6 +44,10 @@ public final class BodyPoseDefaultsConfig {
         return getInstance().defaultPoseMode;
     }
 
+    public static String getDefaultWorldPreviewMode() {
+        return getInstance().defaultWorldPreviewMode;
+    }
+
     public static void setDefaultSlimModel(boolean slimModel) {
         BodyPoseDefaultsConfig config = getInstance();
         config.defaultSlimModel = slimModel;
@@ -50,6 +57,13 @@ public final class BodyPoseDefaultsConfig {
     public static void setDefaultPoseMode(String poseMode) {
         BodyPoseDefaultsConfig config = getInstance();
         config.defaultPoseMode = normalizePoseMode(poseMode);
+        config.defaultWorldPreviewMode = normalizeWorldPreviewMode(config.defaultWorldPreviewMode);
+        config.save();
+    }
+
+    public static void setDefaultWorldPreviewMode(String mode) {
+        BodyPoseDefaultsConfig config = getInstance();
+        config.defaultWorldPreviewMode = normalizeWorldPreviewMode(mode);
         config.save();
     }
 
@@ -57,6 +71,7 @@ public final class BodyPoseDefaultsConfig {
         BodyPoseDefaultsConfig config = getInstance();
         config.defaultSlimModel = slimModel;
         config.defaultPoseMode = normalizePoseMode(poseMode);
+        config.defaultWorldPreviewMode = normalizeWorldPreviewMode(config.defaultWorldPreviewMode);
         config.save();
     }
 
@@ -77,6 +92,7 @@ public final class BodyPoseDefaultsConfig {
                 BodyPoseDefaultsConfig config = GSON.fromJson(reader, BodyPoseDefaultsConfig.class);
                 if (config != null) {
                     config.defaultPoseMode = normalizePoseMode(config.defaultPoseMode);
+                    config.defaultWorldPreviewMode = normalizeWorldPreviewMode(config.defaultWorldPreviewMode);
                     return config;
                 }
             } catch (IOException e) {
@@ -88,6 +104,14 @@ public final class BodyPoseDefaultsConfig {
         return config;
     }
 
+
+
+    public static String normalizeWorldPreviewMode(String mode) {
+        return switch (mode == null ? "" : mode) {
+            case WORLD_PREVIEW_FOLLOW_PLAYER -> WORLD_PREVIEW_FOLLOW_PLAYER;
+            default -> WORLD_PREVIEW_FIXED;
+        };
+    }
     public static String normalizePoseMode(String poseMode) {
         return switch (poseMode == null ? "" : poseMode) {
             case MODE_STATIC_PART -> MODE_STATIC_PART;

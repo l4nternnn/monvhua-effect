@@ -419,7 +419,8 @@ public class MonvhuaMod implements ModInitializer {
                 BodyPartManager.updatePlacedCombinedDisplayPose(player, packet.entityId(), packet.poseMode(),
                         packet.poseValues(), packet.bendValues(), packet.bones(),
                         packet.offsetX(), packet.offsetY(), packet.offsetZ(),
-                        packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale());
+                        packet.rotationPitch(), packet.rotationYaw(), packet.rotationRoll(), packet.modelScale(),
+                        packet.liveUpdate());
             });
         });
 
