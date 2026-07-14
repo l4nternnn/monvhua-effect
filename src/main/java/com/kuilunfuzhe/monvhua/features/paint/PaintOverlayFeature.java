@@ -29,7 +29,10 @@ import net.minecraft.util.math.random.Random;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiPredicate;
@@ -154,7 +157,8 @@ public final class PaintOverlayFeature {
         if (!(player.getWorld() instanceof ServerWorld world)) {
             return;
         }
-        if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
+        if (!isValidHitPoint(packet.pos(), packet.hitPos())
+                || packet.hitPos().squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
             return;
         }
         if (world.getBlockState(packet.pos()).getBlock() == ModBlocks.DRAWING_BOARD
@@ -162,11 +166,11 @@ public final class PaintOverlayFeature {
             return;
         }
         if (isHoldingSprayCan(player)) {
-            sprayAtByPlayer(player, world, packet.pos(), packet.face(), packet.x(), packet.y());
+            sprayAtByPlayer(player, world, packet.pos(), packet.face(), packet.x(), packet.y(), packet.hitPos());
             return;
         }
         if (isHoldingPaintBrush(player)) {
-            paintAtByPlayer(player, world, packet.pos(), packet.face(), packet.x(), packet.y());
+            paintAtByPlayer(player, world, packet.pos(), packet.face(), packet.x(), packet.y(), packet.hitPos());
             return;
         }
         if (!isHoldingEraser(player)) {
@@ -176,14 +180,15 @@ public final class PaintOverlayFeature {
             clearFacesAround(world, packet.pos(), packet.face(), getBrushSettings(player).radius());
             return;
         }
-        eraseAt(world, packet.pos(), packet.face(), packet.x(), packet.y(), getBrushSettings(player).radius());
+        eraseAt(world, packet.pos(), packet.face(), packet.x(), packet.y(), getBrushSettings(player).radius(), packet.hitPos());
     }
 
     private static void handleEditorPaintStroke(ServerPlayerEntity player, PaintOverlayPackets.EditorPaintStrokeC2S packet) {
         if (!(player.getWorld() instanceof ServerWorld world) || !hasPaintEditorAccess(player)) {
             return;
         }
-        if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
+        if (!isValidHitPoint(packet.pos(), packet.hitPos())
+                || packet.hitPos().squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
             return;
         }
         if (world.getBlockState(packet.pos()).getBlock() == ModBlocks.DRAWING_BOARD
@@ -191,11 +196,11 @@ public final class PaintOverlayFeature {
             return;
         }
         if (packet.tool() == 1) {
-            paintAtByPlayer(player, world, packet.pos(), packet.face(), packet.x(), packet.y());
+            paintAtByPlayer(player, world, packet.pos(), packet.face(), packet.x(), packet.y(), packet.hitPos());
             return;
         }
         if (packet.tool() == 4) {
-            sprayAtByPlayer(player, world, packet.pos(), packet.face(), packet.x(), packet.y());
+            sprayAtByPlayer(player, world, packet.pos(), packet.face(), packet.x(), packet.y(), packet.hitPos());
             return;
         }
         if (packet.tool() != 2) {
@@ -205,7 +210,17 @@ public final class PaintOverlayFeature {
             clearFacesAround(world, packet.pos(), packet.face(), getBrushSettings(player).radius());
             return;
         }
-        eraseAt(world, packet.pos(), packet.face(), packet.x(), packet.y(), getBrushSettings(player).radius());
+        eraseAt(world, packet.pos(), packet.face(), packet.x(), packet.y(), getBrushSettings(player).radius(), packet.hitPos());
+    }
+
+    private static boolean isValidHitPoint(BlockPos pos, Vec3d hitPos) {
+        if (hitPos == null || !Double.isFinite(hitPos.x) || !Double.isFinite(hitPos.y) || !Double.isFinite(hitPos.z)) {
+            return false;
+        }
+        double tolerance = 1.0E-3D;
+        return hitPos.x >= pos.getX() - tolerance && hitPos.x <= pos.getX() + 1.0D + tolerance
+                && hitPos.y >= pos.getY() - tolerance && hitPos.y <= pos.getY() + 1.0D + tolerance
+                && hitPos.z >= pos.getZ() - tolerance && hitPos.z <= pos.getZ() + 1.0D + tolerance;
     }
 
     private static void handleRestoreFace(ServerPlayerEntity player, PaintOverlayPackets.RestoreFaceC2S packet) {
@@ -661,24 +676,28 @@ public final class PaintOverlayFeature {
         paintAtLimited(world, pos, face, x, y, settings, Integer.MAX_VALUE);
     }
 
-    private static void paintAtByPlayer(ServerPlayerEntity player, ServerWorld world, BlockPos pos, Direction face, int x, int y) {
+    private static void paintAtByPlayer(ServerPlayerEntity player, ServerWorld world, BlockPos pos, Direction face,
+                                        int x, int y, Vec3d hitPos) {
         BrushUse brushUse = brushUse(player);
         if (brushUse == null) {
             return;
         }
-        int changedPixels = paintAtLimited(world, pos, face, x, y, brushUse.settings(), paintBudget(player, brushUse.stack()));
+        int changedPixels = paintOnSurfacesLimited(world, hitPos, brushUse.settings(),
+                paintBudget(player, brushUse.stack()));
         if (changedPixels > 0 && !player.isCreative()) {
             PaintBrushItem.consumePaint(brushUse.stack(), PaintBrushItem.getSelectedSlot(brushUse.stack()), PaintConfig.getInstance().scaledConsumption(changedPixels));
             player.getInventory().markDirty();
         }
     }
 
-    private static void sprayAtByPlayer(ServerPlayerEntity player, ServerWorld world, BlockPos pos, Direction face, int x, int y) {
+    private static void sprayAtByPlayer(ServerPlayerEntity player, ServerWorld world, BlockPos pos, Direction face,
+                                        int x, int y, Vec3d hitPos) {
         BrushUse brushUse = sprayUse(player);
         if (brushUse == null) {
             return;
         }
-        int changedPixels = sprayAtLimited(world, pos, face, x, y, brushUse.settings(), paintBudget(player, brushUse.stack()));
+        int changedPixels = sprayOnSurfacesLimited(world, hitPos, brushUse.settings(),
+                paintBudget(player, brushUse.stack()));
         if (changedPixels > 0 && !player.isCreative()) {
             PaintBrushItem.consumePaint(brushUse.stack(), PaintBrushItem.getSelectedSlot(brushUse.stack()), PaintConfig.getInstance().scaledConsumption(changedPixels));
             player.getInventory().markDirty();
@@ -713,6 +732,29 @@ public final class PaintOverlayFeature {
             return 0;
         }
         broadcastFace(world, pos, face, store.getPixels(pos, face));
+        return changedPixels;
+    }
+
+    private static int paintOnSurfacesLimited(ServerWorld world, Vec3d hitPos, BrushSettings settings, int budget) {
+        if (budget <= 0) {
+            return 0;
+        }
+        PaintOverlayStore store = PaintOverlayStore.get(world);
+        List<PaintSurfaceTargeting.SurfacePixel> targets = PaintSurfaceTargeting.collect(
+                world, hitPos, settings.radius());
+        Set<PaintOverlayStore.FaceKey> changedFaces = new LinkedHashSet<>();
+        int changedPixels = 0;
+        for (PaintSurfaceTargeting.SurfacePixel target : targets) {
+            if (changedPixels >= budget) {
+                break;
+            }
+            PaintOverlayStore.FaceKey key = target.key();
+            if (store.setPixel(key.pos(), key.face(), target.x(), target.y(), settings.color())) {
+                changedFaces.add(key);
+                changedPixels++;
+            }
+        }
+        broadcastChangedFaces(world, store, changedFaces);
         return changedPixels;
     }
 
@@ -756,6 +798,52 @@ public final class PaintOverlayFeature {
         return changedPixels;
     }
 
+    private static int sprayOnSurfacesLimited(ServerWorld world, Vec3d hitPos, BrushSettings settings, int budget) {
+        if (budget <= 0) {
+            return 0;
+        }
+        List<PaintSurfaceTargeting.SurfacePixel> targets = PaintSurfaceTargeting.collect(
+                world, hitPos, settings.radius());
+        if (targets.isEmpty()) {
+            return 0;
+        }
+        PaintOverlayStore store = PaintOverlayStore.get(world);
+        Map<PaintOverlayStore.FaceKey, int[]> facePixels = new LinkedHashMap<>();
+        Set<PaintOverlayStore.FaceKey> changedFaces = new LinkedHashSet<>();
+        Random random = Random.create(spraySeed(world, BlockPos.ofFloored(hitPos), Direction.UP,
+                MathHelper.floor(hitPos.x * PaintOverlayStore.SIZE), MathHelper.floor(hitPos.y * PaintOverlayStore.SIZE)));
+        int radius = MathHelper.clamp(settings.radius(), MIN_RADIUS, MAX_MANUAL_RADIUS);
+        int dotCount = MathHelper.clamp(radius * radius * 3, 6, 384);
+        double worldRadius = PaintSurfaceTargeting.worldRadius(radius);
+        int changedPixels = 0;
+        for (int i = 0; i < dotCount && changedPixels < budget; i++) {
+            PaintSurfaceTargeting.SurfacePixel target = targets.get(random.nextInt(targets.size()));
+            double normalizedDistance = worldRadius <= 0.0D
+                    ? 0.0D
+                    : Math.min(1.0D, Math.sqrt(target.distanceSquared()) / worldRadius);
+            float falloff = (float) Math.pow(1.0D - normalizedDistance, 1.4D);
+            if (random.nextFloat() > falloff) {
+                continue;
+            }
+            PaintOverlayStore.FaceKey key = target.key();
+            int[] pixels = facePixels.computeIfAbsent(key, ignored -> store.getPixels(key.pos(), key.face()));
+            int index = target.y() * PaintOverlayStore.SIZE + target.x();
+            int color = sprayColor(pixels[index], settings.color(), falloff);
+            if (pixels[index] != color) {
+                pixels[index] = color;
+                changedFaces.add(key);
+                changedPixels++;
+            }
+        }
+        for (PaintOverlayStore.FaceKey key : changedFaces) {
+            int[] pixels = facePixels.get(key);
+            if (pixels != null && store.setPixels(key.pos(), key.face(), pixels)) {
+                broadcastFace(world, key.pos(), key.face(), pixels);
+            }
+        }
+        return changedPixels;
+    }
+
     private static long spraySeed(ServerWorld world, BlockPos pos, Direction face, int x, int y) {
         long seed = world.getTime();
         seed = seed * 31L + pos.asLong();
@@ -792,6 +880,18 @@ public final class PaintOverlayFeature {
             return;
         }
         broadcastFace(world, pos, face, store.getPixels(pos, face));
+    }
+
+    private static void eraseAt(ServerWorld world, BlockPos pos, Direction face, int x, int y, int radius, Vec3d hitPos) {
+        PaintOverlayStore store = PaintOverlayStore.get(world);
+        Set<PaintOverlayStore.FaceKey> changedFaces = new LinkedHashSet<>();
+        for (PaintSurfaceTargeting.SurfacePixel target : PaintSurfaceTargeting.collect(world, hitPos, radius)) {
+            PaintOverlayStore.FaceKey key = target.key();
+            if (store.setPixel(key.pos(), key.face(), target.x(), target.y(), 0)) {
+                changedFaces.add(key);
+            }
+        }
+        broadcastChangedFaces(world, store, changedFaces);
     }
 
     public static void clearFacesAround(ServerWorld world, BlockPos pos, Direction face, int radius) {
@@ -921,7 +1021,7 @@ public final class PaintOverlayFeature {
         return true;
     }
 
-    private static boolean canPlacePaint(ServerWorld world, BlockPos pos) {
+    public static boolean canPlacePaint(net.minecraft.world.BlockView world, BlockPos pos) {
         return allowNonFullBlockPainting || world.getBlockState(pos).isFullCube(world, pos);
     }
 
@@ -956,6 +1056,13 @@ public final class PaintOverlayFeature {
             if (isNear(player, pos)) {
                 ServerPlayNetworking.send(player, packet);
             }
+        }
+    }
+
+    private static void broadcastChangedFaces(ServerWorld world, PaintOverlayStore store,
+                                              Set<PaintOverlayStore.FaceKey> changedFaces) {
+        for (PaintOverlayStore.FaceKey key : changedFaces) {
+            broadcastFace(world, key.pos(), key.face(), store.getPixels(key.pos(), key.face()));
         }
     }
 

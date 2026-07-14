@@ -9,6 +9,7 @@ import com.kuilunfuzhe.monvhua.features.gravity.GravityAreaBoundaryRenderer;
 import com.kuilunfuzhe.monvhua.features.injured_and_bleeding.InjuredBleedingClient;
 import com.kuilunfuzhe.monvhua.features.paint.PaintBucketCarryClientState;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
+import com.kuilunfuzhe.monvhua.features.paint.PaintToolTargetPreviewRenderer;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.through.ThroughItem;
 import com.kuilunfuzhe.monvhua.renderer.bodypose.BodyPoseWorldPreviewRenderer;
@@ -43,6 +44,7 @@ public class WorldRenderHandler {
             GravityAreaBoundaryRenderer.render(context);
             AreaTipAreaRenderer.render(context);
             PaintOverlayClient.render(context);
+            PaintToolTargetPreviewRenderer.render(context);
             InjuredBleedingClient.render(context);
             PlayerBindingClient.render(context);
             PaintBucketCarryClientState.render(context);

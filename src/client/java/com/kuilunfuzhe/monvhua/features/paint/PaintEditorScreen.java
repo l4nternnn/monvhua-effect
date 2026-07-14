@@ -327,6 +327,22 @@ public class PaintEditorScreen extends Screen {
     public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
     }
 
+    public PaintOverlayClient.EditorTool previewTool() {
+        return activeEditorTool();
+    }
+
+    public double previewMouseX() {
+        return lastMouseX;
+    }
+
+    public double previewMouseY() {
+        return lastMouseY;
+    }
+
+    public boolean previewMouseTargetsWorld() {
+        return lastMouseX >= LEFT_WIDTH && lastMouseX < rightX();
+    }
+
     @Override
     protected void applyBlur(DrawContext context) {
     }
@@ -406,6 +422,7 @@ public class PaintEditorScreen extends Screen {
         if (radiusField != null && radiusField.visible && radiusField.isMouseOver(mouseX, mouseY)) {
             return super.mouseClicked(mouseX, mouseY, button);
         }
+        clearTextFieldFocus();
         if (handleLeftPanelClick(mouseX, mouseY) || handleRightPanelClick(mouseX, mouseY)) {
             return true;
         }
@@ -425,12 +442,6 @@ public class PaintEditorScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        if (hexField != null && hexField.visible && hexField.isFocused()) {
-            return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
-        }
-        if (radiusField != null && radiusField.visible && radiusField.isFocused()) {
-            return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
-        }
         if (pickingColor && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             if (selectedTool == PaintOverlayClient.EditorTool.PRESET) {
                 pickPresetColor(mouseX, mouseY, true);
@@ -452,6 +463,12 @@ public class PaintEditorScreen extends Screen {
         if (draggingShapeStroke && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             updateShapeStrokeFromMouse(mouseX);
             return true;
+        }
+        if (hexField != null && hexField.visible && hexField.isFocused()) {
+            return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        }
+        if (radiusField != null && radiusField.visible && radiusField.isFocused()) {
+            return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
         }
         if ((selectedTool == PaintOverlayClient.EditorTool.SELECT || selectedTool == PaintOverlayClient.EditorTool.SHAPE)
                 && dragMode != DragMode.NONE
@@ -481,12 +498,6 @@ public class PaintEditorScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (hexField != null && hexField.visible && hexField.isFocused() && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-            return super.mouseReleased(mouseX, mouseY, button);
-        }
-        if (radiusField != null && radiusField.visible && radiusField.isFocused() && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-            return super.mouseReleased(mouseX, mouseY, button);
-        }
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             if ((selectedTool == PaintOverlayClient.EditorTool.SELECT || selectedTool == PaintOverlayClient.EditorTool.SHAPE)
                     && dragMode != DragMode.NONE) {
@@ -516,6 +527,14 @@ public class PaintEditorScreen extends Screen {
                     PaintOverlayClient.recordPickedColor(PaintOverlayClient.selectedColor());
                 }
             }
+            if (!pickingColor && !leftLooking
+                    && hexField != null && hexField.visible && hexField.isFocused()) {
+                return super.mouseReleased(mouseX, mouseY, button);
+            }
+            if (!pickingColor && !leftLooking
+                    && radiusField != null && radiusField.visible && radiusField.isFocused()) {
+                return super.mouseReleased(mouseX, mouseY, button);
+            }
             pickingColor = false;
             leftLooking = false;
             PaintOverlayClient.stopEditorUse();
@@ -529,6 +548,15 @@ public class PaintEditorScreen extends Screen {
             return true;
         }
         return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    private void clearTextFieldFocus() {
+        if (hexField != null) {
+            hexField.setFocused(false);
+        }
+        if (radiusField != null) {
+            radiusField.setFocused(false);
+        }
     }
 
     private void performEditorUseInterpolated(double mouseX, double mouseY, double deltaX, double deltaY) {

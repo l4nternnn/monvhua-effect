@@ -953,7 +953,8 @@ public final class PaintOverlayClient {
         if (spray) {
             syncSettings(EditorTool.SPRAY);
         }
-        SafeClientNetworking.send(new PaintOverlayPackets.PaintStrokeC2S(pos, face, pixel[0], pixel[1], clear));
+        SafeClientNetworking.send(new PaintOverlayPackets.PaintStrokeC2S(
+                pos, face, pixel[0], pixel[1], clear, hit.getPos()));
     }
 
     public static boolean isBrushInputActive(MinecraftClient client) {
@@ -1136,11 +1137,12 @@ public final class PaintOverlayClient {
         }
         lastStrokeKey = key;
         repeatedStrokeTicks = 0;
-        beginEditorHistory(tool, clear, pos, face);
+        beginEditorHistory(tool, clear, client, hit.getPos(), pos, face);
         if (tool == EditorTool.SPRAY) {
             syncSettings(EditorTool.SPRAY);
         }
-        SafeClientNetworking.send(new PaintOverlayPackets.EditorPaintStrokeC2S(pos, face, pixel[0], pixel[1], tool.networkId(), clear));
+        SafeClientNetworking.send(new PaintOverlayPackets.EditorPaintStrokeC2S(
+                pos, face, pixel[0], pixel[1], tool.networkId(), clear, hit.getPos()));
     }
 
     private static BlockHitResult crosshairBlockHit(MinecraftClient client) {
@@ -1519,8 +1521,9 @@ public final class PaintOverlayClient {
         client.player.setPitch(MathHelper.clamp(client.player.getPitch() + (float) deltaY * sensitivity, -89.9F, 89.9F));
     }
 
-    private static void beginEditorHistory(EditorTool tool, boolean clearFace, BlockPos pos, Direction face) {
-        Set<EditorHistoryTarget> expectedKeys = expectedEditorHistoryKeys(tool, clearFace, pos, face);
+    private static void beginEditorHistory(EditorTool tool, boolean clearFace, MinecraftClient client,
+                                           Vec3d hitPos, BlockPos pos, Direction face) {
+        Set<EditorHistoryTarget> expectedKeys = expectedEditorHistoryKeys(tool, clearFace, client, hitPos, pos, face);
         if (pendingEditorHistory == null || pendingEditorHistory.closed()) {
             finishPendingEditorHistoryIfIdle(true);
             pendingEditorHistory = new PendingEditorHistoryStep(editorHistorySequence++, editorHistoryLabel(tool, clearFace), expectedKeys);
@@ -1572,18 +1575,27 @@ public final class PaintOverlayClient {
         pendingEditorHistory.touch(expectedKeys);
     }
 
-    private static Set<EditorHistoryTarget> expectedEditorHistoryKeys(EditorTool tool, boolean clearFace, BlockPos pos, Direction face) {
+    private static Set<EditorHistoryTarget> expectedEditorHistoryKeys(EditorTool tool, boolean clearFace,
+                                                                      MinecraftClient client, Vec3d hitPos,
+                                                                      BlockPos pos, Direction face) {
         Set<EditorHistoryTarget> keys = new HashSet<>();
         if (tool == EditorTool.ERASER && clearFace) {
-            int blockRadius = Math.max(0, MathHelper.clamp(selectedRadius(tool), PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_MANUAL_RADIUS) - 1);
+            int blockRadius = Math.max(0, MathHelper.clamp(selectedRadius(tool),
+                    PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_MANUAL_RADIUS) - 1);
             for (int a = -blockRadius; a <= blockRadius; a++) {
                 for (int b = -blockRadius; b <= blockRadius; b++) {
                     if (a * a + b * b <= blockRadius * blockRadius) {
-                        keys.add(EditorHistoryTarget.block(new PaintOverlayStore.FaceKey(offsetOnFacePlane(pos, face, a, b), face)));
+                        keys.add(EditorHistoryTarget.block(new PaintOverlayStore.FaceKey(
+                                offsetOnFacePlane(pos, face, a, b), face)));
                     }
                 }
             }
-        } else {
+        } else if (client != null && client.world != null && hitPos != null) {
+            for (PaintOverlayStore.FaceKey key : PaintSurfaceTargeting.collectFaces(client.world, hitPos, selectedRadius(tool))) {
+                keys.add(EditorHistoryTarget.block(key));
+            }
+        }
+        if (keys.isEmpty()) {
             keys.add(EditorHistoryTarget.block(new PaintOverlayStore.FaceKey(pos, face)));
         }
         return keys;

@@ -10,6 +10,7 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -558,7 +559,7 @@ public final class PaintOverlayPackets {
         }
     }
 
-    public record PaintStrokeC2S(BlockPos pos, Direction face, int x, int y, boolean clearFace) implements CustomPayload {
+    public record PaintStrokeC2S(BlockPos pos, Direction face, int x, int y, boolean clearFace, Vec3d hitPos) implements CustomPayload {
         public static final Id<PaintStrokeC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "paint_stroke"));
         public static final PacketCodec<RegistryByteBuf, PaintStrokeC2S> CODEC = PacketCodec.of(PaintStrokeC2S::write, PaintStrokeC2S::new);
         private static boolean registered = false;
@@ -568,7 +569,8 @@ public final class PaintOverlayPackets {
         }
 
         private PaintStrokeC2S(RegistryByteBuf buf) {
-            this(buf.readBlockPos(), Direction.byIndex(buf.readVarInt()), buf.readVarInt(), buf.readVarInt(), buf.readBoolean());
+            this(buf.readBlockPos(), Direction.byIndex(buf.readVarInt()), buf.readVarInt(), buf.readVarInt(), buf.readBoolean(),
+                    new Vec3d(buf.readDouble(), buf.readDouble(), buf.readDouble()));
         }
 
         private void write(RegistryByteBuf buf) {
@@ -577,6 +579,9 @@ public final class PaintOverlayPackets {
             buf.writeVarInt(x);
             buf.writeVarInt(y);
             buf.writeBoolean(clearFace);
+            buf.writeDouble(hitPos.x);
+            buf.writeDouble(hitPos.y);
+            buf.writeDouble(hitPos.z);
         }
 
         public static void register() {
@@ -661,7 +666,7 @@ public final class PaintOverlayPackets {
         }
     }
 
-    public record EditorPaintStrokeC2S(BlockPos pos, Direction face, int x, int y, int tool, boolean clearFace) implements CustomPayload {
+    public record EditorPaintStrokeC2S(BlockPos pos, Direction face, int x, int y, int tool, boolean clearFace, Vec3d hitPos) implements CustomPayload {
         public static final Id<EditorPaintStrokeC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "editor_paint_stroke"));
         public static final PacketCodec<RegistryByteBuf, EditorPaintStrokeC2S> CODEC = PacketCodec.of(EditorPaintStrokeC2S::write, EditorPaintStrokeC2S::new);
         private static boolean registered = false;
@@ -671,7 +676,8 @@ public final class PaintOverlayPackets {
         }
 
         private EditorPaintStrokeC2S(RegistryByteBuf buf) {
-            this(buf.readBlockPos(), Direction.byIndex(buf.readVarInt()), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean());
+            this(buf.readBlockPos(), Direction.byIndex(buf.readVarInt()), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean(),
+                    new Vec3d(buf.readDouble(), buf.readDouble(), buf.readDouble()));
         }
 
         private void write(RegistryByteBuf buf) {
@@ -681,6 +687,9 @@ public final class PaintOverlayPackets {
             buf.writeVarInt(y);
             buf.writeVarInt(tool);
             buf.writeBoolean(clearFace);
+            buf.writeDouble(hitPos.x);
+            buf.writeDouble(hitPos.y);
+            buf.writeDouble(hitPos.z);
         }
 
         public static void register() {
