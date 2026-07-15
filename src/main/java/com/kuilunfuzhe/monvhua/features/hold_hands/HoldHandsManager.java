@@ -51,6 +51,20 @@ public final class HoldHandsManager {
     private static final double ANCHOR_SNEAK_INPUT_SPEED = 0.055D;
     private static final double ANCHOR_FLY_VERTICAL_INPUT_SPEED = 0.14D;
     private static final double ANCHOR_JUMP_INPUT_SPEED = 0.18D;
+    private static final double PAIR_INTENT_FILTER_ALPHA = 0.32D;
+    private static final double PAIR_CENTER_STIFFNESS = 0.18D;
+    private static final double PAIR_CENTER_MAX_MEASURED_CORRECTION = 0.08D;
+    private static final double PAIR_MAX_HORIZONTAL_SPEED = 0.30D;
+    private static final double PAIR_MAX_VERTICAL_SPEED = 0.18D;
+    private static final double PAIR_MAX_ACCELERATION = 0.09D;
+    private static final double PAIR_POSITION_DEADBAND = 0.055D;
+    private static final double PAIR_POSITION_STIFFNESS = 0.64D;
+    private static final double PAIR_MAX_CORRECTION_SPEED = 0.82D;
+    private static final double PAIR_VERTICAL_STIFFNESS = 0.30D;
+    private static final double PAIR_MAX_VERTICAL_CORRECTION_SPEED = 0.18D;
+    private static final double PAIR_TELEPORT_DISTANCE = 7.0D;
+    private static final int PAIR_TELEPORT_CONFIRM_TICKS = 4;
+    private static final int PAIR_VERTICAL_CONFIRM_TICKS = 3;
     private static final double FOLLOW_POSITION_STEP_DEADBAND = 0.20D;
     private static final double TAUT_POSITION_STEP_DEADBAND = 0.08D;
     private static final double FOLLOW_POSITION_MIN_STEP = 0.08D;
@@ -348,39 +362,69 @@ public final class HoldHandsManager {
         float leaderBodyYaw = leader.getBodyYaw();
         float followerBodyYaw = holdBodyYaw;
         String key = pairKey(leader.getUuid(), follower.getUuid());
-        HoldAnchorState anchor = ANCHORS.get(key);
-        if (anchor == null || anchor.position() == null) {
+        HoldAnchorState state = ANCHORS.get(key);
+        Vec3d measuredCenter = leader.getPos().add(follower.getPos()).multiply(0.5D);
+        if (state == null || state.center() == null || state.position() == null) {
             Vec3d start = previousSharedHandPoint != null && previousSharedHandPoint.lengthSquared() > 0.000001D
                     ? previousSharedHandPoint
                     : solveSharedHandPoint(leader, follower, defaultDistance);
-            anchor = new HoldAnchorState(start, Vec3d.ZERO);
+            state = new HoldAnchorState(start, Vec3d.ZERO, measuredCenter, Vec3d.ZERO,
+                    Vec3d.ZERO, Vec3d.ZERO, 0, 0);
         }
 
-        String verticalLeadReason = verticalLeadReason(leader, follower);
-        boolean useVerticalLead = !"none".equals(verticalLeadReason);
-        Vec3d leaderIntent = endpointMotion(inputIntentVelocity(leader), useVerticalLead);
-        Vec3d followerIntent = endpointMotion(inputIntentVelocity(follower), useVerticalLead);
-        Vec3d desiredEndpoint = solveSharedHandPoint(leader.getPos(), follower.getPos(),
-                leaderIntent,
-                followerIntent,
+        String rawVerticalLeadReason = verticalLeadReason(leader, follower);
+        boolean verticalCandidate = !"none".equals(rawVerticalLeadReason);
+        int verticalTicks = verticalCandidate
+                ? Math.min(PAIR_VERTICAL_CONFIRM_TICKS, state.verticalTicks() + 1)
+                : Math.max(0, state.verticalTicks() - 1);
+        boolean useVerticalLead = verticalTicks >= PAIR_VERTICAL_CONFIRM_TICKS;
+        String verticalLeadReason = useVerticalLead ? rawVerticalLeadReason
+                : verticalCandidate ? "pending:" + rawVerticalLeadReason : "none";
+
+        Vec3d leaderIntent = filterPairIntent(state.leaderIntent(), inputIntentVelocity(leader), useVerticalLead);
+        Vec3d followerIntent = filterPairIntent(state.followerIntent(), inputIntentVelocity(follower), useVerticalLead);
+        Vec3d pairVelocity = pairIntentVelocity(leaderIntent, followerIntent, useVerticalLead);
+        PairCenterResult centerResult = updatePairCenter(state, measuredCenter, pairVelocity, useVerticalLead);
+        Vec3d center = centerResult.center();
+        Vec3d centerVelocity = centerResult.velocity();
+
+        Vec3d pairOffset = desiredPairOffsetForAnchor(holdBodyYaw, defaultDistance, leader, follower, useVerticalLead);
+        Vec3d leaderTarget = center.subtract(pairOffset.multiply(0.5D));
+        Vec3d followerTarget = center.add(pairOffset.multiply(0.5D));
+        if (!useVerticalLead) {
+            leaderTarget = new Vec3d(leaderTarget.x, leader.getY(), leaderTarget.z);
+            followerTarget = new Vec3d(followerTarget.x, follower.getY(), followerTarget.z);
+        }
+
+        int teleportTicks = needsPairTeleport(leader, follower, leaderTarget, followerTarget)
+                ? state.teleportTicks() + 1 : 0;
+        Vec3d leaderCorrection;
+        Vec3d followerCorrection;
+        if (teleportTicks >= PAIR_TELEPORT_CONFIRM_TICKS) {
+            leader.requestTeleport(leaderTarget.x, leaderTarget.y, leaderTarget.z);
+            follower.requestTeleport(followerTarget.x, followerTarget.y, followerTarget.z);
+            leader.setVelocity(centerVelocity);
+            follower.setVelocity(centerVelocity);
+            leader.velocityModified = true;
+            follower.velocityModified = true;
+            leaderCorrection = leaderTarget.subtract(leader.getPos());
+            followerCorrection = followerTarget.subtract(follower.getPos());
+            teleportTicks = 0;
+        } else {
+            leaderCorrection = applyPairPlayerCorrection(leader, leaderTarget, centerVelocity, useVerticalLead);
+            followerCorrection = applyPairPlayerCorrection(follower, followerTarget, centerVelocity, useVerticalLead);
+        }
+
+        Vec3d desiredEndpoint = solveSharedHandPoint(leaderTarget, followerTarget,
+                endpointMotion(leaderIntent, useVerticalLead),
+                endpointMotion(followerIntent, useVerticalLead),
                 leaderBodyYaw, followerBodyYaw, defaultDistance, previousSharedHandPoint);
-        Vec3d anchorPosition = updateAnchorPosition(anchor, desiredEndpoint, leader, follower, useVerticalLead);
-        Vec3d anchorVelocity = ANCHORS.getOrDefault(key, anchor).velocity();
+        Vec3d anchorPosition = stabilizeAnchorEndpoint(state.position(), desiredEndpoint, useVerticalLead);
+        Vec3d anchorVelocity = state.position() == null ? Vec3d.ZERO : anchorPosition.subtract(state.position());
+        ANCHORS.put(key, new HoldAnchorState(anchorPosition, anchorVelocity, center, centerVelocity,
+                leaderIntent, followerIntent, verticalTicks, teleportTicks));
 
-        Vec3d leaderTarget = targetFeetForAnchor(anchorPosition, leaderBodyYaw,
-                HoldHandsSkeletalPose.ACTIVE_ROLE_HAND);
-        Vec3d followerTarget = targetFeetForAnchor(anchorPosition, followerBodyYaw,
-                HoldHandsSkeletalPose.PASSIVE_ROLE_HAND);
-        Vec3d separationCorrection = bodySeparationCorrection(leaderTarget, followerTarget, holdBodyYaw);
-        leaderTarget = leaderTarget.subtract(separationCorrection.multiply(0.5D));
-        followerTarget = followerTarget.add(separationCorrection.multiply(0.5D));
-
-        boolean allowPositiveVertical = hasExplicitVerticalInput(leader) || hasExplicitVerticalInput(follower);
-        Vec3d leaderCorrection = applyAnchorPlayerCorrection(leader, leaderTarget, anchorVelocity,
-                useVerticalLead, allowPositiveVertical);
-        Vec3d followerCorrection = applyAnchorPlayerCorrection(follower, followerTarget, anchorVelocity,
-                useVerticalLead, allowPositiveVertical);
-        logAnchorDebug(key, leader, follower, anchorPosition, anchorVelocity, desiredEndpoint,
+        logAnchorDebug(key, leader, follower, anchorPosition, centerVelocity, desiredEndpoint,
                 leaderTarget, followerTarget, leaderIntent, followerIntent, useVerticalLead,
                 verticalLeadReason, leaderCorrection, followerCorrection);
         if (useVerticalLead) {
@@ -391,94 +435,124 @@ public final class HoldHandsManager {
         return anchorPosition;
     }
 
-    private static Vec3d updateAnchorPosition(HoldAnchorState previous, Vec3d desiredEndpoint,
-                                              ServerPlayerEntity leader, ServerPlayerEntity follower,
-                                              boolean useVerticalLead) {
-        Vec3d position = previous.position();
-        Vec3d previousVelocity = previous.velocity() == null ? Vec3d.ZERO : previous.velocity();
-        Vec3d inputVelocity = inputIntentVelocity(leader).add(inputIntentVelocity(follower));
-        Vec3d springVelocity = desiredEndpoint.subtract(position).multiply(ANCHOR_POSITION_STIFFNESS);
+    private static Vec3d filterPairIntent(Vec3d previous, Vec3d raw, boolean useVerticalLead) {
+        Vec3d previousIntent = previous == null ? Vec3d.ZERO : previous;
+        Vec3d target = raw == null ? Vec3d.ZERO : raw;
         if (!useVerticalLead) {
-            previousVelocity = new Vec3d(previousVelocity.x, 0.0D, previousVelocity.z);
-            inputVelocity = new Vec3d(inputVelocity.x, 0.0D, inputVelocity.z);
-            springVelocity = new Vec3d(springVelocity.x, 0.0D, springVelocity.z);
+            previousIntent = new Vec3d(previousIntent.x, 0.0D, previousIntent.z);
+            target = new Vec3d(target.x, 0.0D, target.z);
         }
-        Vec3d targetVelocity = clampAnchorVelocity(inputVelocity.add(springVelocity));
-        Vec3d velocityDelta = HoldHandsLinkGeometry.clampSpeed(
-                targetVelocity.subtract(previousVelocity), ANCHOR_MAX_ACCELERATION);
-        Vec3d nextVelocity = clampAnchorVelocity(previousVelocity.add(velocityDelta)
-                .lerp(targetVelocity, ANCHOR_VELOCITY_ALPHA));
-        Vec3d nextPosition = position.add(nextVelocity);
+        return previousIntent.lerp(target, PAIR_INTENT_FILTER_ALPHA);
+    }
+
+    private static Vec3d pairIntentVelocity(Vec3d leaderIntent, Vec3d followerIntent, boolean useVerticalLead) {
+        Vec3d combined = (leaderIntent == null ? Vec3d.ZERO : leaderIntent)
+                .add(followerIntent == null ? Vec3d.ZERO : followerIntent);
+        Vec3d horizontal = HoldHandsLinkGeometry.clampSpeed(new Vec3d(combined.x, 0.0D, combined.z),
+                PAIR_MAX_HORIZONTAL_SPEED);
+        double y = useVerticalLead ? MathHelper.clamp(combined.y, -PAIR_MAX_VERTICAL_SPEED, PAIR_MAX_VERTICAL_SPEED) : 0.0D;
+        return new Vec3d(horizontal.x, y, horizontal.z);
+    }
+
+    private static PairCenterResult updatePairCenter(HoldAnchorState state, Vec3d measuredCenter,
+                                                     Vec3d pairVelocity, boolean useVerticalLead) {
+        Vec3d center = state.center() == null ? measuredCenter : state.center();
+        Vec3d previousVelocity = state.centerVelocity() == null ? Vec3d.ZERO : state.centerVelocity();
+        Vec3d measuredError = measuredCenter.subtract(center);
+        Vec3d measuredCorrection = HoldHandsLinkGeometry.clampSpeed(
+                new Vec3d(measuredError.x, 0.0D, measuredError.z).multiply(PAIR_CENTER_STIFFNESS),
+                PAIR_CENTER_MAX_MEASURED_CORRECTION);
+        double yCorrection = 0.0D;
+        if (useVerticalLead) {
+            yCorrection = MathHelper.clamp(measuredError.y * PAIR_CENTER_STIFFNESS,
+                    -PAIR_CENTER_MAX_MEASURED_CORRECTION, PAIR_CENTER_MAX_MEASURED_CORRECTION);
+        }
+
+        Vec3d targetVelocity = clampPairVelocity(pairVelocity.add(measuredCorrection).add(0.0D, yCorrection, 0.0D),
+                useVerticalLead);
+        Vec3d velocityDelta = HoldHandsLinkGeometry.clampSpeed(targetVelocity.subtract(previousVelocity),
+                PAIR_MAX_ACCELERATION);
+        Vec3d nextVelocity = clampPairVelocity(previousVelocity.add(velocityDelta), useVerticalLead);
+        Vec3d nextCenter = center.add(nextVelocity);
         if (!useVerticalLead) {
             nextVelocity = new Vec3d(nextVelocity.x, 0.0D, nextVelocity.z);
-            nextPosition = new Vec3d(nextPosition.x, desiredEndpoint.y, nextPosition.z);
+            nextCenter = new Vec3d(nextCenter.x, measuredCenter.y, nextCenter.z);
         }
-        ANCHORS.put(pairKey(leader.getUuid(), follower.getUuid()), new HoldAnchorState(nextPosition, nextVelocity));
-        return nextPosition;
+        return new PairCenterResult(nextCenter, nextVelocity);
     }
 
-    private static Vec3d targetFeetForAnchor(Vec3d anchor, float bodyYaw,
-                                             HoldHandsSkeletalPose.HandSide side) {
-        Vec3d palmLocal = HoldHandsLinkGeometry.palmSocket(side);
-        return anchor.subtract(HoldHandsLinkGeometry.bodyLocalToWorldVector(palmLocal, bodyYaw));
-    }
-
-    private static Vec3d bodySeparationCorrection(Vec3d leaderTarget, Vec3d followerTarget, float holdBodyYaw) {
-        Vec3d offset = followerTarget.subtract(leaderTarget);
-        Vec3d horizontal = new Vec3d(offset.x, 0.0D, offset.z);
-        double distance = horizontal.length();
-        if (distance >= HoldHandsLinkGeometry.MIN_BODY_DISTANCE) {
-            return Vec3d.ZERO;
+    private static Vec3d desiredPairOffsetForAnchor(float holdBodyYaw, double defaultDistance,
+                                                    ServerPlayerEntity leader, ServerPlayerEntity follower,
+                                                    boolean useVerticalLead) {
+        Vec3d base = HoldHandsLinkGeometry.defaultFollowerOffset(holdBodyYaw);
+        Vec3d horizontal = new Vec3d(base.x, 0.0D, base.z);
+        if (horizontal.lengthSquared() <= 0.000001D) {
+            horizontal = new Vec3d(1.0D, 0.0D, 0.0D);
         }
-
-        Vec3d axis = distance <= 0.000001D
-                ? HoldHandsLinkGeometry.defaultFollowerOffset(holdBodyYaw).normalize()
-                : horizontal.multiply(1.0D / distance);
-        double missing = HoldHandsLinkGeometry.MIN_BODY_DISTANCE - distance;
-        return axis.multiply(missing);
+        double distance = MathHelper.clamp(defaultDistance,
+                HoldHandsLinkGeometry.MIN_BODY_DISTANCE, HoldHandsLinkGeometry.NATURAL_MAX_SHOULDER_DISTANCE);
+        double y = useVerticalLead ? MathHelper.clamp(follower.getY() - leader.getY(),
+                -HoldHandsLinkGeometry.ARM_REACH, HoldHandsLinkGeometry.ARM_REACH) : 0.0D;
+        Vec3d direction = horizontal.normalize();
+        return new Vec3d(direction.x * distance, y, direction.z * distance);
     }
 
-    private static Vec3d applyAnchorPlayerCorrection(ServerPlayerEntity player, Vec3d targetFeet,
-                                                     Vec3d anchorVelocity, boolean useVerticalLead,
-                                                     boolean allowPositiveVertical) {
+    private static boolean needsPairTeleport(ServerPlayerEntity leader, ServerPlayerEntity follower,
+                                             Vec3d leaderTarget, Vec3d followerTarget) {
+        return leader.getPos().distanceTo(leaderTarget) >= PAIR_TELEPORT_DISTANCE
+                || follower.getPos().distanceTo(followerTarget) >= PAIR_TELEPORT_DISTANCE;
+    }
+
+    private static Vec3d applyPairPlayerCorrection(ServerPlayerEntity player, Vec3d targetFeet,
+                                                   Vec3d centerVelocity, boolean useVerticalLead) {
         Vec3d delta = targetFeet.subtract(player.getPos());
         Vec3d horizontalDelta = new Vec3d(delta.x, 0.0D, delta.z);
-        Vec3d horizontalVelocity = new Vec3d(anchorVelocity.x, 0.0D, anchorVelocity.z);
-        double verticalVelocity = 0.0D;
-        if (!useVerticalLead) {
-            delta = horizontalDelta;
-        } else {
-            double maxUp = allowPositiveVertical ? ANCHOR_PLAYER_MAX_VERTICAL_CORRECTION_SPEED : 0.0D;
-            double anchorY = MathHelper.clamp(anchorVelocity.y,
-                    -ANCHOR_PLAYER_MAX_VERTICAL_CORRECTION_SPEED, maxUp);
-            double correctionY = MathHelper.clamp(delta.y * ANCHOR_PLAYER_VERTICAL_STIFFNESS,
-                    -ANCHOR_PLAYER_MAX_VERTICAL_CORRECTION_SPEED, maxUp);
-            verticalVelocity = MathHelper.clamp(anchorY + correctionY,
-                    -ANCHOR_PLAYER_MAX_VERTICAL_CORRECTION_SPEED, maxUp);
+        Vec3d correction = Vec3d.ZERO;
+        if (horizontalDelta.length() > PAIR_POSITION_DEADBAND) {
+            correction = HoldHandsLinkGeometry.clampSpeed(horizontalDelta.multiply(PAIR_POSITION_STIFFNESS),
+                    PAIR_MAX_CORRECTION_SPEED);
         }
-        if (delta.length() >= ANCHOR_PLAYER_TELEPORT_DISTANCE) {
-            double targetY = player.getY();
-            if (useVerticalLead && (allowPositiveVertical || targetFeet.y <= player.getY())) {
-                targetY = targetFeet.y;
-            }
-            player.requestTeleport(targetFeet.x, targetY, targetFeet.z);
-            player.setVelocity(horizontalVelocity.add(0.0D, verticalVelocity, 0.0D));
-            player.velocityModified = true;
-            return delta;
-        } else {
-            Vec3d correction = HoldHandsLinkGeometry.clampSpeed(horizontalDelta.multiply(ANCHOR_PLAYER_STIFFNESS),
-                    ANCHOR_PLAYER_MAX_CORRECTION_SPEED);
-            player.setVelocity(horizontalVelocity.add(correction).add(0.0D, verticalVelocity, 0.0D));
-            player.velocityModified = true;
-            return correction.add(0.0D, verticalVelocity, 0.0D);
+        double verticalVelocity = player.getVelocity().y;
+        if (useVerticalLead) {
+            double centerY = MathHelper.clamp(centerVelocity.y,
+                    -PAIR_MAX_VERTICAL_CORRECTION_SPEED, PAIR_MAX_VERTICAL_CORRECTION_SPEED);
+            double correctionY = MathHelper.clamp(delta.y * PAIR_VERTICAL_STIFFNESS,
+                    -PAIR_MAX_VERTICAL_CORRECTION_SPEED, PAIR_MAX_VERTICAL_CORRECTION_SPEED);
+            verticalVelocity = MathHelper.clamp(centerY + correctionY,
+                    -PAIR_MAX_VERTICAL_CORRECTION_SPEED, PAIR_MAX_VERTICAL_CORRECTION_SPEED);
         }
+
+        Vec3d horizontalVelocity = new Vec3d(centerVelocity.x, 0.0D, centerVelocity.z).add(correction);
+        player.setVelocity(horizontalVelocity.add(0.0D, verticalVelocity, 0.0D));
+        player.velocityModified = true;
+        return correction.add(0.0D, useVerticalLead ? verticalVelocity : 0.0D, 0.0D);
     }
 
-    private static Vec3d clampAnchorVelocity(Vec3d velocity) {
+    private static Vec3d clampPairVelocity(Vec3d velocity, boolean useVerticalLead) {
         Vec3d horizontal = HoldHandsLinkGeometry.clampSpeed(new Vec3d(velocity.x, 0.0D, velocity.z),
-                ANCHOR_MAX_HORIZONTAL_SPEED);
-        double y = MathHelper.clamp(velocity.y, -ANCHOR_MAX_VERTICAL_SPEED, ANCHOR_MAX_VERTICAL_SPEED);
+                PAIR_MAX_HORIZONTAL_SPEED);
+        double y = useVerticalLead
+                ? MathHelper.clamp(velocity.y, -PAIR_MAX_VERTICAL_SPEED, PAIR_MAX_VERTICAL_SPEED)
+                : 0.0D;
         return new Vec3d(horizontal.x, y, horizontal.z);
+    }
+
+    private static Vec3d stabilizeAnchorEndpoint(Vec3d previous, Vec3d target, boolean useVerticalLead) {
+        if (target == null) {
+            return previous == null ? Vec3d.ZERO : previous;
+        }
+        if (previous == null || previous.lengthSquared() <= 0.000001D) {
+            return target;
+        }
+        double distance = previous.distanceTo(target);
+        if (distance <= SHARED_POINT_DEADBAND) {
+            return previous;
+        }
+        if (distance >= 1.20D) {
+            return target;
+        }
+        double alpha = useVerticalLead ? 0.58D : 0.34D;
+        return previous.lerp(target, alpha);
     }
 
     private static Vec3d inputIntentVelocity(ServerPlayerEntity player) {
@@ -926,6 +1000,14 @@ public final class HoldHandsManager {
         }
     }
 
-    private record HoldAnchorState(Vec3d position, Vec3d velocity) {
+    private record PairCenterResult(Vec3d center, Vec3d velocity) {
+    }
+
+    private record HoldAnchorState(Vec3d position, Vec3d velocity, Vec3d center, Vec3d centerVelocity,
+                                   Vec3d leaderIntent, Vec3d followerIntent,
+                                   int verticalTicks, int teleportTicks) {
+        private HoldAnchorState(Vec3d position, Vec3d velocity) {
+            this(position, velocity, null, Vec3d.ZERO, Vec3d.ZERO, Vec3d.ZERO, 0, 0);
+        }
     }
 }
