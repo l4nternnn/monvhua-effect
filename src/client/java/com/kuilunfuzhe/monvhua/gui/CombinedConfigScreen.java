@@ -487,7 +487,7 @@ public final class CombinedConfigScreen {
             addField(parent, "uiDrain", "界面消耗/s", cfg.uiDrainRate());
             addField(parent, "watchDrain", "注视消耗/s", cfg.watchDrainRate());
             addField(parent, "regen", "恢复/s", cfg.regenRate());
-            addField(parent, "parrotDaily", "鹦鹉每日", cfg.parrotDailyLimit());
+            addField(parent, "parrotDaily", "锚点每日次数", cfg.parrotDailyLimit());
             addSave(parent, "保存千里眼", this::saveEvil);
         }
 
@@ -587,8 +587,9 @@ public final class CombinedConfigScreen {
                 addField(parent, "sprayDecaySeconds", "喷洒衰减时间/s", cachedInjuredBleedingConfig.sprayDecaySeconds);
                 addField(parent, "particlesPerSecond", "每秒喷洒粒子数量", cachedInjuredBleedingConfig.particlesPerSecond);
                 addField(parent, "bloodSpotFadeSeconds", "落地血点消失时间/s", cachedInjuredBleedingConfig.bloodSpotFadeSeconds);
-                addField(parent, "bloodSpotButterflyChancePercent", "Blood butterfly chance/%", cachedInjuredBleedingConfig.bloodSpotButterflyChancePercent);
-                addField(parent, "bloodButterflyLifetimeSeconds", "Blood butterfly lifetime/s", cachedInjuredBleedingConfig.bloodButterflyLifetimeSeconds);
+                addField(parent, "bloodSpotButterflyChancePercent", "血蝴蝶散布/%", cachedInjuredBleedingConfig.bloodSpotButterflyChancePercent);
+                addField(parent, "bloodButterflyLifetimeSeconds", "血蝴蝶存活时间/s", cachedInjuredBleedingConfig.bloodButterflyLifetimeSeconds);
+                addField(parent, "triggerIntervalSeconds", "触发间隔/s", cachedInjuredBleedingConfig.triggerIntervalSeconds);
                 addEntitySelectorField(parent);
                 Button save = button(getContext(), "保存受伤配置");
                 save.setOnClickListener(v -> saveInjuredBleeding());
@@ -1092,6 +1093,7 @@ public final class CombinedConfigScreen {
                 config.bloodSpotFadeSeconds = doubleField("bloodSpotFadeSeconds");
                 config.bloodSpotButterflyChancePercent = doubleField("bloodSpotButterflyChancePercent");
                 config.bloodButterflyLifetimeSeconds = doubleField("bloodButterflyLifetimeSeconds");
+                config.triggerIntervalSeconds = doubleField("triggerIntervalSeconds");
                 config.entitySelector = text(fields.get("entitySelector"));
                 cachedInjuredBleedingConfig = InjuredBleedingConfig.fromJson(config.toJson());
                 ClientPlayNetworking.send(new InjuredBleedingPackets.UpdateConfigC2S(cachedInjuredBleedingConfig.toJson()));

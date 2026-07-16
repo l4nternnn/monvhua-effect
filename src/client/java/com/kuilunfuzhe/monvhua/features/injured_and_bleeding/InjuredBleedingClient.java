@@ -450,7 +450,7 @@ public final class InjuredBleedingClient {
 
         private static Particle spawn(MinecraftClient client, Vec3d pos, double vx, double vy, double vz) {
             if (client.particleManager != null) {
-                return client.particleManager.addParticle(ParticleTypes.FALLING_DRIPSTONE_LAVA, pos.x, pos.y, pos.z, vx, vy, vz);
+                return client.particleManager.addParticle(ParticleTypes.FALLING_LAVA, pos.x, pos.y, pos.z, vx, vy, vz);
             }
             return null;
         }

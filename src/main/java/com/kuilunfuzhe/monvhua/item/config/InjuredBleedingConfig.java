@@ -24,6 +24,7 @@ public class InjuredBleedingConfig {
     public double bloodSpotFadeSeconds = 6.0D;
     public double bloodSpotButterflyChancePercent = 0.0D;
     public double bloodButterflyLifetimeSeconds = 8.0D;
+    public double triggerIntervalSeconds = 0.0D;
     public String entitySelector = "";
 
     public static InjuredBleedingConfig getInstance() {
@@ -75,6 +76,7 @@ public class InjuredBleedingConfig {
         config.bloodSpotFadeSeconds = Math.clamp(config.bloodSpotFadeSeconds, 0.5D, 120.0D);
         config.bloodSpotButterflyChancePercent = Math.clamp(config.bloodSpotButterflyChancePercent, 0.0D, 100.0D);
         config.bloodButterflyLifetimeSeconds = Math.clamp(config.bloodButterflyLifetimeSeconds, 0.1D, 32.0D);
+        config.triggerIntervalSeconds = Math.clamp(config.triggerIntervalSeconds, 0.0D, 3600.0D);
         config.entitySelector = normalizeEntitySelector(config.entitySelector);
         return config;
     }

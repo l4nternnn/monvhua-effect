@@ -16,12 +16,16 @@ import net.minecraft.text.Text;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
+import java.util.UUID;
 
 public final class InjuredBleedingFeature {
     private static final double SYNC_DISTANCE_SQUARED = 96.0D * 96.0D;
     private static final double LANDING_RADIUS = 0.6D;
+    private static final Map<UUID, Long> LAST_BLEEDING_TRIGGER_TICKS = new HashMap<>();
 
     private InjuredBleedingFeature() {
     }
@@ -34,13 +38,17 @@ public final class InjuredBleedingFeature {
     }
 
     public static void handleDamage(LivingEntity entity, float amount) {
-        if (amount > 0.0F && entity.getWorld() instanceof ServerWorld world && entity.getMaxHealth() > 0.0F && matchesConfiguredSelector(world, entity)) {
+        if (amount > 0.0F && entity.getWorld() instanceof ServerWorld world && entity.getMaxHealth() > 0.0F) {
+            InjuredBleedingConfig config = InjuredBleedingConfig.getInstance();
+            if (!matchesConfiguredSelector(world, entity, config) || !canTriggerBleeding(world, entity, config)) {
+                return;
+            }
             spawnBloodEffect(world, entity, amount);
         }
     }
 
-    private static boolean matchesConfiguredSelector(ServerWorld world, LivingEntity entity) {
-        String selectorText = InjuredBleedingConfig.normalizeEntitySelector(InjuredBleedingConfig.getInstance().entitySelector);
+    private static boolean matchesConfiguredSelector(ServerWorld world, LivingEntity entity, InjuredBleedingConfig config) {
+        String selectorText = InjuredBleedingConfig.normalizeEntitySelector(config.entitySelector);
         if (selectorText == null || selectorText.isBlank()) {
             return true;
         }
@@ -55,6 +63,20 @@ public final class InjuredBleedingFeature {
             MonvhuaMod.LOGGER.warn("[Monvhua] Ignoring invalid injured bleeding entity selector: {}", selectorText, e);
             return false;
         }
+    }
+
+    private static boolean canTriggerBleeding(ServerWorld world, LivingEntity entity, InjuredBleedingConfig config) {
+        int intervalTicks = Math.max(0, (int) Math.round(config.triggerIntervalSeconds * 20.0D));
+        if (intervalTicks <= 0) {
+            return true;
+        }
+        long now = world.getTime();
+        Long lastTriggerTick = LAST_BLEEDING_TRIGGER_TICKS.get(entity.getUuid());
+        if (lastTriggerTick != null && now - lastTriggerTick < intervalTicks) {
+            return false;
+        }
+        LAST_BLEEDING_TRIGGER_TICKS.put(entity.getUuid(), now);
+        return true;
     }
 
     private static void spawnBloodEffect(ServerWorld world, LivingEntity entity, float amount) {
