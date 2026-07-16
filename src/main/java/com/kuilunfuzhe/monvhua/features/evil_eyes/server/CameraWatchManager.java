@@ -68,7 +68,7 @@ public class CameraWatchManager {
             UI_STATES.remove(uuid);
             return;
         }
-        UI_STATES.put(uuid, new UiState(true, MathHelper.clamp(previewCount, 0, 4), hovered, expanded));
+        UI_STATES.put(uuid, new UiState(true, MathHelper.clamp(previewCount, 0, 6), hovered, expanded));
     }
 
     /**

@@ -31,7 +31,9 @@
 		"InvertedWallMountedPlacementMixin",
 		"PlayerManagerMixin",
 		"ServerCommonNetworkHandlerMixin",
-		"ThroughPhaseCollisionMixin"
+		"ThroughPhaseCollisionMixin",
+		"possession.PossessionMovementMixin",
+		"possession.PossessionNetworkInputMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

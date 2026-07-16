@@ -34,6 +34,7 @@ import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayFeature;
 import com.kuilunfuzhe.monvhua.features.paint.PaintBucketBlock;
 import com.kuilunfuzhe.monvhua.features.portal.PortalItems;
 import com.kuilunfuzhe.monvhua.features.plant.PlantMagic;
+import com.kuilunfuzhe.monvhua.features.possession.PossessionFeature;
 import com.kuilunfuzhe.monvhua.item.ModItemGroups;
 import com.kuilunfuzhe.monvhua.item.area_tip.AreaTipItems;
 import com.kuilunfuzhe.monvhua.item.block_hole.BlockHoleItems;
@@ -191,6 +192,7 @@ public class MonvhuaMod implements ModInitializer {
         OpenUIS2C.register();
         ViewModeS2C.register();
         EntityMarkedS2C.register();
+        ClairvoyanceGazeAlertS2C.register();
         ToggleImagesS2CPacket.register();
         SelectView.register();
         ForceExitViewS2C.register();
@@ -666,6 +668,7 @@ public class MonvhuaMod implements ModInitializer {
         HotBackpackSaveFeature.initialize();
         PlayerBindingFeature.initialize();
         ThroughItem.initialize(configManager);
+        PossessionFeature.initialize();
         ModBlocks.initialize();
         Assembly_ModItems.initialize();
         mirror_of_then_and_now.initialize();

@@ -64,7 +64,10 @@
 		"PlayerEntityRenderStateAccessor",
 		"PlayerEntityRendererInvoker",
 		"PlayerEntityRendererMixin",
-		"PlayerListHudMixin"
+		"PlayerListHudMixin",
+		"possession.PossessionInputRedirectMixin",
+		"possession.PossessionHandStackMixin",
+		"possession.PossessionCrosshairTargetMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

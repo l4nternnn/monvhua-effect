@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.mixin.gravity;
 
 import com.kuilunfuzhe.monvhua.features.gravity.SurfaceGravityClientEngine;
+import com.kuilunfuzhe.monvhua.features.possession.PossessionClient;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.entity.Entity;
@@ -21,7 +22,9 @@ public abstract class GravityCrosshairTargetMixin {
 
     @Inject(method = "updateCrosshairTarget", at = @At("RETURN"))
     private void monvhua$updateSurfaceGravityCrosshairTarget(float tickProgress, CallbackInfo ci) {
-        if (client.player == null || !SurfaceGravityClientEngine.isActive(client.player)) {
+        if (PossessionClient.isActive()
+                || client.player == null
+                || !SurfaceGravityClientEngine.isActive(client.player)) {
             return;
         }
         HitResult hit = SurfaceGravityClientEngine.raycast(client, tickProgress);

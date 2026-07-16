@@ -30,6 +30,7 @@ public final class EvilEyesPackets {
         OpenUIS2C.register();
         ViewModeS2C.register();
         EntityMarkedS2C.register();
+        ClairvoyanceGazeAlertS2C.register();
         SelectView.register();
         ForceExitViewS2C.register();
         AnchorParticleS2C.register();
@@ -162,6 +163,29 @@ public final class EvilEyesPackets {
     public record ForceExitViewS2C() implements CustomPayload {
         public static final Id<ForceExitViewS2C> ID = new Id<>(Identifier.of("monvhua", "force_exit_view"));
         public static final PacketCodec<RegistryByteBuf, ForceExitViewS2C> CODEC = PacketCodec.unit(new ForceExitViewS2C());
+        private static boolean registered = false;
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record ClairvoyanceGazeAlertS2C(int type, String watcherName, int count, int durationTicks) implements CustomPayload {
+        public static final Id<ClairvoyanceGazeAlertS2C> ID = new Id<>(Identifier.of("monvhua", "clairvoyance_gaze_alert"));
+        public static final PacketCodec<PacketByteBuf, ClairvoyanceGazeAlertS2C> CODEC =
+                PacketCodec.tuple(PacketCodecs.INTEGER, ClairvoyanceGazeAlertS2C::type,
+                        PacketCodecs.STRING, ClairvoyanceGazeAlertS2C::watcherName,
+                        PacketCodecs.INTEGER, ClairvoyanceGazeAlertS2C::count,
+                        PacketCodecs.INTEGER, ClairvoyanceGazeAlertS2C::durationTicks,
+                        ClairvoyanceGazeAlertS2C::new);
         private static boolean registered = false;
 
         public static void register() {

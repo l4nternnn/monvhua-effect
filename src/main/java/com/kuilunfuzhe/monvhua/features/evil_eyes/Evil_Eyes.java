@@ -67,6 +67,10 @@ public class Evil_Eyes {
     private static final int INITIAL_MARK_TICKS = 40;           // 2 秒
     private static final int COOLDOWN_TICKS = 100;              // 5 秒
     private static final double PARTICLE_BROADCAST_RANGE_SQ = 64.0 * 64.0;
+    private static final int GAZE_ALERT_TYPE_PLAYER = 0;
+    private static final int GAZE_ALERT_TYPE_ANCHOR = 1;
+    private static final int GAZE_ALERT_DURATION_TICKS = 30;
+    private static final int GAZE_ALERT_SYNC_INTERVAL_TICKS = 10;
 
     /** 玩家标记列表：玩家UUID → (目标UUID → 过期tick) */
     private static final Map<UUID, Map<UUID, Long>> playerMarkedEntities = new ConcurrentHashMap<>();
@@ -80,6 +84,7 @@ public class Evil_Eyes {
      * 持续超出20tick（1秒）后自动移除标记。key=玩家UUID → (实体UUID → 首次超出tick)
      */
     private static final Map<UUID, Map<UUID, Long>> outOfRangeSince = new ConcurrentHashMap<>();
+    private static final Map<String, Long> gazeAlertLastSync = new ConcurrentHashMap<>();
     private static final Logger LOGGER = LoggerFactory.getLogger("Clairvoyance");
 
 
@@ -161,6 +166,28 @@ public class Evil_Eyes {
         if (!(e instanceof ArmorStandEntity as)) return false;
         Text name = as.getCustomName();
         return name != null && "clairvoyance_evil_eyes".equals(name.getString());
+    }
+
+    private static boolean hasClairvoyanceItem(ServerPlayerEntity player) {
+        for (int i = 0; i < player.getInventory().size(); i++) {
+            if (player.getInventory().getStack(i).getItem() == CLAIRVOYANCE_ITEM) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void syncGazeAlert(ServerPlayerEntity player, Entity watcher, int type, long now) {
+        if (player == null || watcher == null) {
+            return;
+        }
+        String key = player.getUuid() + ":" + type + ":" + watcher.getUuid();
+        Long lastSync = gazeAlertLastSync.get(key);
+        if (lastSync != null && now - lastSync < GAZE_ALERT_SYNC_INTERVAL_TICKS) {
+            return;
+        }
+        gazeAlertLastSync.put(key, now);
+        ServerPlayNetworking.send(player, new ClairvoyanceGazeAlertS2C(type, tag_pitch.entityDisplayName(watcher), 1, GAZE_ALERT_DURATION_TICKS));
     }
 
     public static boolean canMarkTarget(Entity entity) {
@@ -655,8 +682,7 @@ public class Evil_Eyes {
             World world = server.getWorld(World.OVERWORLD);
             if (world == null) return;
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-                if (player.getMainHandStack().getItem() != CLAIRVOYANCE_ITEM &&
-                        player.getOffHandStack().getItem() != CLAIRVOYANCE_ITEM) continue;
+                if (!hasClairvoyanceItem(player)) continue;
                 int stage = getPlayerStage(player, configManager);
                 int maxMarks = configManager.getStageConfig(stage).maxMarks();
                 Map<UUID, Long> marks = playerMarkedEntities.computeIfAbsent(player.getUuid(), k -> new ConcurrentHashMap<>());
@@ -664,15 +690,17 @@ public class Evil_Eyes {
                 Box searchBox = player.getBoundingBox().expand(range);
                 for (Entity entity : world.getOtherEntities(player, searchBox, e ->
                         canMarkTarget(e) && e != player)) {
-                    if (marks.containsKey(entity.getUuid())) continue;
+                    boolean alreadyMarked = marks.containsKey(entity.getUuid());
                     if (recentlyUnmarked.getOrDefault(entity.getUuid(), 0L) > world.getTime()) continue;
-                    if (getCurrentMarkCount(player.getUuid()) >= maxMarks) continue;
                     if (!hasLineOfSight(entity, player)) continue;
                     Vec3d toPlayer = player.getPos().subtract(entity.getPos()).normalize();
                     Vec3d entityLook = entity.getRotationVec(1.0f);
                     // 点积>0.5表示实体视线与玩家方向夹角<60°，即实体大致在看向玩家
                     if (entityLook.dotProduct(toPlayer) < 0.5) continue;
                     long now = world.getTime();
+                    syncGazeAlert(player, entity, GAZE_ALERT_TYPE_PLAYER, now);
+                    if (alreadyMarked) continue;
+                    if (getCurrentMarkCount(player.getUuid()) >= maxMarks) continue;
                     marks.put(entity.getUuid(), now + MARK_EXPIRE_TICKS); // 自动标记有效期20秒（400tick）
                     sendMarkedListToClient(player, marks, maxMarks);
                     player.sendMessage(Text.literal(tag_pitch.entityDisplayName(entity) + "在注视着你"), true);
@@ -807,7 +835,6 @@ public class Evil_Eyes {
                 Map<UUID, Long> marks = playerMarkedEntities.computeIfAbsent(ownerId, k -> new ConcurrentHashMap<>());
                 int stage = getPlayerStage(owner, configManager);
                 int maxMarks = configManager.getStageConfig(stage).maxMarks();
-                if (getCurrentMarkCount(ownerId) >= maxMarks) continue;
 
                 double range = ANCHOR_RANGE;
                 Box searchBox = stand.getBoundingBox().expand(range);
@@ -815,9 +842,8 @@ public class Evil_Eyes {
                         e -> canMarkTarget(e) && e != owner && e != stand);
 
                 for (LivingEntity living : nearby) {
-                    if (marks.containsKey(living.getUuid())) continue;
+                    boolean alreadyMarked = marks.containsKey(living.getUuid());
                     if (recentlyUnmarked.getOrDefault(living.getUuid(), 0L) > world.getTime()) continue;
-                    if (getCurrentMarkCount(ownerId) >= maxMarks) break;
 
                     // 1. 视线检测：从实体眼睛到盔甲架是否有遮挡
                     if (!hasLineOfSight(living, stand)) continue;
@@ -829,6 +855,9 @@ public class Evil_Eyes {
 
                     // 通过检测，标记该实体
                     long now = world.getTime();
+                    syncGazeAlert(owner, living, GAZE_ALERT_TYPE_ANCHOR, now);
+                    if (alreadyMarked) continue;
+                    if (getCurrentMarkCount(ownerId) >= maxMarks) continue;
                     long expire = now + MARK_EXPIRE_TICKS;  // 20秒
                     marks.put(living.getUuid(), expire);
                     sendMarkedListToClient(owner, marks, maxMarks);

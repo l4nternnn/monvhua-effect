@@ -19,12 +19,20 @@ public final class ClairvoyanceEnergyClient {
             }
             boolean holdingClairvoyance = client.player.getMainHandStack().getItem() == com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes.CLAIRVOYANCE_ITEM
                     || client.player.getOffHandStack().getItem() == com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes.CLAIRVOYANCE_ITEM;
-            if (!holdingClairvoyance && currentEnergy >= maxEnergy) {
+            boolean showEnergy = holdingClairvoyance || currentEnergy < maxEnergy;
+            boolean showGazeAlert = ClairvoyanceGazeAlertClient.hasActiveAlert()
+                    && ClairvoyanceGazeAlertClient.hasClairvoyanceInInventory(client.player);
+            if (!showEnergy && !showGazeAlert) {
                 return;
             }
             int x = 8;
             int y = context.getScaledWindowHeight() / 2 - 4;
-            renderBar(context, x, y, 92, 7, true);
+            if (showEnergy) {
+                renderBar(context, x, y, 92, 7, true);
+            }
+            if (showGazeAlert) {
+                ClairvoyanceGazeAlertClient.render(context, x, y + 11);
+            }
         });
     }
 

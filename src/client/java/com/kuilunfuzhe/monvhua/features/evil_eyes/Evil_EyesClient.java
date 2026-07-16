@@ -48,6 +48,13 @@ public class Evil_EyesClient {
     // 公开的标记实体映射（供其他类使用）
     public static final Map<UUID, Long> localMarkedEntities = new ConcurrentHashMap<>();
     public static final Map<UUID, MarkedEntityName> localMarkedEntityNames = new ConcurrentHashMap<>();
+    private static final long LOST_TARGET_GRACE_TICKS = 40L;
+    private static final Map<UUID, Long> missingEntitySince = new ConcurrentHashMap<>();
+    private static final Map<UUID, Long> missingSyncSince = new ConcurrentHashMap<>();
+    private static final Map<UUID, Long> markedSyncGenerations = new ConcurrentHashMap<>();
+    private static long currentMarkedSyncGeneration = 0L;
+    private static long pendingMarkedSyncGeneration = -1L;
+    private static long pendingMarkedSyncTick = -1L;
     private static volatile String viewMode = "viewport";
 
     public record MarkedEntityName(String name, String tag) {
@@ -68,16 +75,88 @@ public class Evil_EyesClient {
         return "viewport".equals(viewMode);
     }
 
+    public static void beginMarkedListSync(MinecraftClient client) {
+        long now = client != null && client.world != null ? client.world.getTime() : System.currentTimeMillis() / 50L;
+        currentMarkedSyncGeneration++;
+        pendingMarkedSyncGeneration = currentMarkedSyncGeneration;
+        pendingMarkedSyncTick = now;
+    }
+
+    public static void receiveMarkedEntity(UUID uuid, long expire, String name, String tag) {
+        localMarkedEntities.put(uuid, expire);
+        localMarkedEntityNames.put(uuid, new MarkedEntityName(name, tag));
+        markedSyncGenerations.put(uuid, currentMarkedSyncGeneration);
+        missingEntitySince.remove(uuid);
+        missingSyncSince.remove(uuid);
+    }
+
     public static boolean pruneLocalMarkedEntities(MinecraftClient client) {
         if (client == null || client.world == null) {
-            return !localMarkedEntities.isEmpty() && localMarkedEntities.keySet().removeIf(uuid -> true);
+            boolean changed = !localMarkedEntities.isEmpty();
+            localMarkedEntities.clear();
+            localMarkedEntityNames.clear();
+            missingEntitySince.clear();
+            missingSyncSince.clear();
+            markedSyncGenerations.clear();
+            pendingMarkedSyncGeneration = -1L;
+            pendingMarkedSyncTick = -1L;
+            return changed;
         }
         long now = client.world.getTime();
-        return localMarkedEntities.entrySet().removeIf(entry -> {
-            if (entry.getValue() <= now) return true;
+        boolean changed = finalizePendingMarkedListSync(now);
+        java.util.Iterator<Map.Entry<UUID, Long>> iterator = localMarkedEntities.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, Long> entry = iterator.next();
+            UUID uuid = entry.getKey();
+            if (entry.getValue() <= now) {
+                iterator.remove();
+                localMarkedEntityNames.remove(uuid);
+                missingEntitySince.remove(uuid);
+                missingSyncSince.remove(uuid);
+                markedSyncGenerations.remove(uuid);
+                changed = true;
+                continue;
+            }
             Entity entity = client.world.getEntity(entry.getKey());
-            return entity == null || !entity.isAlive();
-        });
+            if (entity != null && entity.isAlive()) {
+                missingEntitySince.remove(uuid);
+                continue;
+            }
+            long missingSince = missingEntitySince.computeIfAbsent(uuid, ignored -> now);
+            if (now - missingSince >= LOST_TARGET_GRACE_TICKS) {
+                iterator.remove();
+                localMarkedEntityNames.remove(uuid);
+                missingEntitySince.remove(uuid);
+                missingSyncSince.remove(uuid);
+                markedSyncGenerations.remove(uuid);
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    private static boolean finalizePendingMarkedListSync(long now) {
+        if (pendingMarkedSyncGeneration < 0L || now <= pendingMarkedSyncTick) {
+            return false;
+        }
+        boolean changed = false;
+        long syncGeneration = pendingMarkedSyncGeneration;
+        long syncTick = pendingMarkedSyncTick;
+        for (UUID uuid : localMarkedEntities.keySet()) {
+            if (markedSyncGenerations.getOrDefault(uuid, -1L) == syncGeneration) {
+                continue;
+            }
+            long missingSince = missingSyncSince.computeIfAbsent(uuid, ignored -> syncTick);
+            long graceExpire = missingSince + LOST_TARGET_GRACE_TICKS;
+            Long previousExpire = localMarkedEntities.get(uuid);
+            if (previousExpire == null || previousExpire != graceExpire) {
+                localMarkedEntities.put(uuid, graceExpire);
+                changed = true;
+            }
+        }
+        pendingMarkedSyncGeneration = -1L;
+        pendingMarkedSyncTick = -1L;
+        return changed;
     }
 
     /**
@@ -137,6 +216,11 @@ public class Evil_EyesClient {
     public static void clearMarkedEntityCache() {
         localMarkedEntities.clear();
         localMarkedEntityNames.clear();
+        missingEntitySince.clear();
+        missingSyncSince.clear();
+        markedSyncGenerations.clear();
+        pendingMarkedSyncGeneration = -1L;
+        pendingMarkedSyncTick = -1L;
     }
 
     // 内部方法

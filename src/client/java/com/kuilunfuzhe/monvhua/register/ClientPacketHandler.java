@@ -5,6 +5,7 @@ import com.google.gson.JsonParser;
 import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.MonvhuaModClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceEnergyClient;
+import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceGazeAlertClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
@@ -148,6 +149,10 @@ public class ClientPacketHandler {
             context.client().execute(() -> ClairvoyanceEnergyClient.setEnergy(packet.currentEnergy(), packet.maxEnergy()));
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(ClairvoyanceGazeAlertS2C.ID, (packet, context) -> {
+            context.client().execute(() -> ClairvoyanceGazeAlertClient.receive(packet.type(), packet.watcherName(), packet.count(), packet.durationTicks()));
+        });
+
         ClientPlayNetworking.registerGlobalReceiver(OpenUIS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
                 if (context.client().currentScreen instanceof com.kuilunfuzhe.monvhua.gui.evil_eyes.Evil_eyesScreen) context.client().setScreen(null);
@@ -164,14 +169,12 @@ public class ClientPacketHandler {
             context.client().execute(() -> {
                 UUID uuid = packet.entityUuid();
                 if (uuid.getMostSignificantBits() == 0 && uuid.getLeastSignificantBits() == 0) {
-                    Evil_EyesClient.localMarkedEntities.clear();
-                    Evil_EyesClient.localMarkedEntityNames.clear();
+                    Evil_EyesClient.beginMarkedListSync(context.client());
                     com.kuilunfuzhe.monvhua.gui.evil_eyes.Evil_eyesScreen.updateMarkedList(Evil_EyesClient.localMarkedEntities);
                     return;
                 }
                 long expire = context.client().world != null ? context.client().world.getTime() + 60 : System.currentTimeMillis() / 50 + 60;
-                Evil_EyesClient.localMarkedEntities.put(uuid, expire);
-                Evil_EyesClient.localMarkedEntityNames.put(uuid, new Evil_EyesClient.MarkedEntityName(packet.entityName(), packet.entityTag()));
+                Evil_EyesClient.receiveMarkedEntity(uuid, expire, packet.entityName(), packet.entityTag());
                 com.kuilunfuzhe.monvhua.gui.evil_eyes.Evil_eyesScreen.updateMarkedList(Evil_EyesClient.localMarkedEntities);
             });
         });

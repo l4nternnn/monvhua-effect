@@ -61,6 +61,7 @@ public final class PortalFramebufferRenderer {
 
     private static long frameIndex;
     private static int lastFailureLogTick = Integer.MIN_VALUE;
+    private static long lastRemoteRendererStateLogFrame = Long.MIN_VALUE / 2L;
     private static BlockPos lastRequestedSource;
     private static final Map<BlockPos, RemoteRequestState> REMOTE_REQUESTS = new LinkedHashMap<>();
     private static boolean remoteTerrainDirty;
@@ -71,6 +72,7 @@ public final class PortalFramebufferRenderer {
     private static RawProjectionMatrix remoteProjectionMatrix;
     private static final LongOpenHashSet REMOTE_SODIUM_CHUNKS = new LongOpenHashSet();
     private static final LongOpenHashSet QUEUED_REMOTE_SODIUM_CHUNKS = new LongOpenHashSet();
+    private static final LongOpenHashSet DIRTY_REMOTE_SODIUM_CHUNKS = new LongOpenHashSet();
     private static final ArrayDeque<Long> PENDING_REMOTE_SODIUM_CHUNKS = new ArrayDeque<>();
     private static boolean creatingRemoteRenderer;
 
@@ -214,7 +216,7 @@ public final class PortalFramebufferRenderer {
 
     public static void onRemoteChunkLoaded(int chunkX, int chunkZ) {
         remoteTerrainDirty = true;
-        queueRemoteSodiumChunk(chunkX, chunkZ);
+        queueRemoteSodiumChunk(chunkX, chunkZ, true);
     }
 
     public static void onRemoteViewChanged() {
@@ -232,6 +234,7 @@ public final class PortalFramebufferRenderer {
             return;
         }
         QUEUED_REMOTE_SODIUM_CHUNKS.removeAll(removedChunks);
+        DIRTY_REMOTE_SODIUM_CHUNKS.removeAll(removedChunks);
         PENDING_REMOTE_SODIUM_CHUNKS.removeIf(removedChunks::contains);
 
         if (remoteWorldRenderer == null
@@ -304,6 +307,7 @@ public final class PortalFramebufferRenderer {
             PortalRemoteRenderContext.clearRemoteRendererAlive();
             REMOTE_SODIUM_CHUNKS.clear();
             QUEUED_REMOTE_SODIUM_CHUNKS.clear();
+            DIRTY_REMOTE_SODIUM_CHUNKS.clear();
             PENDING_REMOTE_SODIUM_CHUNKS.clear();
             remoteTerrainDirty = true;
         }
@@ -590,7 +594,7 @@ public final class PortalFramebufferRenderer {
             PortalRemoteRenderContext.beginPortalPass(PortalRemoteChunkCache.getActiveSourcePos());
             try {
                 PortalRemoteChunkCache.forEachLoadedChunk(PortalFramebufferRenderer::queueRemoteSodiumChunk);
-                if (remoteTerrainDirty || PortalRemoteChunkCache.loadedChunkCount() > 0) {
+                if (remoteTerrainDirty) {
                     sceneRenderer.scheduleTerrainUpdate();
                     remoteTerrainDirty = false;
                 }
@@ -632,6 +636,7 @@ public final class PortalFramebufferRenderer {
                         sceneFogColor,
                         !thickFog
                 );
+                logRemoteRendererState(sceneRenderer);
             } finally {
                 PortalRemoteRenderContext.endPortalPass();
                 if (dhSuspended) {
@@ -728,7 +733,16 @@ public final class PortalFramebufferRenderer {
     }
 
     private static void queueRemoteSodiumChunk(int chunkX, int chunkZ) {
+        queueRemoteSodiumChunk(chunkX, chunkZ, false);
+    }
+
+    private static void queueRemoteSodiumChunk(int chunkX, int chunkZ, boolean dirty) {
         long chunkKey = ChunkPos.toLong(chunkX, chunkZ);
+        if (dirty) {
+            DIRTY_REMOTE_SODIUM_CHUNKS.add(chunkKey);
+        } else if (REMOTE_SODIUM_CHUNKS.contains(chunkKey)) {
+            return;
+        }
         if (QUEUED_REMOTE_SODIUM_CHUNKS.add(chunkKey)) {
             PENDING_REMOTE_SODIUM_CHUNKS.addLast(chunkKey);
         }
@@ -768,12 +782,14 @@ public final class PortalFramebufferRenderer {
             int chunkX = ChunkPos.getPackedX(chunkKey);
             int chunkZ = ChunkPos.getPackedZ(chunkKey);
             if (PortalRemoteChunkCache.get(client.world, chunkX, chunkZ) == null) {
+                DIRTY_REMOTE_SODIUM_CHUNKS.remove(chunkKey);
                 continue;
             }
 
             if (REMOTE_SODIUM_CHUNKS.add(chunkKey)) {
                 sectionManager.onChunkAdded(chunkX, chunkZ);
-            } else {
+                DIRTY_REMOTE_SODIUM_CHUNKS.remove(chunkKey);
+            } else if (DIRTY_REMOTE_SODIUM_CHUNKS.remove(chunkKey)) {
                 sodiumRenderer.scheduleRebuildForChunks(
                         chunkX,
                         client.world.getBottomSectionCoord(),
@@ -801,6 +817,36 @@ public final class PortalFramebufferRenderer {
                 sceneRenderer.scheduleChunkRender(chunkX, sectionY, chunkZ);
             }
         }
+    }
+
+    private static void logRemoteRendererState(WorldRenderer sceneRenderer) {
+        if (frameIndex - lastRemoteRendererStateLogFrame < PortalViewConfig.PORTAL_FREEZE_LOG_INTERVAL_TICKS * 2L
+                || !(sceneRenderer instanceof LevelRendererExtension extension)) {
+            return;
+        }
+        SodiumWorldRenderer sodiumRenderer = extension.sodium$getWorldRenderer();
+        if (!(sodiumRenderer instanceof SodiumWorldRendererAccessor accessor)) {
+            return;
+        }
+        RenderSectionManager sectionManager = accessor.monvhua$getRenderSectionManager();
+        if (sectionManager == null) {
+            return;
+        }
+        lastRemoteRendererStateLogFrame = frameIndex;
+        var builder = sectionManager.getBuilder();
+        MonvhuaMod.LOGGER.info(
+                "[Monvhua] Portal remote renderer state: source={} cache={} registered={} pending={} dirty={} sections={} visible={} jobs={} busy={}/{}",
+                PortalRemoteChunkCache.getActiveSourcePos(),
+                PortalRemoteChunkCache.loadedChunkCount(),
+                REMOTE_SODIUM_CHUNKS.size(),
+                PENDING_REMOTE_SODIUM_CHUNKS.size(),
+                DIRTY_REMOTE_SODIUM_CHUNKS.size(),
+                sectionManager.getTotalSections(),
+                sectionManager.getVisibleChunkCount(),
+                builder.getScheduledJobCount(),
+                builder.getBusyThreadCount(),
+                builder.getTotalThreadCount()
+        );
     }
 
     private static Matrix4f projectionForAspect(Matrix4f original, float aspect) {

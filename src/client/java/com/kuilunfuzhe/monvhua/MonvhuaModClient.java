@@ -23,6 +23,7 @@ import com.kuilunfuzhe.monvhua.features.mirror.MirrorHudOverlay;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
 import com.kuilunfuzhe.monvhua.features.paint.PlayerPaintCommand;
 import com.kuilunfuzhe.monvhua.features.playerlist.PlayerListRestrictClient;
+import com.kuilunfuzhe.monvhua.features.possession.PossessionClient;
 import com.kuilunfuzhe.monvhua.network.playerlist.PlayerListRestrictS2CPacket;
 import com.kuilunfuzhe.monvhua.features.paint.drawingboard.DrawingBoardClient;
 import com.kuilunfuzhe.monvhua.features.portal.client.PortalClient;
@@ -117,6 +118,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         HotBackpackSaveClient.initialize();
         InjuredBleedingClient.initialize();
         PlayerBindingClient.initialize();
+        PossessionClient.initialize();
         initializeOptionalAxiomAreaTip();
         PaintOverlayClient.initialize();
         DrawingBoardClient.initialize();

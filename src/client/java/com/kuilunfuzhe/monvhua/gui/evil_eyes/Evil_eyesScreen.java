@@ -38,7 +38,7 @@ public class Evil_eyesScreen extends Screen {
     private static final int VIEW_SLOT_TEXTURE_WIDTH = 222;
     private static final int VIEW_SLOT_TEXTURE_HEIGHT = 160;
     private static final int VIEW_SLOT_TEXTURE_GAP = 14;
-    private static final int VIEW_SLOTS = 4;
+    private static final int VIEW_SLOTS = 6;
     private static final int VIEW_CORNER_RADIUS = 8;
     private static final long VIEW_HOVER_ANIMATION_MS = 200L;
     private static final boolean LAYOUT_EDITING_ENABLED = false;
@@ -49,7 +49,9 @@ public class Evil_eyesScreen extends Screen {
             new LayoutDefault(0.40983605F, 0.015521064F, 0.08782201F, 0.11086474F, 0.25355673F),
             new LayoutDefault(0.3173302F, 0.022172948F, 0.08665106F, 0.10421286F, -0.07510233F),
             new LayoutDefault(0.50351286F, 0.017738359F, 0.083138175F, 0.11086474F, 0.31312594F),
-            new LayoutDefault(0.59601873F, 0.022172948F, 0.08782201F, 0.10421286F, 0.0F)
+            new LayoutDefault(0.59601873F, 0.022172948F, 0.08782201F, 0.10421286F, 0.0F),
+            new LayoutDefault(0.22443435F, 0.022172948F, 0.08665106F, 0.10421286F, -0.07510233F),
+            new LayoutDefault(0.6889146F, 0.022172948F, 0.08782201F, 0.10421286F, 0.0F)
     };
     private static final int TEXT_MAIN = 0xFFF5E6D3;
     private static final int TEXT_MUTED = 0xFF9CA3AF;
@@ -76,9 +78,13 @@ public class Evil_eyesScreen extends Screen {
             DraggableResizableLayout.Bounds.EMPTY,
             DraggableResizableLayout.Bounds.EMPTY,
             DraggableResizableLayout.Bounds.EMPTY,
+            DraggableResizableLayout.Bounds.EMPTY,
+            DraggableResizableLayout.Bounds.EMPTY,
             DraggableResizableLayout.Bounds.EMPTY
     };
     private final ViewAnimation[] viewAnimations = new ViewAnimation[]{
+            new ViewAnimation(),
+            new ViewAnimation(),
             new ViewAnimation(),
             new ViewAnimation(),
             new ViewAnimation(),

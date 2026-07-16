@@ -31,8 +31,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class ClairvoyanceViewportRenderer {
 	private static final AtomicBoolean renderingPreview = new AtomicBoolean(false);
 	private static final double CAMERA_DISTANCE = 4.0;
-	private static final int MAX_TARGETS = 4;
+	private static final int MAX_TARGETS = 6;
 	private static final long IDLE_RENDER_INTERVAL_TICKS = 40L;
+	private static final int[] INITIAL_LOAD_ORDER = new int[]{4, 1, 0, 2, 3, 5};
 
 	private static final UUID[] selectedTargets = new UUID[MAX_TARGETS];
 	private static final SimpleFramebuffer[] previewFramebuffers = new SimpleFramebuffer[MAX_TARGETS];
@@ -40,6 +41,7 @@ public final class ClairvoyanceViewportRenderer {
 	private static final Double[] smoothDistances = new Double[MAX_TARGETS];
 	private static final Vec3d[] smoothCameraPositions = new Vec3d[MAX_TARGETS];
 	private static final long[] lastPreviewRenderTicks = new long[MAX_TARGETS];
+	private static final boolean[] firstFrameRendered = new boolean[MAX_TARGETS];
 	private static int hoveredSlot = -1;
 	private static int expandedSlot = -1;
 
@@ -138,10 +140,11 @@ public final class ClairvoyanceViewportRenderer {
 		if (renderingPreview.getAndSet(true)) return;
 
 		try {
+			int initialSlot = firstInitialLoadSlot();
 			for (int slot = 0; slot < MAX_TARGETS; slot++) {
 				UUID targetId = selectedTargets[slot];
 				if (targetId == null) continue;
-				if (!shouldRenderSlot(client, slot)) continue;
+				if (!shouldRenderSlot(client, slot, initialSlot)) continue;
 				Entity target = client.world.getEntity(targetId);
 				if (target == null || !target.isAlive()) {
 					clearSlot(slot);
@@ -149,6 +152,7 @@ public final class ClairvoyanceViewportRenderer {
 				}
 				renderPreviewSlot(slot, client, target, tickCounter, fog, fogColor, mainCamera, positionMatrix, projectionMatrix);
 				lastPreviewRenderTicks[slot] = client.world.getTime();
+				firstFrameRendered[slot] = true;
 			}
 			compactTargets();
 		} finally {
@@ -156,15 +160,35 @@ public final class ClairvoyanceViewportRenderer {
 		}
 	}
 
-	private static boolean shouldRenderSlot(MinecraftClient client, int slot) {
+	private static boolean shouldRenderSlot(MinecraftClient client, int slot, int initialSlot) {
 		if (slot == hoveredSlot || slot == expandedSlot) {
 			return true;
+		}
+		if (slot == initialSlot) {
+			return true;
+		}
+		if (!firstFrameRendered[slot]) {
+			return false;
 		}
 		long now = client.world.getTime();
 		if (previewFramebuffers[slot] == null && lastPreviewRenderTicks[slot] == 0L) {
 			lastPreviewRenderTicks[slot] = now - IDLE_RENDER_INTERVAL_TICKS + slot * Math.max(1L, IDLE_RENDER_INTERVAL_TICKS / MAX_TARGETS);
 		}
 		return now - lastPreviewRenderTicks[slot] >= IDLE_RENDER_INTERVAL_TICKS;
+	}
+
+	private static int firstInitialLoadSlot() {
+		for (int slot : INITIAL_LOAD_ORDER) {
+			if (slot >= 0 && slot < MAX_TARGETS && selectedTargets[slot] != null && !firstFrameRendered[slot]) {
+				return slot;
+			}
+		}
+		for (int slot = 0; slot < MAX_TARGETS; slot++) {
+			if (selectedTargets[slot] != null && !firstFrameRendered[slot]) {
+				return slot;
+			}
+		}
+		return -1;
 	}
 
 	private static void renderPreviewSlot(int slot, MinecraftClient client, Entity target, RenderTickCounter tickCounter, GpuBufferSlice fog, Vector4f fogColor, Camera mainCamera, Matrix4f positionMatrix, Matrix4f projectionMatrix) {
@@ -225,13 +249,24 @@ public final class ClairvoyanceViewportRenderer {
 	public static void renderPreviewRect(DrawContext context, int slot, int x, int y, int width, int height) {
 		if (slot < 0 || slot >= MAX_TARGETS) return;
 		SimpleFramebuffer previewFramebuffer = previewFramebuffers[slot];
-		if (previewFramebuffer == null || selectedTargets[slot] == null) return;
+		if (selectedTargets[slot] == null) return;
 		MinecraftClient client = MinecraftClient.getInstance();
+		if (previewFramebuffer == null) {
+			renderLoadingRect(context, client, x, y, width, height);
+			return;
+		}
 		var mainFramebuffer = client.getFramebuffer();
 		if (previewFramebuffer.textureWidth != mainFramebuffer.textureWidth || previewFramebuffer.textureHeight != mainFramebuffer.textureHeight) {
+			renderLoadingRect(context, client, x, y, width, height);
 			return;
 		}
 		MirrorFramebufferCompositor.renderGuiRect(context, previewFramebuffer, x, y, width, height);
+	}
+
+	private static void renderLoadingRect(DrawContext context, MinecraftClient client, int x, int y, int width, int height) {
+		context.fill(x, y, x + width, y + height, 0xAA110B1A);
+		context.fill(x + 1, y + 1, x + width - 1, y + height - 1, 0xAA1E1530);
+		context.drawCenteredTextWithShadow(client.textRenderer, "Loading...", x + width / 2, y + height / 2 - 4, 0xFF9CA3AF);
 	}
 
 	public static void cleanup() {
@@ -242,6 +277,7 @@ public final class ClairvoyanceViewportRenderer {
 			}
 			selectedTargets[i] = null;
 			lastPreviewRenderTicks[i] = 0L;
+			firstFrameRendered[i] = false;
 			resetSmoothing(i);
 		}
 		hoveredSlot = -1;
@@ -309,6 +345,7 @@ public final class ClairvoyanceViewportRenderer {
 	private static void clearSlot(int slot) {
 		selectedTargets[slot] = null;
 		lastPreviewRenderTicks[slot] = 0L;
+		firstFrameRendered[slot] = false;
 		resetSmoothing(slot);
 	}
 
@@ -342,6 +379,7 @@ public final class ClairvoyanceViewportRenderer {
 			smoothDistances[i] = smoothDistances[i - 1];
 			smoothCameraPositions[i] = smoothCameraPositions[i - 1];
 			lastPreviewRenderTicks[i] = lastPreviewRenderTicks[i - 1];
+			firstFrameRendered[i] = firstFrameRendered[i - 1];
 		}
 		clearSlot(index);
 	}
@@ -356,8 +394,10 @@ public final class ClairvoyanceViewportRenderer {
 				smoothDistances[write] = smoothDistances[read];
 				smoothCameraPositions[write] = smoothCameraPositions[read];
 				lastPreviewRenderTicks[write] = lastPreviewRenderTicks[read];
+				firstFrameRendered[write] = firstFrameRendered[read];
 				selectedTargets[read] = null;
 				lastPreviewRenderTicks[read] = 0L;
+				firstFrameRendered[read] = false;
 				resetSmoothing(read);
 			}
 			write++;
