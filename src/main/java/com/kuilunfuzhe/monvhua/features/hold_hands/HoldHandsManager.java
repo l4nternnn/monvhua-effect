@@ -195,7 +195,7 @@ public final class HoldHandsManager {
             processed.add(active.getUuid());
             processed.add(passive.getUuid());
 
-            float holdBodyYaw = updateHoldBodyYaw(active, passive, passiveData);
+            float holdBodyYaw = passiveData.holdBodyYaw();
             applyFollowerBodyYaw(passive, holdBodyYaw);
             Vec3d previousSharedHandPoint = activeData.sharedHandPoint() != null
                     ? activeData.sharedHandPoint()
@@ -261,25 +261,22 @@ public final class HoldHandsManager {
                 && follower.getWorld() == leader.getWorld();
     }
 
-    private static float updateHoldBodyYaw(ServerPlayerEntity leader, ServerPlayerEntity follower, HoldHandData followerData) {
-        float currentYaw = followerData.holdBodyYaw();
+    private static float updateHoldBodyYaw(ServerPlayerEntity leader, ServerPlayerEntity follower,
+                                           HoldHandData followerData, double pullDistance) {
+        float currentYaw = followerData == null ? follower.getBodyYaw() : followerData.holdBodyYaw();
         float targetYaw = leader.getBodyYaw();
-        Vec3d previousLeaderPos = followerData.lastLeaderPos();
-        Vec3d currentLeaderPos = leader.getPos();
-        double moved = horizontalDistance(previousLeaderPos, currentLeaderPos);
         float nextYaw = currentYaw;
-        if (moved > FOLLOW_YAW_MOVE_DEADBAND) {
-            double progress = MathHelper.clamp(moved * FOLLOW_YAW_PROGRESS_PER_BLOCK, 0.0D, 1.0D);
+        float delta = MathHelper.wrapDegrees(targetYaw - currentYaw);
+        if (Math.abs(delta) <= 1.25F) {
+            nextYaw = MathHelper.wrapDegrees(targetYaw);
+        } else if (pullDistance > FOLLOW_YAW_MOVE_DEADBAND) {
+            double progress = MathHelper.clamp(pullDistance * FOLLOW_YAW_PROGRESS_PER_BLOCK, 0.0D, 1.0D);
             float maxStep = (float) Math.min(FOLLOW_YAW_MAX_STEP, Math.max(0.0D,
-                    Math.abs(MathHelper.wrapDegrees(targetYaw - currentYaw)) * progress));
+                    Math.abs(delta) * progress));
             nextYaw = stepTowardsAngle(currentYaw, targetYaw, maxStep);
         }
 
-        setPairHoldBodyYaw(leader, follower, nextYaw, currentLeaderPos);
-        if (Math.abs(MathHelper.wrapDegrees(nextYaw - currentYaw)) > 0.001F) {
-            sync(leader, true);
-            sync(follower, true);
-        }
+        setPairHoldBodyYaw(leader, follower, nextYaw, leader.getPos());
         return nextYaw;
     }
 
@@ -414,6 +411,12 @@ public final class HoldHandsManager {
             leaderCorrection = applyPairPlayerCorrection(leader, leaderTarget, centerVelocity, useVerticalLead);
             followerCorrection = applyPairPlayerCorrection(follower, followerTarget, centerVelocity, useVerticalLead);
         }
+
+        double followerPullDistance = Math.max(horizontalDistance(follower.getPos(), followerTarget),
+                horizontalDistance(Vec3d.ZERO, centerVelocity));
+        HoldHandData followerData = ACTIVE.get(follower.getUuid());
+        followerBodyYaw = updateHoldBodyYaw(leader, follower, followerData, followerPullDistance);
+        applyFollowerBodyYaw(follower, followerBodyYaw);
 
         Vec3d desiredEndpoint = solveSharedHandPoint(leaderTarget, followerTarget,
                 endpointMotion(leaderIntent, useVerticalLead),

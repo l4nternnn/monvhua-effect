@@ -28,8 +28,11 @@ public abstract class ClientChunkManagerRemoteMixin {
     private void monvhua$getRemotePortalChunk(int chunkX, int chunkZ, ChunkStatus leastStatus,
                                               boolean create,
                                               CallbackInfoReturnable<WorldChunk> cir) {
+        if (!PortalRemoteRenderContext.isPortalPass()) {
+            return;
+        }
         WorldChunk remote = PortalRemoteChunkCache.get(world, chunkX, chunkZ);
-        if (PortalRemoteRenderContext.isPortalPass() && remote != null) {
+        if (remote != null) {
             cir.setReturnValue(remote);
         }
     }

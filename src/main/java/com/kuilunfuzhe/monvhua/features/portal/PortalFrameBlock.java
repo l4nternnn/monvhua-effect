@@ -27,7 +27,7 @@ public class PortalFrameBlock extends Block {
             return ActionResult.SUCCESS;
         }
         if (world instanceof ServerWorld serverWorld) {
-            return PortalManager.tryCreateAt(serverWorld, pos, player) ? ActionResult.SUCCESS_SERVER : ActionResult.PASS;
+            return PortalManager.tryCreateAt(serverWorld, pos, player, hit.getSide()) ? ActionResult.SUCCESS_SERVER : ActionResult.PASS;
         }
         return ActionResult.PASS;
     }

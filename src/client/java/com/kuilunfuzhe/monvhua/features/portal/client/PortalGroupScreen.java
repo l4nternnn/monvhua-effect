@@ -46,7 +46,8 @@ public class PortalGroupScreen extends Screen {
             String group = groups[i];
             int count = i < endpointCounts.length ? endpointCounts[i] : 0;
             int buttonY = rowY + i * 22;
-            addDrawableChild(ButtonWidget.builder(Text.literal(group + " (" + count + "/2)"), button -> bind(group))
+            String label = (isSelectedGroup(group) ? "> " : "") + group + " (" + count + "/2)";
+            addDrawableChild(ButtonWidget.builder(Text.literal(label), button -> bind(group))
                     .dimensions(x + 10, buttonY, panelWidth - 20, 20)
                     .build());
         }
@@ -66,6 +67,7 @@ public class PortalGroupScreen extends Screen {
         context.drawText(textRenderer, Text.literal("Group name"), x + 10, y + 27, 0xFFB8DDE8, false);
         context.drawText(textRenderer, Text.literal("Existing groups"), x + 10, y + 84, 0xFFB8DDE8, false);
         super.render(context, mouseX, mouseY, delta);
+        drawSelectedGroupOutline(context, x, y, panelWidth);
     }
 
     private void bind(String group) {
@@ -73,6 +75,29 @@ public class PortalGroupScreen extends Screen {
             PortalFramebufferRenderer.requestPreviewCapture(pos);
             ClientPlayNetworking.send(new PortalPackets.BindGroupC2S(pos, group));
             close();
+        }
+    }
+
+    private boolean isSelectedGroup(String group) {
+        return group != null && group.equals(selectedGroup);
+    }
+
+    private void drawSelectedGroupOutline(DrawContext context, int x, int y, int panelWidth) {
+        int rowY = y + 92;
+        for (int i = 0; i < Math.min(groups.length, 5); i++) {
+            if (!isSelectedGroup(groups[i])) {
+                continue;
+            }
+            int buttonY = rowY + i * 22;
+            int left = x + 9;
+            int right = x + panelWidth - 9;
+            int top = buttonY - 1;
+            int bottom = buttonY + 21;
+            context.fill(left, top, right, top + 1, 0xFF66D9EF);
+            context.fill(left, bottom - 1, right, bottom, 0xFF66D9EF);
+            context.fill(left, top, left + 1, bottom, 0xFF66D9EF);
+            context.fill(right - 1, top, right, bottom, 0xFF66D9EF);
+            return;
         }
     }
 }

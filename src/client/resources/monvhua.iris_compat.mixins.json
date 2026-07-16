@@ -4,7 +4,8 @@
 	"compatibilityLevel": "JAVA_21",
 	"plugin": "com.kuilunfuzhe.monvhua.mixin.compat.IrisCompatMixinPlugin",
 	"client": [
-		"multiple_perspectives.IrisPipelineManagerMirrorMixin"
+		"multiple_perspectives.IrisPipelineManagerMirrorMixin",
+		"multiple_perspectives.IrisPortalSurfaceShaderSkipMixin"
 	],
 	"injectors": {
 		"defaultRequire": 0

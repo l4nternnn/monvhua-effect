@@ -80,6 +80,7 @@ public final class PortalManager {
         if (!(world instanceof ServerWorld serverWorld)) {
             return;
         }
+        PortalGroupStore.get(serverWorld).removeEndpoint(pos);
         RegistryKey<World> worldKey = serverWorld.getRegistryKey();
         for (PortalEndpoint endpoint : new ArrayList<>(PORTALS)) {
             if (!endpoint.worldKey().equals(worldKey)) {
@@ -132,17 +133,15 @@ public final class PortalManager {
         }
     }
 
-    public static boolean tryCreateAt(ServerWorld world, BlockPos framePos, PlayerEntity player) {
-        for (Direction.Axis axis : new Direction.Axis[]{Direction.Axis.X, Direction.Axis.Z}) {
-            Structure structure = detectStructure(world, axis, framePos);
-            if (structure != null) {
-                Direction facing = facingFor(player, axis, structure.fixed());
-                createSurface(world, structure, facing);
-                if (player instanceof ServerPlayerEntity serverPlayer) {
-                    openEditor(world, structure.origin(), serverPlayer);
-                }
-                return true;
+    public static boolean tryCreateAt(ServerWorld world, BlockPos framePos, PlayerEntity player, Direction positiveFacing) {
+        Direction facing = positiveFacing == null ? Direction.NORTH : positiveFacing;
+        Structure structure = detectStructure(world, facing.getAxis(), framePos);
+        if (structure != null) {
+            createSurface(world, structure, facing);
+            if (player instanceof ServerPlayerEntity serverPlayer) {
+                openEditor(world, structure.origin(), serverPlayer);
             }
+            return true;
         }
         if (player != null) {
             player.sendMessage(Text.literal("Portal frame: no closed rectangular frame found"), true);
@@ -156,6 +155,7 @@ public final class PortalManager {
                 || !portal.isController()) {
             return;
         }
+        loadStoredGroups(world);
         registerExistingEndpoint(world, portal);
         sendEditor(serverPlayer, portal);
     }
@@ -167,6 +167,7 @@ public final class PortalManager {
                 || !portal.isController()) {
             return;
         }
+        loadStoredGroups(world);
         registerPortal(world, controllerPos);
         String clean = sanitizeGroup(groupId);
         if (clean.isEmpty()) {
@@ -174,6 +175,7 @@ public final class PortalManager {
             return;
         }
         removeEndpoint(controllerPos);
+        PortalGroupStore.get(world).removeEndpoint(controllerPos);
         PortalGroup group = GROUPS.computeIfAbsent(clean, PortalGroup::new);
         if (!group.add(controllerPos)) {
             player.sendMessage(Text.literal("Portal group already has two endpoints"), true);
@@ -181,6 +183,7 @@ public final class PortalManager {
             return;
         }
         portal.setGroupId(clean);
+        persistGroup(world, group);
         relinkGroup(world, group);
         sendEditor(player, portal);
     }
@@ -190,12 +193,16 @@ public final class PortalManager {
         if (clean.isEmpty()) {
             return;
         }
-        PortalGroup group = GROUPS.remove(clean);
-        if (group == null) {
+        if (!(player.getWorld() instanceof ServerWorld world)) {
             return;
         }
-        clearEndpoint(player.getWorld(), group.first);
-        clearEndpoint(player.getWorld(), group.second);
+        loadStoredGroups(world);
+        PortalGroup group = GROUPS.remove(clean);
+        if (group != null) {
+            clearEndpoint(world, group.first);
+            clearEndpoint(world, group.second);
+        }
+        PortalGroupStore.get(world).deleteGroup(clean);
     }
 
     public static void requestRemoteView(ServerPlayerEntity player, BlockPos sourcePos) {
@@ -298,7 +305,9 @@ public final class PortalManager {
     private static void sendEditor(ServerPlayerEntity player, PortalBlockEntity portal) {
         List<String> names = new ArrayList<>();
         List<Integer> counts = new ArrayList<>();
-        for (PortalGroup group : GROUPS.values()) {
+        List<PortalGroup> groups = new ArrayList<>(GROUPS.values());
+        groups.sort(Comparator.comparing(group -> group.id));
+        for (PortalGroup group : groups) {
             names.add(group.id);
             counts.add(group.count());
         }
@@ -317,7 +326,30 @@ public final class PortalManager {
     private static void registerExistingEndpoint(ServerWorld world, PortalBlockEntity portal) {
         registerPortal(world, portal.getPos());
         if (!portal.getGroupId().isEmpty()) {
-            GROUPS.computeIfAbsent(portal.getGroupId(), PortalGroup::new).add(portal.getPos());
+            PortalGroup group = GROUPS.computeIfAbsent(portal.getGroupId(), PortalGroup::new);
+            if (group.add(portal.getPos())) {
+                persistGroup(world, group);
+            }
+        }
+    }
+
+    private static void loadStoredGroups(ServerWorld world) {
+        PortalGroupStore store = PortalGroupStore.get(world);
+        for (String name : store.names()) {
+            String clean = sanitizeGroup(name);
+            if (clean.isEmpty()) {
+                continue;
+            }
+            PortalGroup group = GROUPS.computeIfAbsent(clean, PortalGroup::new);
+            for (BlockPos endpoint : store.endpoints(clean)) {
+                group.add(endpoint);
+            }
+        }
+    }
+
+    private static void persistGroup(ServerWorld world, PortalGroup group) {
+        if (group != null) {
+            PortalGroupStore.get(world).setEndpoints(group.id, group.positions());
         }
     }
 
@@ -381,7 +413,7 @@ public final class PortalManager {
     private static Structure detectStructure(ServerWorld world, Direction.Axis axis, BlockPos framePos) {
         int fixed = fixed(axis, framePos);
         int h = horizontal(axis, framePos);
-        int y = framePos.getY();
+        int y = vertical(axis, framePos);
         int[][] adjacent = {{h + 1, y}, {h - 1, y}, {h, y + 1}, {h, y - 1}};
         for (int[] seed : adjacent) {
             Structure structure = floodInterior(world, axis, fixed, seed[0], seed[1]);
@@ -487,23 +519,28 @@ public final class PortalManager {
         }
     }
 
-    private static Direction facingFor(PlayerEntity player, Direction.Axis axis, int fixed) {
-        if (axis == Direction.Axis.X) {
-            return player.getX() >= fixed + 0.5D ? Direction.EAST : Direction.WEST;
-        }
-        return player.getZ() >= fixed + 0.5D ? Direction.SOUTH : Direction.NORTH;
-    }
-
     private static int fixed(Direction.Axis axis, BlockPos pos) {
-        return axis == Direction.Axis.X ? pos.getX() : pos.getZ();
+        return switch (axis) {
+            case X -> pos.getX();
+            case Y -> pos.getY();
+            case Z -> pos.getZ();
+        };
     }
 
     private static int horizontal(Direction.Axis axis, BlockPos pos) {
         return axis == Direction.Axis.X ? pos.getZ() : pos.getX();
     }
 
+    private static int vertical(Direction.Axis axis, BlockPos pos) {
+        return axis == Direction.Axis.Y ? pos.getZ() : pos.getY();
+    }
+
     private static BlockPos pos(Direction.Axis axis, int fixed, int h, int y) {
-        return axis == Direction.Axis.X ? new BlockPos(fixed, y, h) : new BlockPos(h, y, fixed);
+        return switch (axis) {
+            case X -> new BlockPos(fixed, y, h);
+            case Y -> new BlockPos(h, fixed, y);
+            case Z -> new BlockPos(h, y, fixed);
+        };
     }
 
     private static void tickWorld(ServerWorld world) {
@@ -924,8 +961,13 @@ public final class PortalManager {
     private static boolean isInsidePortalRect(PortalBlockEntity portal, Vec3d pos) {
         Vec3d local = pos.subtract(Vec3d.ofCenter(portal.getOrigin()));
         Direction facing = portal.getFacing();
-        double horizontal = facing.getAxis() == Direction.Axis.X ? local.z : local.x;
-        double vertical = local.y + 0.5D;
+        Vec3d widthAxis = PortalTransform.surfaceWidthAxis(facing);
+        Vec3d heightAxis = PortalTransform.surfaceHeightAxis(facing);
+        double horizontal = local.dotProduct(widthAxis);
+        double vertical = local.dotProduct(heightAxis);
+        if (heightAxis.y != 0.0D) {
+            vertical += 0.5D;
+        }
         return horizontal >= -0.1D
                 && horizontal <= portal.getPortalWidth() + 0.1D
                 && vertical >= -0.1D
@@ -948,18 +990,27 @@ public final class PortalManager {
                 targetPortal.getFacing()
         );
         Vec3d targetNormal = normal(targetPortal.getFacing());
-        double normalOffset = mapped.subtract(targetCenter).dotProduct(targetNormal);
-        Vec3d targetPos = mapped
-                .subtract(targetNormal.multiply(normalOffset))
-                .add(targetNormal.multiply(-PortalViewConfig.TELEPORT_EXIT_OFFSET));
-        float yaw = PortalTransform.mapYaw(player.getYaw(), portal.getFacing(), targetPortal.getFacing());
-
-        player.teleport(world, targetPos.x, targetPos.y, targetPos.z, java.util.Set.of(), yaw, player.getPitch(), false);
-        player.setVelocity(PortalTransform.mapVector(
+        Vec3d mappedVelocity = PortalTransform.mapVectorFrontToFront(
                 player.getVelocity(),
                 portal.getFacing(),
                 targetPortal.getFacing()
-        ));
+        );
+        double normalOffset = mapped.subtract(targetCenter).dotProduct(targetNormal);
+        double exitOffset = Math.max(
+                Math.abs(normalOffset),
+                PortalViewConfig.TELEPORT_EXIT_OFFSET
+        );
+        Vec3d targetPos = mapped.add(targetNormal.multiply(exitOffset - normalOffset));
+        PortalTransform.Rotation rotation = PortalTransform.mapRotationFrontToFront(
+                player.getYaw(),
+                player.getPitch(),
+                portal.getFacing(),
+                targetPortal.getFacing()
+        );
+
+        player.teleport(world, targetPos.x, targetPos.y, targetPos.z,
+                java.util.Set.of(), rotation.yaw(), rotation.pitch(), false);
+        player.setVelocity(mappedVelocity);
         player.velocityModified = true;
     }
 
@@ -968,7 +1019,7 @@ public final class PortalManager {
         Direction.Axis axis = portal.getFacing().getAxis();
         int fixed = fixed(axis, origin);
         int minH = horizontal(axis, origin);
-        int minY = origin.getY();
+        int minY = vertical(axis, origin);
         int width = portal.getPortalWidth();
         int height = portal.getPortalHeight();
         for (int y = 0; y < height; y++) {
@@ -998,7 +1049,7 @@ public final class PortalManager {
         Direction.Axis axis = controller.getFacing().getAxis();
         int fixed = fixed(axis, origin);
         int minH = horizontal(axis, origin);
-        int minY = origin.getY();
+        int minY = vertical(axis, origin);
         int width = controller.getPortalWidth();
         int height = controller.getPortalHeight();
         onPortalRemoved(world, controller.getPos());
@@ -1033,13 +1084,8 @@ public final class PortalManager {
     private static BlockPos mapRemoteViewCenter(ServerPlayerEntity player,
                                                 PortalBlockEntity source,
         PortalBlockEntity target) {
-        Vec3d mapped = PortalTransform.mapPosition(
-                player.getEyePos(),
-                source.getPortalCenter(),
-                source.getFacing(),
-                target.getPortalCenter(),
-                target.getFacing()
-        );
+        Vec3d mapped = target.getPortalCenter()
+                .add(normal(target.getFacing()).multiply(0.55D));
         return BlockPos.ofFloored(mapped.x, mapped.y, mapped.z);
     }
 
@@ -1092,6 +1138,9 @@ public final class PortalManager {
         }
 
         private void remove(BlockPos pos) {
+            if (pos == null) {
+                return;
+            }
             if (pos.equals(first)) {
                 first = null;
             }
@@ -1102,6 +1151,17 @@ public final class PortalManager {
 
         private int count() {
             return (first == null ? 0 : 1) + (second == null ? 0 : 1);
+        }
+
+        private List<BlockPos> positions() {
+            List<BlockPos> positions = new ArrayList<>(2);
+            if (first != null) {
+                positions.add(first);
+            }
+            if (second != null) {
+                positions.add(second);
+            }
+            return positions;
         }
     }
 

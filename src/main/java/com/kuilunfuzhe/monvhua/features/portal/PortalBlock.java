@@ -30,11 +30,12 @@ import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
 public class PortalBlock extends BlockWithEntity {
-    public static final EnumProperty<Direction> FACING = Properties.HORIZONTAL_FACING;
+    public static final EnumProperty<Direction> FACING = Properties.FACING;
     public static final BooleanProperty CONTROLLER = BooleanProperty.of("controller");
 
     private static final VoxelShape NORTH_SOUTH_SHAPE = VoxelShapes.cuboid(0.0, 0.0, 0.4375, 1.0, 1.0, 0.5625);
     private static final VoxelShape EAST_WEST_SHAPE = VoxelShapes.cuboid(0.4375, 0.0, 0.0, 0.5625, 1.0, 1.0);
+    private static final VoxelShape UP_DOWN_SHAPE = VoxelShapes.cuboid(0.0, 0.4375, 0.0, 1.0, 0.5625, 1.0);
 
     public PortalBlock(AbstractBlock.Settings settings) {
         super(settings);
@@ -54,7 +55,7 @@ public class PortalBlock extends BlockWithEntity {
     @Override
     public BlockState getPlacementState(ItemPlacementContext ctx) {
         return getDefaultState()
-                .with(FACING, ctx.getHorizontalPlayerFacing().getOpposite())
+                .with(FACING, ctx.getSide())
                 .with(CONTROLLER, true);
     }
 
@@ -93,7 +94,11 @@ public class PortalBlock extends BlockWithEntity {
     @Override
     public VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
         Direction facing = state.get(FACING);
-        return facing.getAxis() == Direction.Axis.X ? EAST_WEST_SHAPE : NORTH_SOUTH_SHAPE;
+        return switch (facing.getAxis()) {
+            case X -> EAST_WEST_SHAPE;
+            case Y -> UP_DOWN_SHAPE;
+            case Z -> NORTH_SOUTH_SHAPE;
+        };
     }
 
     @Override

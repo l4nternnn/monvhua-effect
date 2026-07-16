@@ -1,7 +1,10 @@
 package com.kuilunfuzhe.monvhua.mixin;
 
 import net.minecraft.client.render.Camera;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.gen.Accessor;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
 /**
@@ -26,4 +29,16 @@ public interface CameraAccessor {
 	 */
 	@Invoker("setRotation")
 	void invokeSetRotation(float yaw, float pitch);
+
+	@Accessor("rotation")
+	Quaternionf monvhua$getRotation();
+
+	@Accessor("horizontalPlane")
+	Vector3f monvhua$getHorizontalPlane();
+
+	@Accessor("verticalPlane")
+	Vector3f monvhua$getVerticalPlane();
+
+	@Accessor("diagonalPlane")
+	Vector3f monvhua$getDiagonalPlane();
 }

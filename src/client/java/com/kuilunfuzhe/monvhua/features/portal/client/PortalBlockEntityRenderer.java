@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.features.portal.client;
 import com.kuilunfuzhe.monvhua.features.portal.PortalBlock;
 import com.kuilunfuzhe.monvhua.features.portal.PortalBlockEntity;
 import com.kuilunfuzhe.monvhua.features.portal.PortalLinkData;
+import com.kuilunfuzhe.monvhua.features.portal.PortalTransform;
 import com.kuilunfuzhe.monvhua.features.portal.PortalViewConfig;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
@@ -31,7 +32,7 @@ public class PortalBlockEntityRenderer implements BlockEntityRenderer<PortalBloc
                 ? entity.getCachedState().get(PortalBlock.FACING)
                 : Direction.NORTH;
         double cameraSide = cameraPos.subtract(entity.getPortalCenter())
-                .dotProduct(new Vec3d(facing.getOffsetX(), 0.0D, facing.getOffsetZ()));
+                .dotProduct(PortalTransform.normal(facing));
         if (cameraSide <= 0.0D) {
             return;
         }
@@ -45,7 +46,7 @@ public class PortalBlockEntityRenderer implements BlockEntityRenderer<PortalBloc
                 : PortalRenderLayers.surface(viewTexture);
         VertexConsumer vertices = vertexConsumers.getBuffer(layer);
         Matrix4f matrix = matrices.peek().getPositionMatrix();
-        boolean baseReverse = facing == Direction.SOUTH || facing == Direction.EAST;
+        boolean baseReverse = facing == Direction.SOUTH || facing == Direction.EAST || facing == Direction.DOWN;
         renderFace(matrix, vertices, facing, color, light, overlay,
                 entity.getPortalWidth(), entity.getPortalHeight(), baseReverse, viewTexture != null);
     }
@@ -89,59 +90,65 @@ public class PortalBlockEntityRenderer implements BlockEntityRenderer<PortalBloc
         float g = ((argb >>> 8) & 0xFF) / 255.0F;
         float b = (argb & 0xFF) / 255.0F;
         float nx = facing.getOffsetX();
+        float ny = facing.getOffsetY();
         float nz = facing.getOffsetZ();
 
         float w = Math.max(1, width);
         float h = Math.max(1, height);
         float horizontalInset = (float) PortalViewConfig.PORTAL_SURFACE_HORIZONTAL_INSET;
         float verticalInset = (float) PortalViewConfig.PORTAL_SURFACE_VERTICAL_INSET;
-        float min = horizontalInset;
-        float max = Math.max(1.0F - horizontalInset, w - horizontalInset);
-        float bottom = verticalInset;
-        float top = Math.max(1.0F - verticalInset, h - verticalInset);
+        double halfWidth = Math.max(0.01D, w * 0.5D - horizontalInset);
+        double halfHeight = Math.max(0.01D, h * 0.5D - verticalInset);
+        Vec3d surfaceWidthAxis = PortalTransform.surfaceWidthAxis(facing);
+        Vec3d surfaceHeightAxis = PortalTransform.surfaceHeightAxis(facing);
+        Vec3d renderWidthAxis = facing.getAxis() == Direction.Axis.Z
+                ? surfaceWidthAxis.multiply(-1.0D)
+                : surfaceWidthAxis;
+        Vec3d center = new Vec3d(0.5D, 0.5D, 0.5D)
+                .add(surfaceWidthAxis.multiply((w - 1.0D) * 0.5D))
+                .add(surfaceHeightAxis.multiply((h - 1.0D) * 0.5D));
+        Vec3d bottomLeft = center
+                .subtract(renderWidthAxis.multiply(halfWidth))
+                .subtract(surfaceHeightAxis.multiply(halfHeight));
+        Vec3d bottomRight = center
+                .add(renderWidthAxis.multiply(halfWidth))
+                .subtract(surfaceHeightAxis.multiply(halfHeight));
+        Vec3d topRight = center
+                .add(renderWidthAxis.multiply(halfWidth))
+                .add(surfaceHeightAxis.multiply(halfHeight));
+        Vec3d topLeft = center
+                .subtract(renderWidthAxis.multiply(halfWidth))
+                .add(surfaceHeightAxis.multiply(halfHeight));
         float u0 = reverseU ? 1.0F : 0.0F;
         float u1 = reverseU ? 0.0F : 1.0F;
 
-        if (facing.getAxis() == Direction.Axis.X) {
-            float x = 0.5F;
-            vertex(matrix, vertices, x, bottom, min, u0, 0.0F, r, g, b, a,
-                    light, overlay, nx, nz, portalSurface);
-            vertex(matrix, vertices, x, bottom, max, u1, 0.0F, r, g, b, a,
-                    light, overlay, nx, nz, portalSurface);
-            vertex(matrix, vertices, x, top, max, u1, 1.0F, r, g, b, a,
-                    light, overlay, nx, nz, portalSurface);
-            vertex(matrix, vertices, x, top, min, u0, 1.0F, r, g, b, a,
-                    light, overlay, nx, nz, portalSurface);
-        } else {
-            float z = 0.5F;
-            vertex(matrix, vertices, max, bottom, z, u0, 0.0F, r, g, b, a,
-                    light, overlay, nx, nz, portalSurface);
-            vertex(matrix, vertices, min, bottom, z, u1, 0.0F, r, g, b, a,
-                    light, overlay, nx, nz, portalSurface);
-            vertex(matrix, vertices, min, top, z, u1, 1.0F, r, g, b, a,
-                    light, overlay, nx, nz, portalSurface);
-            vertex(matrix, vertices, max, top, z, u0, 1.0F, r, g, b, a,
-                    light, overlay, nx, nz, portalSurface);
-        }
+        vertex(matrix, vertices, bottomLeft, u0, 0.0F, r, g, b, a,
+                light, overlay, nx, ny, nz, portalSurface);
+        vertex(matrix, vertices, bottomRight, u1, 0.0F, r, g, b, a,
+                light, overlay, nx, ny, nz, portalSurface);
+        vertex(matrix, vertices, topRight, u1, 1.0F, r, g, b, a,
+                light, overlay, nx, ny, nz, portalSurface);
+        vertex(matrix, vertices, topLeft, u0, 1.0F, r, g, b, a,
+                light, overlay, nx, ny, nz, portalSurface);
     }
 
     private static void vertex(Matrix4f matrix, VertexConsumer vertices,
-                               float x, float y, float z,
+                               Vec3d pos,
                                float u, float v,
                                float r, float g, float b, float a,
-                               int light, int overlay, float nx, float nz,
+                               int light, int overlay, float nx, float ny, float nz,
                                boolean portalSurface) {
         if (portalSurface) {
-            vertices.vertex(matrix, x, y, z)
+            vertices.vertex(matrix, (float) pos.x, (float) pos.y, (float) pos.z)
                     .texture(u, v)
                     .color(r, g, b, a);
             return;
         }
-        vertices.vertex(matrix, x, y, z)
+        vertices.vertex(matrix, (float) pos.x, (float) pos.y, (float) pos.z)
                 .color(r, g, b, a)
                 .texture(u, v)
                 .overlay(overlay)
                 .light(light)
-                .normal(nx, 0.0F, nz);
+                .normal(nx, ny, nz);
     }
 }

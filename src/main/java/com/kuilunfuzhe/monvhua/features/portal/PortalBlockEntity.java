@@ -82,11 +82,9 @@ public class PortalBlockEntity extends BlockEntity {
     public Vec3d getPortalCenter() {
         BlockPos base = getOrigin();
         Direction facing = getFacing();
-        double y = base.getY() + getPortalHeight() / 2.0D;
-        if (facing.getAxis() == Direction.Axis.X) {
-            return new Vec3d(base.getX() + 0.5D, y, base.getZ() + getPortalWidth() / 2.0D);
-        }
-        return new Vec3d(base.getX() + getPortalWidth() / 2.0D, y, base.getZ() + 0.5D);
+        return Vec3d.ofCenter(base)
+                .add(PortalTransform.surfaceWidthAxis(facing).multiply((getPortalWidth() - 1) * 0.5D))
+                .add(PortalTransform.surfaceHeightAxis(facing).multiply((getPortalHeight() - 1) * 0.5D));
     }
 
     public void setStructure(BlockPos origin, int width, int height) {
@@ -107,7 +105,7 @@ public class PortalBlockEntity extends BlockEntity {
 
     public void setTarget(BlockPos pos, Direction facing, Vec3d center, long activeAfterTick) {
         targetPos = pos.toImmutable();
-        targetFacing = facing == null || facing.getAxis().isVertical() ? Direction.NORTH : facing;
+        targetFacing = facing == null ? Direction.NORTH : facing;
         targetCenter = center == null ? Vec3d.ofCenter(targetPos) : center;
         this.activeAfterTick = Math.max(0L, activeAfterTick);
         active = world == null || this.activeAfterTick <= world.getTime();
@@ -132,19 +130,21 @@ public class PortalBlockEntity extends BlockEntity {
 
     public boolean containsSurface(BlockPos checkPos) {
         BlockPos base = getOrigin();
+        int x = checkPos.getX() - base.getX();
         int y = checkPos.getY() - base.getY();
-        if (y < 0 || y >= getPortalHeight()) {
-            return false;
-        }
+        int z = checkPos.getZ() - base.getZ();
         Direction facing = getFacing();
-        if (facing.getAxis() == Direction.Axis.X) {
-            return checkPos.getX() == base.getX()
-                    && checkPos.getZ() >= base.getZ()
-                    && checkPos.getZ() < base.getZ() + getPortalWidth();
-        }
-        return checkPos.getZ() == base.getZ()
-                && checkPos.getX() >= base.getX()
-                && checkPos.getX() < base.getX() + getPortalWidth();
+        return switch (facing.getAxis()) {
+            case X -> x == 0
+                    && z >= 0 && z < getPortalWidth()
+                    && y >= 0 && y < getPortalHeight();
+            case Y -> y == 0
+                    && x >= 0 && x < getPortalWidth()
+                    && z >= 0 && z < getPortalHeight();
+            case Z -> z == 0
+                    && x >= 0 && x < getPortalWidth()
+                    && y >= 0 && y < getPortalHeight();
+        };
     }
 
     private static String sanitizeGroup(String value) {
@@ -183,9 +183,6 @@ public class PortalBlockEntity extends BlockEntity {
         }
         int index = view.read("target_facing", Codec.INT).orElse(Direction.NORTH.getIndex());
         targetFacing = Direction.byIndex(index);
-        if (targetFacing.getAxis().isVertical()) {
-            targetFacing = Direction.NORTH;
-        }
         width = Math.max(1, Math.min(PortalManager.MAX_PORTAL_SIZE, view.read("width", Codec.INT).orElse(1)));
         height = Math.max(1, Math.min(PortalManager.MAX_PORTAL_SIZE, view.read("height", Codec.INT).orElse(1)));
         groupId = sanitizeGroup(view.read("group_id", Codec.STRING).orElse(""));

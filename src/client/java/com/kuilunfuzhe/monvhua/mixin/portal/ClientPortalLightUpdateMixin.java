@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.mixin.portal;
 
 import com.kuilunfuzhe.monvhua.features.portal.client.PortalFramebufferRenderer;
 import com.kuilunfuzhe.monvhua.features.portal.client.PortalRemoteChunkCache;
+import com.kuilunfuzhe.monvhua.features.portal.client.PortalRemoteRenderContext;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.network.packet.s2c.play.LightData;
@@ -17,7 +18,9 @@ public abstract class ClientPortalLightUpdateMixin {
                                                             LightData data, boolean trustEdges,
                                                             CallbackInfo ci) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.world != null && PortalRemoteChunkCache.accepts(client.world, chunkX, chunkZ)) {
+        if (PortalRemoteRenderContext.isPortalPass()
+                && client.world != null
+                && PortalRemoteChunkCache.accepts(client.world, chunkX, chunkZ)) {
             PortalFramebufferRenderer.onRemoteChunkLoaded(chunkX, chunkZ);
         }
     }

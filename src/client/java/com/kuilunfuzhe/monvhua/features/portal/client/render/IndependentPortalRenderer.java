@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.features.portal.client.render;
 
 import com.kuilunfuzhe.monvhua.features.portal.PortalItems;
 import com.kuilunfuzhe.monvhua.features.portal.PortalBlockEntity;
+import com.kuilunfuzhe.monvhua.features.portal.PortalTransform;
 import com.kuilunfuzhe.monvhua.features.portal.PortalViewConfig;
 import com.kuilunfuzhe.monvhua.features.portal.client.PortalHorizonCache;
 import com.kuilunfuzhe.monvhua.features.portal.client.PortalRemoteChunkCache;
@@ -1274,9 +1275,6 @@ public final class IndependentPortalRenderer {
                 return null;
             }
             Direction facing = portal.getFacing();
-            Vec3d horizontal = facing.getAxis() == Direction.Axis.X
-                    ? new Vec3d(0.0D, 0.0D, 1.0D)
-                    : new Vec3d(1.0D, 0.0D, 0.0D);
             double width = Math.max(
                     0.01D,
                     portal.getPortalWidth() - PortalViewConfig.PORTAL_SURFACE_HORIZONTAL_INSET * 2.0D
@@ -1287,9 +1285,9 @@ public final class IndependentPortalRenderer {
             );
             return new ApertureProjection(
                     portal.getPortalCenter(),
-                    horizontal,
-                    new Vec3d(0.0D, 1.0D, 0.0D),
-                    new Vec3d(facing.getOffsetX(), facing.getOffsetY(), facing.getOffsetZ()),
+                    PortalTransform.surfaceWidthAxis(facing),
+                    PortalTransform.surfaceHeightAxis(facing),
+                    PortalTransform.normal(facing),
                     width,
                     height
             );
