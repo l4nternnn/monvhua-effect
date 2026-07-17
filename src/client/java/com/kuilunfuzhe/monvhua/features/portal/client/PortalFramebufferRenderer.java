@@ -5,6 +5,7 @@ import com.kuilunfuzhe.monvhua.compat.DhCompat;
 import com.kuilunfuzhe.monvhua.compat.IrisMirrorCompat;
 import com.kuilunfuzhe.monvhua.compat.PortalIrisCompat;
 import com.kuilunfuzhe.monvhua.features.portal.PortalBlockEntity;
+import com.kuilunfuzhe.monvhua.features.portal.PortalFrame;
 import com.kuilunfuzhe.monvhua.features.portal.PortalLinkData;
 import com.kuilunfuzhe.monvhua.features.portal.PortalTransform;
 import com.kuilunfuzhe.monvhua.features.portal.PortalViewConfig;
@@ -13,13 +14,16 @@ import com.kuilunfuzhe.monvhua.mixin.CameraAccessor;
 import com.kuilunfuzhe.monvhua.mixin.GameRendererAccessor;
 import com.kuilunfuzhe.monvhua.mixin.portal.SodiumWorldRendererAccessor;
 import com.kuilunfuzhe.monvhua.network.portal.PortalPackets;
+import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.systems.ProjectionType;
+import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.SimpleFramebuffer;
 import net.minecraft.client.render.BufferBuilderStorage;
 import net.minecraft.client.render.Camera;
@@ -44,6 +48,8 @@ import net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer;
 import net.caffeinemc.mods.sodium.client.render.chunk.RenderSectionManager;
 import net.caffeinemc.mods.sodium.client.world.LevelRendererExtension;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -51,6 +57,8 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
+import java.util.OptionalInt;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class PortalFramebufferRenderer {
@@ -75,6 +83,7 @@ public final class PortalFramebufferRenderer {
     private static final LongOpenHashSet QUEUED_REMOTE_SODIUM_CHUNKS = new LongOpenHashSet();
     private static final LongOpenHashSet DIRTY_REMOTE_SODIUM_CHUNKS = new LongOpenHashSet();
     private static final ArrayDeque<Long> PENDING_REMOTE_SODIUM_CHUNKS = new ArrayDeque<>();
+    private static GpuBuffer portalAreaBuffer;
     private static boolean creatingRemoteRenderer;
 
     private PortalFramebufferRenderer() {
@@ -141,7 +150,7 @@ public final class PortalFramebufferRenderer {
         RenderFrame frame = new RenderFrame(
                 client,
                 tickCounter,
-                mainCamera,
+                snapshotMainCamera(mainCamera),
                 perspectiveProjection,
                 viewDistanceChunks,
                 irisShaders
@@ -180,7 +189,7 @@ public final class PortalFramebufferRenderer {
             candidates.add(0, remoteViewCandidate);
         }
         Candidate remoteViewCandidate = candidates.getFirst();
-        requestRemoteView(remoteViewCandidate.portal);
+        requestRemoteView(remoteViewCandidate.portal, frame.mainCamera());
 
         try {
             int rendered = 0;
@@ -198,6 +207,7 @@ public final class PortalFramebufferRenderer {
                         key -> new RenderSlot(client, key, "live")
                 );
                 if (frameIndex - slot.lastAttemptFrame < updateInterval) {
+                    compositeCachedPortalArea(frame, portal, slot);
                     continue;
                 }
                 slot.lastAttemptFrame = frameIndex;
@@ -306,6 +316,10 @@ public final class PortalFramebufferRenderer {
             remoteFogRenderer = null;
             remoteProjectionMatrix = null;
             PortalRemoteRenderContext.clearRemoteRendererAlive();
+            if (portalAreaBuffer != null) {
+                portalAreaBuffer.close();
+                portalAreaBuffer = null;
+            }
             REMOTE_SODIUM_CHUNKS.clear();
             QUEUED_REMOTE_SODIUM_CHUNKS.clear();
             DIRTY_REMOTE_SODIUM_CHUNKS.clear();
@@ -314,14 +328,14 @@ public final class PortalFramebufferRenderer {
         }
     }
 
-    private static void requestRemoteView(PortalBlockEntity portal) {
+    private static void requestRemoteView(PortalBlockEntity portal, MainCameraSnapshot mainCamera) {
         PortalLinkData link = portal == null ? null : portal.getLinkData();
         if (link == null) {
             return;
         }
         MinecraftClient client = MinecraftClient.getInstance();
         TargetPortalView targetView = targetView(client.world, link);
-        CameraPose pose = fixedTargetCameraPose(targetView);
+        CameraPose pose = transformedCameraPose(mainCamera, portal, targetView);
         BlockPos sourcePos = portal.getPos();
         BlockPos viewCenter = remoteViewCenterFor(pose);
         RemoteRequestState previous = REMOTE_REQUESTS.get(sourcePos);
@@ -389,23 +403,25 @@ public final class PortalFramebufferRenderer {
         PortalRemoteChunkCache.activate(sourcePortal.getPos());
         TargetPortalView targetView = targetView(client.world, link);
 
-        Resolution resolution = resolutionForLiveView(frame, sourcePortal);
+        Resolution resolution = fullFrameResolution(client);
         SimpleFramebuffer framebuffer = slot.prepare(resolution);
-        CameraPose pose = fixedTargetCameraPose(targetView);
-        Aperture aperture = apertureFor(sourcePortal, targetView);
+        CameraPose pose = transformedCameraPose(frame.mainCamera(), sourcePortal, targetView);
         float aspect = resolution.width / (float) Math.max(1, resolution.height);
 
-        if (!renderPortalScene(frame, framebuffer, pose, aperture, aspect)) {
+        if (!renderPortalScene(frame, framebuffer, pose, null, aspect)) {
             slot.freeze("render_scene_failed", frameIndex);
+            compositeCachedPortalArea(frame, sourcePortal, slot);
             return;
         }
 
         PublishDecision decision = livePublishDecision(client.world, link.targetPos());
         if (!decision.publish()) {
             slot.freeze(decision.detail(), frameIndex);
+            compositeCachedPortalArea(frame, sourcePortal, slot);
             return;
         }
         slot.logStatus(decision.detail(), frameIndex);
+        compositePortalArea(frame, sourcePortal, framebuffer);
         slot.publish(link.targetPos(), frameIndex);
     }
 
@@ -525,6 +541,50 @@ public final class PortalFramebufferRenderer {
         );
     }
 
+    private static MainCameraSnapshot snapshotMainCamera(Camera camera) {
+        return new MainCameraSnapshot(
+                camera.getPos(),
+                new Quaternionf(camera.getRotation()).normalize()
+        );
+    }
+
+    private static CameraPose transformedCameraPose(MainCameraSnapshot sourceCamera,
+                                                    PortalBlockEntity sourcePortal,
+                                                    TargetPortalView targetPortal) {
+        PortalFrame sourceFrame = sourcePortal.getFrame();
+        PortalFrame targetFrame = targetFrameFor(targetPortal, sourcePortal);
+        Vec3d position = PortalTransform.mapPoint(sourceCamera.position(), sourceFrame, targetFrame);
+        Vec3d forward = cameraVector(sourceCamera, new Vector3f(0.0F, 0.0F, -1.0F));
+        Vec3d up = cameraVector(sourceCamera, new Vector3f(0.0F, 1.0F, 0.0F));
+        Vec3d mappedForward = PortalTransform.mapVector(forward, sourceFrame, targetFrame).normalize();
+        Vec3d mappedUp = PortalTransform.mapVector(up, sourceFrame, targetFrame).normalize();
+        PortalTransform.Rotation rotation = PortalTransform.rotationFromVector(mappedForward);
+        return new CameraPose(
+                position,
+                rotation.yaw(),
+                rotation.pitch(),
+                cameraRotation(mappedForward, mappedUp)
+        );
+    }
+
+    private static PortalFrame targetFrameFor(TargetPortalView targetPortal, PortalBlockEntity sourcePortal) {
+        if (targetPortal.portal() != null) {
+            return targetPortal.portal().getFrame();
+        }
+        return PortalFrame.centered(
+                targetPortal.center(),
+                targetPortal.facing(),
+                sourcePortal.getPortalWidth(),
+                sourcePortal.getPortalHeight()
+        );
+    }
+
+    private static Vec3d cameraVector(MainCameraSnapshot camera, Vector3f localVector) {
+        Vector3f vector = new Vector3f(localVector);
+        camera.rotation().transform(vector);
+        return new Vec3d(vector.x, vector.y, vector.z);
+    }
+
     private static Quaternionf cameraRotation(Vec3d forward, Vec3d up) {
         Vec3d normalizedForward = forward.normalize();
         Vec3d normalizedUp = up.normalize();
@@ -569,9 +629,7 @@ public final class PortalFramebufferRenderer {
         GpuTextureView previousDepth = RenderSystem.outputDepthTextureOverride;
         GpuBufferSlice previousFog = RenderSystem.getShaderFog();
         Camera globalCamera = client.gameRenderer.getCamera();
-        Vec3d previousCameraPos = globalCamera.getPos();
-        float previousCameraYaw = globalCamera.getYaw();
-        float previousCameraPitch = globalCamera.getPitch();
+        CameraState previousCameraState = snapshotCameraState(globalCamera);
         boolean globalCameraOverridden = false;
         boolean portalDhStateInstalled = false;
         boolean dhSuspended = false;
@@ -666,13 +724,7 @@ public final class PortalFramebufferRenderer {
                 DhCompat.endPortalRender();
             }
             if (globalCameraOverridden) {
-                CameraAccessor globalCameraAccessor = (CameraAccessor) globalCamera;
-                globalCameraAccessor.invokeSetPos(
-                        previousCameraPos.x,
-                        previousCameraPos.y,
-                        previousCameraPos.z
-                );
-                globalCameraAccessor.invokeSetRotation(previousCameraYaw, previousCameraPitch);
+                restoreCameraState(globalCamera, previousCameraState);
             }
             if (sceneFogRenderer != null) {
                 sceneFogRenderer.rotate();
@@ -703,6 +755,78 @@ public final class PortalFramebufferRenderer {
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
+    private static void compositePortalArea(RenderFrame frame, PortalBlockEntity portal,
+                                            SimpleFramebuffer sourceFramebuffer) {
+        Framebuffer mainFramebuffer = frame.client().getFramebuffer();
+        if (sourceFramebuffer == null || mainFramebuffer == null
+                || sourceFramebuffer.getColorAttachmentView() == null
+                || mainFramebuffer.getColorAttachmentView() == null) {
+            return;
+        }
+
+        PortalScreenQuad quad = screenQuadForPortal(frame, portal);
+        if (quad == null) {
+            return;
+        }
+
+        GpuTextureView mainDepth = mainFramebuffer.getDepthAttachmentView();
+        boolean depthTest = mainDepth != null;
+        GpuBuffer vertexBuffer = getPortalAreaBuffer(quad);
+        try (RenderPass pass = depthTest
+                ? RenderSystem.getDevice().createCommandEncoder().createRenderPass(
+                () -> "Monvhua portal framebuffer area",
+                mainFramebuffer.getColorAttachmentView(),
+                OptionalInt.empty(),
+                mainDepth,
+                OptionalDouble.empty()
+        )
+                : RenderSystem.getDevice().createCommandEncoder().createRenderPass(
+                () -> "Monvhua portal framebuffer area",
+                mainFramebuffer.getColorAttachmentView(),
+                OptionalInt.empty()
+        )) {
+            pass.setPipeline(PortalRenderPipelines.framebufferArea(depthTest));
+            pass.setVertexBuffer(0, vertexBuffer);
+            pass.bindSampler("InSampler", sourceFramebuffer.getColorAttachmentView());
+            pass.draw(0, 6);
+        }
+    }
+
+    private static void compositeCachedPortalArea(RenderFrame frame, PortalBlockEntity portal, RenderSlot slot) {
+        SimpleFramebuffer cachedFramebuffer = slot.frontFramebuffer();
+        if (!slot.ready || cachedFramebuffer == null) {
+            return;
+        }
+        compositePortalArea(frame, portal, cachedFramebuffer);
+    }
+
+    private static GpuBuffer getPortalAreaBuffer(PortalScreenQuad quad) {
+        if (portalAreaBuffer != null) {
+            portalAreaBuffer.close();
+            portalAreaBuffer = null;
+        }
+
+        ByteBuffer vertices = ByteBuffer.allocateDirect(6 * 5 * Float.BYTES).order(ByteOrder.nativeOrder());
+        putPortalAreaVertex(vertices, quad.bottomLeft());
+        putPortalAreaVertex(vertices, quad.bottomRight());
+        putPortalAreaVertex(vertices, quad.topRight());
+        putPortalAreaVertex(vertices, quad.bottomLeft());
+        putPortalAreaVertex(vertices, quad.topRight());
+        putPortalAreaVertex(vertices, quad.topLeft());
+        vertices.flip();
+        portalAreaBuffer = RenderSystem.getDevice()
+                .createBuffer(() -> "Monvhua portal framebuffer area vertices", 40, vertices);
+        return portalAreaBuffer;
+    }
+
+    private static void putPortalAreaVertex(ByteBuffer buffer, PortalScreenVertex vertex) {
+        buffer.putFloat(vertex.x());
+        buffer.putFloat(vertex.y());
+        buffer.putFloat(vertex.z());
+        buffer.putFloat(vertex.x());
+        buffer.putFloat(vertex.y());
+    }
+
     private static void applyCameraPose(Camera camera, CameraPose pose) {
         CameraAccessor accessor = (CameraAccessor) camera;
         accessor.invokeSetPos(pose.position.x, pose.position.y, pose.position.z);
@@ -718,6 +842,29 @@ public final class PortalFramebufferRenderer {
         new Vector3f(0.0F, 0.0F, -1.0F).rotate(normalized, accessor.monvhua$getHorizontalPlane());
         new Vector3f(0.0F, 1.0F, 0.0F).rotate(normalized, accessor.monvhua$getVerticalPlane());
         new Vector3f(-1.0F, 0.0F, 0.0F).rotate(normalized, accessor.monvhua$getDiagonalPlane());
+    }
+
+    private static CameraState snapshotCameraState(Camera camera) {
+        CameraAccessor accessor = (CameraAccessor) camera;
+        return new CameraState(
+                camera.getPos(),
+                camera.getYaw(),
+                camera.getPitch(),
+                new Quaternionf(accessor.monvhua$getRotation()),
+                new Vector3f(accessor.monvhua$getHorizontalPlane()),
+                new Vector3f(accessor.monvhua$getVerticalPlane()),
+                new Vector3f(accessor.monvhua$getDiagonalPlane())
+        );
+    }
+
+    private static void restoreCameraState(Camera camera, CameraState state) {
+        CameraAccessor accessor = (CameraAccessor) camera;
+        accessor.invokeSetPos(state.position().x, state.position().y, state.position().z);
+        accessor.invokeSetRotation(state.yaw(), state.pitch());
+        accessor.monvhua$getRotation().set(state.rotation());
+        accessor.monvhua$getHorizontalPlane().set(state.horizontalPlane());
+        accessor.monvhua$getVerticalPlane().set(state.verticalPlane());
+        accessor.monvhua$getDiagonalPlane().set(state.diagonalPlane());
     }
 
     private static Vector3f toVector3f(Vec3d vector) {
@@ -894,9 +1041,12 @@ public final class PortalFramebufferRenderer {
                                                 Vec3d cameraPos,
                                                 Quaternionf worldToCamera,
                                                 float fallbackAspect) {
-        Vec3d center = portal.center();
-        Vec3d horizontal = PortalTransform.surfaceWidthAxis(portal.facing());
-        Vec3d vertical = PortalTransform.surfaceHeightAxis(portal.facing());
+        PortalFrame frame = portal.portal() != null
+                ? portal.portal().getFrame()
+                : PortalFrame.centered(portal.center(), portal.facing(), portal.width(), portal.height());
+        Vec3d center = frame.center();
+        Vec3d horizontal = frame.widthAxis();
+        Vec3d vertical = frame.heightAxis();
         double halfWidth = Math.max(
                 0.01D,
                 portal.width() * 0.5D - PortalViewConfig.PORTAL_SURFACE_HORIZONTAL_INSET
@@ -950,7 +1100,7 @@ public final class PortalFramebufferRenderer {
         projection.m21((maxY + minY) / height);
         setPerspectiveDepth(
                 projection,
-                minimumDepth + (float) PortalViewConfig.PORTAL_NEAR_PLANE_BIAS,
+                minimumDepth - (float) PortalViewConfig.PORTAL_NEAR_PLANE_BIAS,
                 Math.max(extractFarPlane(original), PortalViewConfig.PORTAL_MINIMUM_FAR_PLANE)
         );
         return projection;
@@ -983,6 +1133,86 @@ public final class PortalFramebufferRenderer {
         return BlockPos.ofFloored(pose.position);
     }
 
+    private static PortalScreenQuad screenQuadForPortal(RenderFrame frame, PortalBlockEntity portal) {
+        if (portal == null) {
+            return null;
+        }
+
+        PortalFrame portalFrame = portal.getFrame();
+        Vec3d center = portalFrame.center();
+        Vec3d horizontal = portalFrame.widthAxis();
+        Vec3d vertical = portalFrame.heightAxis();
+        double halfWidth = Math.max(0.01D, portal.getPortalWidth() * 0.5D);
+        double halfHeight = Math.max(0.01D, portal.getPortalHeight() * 0.5D);
+        Quaternionf worldToCamera = new Quaternionf(frame.mainCamera().rotation()).conjugate();
+
+        PortalScreenVertex bottomLeft = projectPortalCorner(
+                frame,
+                worldToCamera,
+                center.subtract(horizontal.multiply(halfWidth)).subtract(vertical.multiply(halfHeight))
+        );
+        PortalScreenVertex bottomRight = projectPortalCorner(
+                frame,
+                worldToCamera,
+                center.add(horizontal.multiply(halfWidth)).subtract(vertical.multiply(halfHeight))
+        );
+        PortalScreenVertex topRight = projectPortalCorner(
+                frame,
+                worldToCamera,
+                center.add(horizontal.multiply(halfWidth)).add(vertical.multiply(halfHeight))
+        );
+        PortalScreenVertex topLeft = projectPortalCorner(
+                frame,
+                worldToCamera,
+                center.subtract(horizontal.multiply(halfWidth)).add(vertical.multiply(halfHeight))
+        );
+        if (bottomLeft == null || bottomRight == null || topRight == null || topLeft == null) {
+            return null;
+        }
+
+        float minX = Math.min(Math.min(bottomLeft.x(), bottomRight.x()), Math.min(topRight.x(), topLeft.x()));
+        float maxX = Math.max(Math.max(bottomLeft.x(), bottomRight.x()), Math.max(topRight.x(), topLeft.x()));
+        float minY = Math.min(Math.min(bottomLeft.y(), bottomRight.y()), Math.min(topRight.y(), topLeft.y()));
+        float maxY = Math.max(Math.max(bottomLeft.y(), bottomRight.y()), Math.max(topRight.y(), topLeft.y()));
+        if (maxX <= 0.0F || minX >= 1.0F || maxY <= 0.0F || minY >= 1.0F) {
+            return null;
+        }
+        if (Math.abs(screenArea(bottomLeft, bottomRight, topRight) + screenArea(bottomLeft, topRight, topLeft)) < 1.0E-6F) {
+            return null;
+        }
+        return new PortalScreenQuad(bottomLeft, bottomRight, topRight, topLeft);
+    }
+
+    private static PortalScreenVertex projectPortalCorner(RenderFrame frame, Quaternionf worldToCamera, Vec3d corner) {
+        Vector3f cameraCorner = new Vector3f(
+                (float) (corner.x - frame.mainCamera().position().x),
+                (float) (corner.y - frame.mainCamera().position().y),
+                (float) (corner.z - frame.mainCamera().position().z)
+        );
+        worldToCamera.transform(cameraCorner);
+        Vector4f clip = new Vector4f(cameraCorner.x, cameraCorner.y, cameraCorner.z, 1.0F);
+        frame.perspectiveProjection().transform(clip);
+        if (clip.w <= 1.0E-5F) {
+            return null;
+        }
+
+        float ndcX = clip.x / clip.w;
+        float ndcY = clip.y / clip.w;
+        float ndcZ = clip.z / clip.w;
+        if (!Float.isFinite(ndcX) || !Float.isFinite(ndcY) || !Float.isFinite(ndcZ)) {
+            return null;
+        }
+        return new PortalScreenVertex(
+                ndcX * 0.5F + 0.5F,
+                ndcY * 0.5F + 0.5F,
+                MathHelper.clamp(ndcZ, -0.9999F, 0.9999F)
+        );
+    }
+
+    private static float screenArea(PortalScreenVertex a, PortalScreenVertex b, PortalScreenVertex c) {
+        return (b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x());
+    }
+
     private static ScreenBounds screenBoundsForPortal(RenderFrame frame, PortalBlockEntity portal) {
         int framebufferWidth = frame.client().getWindow().getFramebufferWidth();
         int framebufferHeight = frame.client().getWindow().getFramebufferHeight();
@@ -990,12 +1220,13 @@ public final class PortalFramebufferRenderer {
             return null;
         }
 
-        Vec3d center = portal.getPortalCenter();
-        Vec3d horizontal = PortalTransform.surfaceWidthAxis(portal.getFacing());
-        Vec3d vertical = PortalTransform.surfaceHeightAxis(portal.getFacing());
+        PortalFrame portalFrame = portal.getFrame();
+        Vec3d center = portalFrame.center();
+        Vec3d horizontal = portalFrame.widthAxis();
+        Vec3d vertical = portalFrame.heightAxis();
         double halfWidth = Math.max(0.01D, portal.getPortalWidth() * 0.5D);
         double halfHeight = Math.max(0.01D, portal.getPortalHeight() * 0.5D);
-        Quaternionf worldToCamera = frame.mainCamera().getRotation().conjugate(new Quaternionf());
+        Quaternionf worldToCamera = new Quaternionf(frame.mainCamera().rotation()).conjugate();
 
         float minX = Float.POSITIVE_INFINITY;
         float minY = Float.POSITIVE_INFINITY;
@@ -1007,9 +1238,9 @@ public final class PortalFramebufferRenderer {
                         .add(horizontal.multiply(halfWidth * horizontalSign))
                         .add(vertical.multiply(halfHeight * verticalSign));
                 Vector3f cameraCorner = new Vector3f(
-                        (float) (corner.x - frame.mainCamera().getPos().x),
-                        (float) (corner.y - frame.mainCamera().getPos().y),
-                        (float) (corner.z - frame.mainCamera().getPos().z)
+                        (float) (corner.x - frame.mainCamera().position().x),
+                        (float) (corner.y - frame.mainCamera().position().y),
+                        (float) (corner.z - frame.mainCamera().position().z)
                 );
                 worldToCamera.transform(cameraCorner);
                 Vector4f clip = new Vector4f(cameraCorner.x, cameraCorner.y, cameraCorner.z, 1.0F);
@@ -1047,7 +1278,7 @@ public final class PortalFramebufferRenderer {
     }
 
     private static Resolution resolutionForLiveView(RenderFrame frame, PortalBlockEntity portal) {
-        Vec3d offset = portal.getPortalCenter().subtract(frame.mainCamera().getPos());
+        Vec3d offset = portal.getPortalCenter().subtract(frame.mainCamera().position());
         double planeDistance = Math.abs(offset.dotProduct(normal(portal.getFacing())));
         double safeDistance = Math.max(PortalViewConfig.MIN_PROJECTION_DEPTH, planeDistance);
         int framebufferWidth = frame.client().getWindow().getFramebufferWidth();
@@ -1136,12 +1367,20 @@ public final class PortalFramebufferRenderer {
     }
 
     private record RenderFrame(MinecraftClient client, RenderTickCounter tickCounter,
-                               Camera mainCamera, Matrix4f perspectiveProjection,
+                               MainCameraSnapshot mainCamera, Matrix4f perspectiveProjection,
                                int viewDistanceChunks, int renderBudget,
                                int maximumSurfaceResolution) {
     }
 
+    private record MainCameraSnapshot(Vec3d position, Quaternionf rotation) {
+    }
+
     private record CameraPose(Vec3d position, float yaw, float pitch, Quaternionf rotation) {
+    }
+
+    private record CameraState(Vec3d position, float yaw, float pitch, Quaternionf rotation,
+                               Vector3f horizontalPlane, Vector3f verticalPlane,
+                               Vector3f diagonalPlane) {
     }
 
     private record TargetPortalView(Vec3d center, Direction facing, PortalBlockEntity portal) {
@@ -1154,6 +1393,15 @@ public final class PortalFramebufferRenderer {
     }
 
     private record ScreenBounds(int x, int y, int width, int height) {
+    }
+
+    private record PortalScreenQuad(PortalScreenVertex bottomLeft,
+                                    PortalScreenVertex bottomRight,
+                                    PortalScreenVertex topRight,
+                                    PortalScreenVertex topLeft) {
+    }
+
+    private record PortalScreenVertex(float x, float y, float z) {
     }
 
     private record PublishDecision(boolean publish, String detail) {
@@ -1222,6 +1470,10 @@ public final class PortalFramebufferRenderer {
             return buffer == null ? null : buffer.textureId;
         }
 
+        private SimpleFramebuffer frontFramebuffer() {
+            return buffer == null ? null : buffer.frontFramebuffer();
+        }
+
         private Identifier textureId() {
             String dimension = Integer.toUnsignedString(key.dimension.hashCode(), 36);
             String position = Long.toUnsignedString(key.pos.asLong(), 36);
@@ -1275,6 +1527,10 @@ public final class PortalFramebufferRenderer {
                 client.getTextureManager().registerTexture(textureId, texture);
             }
             texture.setFramebuffer(frontFramebuffer);
+        }
+
+        private SimpleFramebuffer frontFramebuffer() {
+            return frontFramebuffer;
         }
 
         private Resolution stabilize(Resolution requested) {

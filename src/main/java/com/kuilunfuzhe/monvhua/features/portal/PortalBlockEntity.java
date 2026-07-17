@@ -80,11 +80,11 @@ public class PortalBlockEntity extends BlockEntity {
     }
 
     public Vec3d getPortalCenter() {
-        BlockPos base = getOrigin();
-        Direction facing = getFacing();
-        return Vec3d.ofCenter(base)
-                .add(PortalTransform.surfaceWidthAxis(facing).multiply((getPortalWidth() - 1) * 0.5D))
-                .add(PortalTransform.surfaceHeightAxis(facing).multiply((getPortalHeight() - 1) * 0.5D));
+        return getFrame().center();
+    }
+
+    public PortalFrame getFrame() {
+        return PortalFrame.of(getOrigin(), getFacing(), getPortalWidth(), getPortalHeight());
     }
 
     public void setStructure(BlockPos origin, int width, int height) {
@@ -129,22 +129,7 @@ public class PortalBlockEntity extends BlockEntity {
     }
 
     public boolean containsSurface(BlockPos checkPos) {
-        BlockPos base = getOrigin();
-        int x = checkPos.getX() - base.getX();
-        int y = checkPos.getY() - base.getY();
-        int z = checkPos.getZ() - base.getZ();
-        Direction facing = getFacing();
-        return switch (facing.getAxis()) {
-            case X -> x == 0
-                    && z >= 0 && z < getPortalWidth()
-                    && y >= 0 && y < getPortalHeight();
-            case Y -> y == 0
-                    && x >= 0 && x < getPortalWidth()
-                    && z >= 0 && z < getPortalHeight();
-            case Z -> z == 0
-                    && x >= 0 && x < getPortalWidth()
-                    && y >= 0 && y < getPortalHeight();
-        };
+        return getFrame().containsBlock(checkPos);
     }
 
     private static String sanitizeGroup(String value) {

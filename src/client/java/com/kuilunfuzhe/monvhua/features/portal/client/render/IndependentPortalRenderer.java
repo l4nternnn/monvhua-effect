@@ -2,7 +2,7 @@ package com.kuilunfuzhe.monvhua.features.portal.client.render;
 
 import com.kuilunfuzhe.monvhua.features.portal.PortalItems;
 import com.kuilunfuzhe.monvhua.features.portal.PortalBlockEntity;
-import com.kuilunfuzhe.monvhua.features.portal.PortalTransform;
+import com.kuilunfuzhe.monvhua.features.portal.PortalFrame;
 import com.kuilunfuzhe.monvhua.features.portal.PortalViewConfig;
 import com.kuilunfuzhe.monvhua.features.portal.client.PortalHorizonCache;
 import com.kuilunfuzhe.monvhua.features.portal.client.PortalRemoteChunkCache;
@@ -1283,11 +1283,12 @@ public final class IndependentPortalRenderer {
                     0.01D,
                     portal.getPortalHeight() - PortalViewConfig.PORTAL_SURFACE_VERTICAL_INSET * 2.0D
             );
+            PortalFrame frame = portal.getFrame();
             return new ApertureProjection(
-                    portal.getPortalCenter(),
-                    PortalTransform.surfaceWidthAxis(facing),
-                    PortalTransform.surfaceHeightAxis(facing),
-                    PortalTransform.normal(facing),
+                    frame.center(),
+                    frame.widthAxis(),
+                    frame.heightAxis(),
+                    frame.normal(),
                     width,
                     height
             );
