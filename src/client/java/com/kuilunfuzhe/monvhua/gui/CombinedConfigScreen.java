@@ -487,6 +487,7 @@ public final class CombinedConfigScreen {
             addField(parent, "uiDrain", "界面消耗/s", cfg.uiDrainRate());
             addField(parent, "watchDrain", "注视消耗/s", cfg.watchDrainRate());
             addField(parent, "regen", "恢复/s", cfg.regenRate());
+            addField(parent, "markExpire", "\u6807\u8bb0\u6d88\u6563/s", cfg.markExpireSeconds());
             addField(parent, "parrotDaily", "锚点每日次数", cfg.parrotDailyLimit());
             addSave(parent, "保存千里眼", this::saveEvil);
         }
@@ -883,7 +884,7 @@ public final class CombinedConfigScreen {
             GlobalConfigS2C.StageConfig old = evil(stage);
             CACHED_EVIL_CONFIGS[stage] = new GlobalConfigS2C.StageConfig(
                     intField("daily"), intField("marks"), old.minScore(), old.maxScore(),
-                    old.watchRequiredTicks(), intField("parrotDaily"), old.maxActiveParrots(),
+                    old.watchRequiredTicks(), intField("markExpire"), intField("parrotDaily"), old.maxActiveParrots(),
                     doubleField("uiDrain"), doubleField("watchDrain"), doubleField("regen"));
         }
 
@@ -966,7 +967,7 @@ public final class CombinedConfigScreen {
                 GlobalConfigS2C.StageConfig old = evil(stage);
                 GlobalConfigS2C.StageConfig updated = new GlobalConfigS2C.StageConfig(
                         intField("daily"), intField("marks"), old.minScore(), old.maxScore(),
-                        old.watchRequiredTicks(), intField("parrotDaily"), old.maxActiveParrots(),
+                        old.watchRequiredTicks(), intField("markExpire"), intField("parrotDaily"), old.maxActiveParrots(),
                         doubleField("uiDrain"), doubleField("watchDrain"), doubleField("regen"));
                 CACHED_EVIL_CONFIGS[stage] = updated;
                 for (int i = 1; i <= STAGES; i++) {
@@ -1125,7 +1126,7 @@ public final class CombinedConfigScreen {
         private GlobalConfigS2C.StageConfig evil(int stage) {
             GlobalConfigS2C.StageConfig cfg = CACHED_EVIL_CONFIGS[Math.clamp(stage, 1, STAGES)];
             if (cfg == null) {
-                return new GlobalConfigS2C.StageConfig(10, 3, 0, 5, 40, 5, 1, 1.0D, 8.0D, 2.0D);
+                return new GlobalConfigS2C.StageConfig(10, 3, 0, 5, 40, 20, 5, 1, 1.0D, 8.0D, 2.0D);
             }
             return cfg;
         }

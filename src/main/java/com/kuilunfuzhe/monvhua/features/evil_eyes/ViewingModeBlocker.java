@@ -47,8 +47,9 @@ public class ViewingModeBlocker {
 					ItemStack mainHand = serverPlayer.getMainHandStack();
 					NbtComponent existing = mainHand.get(DataComponentTypes.CUSTOM_DATA);
 					NbtCompound nbt = existing != null ? existing.copyNbt() : new NbtCompound();
-					if (!nbt.contains("signed_evil")) {
-						nbt.putString("signed_evil", serverPlayer.getUuid().toString());
+					if (!nbt.contains(Evil_Eyes.SIGNED_EVIL_KEY)) {
+						nbt.putString(Evil_Eyes.SIGNED_EVIL_KEY, serverPlayer.getUuid().toString());
+						nbt.putString(Evil_Eyes.SIGNED_EVIL_ID_KEY, UUID.randomUUID().toString());
 						mainHand.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
 						serverPlayer.sendMessage(Text.literal("§8这个物品似乎哪里怪怪的"), true);
 					} else {
@@ -71,8 +72,9 @@ public class ViewingModeBlocker {
 					ItemStack mainHand = serverPlayer.getMainHandStack();
 					NbtComponent existing = mainHand.get(DataComponentTypes.CUSTOM_DATA);
 					NbtCompound nbt = existing != null ? existing.copyNbt() : new NbtCompound();
-					if (!nbt.contains("signed_evil")) {
-						nbt.putString("signed_evil", serverPlayer.getUuid().toString());
+					if (!nbt.contains(Evil_Eyes.SIGNED_EVIL_KEY)) {
+						nbt.putString(Evil_Eyes.SIGNED_EVIL_KEY, serverPlayer.getUuid().toString());
+						nbt.putString(Evil_Eyes.SIGNED_EVIL_ID_KEY, UUID.randomUUID().toString());
 						mainHand.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
 						serverPlayer.sendMessage(Text.literal("§a物品已标记§c洞察印记§a"), true);
 					} else {
@@ -99,8 +101,8 @@ public class ViewingModeBlocker {
 					NbtComponent customData = stack.get(DataComponentTypes.CUSTOM_DATA);
 					if (customData == null) continue;
 					NbtCompound nbt = customData.copyNbt();
-					if (!nbt.contains("signed_evil")) continue;
-					String uuidStr = nbt.getString("signed_evil").orElse(null);
+					if (!nbt.contains(Evil_Eyes.SIGNED_EVIL_KEY)) continue;
+					String uuidStr = nbt.getString(Evil_Eyes.SIGNED_EVIL_KEY).orElse(null);
 					if (uuidStr == null) continue;
 					UUID markerUuid;
 					try {
@@ -108,8 +110,10 @@ public class ViewingModeBlocker {
 					} catch (IllegalArgumentException e) {
 						continue;
 					}
+					Evil_Eyes.ensureSignedItemId(stack);
 					if (markerUuid.equals(player.getUuid())) continue;
 					if (!Evil_Eyes.canMarkTarget(player)) continue;
+					if (Evil_Eyes.isUnmarkCoolingDownFor(markerUuid, player.getUuid(), now)) continue;
 					String pairKey = markerUuid.toString() + ":" + player.getUuid().toString();
 					boolean firstTime = SIGNED_EVIL_NOTIFIED.add(pairKey);
 					if (!Evil_Eyes.hasActiveMark(markerUuid, player.getUuid())) {

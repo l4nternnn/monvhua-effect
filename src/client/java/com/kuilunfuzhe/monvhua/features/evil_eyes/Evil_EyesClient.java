@@ -48,6 +48,9 @@ public class Evil_EyesClient {
     // 公开的标记实体映射（供其他类使用）
     public static final Map<UUID, Long> localMarkedEntities = new ConcurrentHashMap<>();
     public static final Map<UUID, MarkedEntityName> localMarkedEntityNames = new ConcurrentHashMap<>();
+    public static final Map<UUID, AnchorEntry> localAnchors = new ConcurrentHashMap<>();
+    public static final Map<UUID, SignedItemEntry> localSignedItems = new ConcurrentHashMap<>();
+    public static final Map<UUID, CooldownEntry> localUnmarkCooldowns = new ConcurrentHashMap<>();
     private static final long LOST_TARGET_GRACE_TICKS = 40L;
     private static final Map<UUID, Long> missingEntitySince = new ConcurrentHashMap<>();
     private static final Map<UUID, Long> missingSyncSince = new ConcurrentHashMap<>();
@@ -58,6 +61,15 @@ public class Evil_EyesClient {
     private static volatile String viewMode = "viewport";
 
     public record MarkedEntityName(String name, String tag) {
+    }
+
+    public record AnchorEntry(Vec3d pos, String label) {
+    }
+
+    public record SignedItemEntry(String label) {
+    }
+
+    public record CooldownEntry(String name, long expireTick) {
     }
 
     public static void setViewMode(String mode) {
@@ -88,6 +100,53 @@ public class Evil_EyesClient {
         markedSyncGenerations.put(uuid, currentMarkedSyncGeneration);
         missingEntitySince.remove(uuid);
         missingSyncSince.remove(uuid);
+    }
+
+    public static void receiveAnchorList(boolean clear, UUID standId, Vec3d pos, String label) {
+        if (clear) {
+            localAnchors.clear();
+        }
+        if (standId == null || (standId.getMostSignificantBits() == 0L && standId.getLeastSignificantBits() == 0L)) {
+            return;
+        }
+        localAnchors.put(standId, new AnchorEntry(pos, label == null || label.isBlank() ? "Anchor" : label));
+    }
+
+    public static void receiveSignedItemList(boolean clear, UUID itemId, String label) {
+        if (clear) {
+            localSignedItems.clear();
+        }
+        if (itemId == null || (itemId.getMostSignificantBits() == 0L && itemId.getLeastSignificantBits() == 0L)) {
+            return;
+        }
+        localSignedItems.put(itemId, new SignedItemEntry(label == null || label.isBlank() ? "Signed item" : label));
+    }
+
+    public static void receiveUnmarkCooldown(boolean clear, UUID entityUuid, String name, int remainingTicks) {
+        if (clear) {
+            localUnmarkCooldowns.clear();
+        }
+        if (entityUuid == null || (entityUuid.getMostSignificantBits() == 0L && entityUuid.getLeastSignificantBits() == 0L)) {
+            return;
+        }
+        if (remainingTicks <= 0) {
+            localUnmarkCooldowns.remove(entityUuid);
+            return;
+        }
+        long now = MinecraftClient.getInstance().world != null ? MinecraftClient.getInstance().world.getTime() : System.currentTimeMillis() / 50L;
+        localUnmarkCooldowns.put(entityUuid, new CooldownEntry(name == null || name.isBlank() ? "Cooldown" : name, now + remainingTicks));
+    }
+
+    public static void removeLocalAnchor(UUID standId) {
+        localAnchors.remove(standId);
+    }
+
+    public static void removeLocalSignedItem(UUID itemId) {
+        localSignedItems.remove(itemId);
+    }
+
+    public static void removeLocalUnmarkCooldown(UUID entityUuid) {
+        localUnmarkCooldowns.remove(entityUuid);
     }
 
     public static boolean pruneLocalMarkedEntities(MinecraftClient client) {
@@ -216,6 +275,9 @@ public class Evil_EyesClient {
     public static void clearMarkedEntityCache() {
         localMarkedEntities.clear();
         localMarkedEntityNames.clear();
+        localAnchors.clear();
+        localSignedItems.clear();
+        localUnmarkCooldowns.clear();
         missingEntitySince.clear();
         missingSyncSince.clear();
         markedSyncGenerations.clear();

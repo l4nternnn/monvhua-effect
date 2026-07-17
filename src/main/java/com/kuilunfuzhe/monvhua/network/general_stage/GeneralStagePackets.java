@@ -40,7 +40,7 @@ public final class GeneralStagePackets {
             return ID;
         }
 
-        public record StageConfig(int dailyLimit, int maxMarks, int minScore, int maxScore, int watchRequiredTicks,
+        public record StageConfig(int dailyLimit, int maxMarks, int minScore, int maxScore, int watchRequiredTicks, int markExpireSeconds,
                                   int parrotDailyLimit, int maxActiveParrots,
                                   double uiDrainRate, double watchDrainRate, double regenRate) {
         }
@@ -85,7 +85,7 @@ public final class GeneralStagePackets {
     }
 
     public record UpdateGlobalConfigC2S(int stage, int dailyLimit, int maxMarks, int minScore, int maxScore,
-                                        int watchRequiredTicks, int parrotDailyLimit, int maxActiveParrots,
+                                        int watchRequiredTicks, int markExpireSeconds, int parrotDailyLimit, int maxActiveParrots,
                                         double uiDrainRate, double watchDrainRate, double regenRate) implements CustomPayload {
         public static final Id<UpdateGlobalConfigC2S> ID = new Id<>(Identifier.of("monvhua", "update_global_config"));
         public static final PacketCodec<RegistryByteBuf, UpdateGlobalConfigC2S> CODEC = PacketCodec.of(
@@ -96,6 +96,7 @@ public final class GeneralStagePackets {
                     buf.writeInt(packet.minScore);
                     buf.writeInt(packet.maxScore);
                     buf.writeInt(packet.watchRequiredTicks);
+                    buf.writeInt(packet.markExpireSeconds);
                     buf.writeInt(packet.parrotDailyLimit);
                     buf.writeInt(packet.maxActiveParrots);
                     buf.writeDouble(packet.uiDrainRate);
@@ -103,7 +104,7 @@ public final class GeneralStagePackets {
                     buf.writeDouble(packet.regenRate);
                 },
                 buf -> new UpdateGlobalConfigC2S(buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
-                        buf.readInt(), buf.readInt(), buf.readInt(), buf.readDouble(), buf.readDouble(), buf.readDouble())
+                        buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readDouble(), buf.readDouble(), buf.readDouble())
         );
         private static boolean registered = false;
 

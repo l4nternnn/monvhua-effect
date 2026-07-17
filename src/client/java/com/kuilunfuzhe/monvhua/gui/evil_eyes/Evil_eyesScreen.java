@@ -4,8 +4,12 @@ import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceEnergyClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceViewportRenderer;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.AnchorDestroyC2S;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.ClearUnmarkCooldownC2S;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.ClairvoyanceUiStateC2S;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.DeleteSignedItemC2S;
 import com.kuilunfuzhe.monvhua.gui.layout.DraggableResizableLayout;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.RequestAnchorListC2S;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.SelectView;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.UnmarkEntityC2S;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -41,6 +45,8 @@ public class Evil_eyesScreen extends Screen {
     private static final int VIEW_SLOTS = 6;
     private static final int VIEW_CORNER_RADIUS = 8;
     private static final long VIEW_HOVER_ANIMATION_MS = 200L;
+    private static final long DELETE_CONFIRM_MS = 1800L;
+    private static final long DELETE_DOUBLE_CLICK_MS = 300L;
     private static final boolean LAYOUT_EDITING_ENABLED = false;
     private static final LayoutDefault MAIN_LAYOUT = new LayoutDefault(0.0F, 0.65410197F, 0.28103045F, 0.33481154F, -1.0795044F);
     private static final LayoutDefault LIST_LAYOUT = new LayoutDefault(0.0F, 0.6585366F, 0.25058547F, 0.34146342F, 0.0F);
@@ -70,9 +76,12 @@ public class Evil_eyesScreen extends Screen {
     private static final Map<UUID, Long> currentMarks = new ConcurrentHashMap<>();
 
     private final List<MarkedRow> markedRows = new ArrayList<>();
+    private final List<CooldownRow> cooldownRows = new ArrayList<>();
+    private final List<ResourceRow> resourceRows = new ArrayList<>();
     private DraggableResizableLayout layout;
     private DraggableResizableLayout.Bounds mainBounds = DraggableResizableLayout.Bounds.EMPTY;
     private DraggableResizableLayout.Bounds listBounds = DraggableResizableLayout.Bounds.EMPTY;
+    private DraggableResizableLayout.Bounds resourceBounds = DraggableResizableLayout.Bounds.EMPTY;
     private DraggableResizableLayout.Bounds viewBounds = DraggableResizableLayout.Bounds.EMPTY;
     private final DraggableResizableLayout.Bounds[] viewSlotBounds = new DraggableResizableLayout.Bounds[]{
             DraggableResizableLayout.Bounds.EMPTY,
@@ -98,6 +107,10 @@ public class Evil_eyesScreen extends Screen {
     private int lastPreviewCount = -1;
     private boolean lastHovered;
     private boolean lastExpanded;
+    private DeleteKey pendingDelete;
+    private long pendingDeleteUntil;
+    private DeleteKey lastDelete;
+    private long lastDeleteAt;
 
     public Evil_eyesScreen() {
         super(Text.empty());
@@ -106,6 +119,10 @@ public class Evil_eyesScreen extends Screen {
     public static void updateMarkedList(Map<UUID, Long> marks) {
         currentMarks.clear();
         currentMarks.putAll(marks);
+        refreshCurrentScreen();
+    }
+
+    public static void updateAnchorList() {
         refreshCurrentScreen();
     }
 
@@ -156,7 +173,14 @@ public class Evil_eyesScreen extends Screen {
 
         nextAutoRefreshTick = 0L;
         refreshEntityRows();
+        requestAnchorList();
         syncUiState(true);
+    }
+
+    private void requestAnchorList() {
+        if (client != null && client.player != null && client.getNetworkHandler() != null) {
+            ClientPlayNetworking.send(new RequestAnchorListC2S());
+        }
     }
 
     @Override
@@ -253,6 +277,7 @@ public class Evil_eyesScreen extends Screen {
     private void refreshEntityRows() {
         syncLayoutBounds();
         markedRows.clear();
+        cooldownRows.clear();
         if (Evil_EyesClient.isViewportMode()) {
             ClairvoyanceViewportRenderer.syncPreviewTargets(currentMarks.keySet());
             syncUiState(false);
@@ -260,16 +285,77 @@ public class Evil_eyesScreen extends Screen {
 
         int rowHeight = 24;
         int rowGap = 5;
-        int rowWidth = listBounds.width;
+        int markedWidth = Math.max(60, Math.min((int) (listBounds.width * 0.58F), listBounds.width - 72));
+        int cooldownX = listBounds.x + markedWidth + 8;
+        int cooldownWidth = Math.max(48, listBounds.x + listBounds.width - cooldownX);
         int yOffset = 20;
         for (UUID uuid : currentMarks.keySet()) {
             DisplayName name = getEntityName(uuid);
-            markedRows.add(new MarkedRow(uuid, name, listBounds.x, listBounds.y + yOffset, rowWidth, rowHeight));
+            markedRows.add(new MarkedRow(uuid, name, listBounds.x, listBounds.y + yOffset, markedWidth, rowHeight));
             yOffset += rowHeight + rowGap;
             if (yOffset + rowHeight > listBounds.height) {
                 break;
             }
         }
+        int cooldownYOffset = 20;
+        long now = currentClientTick();
+        for (Map.Entry<UUID, Evil_EyesClient.CooldownEntry> entry : Evil_EyesClient.localUnmarkCooldowns.entrySet()) {
+            int remainingTicks = (int) Math.max(0L, entry.getValue().expireTick() - now);
+            if (remainingTicks <= 0) {
+                continue;
+            }
+            DisplayName name = new DisplayName(Text.literal(entry.getValue().name()), entry.getValue().name());
+            cooldownRows.add(new CooldownRow(entry.getKey(), name, remainingTicks, cooldownX, listBounds.y + cooldownYOffset, cooldownWidth, rowHeight));
+            cooldownYOffset += rowHeight + rowGap;
+            if (cooldownYOffset + rowHeight > listBounds.height) {
+                break;
+            }
+        }
+        refreshResourceRows();
+    }
+
+    private void refreshResourceRows() {
+        resourceBounds = resourceListBounds();
+        resourceRows.clear();
+        int rowHeight = 20;
+        int rowGap = 4;
+        int rowWidth = Math.max(64, resourceBounds.width - 12);
+        int y = resourceBounds.y + 24;
+        int bottom = resourceBounds.y + resourceBounds.height - 6;
+
+        List<Map.Entry<UUID, Evil_EyesClient.AnchorEntry>> anchors = new ArrayList<>(Evil_EyesClient.localAnchors.entrySet());
+        anchors.sort((a, b) -> a.getValue().label().compareToIgnoreCase(b.getValue().label()));
+        for (Map.Entry<UUID, Evil_EyesClient.AnchorEntry> entry : anchors) {
+            if (y + rowHeight > bottom) {
+                return;
+            }
+            DisplayName name = new DisplayName(Text.literal(entry.getValue().label()), entry.getValue().label());
+            resourceRows.add(new ResourceRow(ResourceType.ANCHOR, entry.getKey(), name, resourceBounds.x + 6, y, rowWidth, rowHeight));
+            y += rowHeight + rowGap;
+        }
+
+        List<Map.Entry<UUID, Evil_EyesClient.SignedItemEntry>> items = new ArrayList<>(Evil_EyesClient.localSignedItems.entrySet());
+        items.sort((a, b) -> a.getValue().label().compareToIgnoreCase(b.getValue().label()));
+        for (Map.Entry<UUID, Evil_EyesClient.SignedItemEntry> entry : items) {
+            if (y + rowHeight > bottom) {
+                return;
+            }
+            DisplayName name = new DisplayName(Text.literal(entry.getValue().label()), entry.getValue().label());
+            resourceRows.add(new ResourceRow(ResourceType.SIGNED_ITEM, entry.getKey(), name, resourceBounds.x + 6, y, rowWidth, rowHeight));
+            y += rowHeight + rowGap;
+        }
+    }
+
+    private DraggableResizableLayout.Bounds resourceListBounds() {
+        int rw = Math.min(176, Math.max(132, width / 6));
+        int x = Math.max(8, width - rw - 10);
+        int y = Math.max(10, viewBounds.y + Math.max(48, viewBounds.height + 8));
+        int h = Math.max(96, height - y - 18);
+        return new DraggableResizableLayout.Bounds(x, y, rw, h, 0.0F);
+    }
+
+    private long currentClientTick() {
+        return client != null && client.world != null ? client.world.getTime() : System.currentTimeMillis() / 50L;
     }
 
     private DisplayName getEntityName(UUID uuid) {
@@ -315,6 +401,8 @@ public class Evil_eyesScreen extends Screen {
         } else {
             drawHintPanel(context);
         }
+        refreshResourceRows();
+        drawResourceRows(context, mouseX, mouseY);
         if (LAYOUT_EDITING_ENABLED && layout != null) {
             layout.drawEditHandles(context);
         }
@@ -329,28 +417,93 @@ public class Evil_eyesScreen extends Screen {
         if (markedRows.isEmpty()) {
             context.drawTextWithShadow(textRenderer, "No marked targets", listBounds.x + 6, listBounds.y + 22, TEXT_MUTED);
             context.drawTextWithShadow(textRenderer, "Marked targets will appear here", listBounds.x + 6, listBounds.y + 36, TEXT_MUTED);
+        } else {
+            UUID selected = ClairvoyanceViewportRenderer.getSelectedTarget();
+            for (MarkedRow row : markedRows) {
+                boolean hover = row.contains(mouseX, mouseY);
+                boolean selectedRow = row.uuid.equals(selected);
+                int fill = selectedRow ? CARD_BG_SELECTED : (hover ? CARD_BG_HOVER : CARD_BG);
+                int border = selectedRow ? ARCANE_BLUE : (hover ? AMETHYST : ACCENT_SOFT);
+                drawRoundedPanel(context, row.x, row.y, row.width, row.height, 6, fill, border);
+
+                context.fill(row.x + 8, row.y + 9, row.x + 12, row.y + 13, selectedRow ? ARCANE_BLUE : ACCENT);
+                Text label = row.name.text();
+                if (textRenderer.getWidth(label) > row.width - 52) {
+                    label = Text.literal(trimToWidth(row.name.plain(), row.width - 52));
+                }
+                context.drawTextWithShadow(textRenderer, label, row.x + 18, row.y + 7, selectedRow ? TEXT_MAIN : 0xFFE8D7C2);
+
+                boolean deleteHover = row.containsDelete(mouseX, mouseY);
+                drawRoundedPanel(context, row.deleteX(), row.y + 4, 16, 16, 5, deleteHover ? 0x66B91C1C : 0x334A3B2C, deleteHover ? DANGER : ACCENT);
+                context.drawCenteredTextWithShadow(textRenderer, "x", row.deleteX() + 8, row.y + 8, deleteHover ? DANGER : TEXT_MUTED);
+            }
+        }
+        drawCooldownRows(context, mouseX, mouseY);
+    }
+
+    private void drawCooldownRows(DrawContext context, int mouseX, int mouseY) {
+        int headerX = cooldownRows.isEmpty()
+                ? listBounds.x + Math.max(88, (int) (listBounds.width * 0.62F))
+                : cooldownRows.get(0).x;
+        context.drawTextWithShadow(textRenderer, "Deleted", headerX, listBounds.y + 8, TEXT_MUTED);
+        if (cooldownRows.isEmpty()) {
+            context.drawTextWithShadow(textRenderer, "No cooldown", headerX, listBounds.y + 22, TEXT_MUTED);
             return;
         }
-
-        UUID selected = ClairvoyanceViewportRenderer.getSelectedTarget();
-        for (MarkedRow row : markedRows) {
+        for (CooldownRow row : cooldownRows) {
             boolean hover = row.contains(mouseX, mouseY);
-            boolean selectedRow = row.uuid.equals(selected);
-            int fill = selectedRow ? CARD_BG_SELECTED : (hover ? CARD_BG_HOVER : CARD_BG);
-            int border = selectedRow ? ARCANE_BLUE : (hover ? AMETHYST : ACCENT_SOFT);
-            drawRoundedPanel(context, row.x, row.y, row.width, row.height, 6, fill, border);
-
-            context.fill(row.x + 8, row.y + 9, row.x + 12, row.y + 13, selectedRow ? ARCANE_BLUE : ACCENT);
-            Text label = row.name.text();
-            if (textRenderer.getWidth(label) > row.width - 52) {
-                label = Text.literal(trimToWidth(row.name.plain(), row.width - 52));
-            }
-            context.drawTextWithShadow(textRenderer, label, row.x + 18, row.y + 7, selectedRow ? TEXT_MAIN : 0xFFE8D7C2);
-
+            drawRoundedPanel(context, row.x, row.y, row.width, row.height, 6, hover ? CARD_BG_HOVER : CARD_BG, hover ? AMETHYST : ACCENT_SOFT);
+            int seconds = Math.max(1, (int) Math.ceil(row.remainingTicks / 20.0D));
+            Text label = Text.literal(trimToWidth(row.name.plain() + " " + seconds + "s", row.width - 52));
+            context.fill(row.x + 7, row.y + 9, row.x + 11, row.y + 13, DANGER);
+            context.drawTextWithShadow(textRenderer, label, row.x + 17, row.y + 7, 0xFFE8D7C2);
             boolean deleteHover = row.containsDelete(mouseX, mouseY);
             drawRoundedPanel(context, row.deleteX(), row.y + 4, 16, 16, 5, deleteHover ? 0x66B91C1C : 0x334A3B2C, deleteHover ? DANGER : ACCENT);
             context.drawCenteredTextWithShadow(textRenderer, "x", row.deleteX() + 8, row.y + 8, deleteHover ? DANGER : TEXT_MUTED);
         }
+    }
+
+    private void drawResourceRows(DrawContext context, int mouseX, int mouseY) {
+        long now = System.currentTimeMillis();
+        drawRoundedPanel(context, resourceBounds.x, resourceBounds.y, resourceBounds.width, resourceBounds.height, 7, 0x771E1530, ACCENT_SOFT);
+        context.drawTextWithShadow(textRenderer, "Anchors & Items", resourceBounds.x + 8, resourceBounds.y + 8, PALE_GOLD);
+        if (resourceRows.isEmpty()) {
+            context.drawTextWithShadow(textRenderer, "No anchors or items", resourceBounds.x + 8, resourceBounds.y + 28, TEXT_MUTED);
+            return;
+        }
+        for (ResourceRow row : resourceRows) {
+            boolean hover = row.contains(mouseX, mouseY);
+            boolean pending = isPendingDelete(row, now);
+            int fill = pending ? 0x774B1111 : (hover ? CARD_BG_HOVER : CARD_BG);
+            int border = pending ? DANGER : (hover ? AMETHYST : ACCENT_SOFT);
+            drawRoundedPanel(context, row.x, row.y, row.width, row.height, 6, fill, border);
+
+            int chip = row.type == ResourceType.ANCHOR ? PALE_GOLD : ARCANE_BLUE;
+            context.fill(row.x + 7, row.y + 8, row.x + 11, row.y + 12, chip);
+            Text label = row.name.text();
+            int labelWidth = row.width - 54;
+            if (pending) {
+                labelWidth -= 20;
+            }
+            if (textRenderer.getWidth(label) > labelWidth) {
+                label = Text.literal(trimToWidth(row.name.plain(), labelWidth));
+            }
+            context.drawTextWithShadow(textRenderer, label, row.x + 17, row.y + 6, 0xFFE8D7C2);
+            if (pending) {
+                context.drawTextWithShadow(textRenderer, "again", row.deleteX() - 31, row.y + 6, DANGER);
+            }
+
+            boolean deleteHover = row.containsDelete(mouseX, mouseY);
+            drawRoundedPanel(context, row.deleteX(), row.y + 3, 16, 16, 5, deleteHover || pending ? 0x77B91C1C : 0x334A3B2C, DANGER);
+            context.drawCenteredTextWithShadow(textRenderer, "x", row.deleteX() + 8, row.y + 7, deleteHover || pending ? DANGER : TEXT_MUTED);
+        }
+    }
+
+    private boolean isPendingDelete(ResourceRow row, long now) {
+        return pendingDelete != null
+                && pendingDelete.type == row.type
+                && pendingDelete.uuid.equals(row.uuid)
+                && now <= pendingDeleteUntil;
     }
 
     private void renderPreviewSlot(DrawContext context, int slot, DraggableResizableLayout.Bounds bounds) {
@@ -520,7 +673,7 @@ public class Evil_eyesScreen extends Screen {
             return true;
         }
         if (button == 0) {
-            return clickMarkedRow(mouseX, mouseY);
+            return clickResourceRow(mouseX, mouseY) || clickCooldownRow(mouseX, mouseY) || clickMarkedRow(mouseX, mouseY);
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
@@ -551,7 +704,7 @@ public class Evil_eyesScreen extends Screen {
             DraggableResizableLayout.DragResult result = layout.mouseReleased(mouseX, mouseY, button);
             syncLayoutBounds();
             refreshEntityRows();
-            return result.moved() || clickMarkedRow(mouseX, mouseY);
+            return result.moved() || clickResourceRow(mouseX, mouseY) || clickCooldownRow(mouseX, mouseY) || clickMarkedRow(mouseX, mouseY);
         }
         return super.mouseReleased(mouseX, mouseY, button);
     }
@@ -572,6 +725,68 @@ public class Evil_eyesScreen extends Screen {
             return true;
         }
         return false;
+    }
+
+    private boolean clickResourceRow(double mouseX, double mouseY) {
+        long now = System.currentTimeMillis();
+        if (pendingDelete != null && now > pendingDeleteUntil) {
+            pendingDelete = null;
+        }
+        for (ResourceRow row : resourceRows) {
+            if (!row.contains(mouseX, mouseY)) {
+                continue;
+            }
+            if (row.containsDelete(mouseX, mouseY)) {
+                confirmResourceDelete(row, now);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private boolean clickCooldownRow(double mouseX, double mouseY) {
+        for (CooldownRow row : cooldownRows) {
+            if (!row.contains(mouseX, mouseY)) {
+                continue;
+            }
+            if (row.containsDelete(mouseX, mouseY)) {
+                Evil_EyesClient.removeLocalUnmarkCooldown(row.uuid);
+                ClientPlayNetworking.send(new ClearUnmarkCooldownC2S(row.uuid));
+                refreshEntityRows();
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private void confirmResourceDelete(ResourceRow row, long now) {
+        DeleteKey key = new DeleteKey(row.type, row.uuid);
+        boolean doubleClick = lastDelete != null && lastDelete.equals(key) && now - lastDeleteAt <= DELETE_DOUBLE_CLICK_MS;
+        boolean confirmed = pendingDelete != null && pendingDelete.equals(key) && now <= pendingDeleteUntil;
+        lastDelete = key;
+        lastDeleteAt = now;
+        if (doubleClick || confirmed) {
+            deleteResource(row);
+            return;
+        }
+        pendingDelete = key;
+        pendingDeleteUntil = now + DELETE_CONFIRM_MS;
+        if (client != null && client.player != null) {
+            client.player.sendMessage(Text.literal("\u00a7eClick x again to delete"), true);
+        }
+    }
+
+    private void deleteResource(ResourceRow row) {
+        pendingDelete = null;
+        lastDelete = null;
+        if (row.type == ResourceType.ANCHOR) {
+            Evil_EyesClient.removeLocalAnchor(row.uuid);
+            ClientPlayNetworking.send(new AnchorDestroyC2S(row.uuid));
+        } else {
+            Evil_EyesClient.removeLocalSignedItem(row.uuid);
+            ClientPlayNetworking.send(new DeleteSignedItemC2S(row.uuid));
+        }
+        refreshEntityRows();
     }
 
     private void selectRow(MarkedRow row) {
@@ -606,6 +821,44 @@ public class Evil_eyesScreen extends Screen {
     }
 
     private record MarkedRow(UUID uuid, DisplayName name, int x, int y, int width, int height) {
+        boolean contains(double mouseX, double mouseY) {
+            return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
+        }
+
+        boolean containsDelete(double mouseX, double mouseY) {
+            int dx = deleteX();
+            return mouseX >= dx && mouseX < dx + 16 && mouseY >= y + 4 && mouseY < y + 20;
+        }
+
+        int deleteX() {
+            return x + width - 21;
+        }
+    }
+
+    private enum ResourceType {
+        ANCHOR,
+        SIGNED_ITEM
+    }
+
+    private record DeleteKey(ResourceType type, UUID uuid) {
+    }
+
+    private record ResourceRow(ResourceType type, UUID uuid, DisplayName name, int x, int y, int width, int height) {
+        boolean contains(double mouseX, double mouseY) {
+            return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
+        }
+
+        boolean containsDelete(double mouseX, double mouseY) {
+            int dx = deleteX();
+            return mouseX >= dx && mouseX < dx + 16 && mouseY >= y + 3 && mouseY < y + 19;
+        }
+
+        int deleteX() {
+            return x + width - 21;
+        }
+    }
+
+    private record CooldownRow(UUID uuid, DisplayName name, int remainingTicks, int x, int y, int width, int height) {
         boolean contains(double mouseX, double mouseY) {
             return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
         }

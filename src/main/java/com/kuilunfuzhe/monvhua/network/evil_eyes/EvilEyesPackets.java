@@ -23,6 +23,9 @@ public final class EvilEyesPackets {
         ExitViewC2S.register();
         PlaceParrotC2S.register();
         AnchorDestroyC2S.register();
+        RequestAnchorListC2S.register();
+        DeleteSignedItemC2S.register();
+        ClearUnmarkCooldownC2S.register();
     }
 
     public static void registerS2C() {
@@ -34,7 +37,109 @@ public final class EvilEyesPackets {
         SelectView.register();
         ForceExitViewS2C.register();
         AnchorParticleS2C.register();
+        AnchorListS2C.register();
+        SignedItemListS2C.register();
+        UnmarkCooldownS2C.register();
         ExplosionParticleS2C.register();
+    }
+
+    public record RequestAnchorListC2S() implements CustomPayload {
+        public static final Id<RequestAnchorListC2S> ID = new Id<>(Identifier.of("monvhua", "request_anchor_list"));
+        public static final PacketCodec<RegistryByteBuf, RequestAnchorListC2S> CODEC =
+                PacketCodec.unit(new RequestAnchorListC2S());
+        private static boolean registered = false;
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record AnchorListS2C(boolean clear, UUID standId, Vec3d pos, String label) implements CustomPayload {
+        public static final Id<AnchorListS2C> ID = new Id<>(Identifier.of("monvhua", "anchor_list"));
+        public static final PacketCodec<RegistryByteBuf, AnchorListS2C> CODEC = PacketCodec.of(
+                (packet, buf) -> {
+                    buf.writeBoolean(packet.clear);
+                    buf.writeUuid(packet.standId);
+                    buf.writeDouble(packet.pos.x);
+                    buf.writeDouble(packet.pos.y);
+                    buf.writeDouble(packet.pos.z);
+                    buf.writeString(packet.label == null ? "" : packet.label);
+                },
+                buf -> new AnchorListS2C(buf.readBoolean(), buf.readUuid(),
+                        new Vec3d(buf.readDouble(), buf.readDouble(), buf.readDouble()), buf.readString())
+        );
+        private static boolean registered = false;
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record SignedItemListS2C(boolean clear, UUID itemId, String label) implements CustomPayload {
+        public static final Id<SignedItemListS2C> ID = new Id<>(Identifier.of("monvhua", "signed_item_list"));
+        public static final PacketCodec<RegistryByteBuf, SignedItemListS2C> CODEC = PacketCodec.of(
+                (packet, buf) -> {
+                    buf.writeBoolean(packet.clear);
+                    buf.writeUuid(packet.itemId);
+                    buf.writeString(packet.label == null ? "" : packet.label);
+                },
+                buf -> new SignedItemListS2C(buf.readBoolean(), buf.readUuid(), buf.readString())
+        );
+        private static boolean registered = false;
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record UnmarkCooldownS2C(boolean clear, UUID entityUuid, String entityName, int remainingTicks) implements CustomPayload {
+        public static final Id<UnmarkCooldownS2C> ID = new Id<>(Identifier.of("monvhua", "unmark_cooldown"));
+        public static final PacketCodec<RegistryByteBuf, UnmarkCooldownS2C> CODEC = PacketCodec.of(
+                (packet, buf) -> {
+                    buf.writeBoolean(packet.clear);
+                    buf.writeUuid(packet.entityUuid);
+                    buf.writeString(packet.entityName == null ? "" : packet.entityName);
+                    buf.writeInt(packet.remainingTicks);
+                },
+                buf -> new UnmarkCooldownS2C(buf.readBoolean(), buf.readUuid(), buf.readString(), buf.readInt())
+        );
+        private static boolean registered = false;
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
     }
 
     public record AnchorDestroyC2S(UUID standId) implements CustomPayload {
@@ -168,6 +273,48 @@ public final class EvilEyesPackets {
         public static void register() {
             if (!registered) {
                 PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record DeleteSignedItemC2S(UUID itemId) implements CustomPayload {
+        public static final Id<DeleteSignedItemC2S> ID = new Id<>(Identifier.of("monvhua", "delete_signed_item"));
+        public static final PacketCodec<RegistryByteBuf, DeleteSignedItemC2S> CODEC = PacketCodec.of(
+                (packet, buf) -> buf.writeUuid(packet.itemId),
+                buf -> new DeleteSignedItemC2S(buf.readUuid())
+        );
+        private static boolean registered = false;
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record ClearUnmarkCooldownC2S(UUID entityUuid) implements CustomPayload {
+        public static final Id<ClearUnmarkCooldownC2S> ID = new Id<>(Identifier.of("monvhua", "clear_unmark_cooldown"));
+        public static final PacketCodec<RegistryByteBuf, ClearUnmarkCooldownC2S> CODEC = PacketCodec.of(
+                (packet, buf) -> buf.writeUuid(packet.entityUuid),
+                buf -> new ClearUnmarkCooldownC2S(buf.readUuid())
+        );
+        private static boolean registered = false;
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
                 registered = true;
             }
         }

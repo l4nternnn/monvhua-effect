@@ -131,6 +131,7 @@ public class ClientPacketHandler {
                                 stageObj.get("minScore").getAsInt(),
                                 stageObj.get("maxScore").getAsInt(),
                                 stageObj.get("watchRequiredTicks").getAsInt(),
+                                jsonInt(stageObj, "markExpireSeconds", 20),
                                 stageObj.get("parrotDailyLimit").getAsInt(),
                                 jsonInt(stageObj, "maxActiveParrots", 1),
                                 jsonDouble(stageObj, "uiDrainRate", 1.0D),
@@ -180,6 +181,27 @@ public class ClientPacketHandler {
         });
 
         // 4. 切换图片显示
+        ClientPlayNetworking.registerGlobalReceiver(AnchorListS2C.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                Evil_EyesClient.receiveAnchorList(packet.clear(), packet.standId(), packet.pos(), packet.label());
+                com.kuilunfuzhe.monvhua.gui.evil_eyes.Evil_eyesScreen.updateAnchorList();
+            });
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(SignedItemListS2C.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                Evil_EyesClient.receiveSignedItemList(packet.clear(), packet.itemId(), packet.label());
+                com.kuilunfuzhe.monvhua.gui.evil_eyes.Evil_eyesScreen.updateAnchorList();
+            });
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(UnmarkCooldownS2C.ID, (packet, context) -> {
+            context.client().execute(() -> {
+                Evil_EyesClient.receiveUnmarkCooldown(packet.clear(), packet.entityUuid(), packet.entityName(), packet.remainingTicks());
+                com.kuilunfuzhe.monvhua.gui.evil_eyes.Evil_eyesScreen.updateAnchorList();
+            });
+        });
+
         ClientPlayNetworking.registerGlobalReceiver(ToggleImagesS2CPacket.ID, (packet, context) -> {
             context.client().execute(() -> BackTextureRenderer.imagesEnabled = packet.enabled());
         });
