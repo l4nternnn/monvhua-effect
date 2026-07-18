@@ -151,6 +151,8 @@ public final class GravityMagic {
     private static final double SELF_FORCE_LANDING_MAX_PROBE_DISTANCE = 7.5D;
     private static final double SELF_FORCE_LANDING_SPEED_LOOKAHEAD = 1.8D;
     private static final double SELF_FORCE_LANDING_EDGE_PADDING = 0.08D;
+    private static final int NON_NORMAL_FALL_RESET_TICKS = 20 * 3;
+    private static final double NON_NORMAL_FALL_MIN_SPEED = 0.08D;
     private static final double MAX_GRAVITY_ENERGY = 100.0D;
     private static final int ENERGY_SYNC_INTERVAL_TICKS = 10;
     private static final Map<UUID, LaunchMode> PLAYER_MODES = new ConcurrentHashMap<>();
@@ -161,6 +163,7 @@ public final class GravityMagic {
     private static final Map<UUID, SelfForceMotion> SELF_FORCE_MOTIONS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> SELF_FORCE_RECOVERY_TICKS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> SELF_FORCE_IMPACT_COOLDOWNS = new ConcurrentHashMap<>();
+    private static final Map<UUID, Integer> NON_NORMAL_FALL_TICKS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> CLIENT_DIRECTED_RECOVERY_TICKS = new ConcurrentHashMap<>();
     private static final Set<UUID> THROWN_GROUP_IMPACTS = ConcurrentHashMap.newKeySet();
     private static final Map<UUID, DirectedEntityGravity> ENTITY_GRAVITY = new ConcurrentHashMap<>();
@@ -415,6 +418,7 @@ public final class GravityMagic {
             ensureServerAreasLoaded(server);
             tickSelfForceMotions(server);
             tickSelfForceRecovery(server);
+            tickNonNormalFallReset(server);
             tickPlayerGravityEnergy(server);
             tickExtractingBlockGroups(server);
             tickHeldBlockGroups(server);
@@ -919,10 +923,15 @@ public final class GravityMagic {
     }
 
     private static boolean canStartBlockGathering(ServerPlayerEntity player) {
-        return player != null
-                && player.isOnGround()
-                && !isSurfaceLogicMode(player)
-                && !hasSurfaceGravity(player);
+        if (player == null || !player.isOnGround() || hasSurfaceGravity(player)) {
+            return false;
+        }
+        UUID uuid = player.getUuid();
+        return !ENTITY_GRAVITY.containsKey(uuid)
+                && !SELF_FORCE_MOTIONS.containsKey(uuid)
+                && !SELF_FORCE_RECOVERY_TICKS.containsKey(uuid)
+                && !SERVER_INVERTED_PLAYER_STATES.containsKey(uuid)
+                && !isInInvertedArea(player);
     }
 
     private static Vec3d heldBlockAnchor(ServerPlayerEntity player, double sphereRadius) {
@@ -1443,6 +1452,7 @@ public final class GravityMagic {
         if (player == null) {
             return;
         }
+        NON_NORMAL_FALL_TICKS.remove(player.getUuid());
         Direction oldDirection = SERVER_SURFACE_GRAVITY_PLAYERS.get(player.getUuid());
         Vec3d oldEye = oldDirection == null ? null : SurfaceGravityCollision.eyePosFromBox(player, oldDirection, player.getBoundingBox());
         SERVER_SURFACE_GRAVITY_PLAYERS.remove(player.getUuid());
@@ -2175,6 +2185,9 @@ public final class GravityMagic {
         if (player == null || nextVelocity == null || player.isOnGround() || !player.isAlive()) {
             return false;
         }
+        if (!isHoldingGravityWand(player)) {
+            return false;
+        }
         if (player.isSpectator() || player.getAbilities().flying || player.isTouchingWater() || player.isInLava()) {
             return false;
         }
@@ -2279,6 +2292,13 @@ public final class GravityMagic {
             return;
         }
         UUID uuid = player.getUuid();
+        if (!isHoldingGravityWand(player)) {
+            SELF_FORCE_RECOVERY_TICKS.remove(uuid);
+            player.setNoGravity(false);
+            player.fallDistance = 0.0F;
+            syncClearDirectedEntityGravity(player);
+            return;
+        }
         SELF_FORCE_RECOVERY_TICKS.put(uuid, 80);
         SELF_FORCE_IMPACT_COOLDOWNS.remove(uuid);
         SERVER_INVERTED_PLAYER_STATES.remove(uuid);
@@ -2304,6 +2324,13 @@ public final class GravityMagic {
                 SELF_FORCE_RECOVERY_TICKS.remove(uuid, entry.getValue());
                 continue;
             }
+            if (!isHoldingGravityWand(player)) {
+                SELF_FORCE_RECOVERY_TICKS.remove(uuid, entry.getValue());
+                player.setNoGravity(false);
+                player.fallDistance = 0.0F;
+                syncClearDirectedEntityGravity(player);
+                continue;
+            }
             ENTITY_GRAVITY.remove(uuid);
             SERVER_INVERTED_PLAYER_STATES.remove(uuid);
             player.setNoGravity(false);
@@ -2322,6 +2349,68 @@ public final class GravityMagic {
                 SELF_FORCE_RECOVERY_TICKS.replace(uuid, entry.getValue(), next);
             }
         }
+    }
+
+    private static void tickNonNormalFallReset(MinecraftServer server) {
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            UUID uuid = player.getUuid();
+            if (!isNonNormalFalling(player)) {
+                NON_NORMAL_FALL_TICKS.remove(uuid);
+                continue;
+            }
+
+            int ticks = NON_NORMAL_FALL_TICKS.merge(uuid, 1, Integer::sum);
+            if (ticks < NON_NORMAL_FALL_RESET_TICKS) {
+                continue;
+            }
+
+            resetPlayerToNormalGravity(player);
+            NON_NORMAL_FALL_TICKS.remove(uuid);
+            player.sendMessage(Text.literal("§c[重力] 非正常下落过久，已回到正常重力"), true);
+        }
+    }
+
+    private static boolean isNonNormalFalling(ServerPlayerEntity player) {
+        if (player == null || !player.isAlive() || player.isOnGround()) {
+            return false;
+        }
+        if (player.isSpectator() || player.getAbilities().flying || player.isTouchingWater() || player.isInLava() || player.hasVehicle()) {
+            return false;
+        }
+
+        UUID uuid = player.getUuid();
+        Direction surfaceDirection = SERVER_SURFACE_GRAVITY_PLAYERS.get(uuid);
+        if (surfaceDirection != null) {
+            return isFallingAlong(player, SurfaceGravityBasis.directionVector(surfaceDirection));
+        }
+
+        if (ENTITY_GRAVITY.containsKey(uuid) || SELF_FORCE_MOTIONS.containsKey(uuid)) {
+            return player.getVelocity().y < -NON_NORMAL_FALL_MIN_SPEED;
+        }
+        return false;
+    }
+
+    private static boolean isFallingAlong(ServerPlayerEntity player, Vec3d down) {
+        if (down == null || down.lengthSquared() <= 1.0E-8D) {
+            return false;
+        }
+        return player.getVelocity().dotProduct(down.normalize()) > NON_NORMAL_FALL_MIN_SPEED;
+    }
+
+    private static void resetPlayerToNormalGravity(ServerPlayerEntity player) {
+        if (player == null) {
+            return;
+        }
+        UUID uuid = player.getUuid();
+        ENTITY_GRAVITY.remove(uuid);
+        SELF_FORCE_MOTIONS.remove(uuid);
+        SELF_FORCE_RECOVERY_TICKS.remove(uuid);
+        SELF_FORCE_IMPACT_COOLDOWNS.remove(uuid);
+        SERVER_INVERTED_PLAYER_STATES.remove(uuid);
+        clearSurfaceGravity(player);
+        player.setNoGravity(false);
+        player.fallDistance = 0.0F;
+        syncClearDirectedEntityGravity(player);
     }
 
     private static void tickExtractingBlockGroups(MinecraftServer server) {
@@ -2553,6 +2642,7 @@ public final class GravityMagic {
         SELF_FORCE_MOTIONS.remove(ownerUuid);
         SELF_FORCE_RECOVERY_TICKS.remove(ownerUuid);
         SELF_FORCE_IMPACT_COOLDOWNS.remove(ownerUuid);
+        NON_NORMAL_FALL_TICKS.remove(ownerUuid);
         clearExtractingBlockGroup(ownerUuid, discardBlocks);
         clearHeldBlockGroup(ownerUuid, discardBlocks);
         for (ServerWorld world : player.getServer().getWorlds()) {
