@@ -13,6 +13,8 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.storage.ReadView;
 import net.minecraft.storage.WriteView;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.world.World;
 
 public class PaintBucketBlockEntity extends BlockEntity {
     private int color = 0xFFFFFF;
@@ -74,15 +76,40 @@ public class PaintBucketBlockEntity extends BlockEntity {
         return Math.max(0, PaintConfig.getInstance().bucketBrushLoads - brushLoadsToday);
     }
 
-    private void refreshBrushLoadDay() {
-        if (world == null) {
+    public BrushLoadState brushLoadState() {
+        refreshBrushLoadDay();
+        return new BrushLoadState(brushLoadDay, brushLoadsToday);
+    }
+
+    public void applyBrushLoadState(BrushLoadState state) {
+        if (state == null) {
+            refreshBrushLoadDay();
             return;
+        }
+        brushLoadDay = state.day();
+        brushLoadsToday = MathHelper.clamp(state.loadsToday(), 0, PaintConfig.getInstance().bucketBrushLoads);
+        refreshBrushLoadDay();
+        sync();
+    }
+
+    public static void tick(World world, BlockPos pos, BlockState state, PaintBucketBlockEntity bucket) {
+        if (!world.isClient()) {
+            bucket.refreshBrushLoadDay();
+        }
+    }
+
+    private boolean refreshBrushLoadDay() {
+        if (world == null) {
+            return false;
         }
         long day = world.getTimeOfDay() / 24000L;
         if (day != brushLoadDay) {
             brushLoadDay = day;
             brushLoadsToday = 0;
+            sync();
+            return true;
         }
+        return false;
     }
 
     private void sync() {
@@ -118,5 +145,8 @@ public class PaintBucketBlockEntity extends BlockEntity {
         view.putBoolean("filled", filled);
         view.put("brush_load_day", Codec.LONG, brushLoadDay);
         view.put("brush_loads_today", Codec.INT, brushLoadsToday);
+    }
+
+    public record BrushLoadState(long day, int loadsToday) {
     }
 }

@@ -438,8 +438,8 @@ public class DrawingBoardScreen extends Screen {
             close();
             return true;
         }
-        if (keyCode >= GLFW.GLFW_KEY_1 && keyCode <= GLFW.GLFW_KEY_9) {
-            PaintOverlayClient.selectBrushSlot(keyCode - GLFW.GLFW_KEY_1);
+        if (keyCode == GLFW.GLFW_KEY_1) {
+            PaintOverlayClient.selectBrushSlot(0);
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);

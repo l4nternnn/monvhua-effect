@@ -27,6 +27,10 @@ public class PaintBrushColorScreen extends Screen {
     private static final int CONTROL_WIDTH = 112;
     private static final int FAVORITE_WIDTH = 46;
     private static final int PANEL_PADDING = 14;
+    private static final int ALPHA_Y_OFFSET = 78;
+    private static final int RECENT_LABEL_Y_OFFSET = 104;
+    private static final int RECENT_Y_OFFSET = 117;
+    private static final int FILL_BUTTON_Y_OFFSET = 148;
     private static final Identifier COLOR_MAP_TEXTURE_ID = Identifier.of(MonvhuaMod.MOD_ID, "dynamic/paint_color_map");
 
     private int mapX;
@@ -44,6 +48,7 @@ public class PaintBrushColorScreen extends Screen {
     private float uploadedHue = -1.0F;
     private boolean updatingHexField;
     private boolean picking;
+    private boolean draggingAlpha;
 
 
     public PaintBrushColorScreen() {
@@ -99,6 +104,10 @@ public class PaintBrushColorScreen extends Screen {
             if (handleFillButtonClick(mouseX, mouseY)) {
                 return true;
             }
+            if (handleAlphaClick(mouseX, mouseY)) {
+                draggingAlpha = true;
+                return true;
+            }
             if (handleStarClick(mouseX, mouseY) || handleColorSlotClick(mouseX, mouseY)) {
                 return true;
             }
@@ -112,6 +121,10 @@ public class PaintBrushColorScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (button == 0 && draggingAlpha) {
+            updateAlphaFromMouse(mouseX);
+            return true;
+        }
         if (button == 0 && pick(mouseX, mouseY)) {
             picking = true;
             return true;
@@ -121,9 +134,16 @@ public class PaintBrushColorScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 0 && draggingAlpha) {
+            updateAlphaFromMouse(mouseX);
+            draggingAlpha = false;
+            persistBrushColorIfStandalone();
+            return true;
+        }
         if (button == 0 && picking) {
             PaintOverlayClient.recordPickedColor(PaintOverlayClient.selectedColor());
             picking = false;
+            persistBrushColorIfStandalone();
             return true;
         }
         return super.mouseReleased(mouseX, mouseY, button);
@@ -164,6 +184,14 @@ public class PaintBrushColorScreen extends Screen {
         return true;
     }
 
+    private boolean handleAlphaClick(double mouseX, double mouseY) {
+        if (!isInside(controlX, alphaY() - 5, CONTROL_WIDTH, 20, mouseX, mouseY)) {
+            return false;
+        }
+        updateAlphaFromMouse(mouseX);
+        return true;
+    }
+
     private boolean handleStarClick(double mouseX, double mouseY) {
         int previewX = controlX;
         int previewY = mapY + 12;
@@ -173,7 +201,7 @@ public class PaintBrushColorScreen extends Screen {
         }
 
         List<Integer> recent = PaintOverlayClient.recentColors();
-        int recentY = mapY + 93;
+        int recentY = mapY + RECENT_Y_OFFSET;
         for (int i = 0; i < recent.size(); i++) {
             int slotX = controlX + i * (SLOT_SIZE + SLOT_GAP);
             if (isInsideStar(slotX, recentY, SLOT_SIZE, mouseX, mouseY)) {
@@ -195,11 +223,12 @@ public class PaintBrushColorScreen extends Screen {
 
     private boolean handleColorSlotClick(double mouseX, double mouseY) {
         List<Integer> recent = PaintOverlayClient.recentColors();
-        int recentY = mapY + 93;
+        int recentY = mapY + RECENT_Y_OFFSET;
         for (int i = 0; i < recent.size(); i++) {
             int slotX = controlX + i * (SLOT_SIZE + SLOT_GAP);
             if (isInside(slotX, recentY, SLOT_SIZE, SLOT_SIZE, mouseX, mouseY)) {
                 selectColor(recent.get(i), true);
+                persistBrushColorIfStandalone();
                 return true;
             }
         }
@@ -209,6 +238,7 @@ public class PaintBrushColorScreen extends Screen {
             int slotY = mapY + 16 + i * (SLOT_SIZE + SLOT_GAP);
             if (isInside(favoriteX, slotY, SLOT_SIZE, SLOT_SIZE, mouseX, mouseY)) {
                 selectColor(favorites.get(i), true);
+                persistBrushColorIfStandalone();
                 return true;
             }
         }
@@ -239,10 +269,11 @@ public class PaintBrushColorScreen extends Screen {
         context.drawText(textRenderer, Text.literal(toHex(color)), previewX + PREVIEW_SIZE + 8, previewY + 10, 0xFFE6E6E6, false);
 
         context.drawText(textRenderer, Text.literal("HEX Search"), controlX, mapY + 44, 0xFFB8B8C2, false);
-        context.drawText(textRenderer, Text.literal("最近取色"), controlX, mapY + 80, 0xFFFFFFFF, false);
+        drawAlphaSlider(context);
+        context.drawText(textRenderer, Text.literal("最近取色"), controlX, mapY + RECENT_LABEL_Y_OFFSET, 0xFFFFFFFF, false);
 
         List<Integer> recent = PaintOverlayClient.recentColors();
-        int recentY = mapY + 93;
+        int recentY = mapY + RECENT_Y_OFFSET;
         for (int i = 0; i < 3; i++) {
             int slotX = controlX + i * (SLOT_SIZE + SLOT_GAP);
             int slotColor = i < recent.size() ? recent.get(i) : 0;
@@ -290,6 +321,23 @@ public class PaintBrushColorScreen extends Screen {
         drawBorder(context, x, y, size, size);
     }
 
+    private void drawAlphaSlider(DrawContext context) {
+        int y = alphaY();
+        int rgb = PaintOverlayClient.selectedColor() & 0xFFFFFF;
+        int alpha = PaintOverlayClient.selectedAlpha();
+        context.drawText(textRenderer, Text.literal("Alpha " + alpha), controlX, y - 11, 0xFFB8B8C2, false);
+        for (int x = 0; x < CONTROL_WIDTH; x++) {
+            int a = Math.round((x / (float) (CONTROL_WIDTH - 1)) * 255.0F);
+            int checker = ((x / 6) & 1) == 0 ? 0xFF4A4A52 : 0xFF25252C;
+            context.fill(controlX + x, y, controlX + x + 1, y + 10, checker);
+            context.fill(controlX + x, y, controlX + x + 1, y + 10, (a << 24) | rgb);
+        }
+        drawBorder(context, controlX, y, CONTROL_WIDTH, 10);
+        int knobX = controlX + Math.round((alpha / 255.0F) * (CONTROL_WIDTH - 1));
+        context.fill(knobX - 2, y - 3, knobX + 3, y + 13, 0xFFFFFFFF);
+        context.fill(knobX - 1, y - 2, knobX + 2, y + 12, 0xFF101015);
+    }
+
     private void drawBorder(DrawContext context, int x, int y, int width, int height) {
         context.fill(x - 1, y - 1, x + width + 1, y, 0xFFB8B8C2);
         context.fill(x - 1, y + height, x + width + 1, y + height + 1, 0xFF111116);
@@ -329,16 +377,16 @@ public class PaintBrushColorScreen extends Screen {
     private void selectColor(int color, boolean record) {
         int rgb = color & 0xFFFFFF;
         loadColor(rgb);
-        PaintOverlayClient.setSelectedColor(0xFF000000 | rgb);
+        PaintOverlayClient.setSelectedColor((PaintOverlayClient.selectedAlpha() << 24) | rgb);
         updateHexField();
         uploadedHue = -1.0F;
         if (record) {
-            PaintOverlayClient.recordPickedColor(color);
+            PaintOverlayClient.recordPickedColor(PaintOverlayClient.selectedColor());
         }
     }
 
     private void syncSelectedColor() {
-        PaintOverlayClient.setSelectedColor(0xFF000000 | hsvToRgb(hue, saturation, value));
+        PaintOverlayClient.setSelectedColor((PaintOverlayClient.selectedAlpha() << 24) | hsvToRgb(hue, saturation, value));
         updateHexField();
     }
 
@@ -352,6 +400,7 @@ public class PaintBrushColorScreen extends Screen {
         }
         try {
             selectColor(Integer.parseInt(digits, 16), true);
+            persistBrushColorIfStandalone();
         } catch (NumberFormatException ignored) {
         }
     }
@@ -389,6 +438,7 @@ public class PaintBrushColorScreen extends Screen {
 
     @Override
     public void removed() {
+        persistBrushColorIfStandalone();
         if (colorMapTexture != null) {
             MinecraftClient.getInstance().getTextureManager().destroyTexture(COLOR_MAP_TEXTURE_ID);
             colorMapTexture = null;
@@ -431,7 +481,22 @@ public class PaintBrushColorScreen extends Screen {
     }
 
     private int fillButtonY() {
-        return mapY + 124;
+        return mapY + FILL_BUTTON_Y_OFFSET;
+    }
+
+    private int alphaY() {
+        return mapY + ALPHA_Y_OFFSET;
+    }
+
+    private void updateAlphaFromMouse(double mouseX) {
+        int alpha = Math.round(MathHelper.clamp((float) ((mouseX - controlX) / (CONTROL_WIDTH - 1)), 0.0F, 1.0F) * 255.0F);
+        PaintOverlayClient.setSelectedAlpha(alpha);
+    }
+
+    private void persistBrushColorIfStandalone() {
+        if (paintBucketPos == null) {
+            PaintOverlayClient.persistSelectedBrushColor();
+        }
     }
 
     private int refillButtonX() {

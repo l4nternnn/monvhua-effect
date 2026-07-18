@@ -830,15 +830,7 @@ public class PaintEditorScreen extends Screen {
             context.fill(x + 1, y + CHAMFER, x + 4, y + 34 - CHAMFER, ACCENT);
         }
         if (tool == PaintOverlayClient.EditorTool.PRESET) {
-            int size = 5;
-            int startX = x + 9;
-            int startY = y + 9;
-            for (int row = 0; row < 3; row++) {
-                for (int col = 0; col < 3; col++) {
-                    int color = presetDraftFilled[row * 3 + col] ? presetDraftColors[row * 3 + col] : 0xFF3A424C;
-                    context.fill(startX + col * 6, startY + row * 6, startX + col * 6 + size, startY + row * 6 + size, color);
-                }
-            }
+            drawPresetToolIcon(context, x, y);
         } else if (tool == PaintOverlayClient.EditorTool.SELECT) {
             drawDashedBorder(context, x + 8, y + 8, 18, 18, TEXT_PRIMARY);
         } else if (tool == PaintOverlayClient.EditorTool.SHAPE) {
@@ -850,6 +842,33 @@ public class PaintEditorScreen extends Screen {
             context.fill(x + 11, y + 16, x + 23, y + 18, TEXT_PRIMARY);
         } else {
             context.drawItem(stack, x + 9, y + 9);
+        }
+    }
+
+    private void drawPresetToolIcon(DrawContext context, int x, int y) {
+        int slots = PaintBrushItem.COLOR_SLOTS;
+        if (slots <= 1) {
+            int color = presetDraftFilled.length > 0 && presetDraftFilled[0] ? presetDraftColors[0] : 0xFF3A424C;
+            context.fill(x + 9, y + 9, x + 25, y + 25, color);
+            drawBorder(context, x + 9, y + 9, 16, 16);
+            return;
+        }
+
+        int columns = Math.min(3, (int) Math.ceil(Math.sqrt(slots)));
+        int rows = (int) Math.ceil(slots / (double) columns);
+        int cell = Math.max(3, Math.min(5, (18 - Math.max(0, columns - 1)) / Math.max(columns, rows)));
+        int gap = 1;
+        int totalWidth = columns * cell + (columns - 1) * gap;
+        int totalHeight = rows * cell + (rows - 1) * gap;
+        int startX = x + (34 - totalWidth) / 2;
+        int startY = y + (34 - totalHeight) / 2;
+        for (int slot = 0; slot < slots; slot++) {
+            int col = slot % columns;
+            int row = slot / columns;
+            int color = presetDraftFilled[slot] ? presetDraftColors[slot] : 0xFF3A424C;
+            int cellX = startX + col * (cell + gap);
+            int cellY = startY + row * (cell + gap);
+            context.fill(cellX, cellY, cellX + cell, cellY + cell, color);
         }
     }
 
@@ -1155,7 +1174,7 @@ public class PaintEditorScreen extends Screen {
         drawColorCursor(context, x, PRESET_EDITOR_PICKER_Y);
         int color = currentPresetDraftColor();
         drawSwatch(context, x + 134, PRESET_EDITOR_PICKER_Y, 24, color, true);
-        context.drawText(textRenderer, Text.literal("色槽 " + (selectedPresetSlot + 1)), x + 134, PRESET_EDITOR_PICKER_Y + 30, TEXT_SECONDARY, false);
+        context.drawText(textRenderer, Text.literal("容量槽"), x + 134, PRESET_EDITOR_PICKER_Y + 30, TEXT_SECONDARY, false);
         context.drawText(textRenderer, Text.literal(toHex(color)), x, PRESET_EDITOR_PICKER_Y + MAP_SIZE + 10, TEXT_PRIMARY, false);
         drawSmallButton(context, x, PRESET_SAVE_Y, 118, 20, "保存");
     }
@@ -1243,7 +1262,7 @@ public class PaintEditorScreen extends Screen {
             if (hover) {
                 context.fill(x + 1, rowY + 1, x + PRESET_MENU_WIDTH - 1, rowY + PRESET_MENU_ROW_HEIGHT - 1, SURFACE_HOVER);
             }
-            context.drawText(textRenderer, Text.literal("\u5B58\u5165\u7B2C" + (slot + 1) + "\u8272\u69FD"), x + 8, rowY + 5, TEXT_PRIMARY, false);
+            context.drawText(textRenderer, Text.literal("存入容量槽"), x + 8, rowY + 5, TEXT_PRIMARY, false);
         }
     }
 

@@ -438,7 +438,7 @@ public final class PaintOverlayFeature {
         }
         int slot = PaintBrushItem.chooseLoadSlot(brush, bucket.getColor());
         if (slot < 0) {
-            player.sendMessage(net.minecraft.text.Text.literal("没有空色槽，且同色色槽仍高于 10%"), true);
+            player.sendMessage(net.minecraft.text.Text.literal("容量槽已有不同颜色，或同色容量仍高于 10%"), true);
             return;
         }
         if (!bucket.takeBrushLoad()) {
@@ -447,8 +447,7 @@ public final class PaintOverlayFeature {
         }
         PaintBrushItem.loadPaint(brush, slot, bucket.getColor());
         player.getInventory().markDirty();
-        player.sendMessage(net.minecraft.text.Text.literal("已装满第 " + (slot + 1)
-                + " 色槽，染料桶剩余 " + bucket.remainingBrushLoadsToday()
+        player.sendMessage(net.minecraft.text.Text.literal("已装满容量槽，染料桶剩余 " + bucket.remainingBrushLoadsToday()
                 + "/" + PaintConfig.getInstance().bucketBrushLoads), true);
     }
 

@@ -336,7 +336,7 @@ public final class PaintOverlayPackets {
         private static boolean registered = false;
 
         public SelectBrushSlotC2S {
-            slot = MathHelper.clamp(slot, 0, 8);
+            slot = 0;
         }
 
         private SelectBrushSlotC2S(RegistryByteBuf buf) {
@@ -504,7 +504,7 @@ public final class PaintOverlayPackets {
         private static boolean registered = false;
 
         public StoreBrushPresetC2S {
-            slot = MathHelper.clamp(slot, 0, 8);
+            slot = 0;
         }
 
         private StoreBrushPresetC2S(RegistryByteBuf buf) {

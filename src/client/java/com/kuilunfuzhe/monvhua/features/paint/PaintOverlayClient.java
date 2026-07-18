@@ -188,14 +188,19 @@ public final class PaintOverlayClient {
     }
 
     public static boolean tryOpenColorScreen(MinecraftClient client) {
-        if (client.player == null || (!client.player.isCreative() && !client.player.isSpectator())) {
+        if (client.player == null) {
             return false;
         }
         if (isHoldingPaintBrush(client)) {
-            client.setScreen(new PaintEditorScreen());
+            syncSelectedColorFromBrush();
+            if (client.player.isCreative() || client.player.isSpectator()) {
+                client.setScreen(new PaintEditorScreen());
+            } else {
+                client.setScreen(new PaintBrushColorScreen());
+            }
             return true;
         }
-        if (isHoldingPaintPaper(client)) {
+        if ((client.player.isCreative() || client.player.isSpectator()) && isHoldingPaintPaper(client)) {
             client.setScreen(new PaintPaperImportScreen());
             return true;
         }
@@ -528,12 +533,16 @@ public final class PaintOverlayClient {
     }
 
     public static void storeColorInPresetSlot(int slot, int color) {
-        slot = MathHelper.clamp(slot, 0, PaintBrushItem.COLOR_SLOTS - 1);
+        slot = 0;
         ItemStack brush = paintBrushStack(MinecraftClient.getInstance());
         if (!brush.isEmpty()) {
-            PaintBrushItem.storePresetColor(brush, slot, color);
+            PaintBrushItem.setSlotColor(brush, slot, color);
         }
         SafeClientNetworking.send(new PaintOverlayPackets.StoreBrushPresetC2S(slot, color));
+    }
+
+    public static void persistSelectedBrushColor() {
+        storeColorInPresetSlot(0, selectedColor());
     }
 
     public static boolean isFavoriteColor(int color) {
@@ -827,10 +836,6 @@ public final class PaintOverlayClient {
             return false;
         }
         int delta = yOffset > 0 ? 1 : -1;
-        if (isHoldingPaintBrush(client) && client.player.isSneaking() && !isCtrlDown(client)) {
-            selectBrushSlot(selectedBrushSlot + delta);
-            return true;
-        }
         if (!isCtrlDown(client)) {
             return false;
         }
@@ -852,17 +857,6 @@ public final class PaintOverlayClient {
     }
 
     private static void tickBrushSlotKeys(MinecraftClient client) {
-        if (client.player == null || client.currentScreen != null || !isHoldingPaintBrush(client)) {
-            return;
-        }
-        long handle = client.getWindow().getHandle();
-        for (int i = 0; i < PaintBrushItem.COLOR_SLOTS; i++) {
-            int key = i == 0 ? GLFW.GLFW_KEY_1 : GLFW.GLFW_KEY_1 + i;
-            if (GLFW.glfwGetKey(handle, key) == GLFW.GLFW_PRESS && selectedBrushSlot != i) {
-                selectBrushSlot(i);
-                return;
-            }
-        }
     }
 
     private static void tickContinuousPainting(MinecraftClient client) {
@@ -1905,7 +1899,7 @@ public final class PaintOverlayClient {
     private static void selectRecentColorSlot(MinecraftClient client, int slot) {
         if (slot < 0 || slot >= RECENT_COLORS.size()) {
             if (client.player != null) {
-                client.player.sendMessage(Text.literal("色槽 " + (slot + 1) + " 为空"), true);
+                client.player.sendMessage(Text.literal("最近颜色 " + (slot + 1) + " 为空"), true);
             }
             return;
         }
@@ -2063,9 +2057,8 @@ public final class PaintOverlayClient {
             int filled = MathHelper.clamp((int) Math.round((slotW - 2) * (remaining / (double) PaintBrushItem.MAX_PAINT_PIXELS)), 0, slotW - 2);
             context.fill(slotX + 1, y + 10, slotX + 1 + filled, y + 13, remaining > 0.0D ? 0xFF58D66D : 0xFF7A3030);
         }
-        int selected = PaintBrushItem.getSelectedSlot(brush);
-        double remaining = PaintBrushItem.getRemainingPaintPercent(brush, selected);
-        context.drawText(client.textRenderer, Text.literal((selected + 1) + ":" + formatPaintPercent(remaining)), x, y - 10, 0xFFE6E6E6, false);
+        double remaining = PaintBrushItem.getRemainingPaintPercent(brush, 0);
+        context.drawText(client.textRenderer, Text.literal("容量 " + formatPaintPercent(remaining)), x, y - 10, 0xFFE6E6E6, false);
     }
 
     private static boolean isHoldingPaintBrush(MinecraftClient client) {
@@ -2144,6 +2137,19 @@ public final class PaintOverlayClient {
             return;
         }
         selectedBrushSlot = PaintBrushItem.getSelectedSlot(brush);
+    }
+
+    private static void syncSelectedColorFromBrush() {
+        ItemStack brush = paintBrushStack(MinecraftClient.getInstance());
+        if (brush.isEmpty()) {
+            return;
+        }
+        selectedBrushSlot = 0;
+        PaintBrushItem.setSelectedSlot(brush, 0);
+        if (PaintBrushItem.hasSlotColor(brush, 0)) {
+            selectedColor = PaintBrushItem.getPaintColor(brush, 0);
+            syncSettings();
+        }
     }
 
     private static boolean isCtrlDown(MinecraftClient client) {

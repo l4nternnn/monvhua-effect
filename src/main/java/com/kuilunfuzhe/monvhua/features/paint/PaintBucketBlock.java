@@ -13,6 +13,8 @@ import net.minecraft.block.BlockState;
 import net.minecraft.block.BlockWithEntity;
 import net.minecraft.block.ShapeContext;
 import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.block.entity.BlockEntityTicker;
+import net.minecraft.block.entity.BlockEntityType;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityCollisionHandler;
 import net.minecraft.entity.LivingEntity;
@@ -118,6 +120,12 @@ public class PaintBucketBlock extends BlockWithEntity {
     @Override
     public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
         return new PaintBucketBlockEntity(pos, state);
+    }
+
+    @Nullable
+    @Override
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(World world, BlockState state, BlockEntityType<T> type) {
+        return world.isClient() ? null : validateTicker(type, PaintBucketBlockEntities.PAINT_BUCKET_BLOCK_ENTITY, PaintBucketBlockEntity::tick);
     }
 
     public static void tickKicks(ServerWorld world) {
@@ -227,7 +235,7 @@ public class PaintBucketBlock extends BlockWithEntity {
         if (!(world.getBlockEntity(pos) instanceof PaintBucketBlockEntity bucket)) {
             return;
         }
-        CARRIED_BUCKETS.put(player.getUuid(), new CarriedBucket(bucket.isFilled(), bucket.getColor()));
+        CARRIED_BUCKETS.put(player.getUuid(), new CarriedBucket(bucket.isFilled(), bucket.getColor(), bucket.brushLoadState()));
         world.removeBlock(pos, false);
         player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 40, 0, false, false, true));
         syncCarriedBucket(player, CARRIED_BUCKETS.get(player.getUuid()));
@@ -236,8 +244,11 @@ public class PaintBucketBlock extends BlockWithEntity {
     private static BlockPos placeCarriedBucket(ServerWorld world, BlockPos pos, CarriedBucket carried) {
         BlockPos target = world.isAir(pos) ? pos : pos.up();
         world.setBlockState(target, com.kuilunfuzhe.monvhua.item.paint.PaintItems.PAINT_BUCKET_BLOCK.getDefaultState());
-        if (world.getBlockEntity(target) instanceof PaintBucketBlockEntity bucket && carried.filled()) {
-            bucket.fill(carried.color());
+        if (world.getBlockEntity(target) instanceof PaintBucketBlockEntity bucket) {
+            if (carried.filled()) {
+                bucket.fill(carried.color());
+            }
+            bucket.applyBrushLoadState(carried.brushLoadState());
         }
         return target;
     }
@@ -262,7 +273,7 @@ public class PaintBucketBlock extends BlockWithEntity {
         ServerPlayNetworking.send(receiver, new PaintOverlayPackets.PaintBucketCarryS2C(carrier.getId(), true, carried.filled(), carried.color()));
     }
 
-    private record CarriedBucket(boolean filled, int color) {
+    private record CarriedBucket(boolean filled, int color, PaintBucketBlockEntity.BrushLoadState brushLoadState) {
     }
 
     private static void recordPosition(PlayerEntity player) {

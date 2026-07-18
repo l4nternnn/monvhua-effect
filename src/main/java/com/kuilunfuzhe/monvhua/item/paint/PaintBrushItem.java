@@ -15,7 +15,8 @@ import net.minecraft.util.math.Vec3d;
 
 public class PaintBrushItem extends Item {
     public static final int MAX_PAINT_PIXELS = 100;
-    public static final int COLOR_SLOTS = 9;
+    public static final int COLOR_SLOTS = 1;
+    private static final int LEGACY_COLOR_SLOTS = 9;
     private static final String PAINT_COLOR_KEY = "paint_color";
     private static final String PAINT_REMAINING_KEY = "paint_remaining";
     private static final String PAINT_REMAINING_EXACT_KEY = "paint_remaining_percent";
@@ -81,6 +82,9 @@ public class PaintBrushItem extends Item {
     }
 
     public static int getPaintColor(ItemStack stack, int slot) {
+        if (stack.getItem() instanceof PaintBrushItem) {
+            migrateLegacyPaint(stack);
+        }
         NbtCompound nbt = customData(stack);
         slot = clampSlot(slot);
         if (nbt.contains(SLOT_COLOR_PREFIX + slot)) {
@@ -117,6 +121,9 @@ public class PaintBrushItem extends Item {
     }
 
     public static double getRemainingPaintPercent(ItemStack stack, int slot) {
+        if (stack.getItem() instanceof PaintBrushItem) {
+            migrateLegacyPaint(stack);
+        }
         NbtCompound nbt = customData(stack);
         slot = clampSlot(slot);
         if (nbt.contains(SLOT_REMAINING_EXACT_PREFIX + slot)) {
@@ -188,7 +195,7 @@ public class PaintBrushItem extends Item {
             return;
         }
         int selected = getSelectedSlot(stack);
-        loadPaint(stack, slot, color);
+        setSlotColor(stack, slot, color);
         setSelectedSlot(stack, selected);
     }
 
@@ -246,7 +253,6 @@ public class PaintBrushItem extends Item {
         if (next <= 0.000001D) {
             nbt.remove(SLOT_REMAINING_PREFIX + slot);
             nbt.remove(SLOT_REMAINING_EXACT_PREFIX + slot);
-            nbt.remove(SLOT_COLOR_PREFIX + slot);
         } else {
             nbt.putInt(SLOT_REMAINING_PREFIX + slot, MathHelper.clamp((int) Math.ceil(next), 0, MAX_PAINT_PIXELS));
             nbt.putDouble(SLOT_REMAINING_EXACT_PREFIX + slot, next);
@@ -265,7 +271,7 @@ public class PaintBrushItem extends Item {
             return;
         }
         NbtCompound nbt = customData(stack);
-        nbt.putInt(SELECTED_SLOT_KEY, clampSlot(slot));
+        nbt.putInt(SELECTED_SLOT_KEY, 0);
         stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
     }
 
@@ -282,7 +288,7 @@ public class PaintBrushItem extends Item {
     }
 
     private static boolean hasAnySlotData(NbtCompound nbt) {
-        for (int slot = 0; slot < COLOR_SLOTS; slot++) {
+        for (int slot = 0; slot < LEGACY_COLOR_SLOTS; slot++) {
             if (nbt.contains(SLOT_COLOR_PREFIX + slot) || nbt.contains(SLOT_REMAINING_PREFIX + slot)
                     || nbt.contains(SLOT_REMAINING_EXACT_PREFIX + slot)) {
                 return true;
@@ -293,23 +299,107 @@ public class PaintBrushItem extends Item {
 
     private static void migrateLegacyPaint(ItemStack stack) {
         NbtCompound nbt = customData(stack);
-        if (hasAnySlotData(nbt) || !nbt.contains(PAINT_REMAINING_KEY)) {
+        if (isSingleSlotData(nbt) && !hasLegacySimplePaint(nbt)) {
             return;
         }
-        double remaining = nbt.contains(PAINT_REMAINING_EXACT_KEY)
-                ? Math.clamp(nbt.getDouble(PAINT_REMAINING_EXACT_KEY, 0.0D), 0.0D, MAX_PAINT_PIXELS)
-                : MathHelper.clamp(nbt.getInt(PAINT_REMAINING_KEY, 0), 0, MAX_PAINT_PIXELS);
-        if (remaining > 0) {
-            int slot = clampSlot(nbt.getInt(SELECTED_SLOT_KEY, 0));
-            nbt.putInt(SLOT_COLOR_PREFIX + slot, legacyOpaqueColor(nbt.getInt(PAINT_COLOR_KEY, 0xFFFFFF)));
-            nbt.putInt(SLOT_REMAINING_PREFIX + slot, MathHelper.clamp((int) Math.ceil(remaining), 0, MAX_PAINT_PIXELS));
-            nbt.putDouble(SLOT_REMAINING_EXACT_PREFIX + slot, remaining);
+        int legacySlot = MathHelper.clamp(nbt.getInt(SELECTED_SLOT_KEY, 0), 0, LEGACY_COLOR_SLOTS - 1);
+        boolean hasColor = hasLegacySlotColor(nbt, legacySlot) || hasLegacySlotColor(nbt, 0) || hasAnyLegacySlotColor(nbt)
+                || nbt.contains(PAINT_COLOR_KEY);
+        int color = findLegacyColor(nbt, legacySlot);
+        double remaining = findLegacyRemaining(nbt, legacySlot);
+        clearLegacySlots(nbt);
+        if (hasColor) {
+            nbt.putInt(SLOT_COLOR_PREFIX + 0, color);
         }
+        if (remaining > 0.0D) {
+            nbt.putInt(SLOT_REMAINING_PREFIX + 0, MathHelper.clamp((int) Math.ceil(remaining), 0, MAX_PAINT_PIXELS));
+            nbt.putDouble(SLOT_REMAINING_EXACT_PREFIX + 0, remaining);
+        }
+        nbt.putInt(SELECTED_SLOT_KEY, 0);
         nbt.putBoolean(COLOR_FORMAT_KEY, true);
         nbt.remove(PAINT_COLOR_KEY);
         nbt.remove(PAINT_REMAINING_KEY);
         nbt.remove(PAINT_REMAINING_EXACT_KEY);
         stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
+    }
+
+    private static boolean hasLegacySlotColor(NbtCompound nbt, int slot) {
+        return nbt.contains(SLOT_COLOR_PREFIX + slot);
+    }
+
+    private static boolean hasAnyLegacySlotColor(NbtCompound nbt) {
+        for (int slot = 0; slot < LEGACY_COLOR_SLOTS; slot++) {
+            if (hasLegacySlotColor(nbt, slot)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isSingleSlotData(NbtCompound nbt) {
+        for (int slot = COLOR_SLOTS; slot < LEGACY_COLOR_SLOTS; slot++) {
+            if (nbt.contains(SLOT_COLOR_PREFIX + slot) || nbt.contains(SLOT_REMAINING_PREFIX + slot)
+                    || nbt.contains(SLOT_REMAINING_EXACT_PREFIX + slot)) {
+                return false;
+            }
+        }
+        return nbt.getInt(SELECTED_SLOT_KEY, 0) == 0;
+    }
+
+    private static boolean hasLegacySimplePaint(NbtCompound nbt) {
+        return nbt.contains(PAINT_COLOR_KEY) || nbt.contains(PAINT_REMAINING_KEY)
+                || nbt.contains(PAINT_REMAINING_EXACT_KEY);
+    }
+
+    private static int findLegacyColor(NbtCompound nbt, int preferredSlot) {
+        if (nbt.contains(SLOT_COLOR_PREFIX + preferredSlot)) {
+            return storedColor(nbt, nbt.getInt(SLOT_COLOR_PREFIX + preferredSlot, 0xFFFFFFFF));
+        }
+        if (nbt.contains(SLOT_COLOR_PREFIX + 0)) {
+            return storedColor(nbt, nbt.getInt(SLOT_COLOR_PREFIX + 0, 0xFFFFFFFF));
+        }
+        for (int slot = 0; slot < LEGACY_COLOR_SLOTS; slot++) {
+            if (nbt.contains(SLOT_COLOR_PREFIX + slot)) {
+                return storedColor(nbt, nbt.getInt(SLOT_COLOR_PREFIX + slot, 0xFFFFFFFF));
+            }
+        }
+        return nbt.contains(PAINT_COLOR_KEY) ? legacyOpaqueColor(nbt.getInt(PAINT_COLOR_KEY, 0xFFFFFF)) : 0;
+    }
+
+    private static double findLegacyRemaining(NbtCompound nbt, int preferredSlot) {
+        double remaining = legacyRemaining(nbt, preferredSlot);
+        if (remaining > 0.0D) {
+            return remaining;
+        }
+        remaining = legacyRemaining(nbt, 0);
+        if (remaining > 0.0D) {
+            return remaining;
+        }
+        for (int slot = 0; slot < LEGACY_COLOR_SLOTS; slot++) {
+            remaining = legacyRemaining(nbt, slot);
+            if (remaining > 0.0D) {
+                return remaining;
+            }
+        }
+        if (nbt.contains(PAINT_REMAINING_EXACT_KEY)) {
+            return Math.clamp(nbt.getDouble(PAINT_REMAINING_EXACT_KEY, 0.0D), 0.0D, MAX_PAINT_PIXELS);
+        }
+        return MathHelper.clamp(nbt.getInt(PAINT_REMAINING_KEY, 0), 0, MAX_PAINT_PIXELS);
+    }
+
+    private static double legacyRemaining(NbtCompound nbt, int slot) {
+        if (nbt.contains(SLOT_REMAINING_EXACT_PREFIX + slot)) {
+            return Math.clamp(nbt.getDouble(SLOT_REMAINING_EXACT_PREFIX + slot, 0.0D), 0.0D, MAX_PAINT_PIXELS);
+        }
+        return MathHelper.clamp(nbt.getInt(SLOT_REMAINING_PREFIX + slot, 0), 0, MAX_PAINT_PIXELS);
+    }
+
+    private static void clearLegacySlots(NbtCompound nbt) {
+        for (int slot = 0; slot < LEGACY_COLOR_SLOTS; slot++) {
+            nbt.remove(SLOT_COLOR_PREFIX + slot);
+            nbt.remove(SLOT_REMAINING_PREFIX + slot);
+            nbt.remove(SLOT_REMAINING_EXACT_PREFIX + slot);
+        }
     }
 
     private static int storedColor(NbtCompound nbt, int color) {
