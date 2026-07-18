@@ -30,6 +30,7 @@ public final class GravityPackets {
         EnergyS2C.register();
         LogicModeS2C.register();
         SurfaceGravityS2C.register();
+        SurfaceLookS2C.register();
         ExtractPoseS2C.register();
         QuakeHintS2C.register();
     }
@@ -294,20 +295,59 @@ public final class GravityPackets {
         }
     }
 
-    public record SurfaceGravityS2C(int directionOrdinal, double anchorX, double anchorY, double anchorZ) implements CustomPayload {
+    public record SurfaceGravityS2C(
+            int entityId,
+            int directionOrdinal,
+            double anchorX,
+            double anchorY,
+            double anchorZ,
+            float localYaw,
+            float localPitch
+    ) implements CustomPayload {
         public static final Id<SurfaceGravityS2C> ID = new Id<>(Identifier.of("monvhua", "surface_gravity"));
         public static final PacketCodec<RegistryByteBuf, SurfaceGravityS2C> CODEC = PacketCodec.of(SurfaceGravityS2C::write, SurfaceGravityS2C::new);
         private static boolean registered = false;
 
         private SurfaceGravityS2C(RegistryByteBuf buf) {
-            this(buf.readInt(), buf.readDouble(), buf.readDouble(), buf.readDouble());
+            this(buf.readInt(), buf.readInt(), buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readFloat(), buf.readFloat());
         }
 
         private void write(RegistryByteBuf buf) {
+            buf.writeInt(entityId);
             buf.writeInt(directionOrdinal);
             buf.writeDouble(anchorX);
             buf.writeDouble(anchorY);
             buf.writeDouble(anchorZ);
+            buf.writeFloat(localYaw);
+            buf.writeFloat(localPitch);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record SurfaceLookS2C(int entityId, float localYaw, float localPitch) implements CustomPayload {
+        public static final Id<SurfaceLookS2C> ID = new Id<>(Identifier.of("monvhua", "surface_gravity_look_s2c"));
+        public static final PacketCodec<RegistryByteBuf, SurfaceLookS2C> CODEC = PacketCodec.of(SurfaceLookS2C::write, SurfaceLookS2C::new);
+        private static boolean registered = false;
+
+        private SurfaceLookS2C(RegistryByteBuf buf) {
+            this(buf.readInt(), buf.readFloat(), buf.readFloat());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeInt(entityId);
+            buf.writeFloat(localYaw);
+            buf.writeFloat(localPitch);
         }
 
         @Override

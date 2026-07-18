@@ -34,17 +34,18 @@ public abstract class MouseMixin {
     }
 
     private boolean monvhua$handleHoldHandsMiddleClick() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || !client.player.isSneaking()) {
-            return false;
-        }
-        if (!(client.crosshairTarget instanceof EntityHitResult hitResult) || hitResult.getType() != HitResult.Type.ENTITY) {
-            return false;
-        }
-        if (!(hitResult.getEntity() instanceof PlayerEntity) || hitResult.getEntity() == client.player) {
-            return false;
-        }
-        SafeClientNetworking.send(new HoldHandsInteractC2SPacket(hitResult.getEntity().getId()));
-        return true;
+//        MinecraftClient client = MinecraftClient.getInstance();
+//        if (client.player == null || !client.player.isSneaking()) {
+//            return false;
+//        }
+//        if (!(client.crosshairTarget instanceof EntityHitResult hitResult) || hitResult.getType() != HitResult.Type.ENTITY) {
+//            return false;
+//        }
+//        if (!(hitResult.getEntity() instanceof PlayerEntity) || hitResult.getEntity() == client.player) {
+//            return false;
+//        }
+//        SafeClientNetworking.send(new HoldHandsInteractC2SPacket(hitResult.getEntity().getId()));
+//        return true;
+        return false;
     }
 }

@@ -33,6 +33,10 @@ public final class SurfaceGravityClientEngine {
         return entity != null && client.player == entity && GravityMagic.getSurfaceGravityDirection(entity) != null;
     }
 
+    public static boolean isRenderActive(Entity entity) {
+        return entity != null && GravityMagic.getSurfaceGravityDirection(entity) != null;
+    }
+
     public static Vec3d eyePos(Entity entity, float tickProgress) {
         return GravityMagic.getSurfaceEyePos(entity, tickProgress);
     }

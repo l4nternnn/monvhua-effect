@@ -133,13 +133,35 @@ public final class GravityClient {
         ClientPlayNetworking.registerGlobalReceiver(GravityPackets.SurfaceGravityS2C.ID, (packet, context) ->
                 context.client().execute(() -> {
                     MinecraftClient client = MinecraftClient.getInstance();
-                    if (client.player == null) {
+                    if (client.player == null || client.world == null) {
+                        return;
+                    }
+                    Entity entity = packet.entityId() == client.player.getId()
+                            ? client.player
+                            : client.world.getEntityById(packet.entityId());
+                    if (entity == null) {
                         return;
                     }
                     int ordinal = packet.directionOrdinal();
                     Direction direction = ordinal >= 0 && ordinal < Direction.values().length ? Direction.values()[ordinal] : null;
                     Vec3d anchor = direction == null ? null : new Vec3d(packet.anchorX(), packet.anchorY(), packet.anchorZ());
-                    GravityMagic.setClientSurfaceGravity(client.player, direction, anchor);
+                    GravityMagic.setClientSurfaceGravity(entity, direction, anchor);
+                    if (direction != null) {
+                        GravityMagic.setSurfaceLookSnapshot(entity, packet.localYaw(), packet.localPitch());
+                    }
+                }));
+        ClientPlayNetworking.registerGlobalReceiver(GravityPackets.SurfaceLookS2C.ID, (packet, context) ->
+                context.client().execute(() -> {
+                    MinecraftClient client = MinecraftClient.getInstance();
+                    if (client.player == null || client.world == null) {
+                        return;
+                    }
+                    Entity entity = packet.entityId() == client.player.getId()
+                            ? client.player
+                            : client.world.getEntityById(packet.entityId());
+                    if (entity != null && GravityMagic.getSurfaceGravityDirection(entity) != null) {
+                        GravityMagic.setSurfaceLookSnapshot(entity, packet.localYaw(), packet.localPitch());
+                    }
                 }));
         ClientPlayNetworking.registerGlobalReceiver(GravityPackets.ExtractPoseS2C.ID, (packet, context) ->
                 context.client().execute(() -> GravityExtractPoseClientState.set(packet.entityId(), packet.ticks())));

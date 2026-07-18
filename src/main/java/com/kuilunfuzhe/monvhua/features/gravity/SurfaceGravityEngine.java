@@ -400,6 +400,10 @@ public final class SurfaceGravityEngine {
             this.lastLocalBodyYaw = this.localYaw;
         }
 
+        public void snapBodyYawToLook() {
+            resetBodyYaw();
+        }
+
         private void updateBodyYaw(float targetYaw) {
             this.lastLocalBodyYaw = this.localBodyYaw;
             this.localBodyYaw += MathHelper.wrapDegrees(targetYaw - this.localBodyYaw) * 0.3F;

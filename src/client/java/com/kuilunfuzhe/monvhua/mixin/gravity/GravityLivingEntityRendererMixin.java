@@ -51,7 +51,7 @@ public abstract class GravityLivingEntityRendererMixin {
             return;
         }
         Entity entity = monvhua$getRenderedEntity(playerState.id);
-        if (!SurfaceGravityClientEngine.isActive(entity)) {
+        if (!SurfaceGravityClientEngine.isRenderActive(entity)) {
             return;
         }
         matrices.push();
