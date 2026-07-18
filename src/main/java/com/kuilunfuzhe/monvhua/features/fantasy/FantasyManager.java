@@ -282,6 +282,11 @@ public class FantasyManager {
     }
 
     private static int getMonvhuaScore(ServerPlayerEntity player) {
+        // ===== 精神治疗：有 Healed 标签则强制分数为 0 =====
+        if (player.getCommandTags().contains("Healed")) {
+            return 0;
+        }
+
         var objective = player.getScoreboard().getNullableObjective("monvhua");
         if (objective == null) return 0;
         var score = player.getScoreboard().getScore(player, objective);
