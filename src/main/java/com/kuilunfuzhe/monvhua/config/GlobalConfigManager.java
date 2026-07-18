@@ -44,7 +44,7 @@ public class GlobalConfigManager {
      * @param parrotDailyLimit 每日鹦鹉放置次数上限
      * @param maxActiveParrots 同时存在的最大鹦鹉数量
      */
-    public record StageConfig(int dailyLimit, int maxMarks, int minScore, int maxScore, int watchRequiredTicks,
+    public record StageConfig(int dailyLimit, int maxMarks, int minScore, int maxScore, int watchRequiredTicks, int markExpireSeconds,
                               int parrotDailyLimit, int maxActiveParrots,
                               double uiDrainRate, double watchDrainRate, double regenRate) {}
 
@@ -97,14 +97,14 @@ public class GlobalConfigManager {
     /** 各阶段默认配置，阶段越高观察tick越少、限额越宽松 */
     private StageConfig getDefaultConfig(int stage) {
         return switch (stage) {
-            case 1 -> new StageConfig(10, 3, 0, 9, 40, 2, 2, 1.0D, 8.0D, 2.0D);
-            case 2 -> new StageConfig(10, 4, 10, 24, 40, 3, 2, 1.0D, 8.0D, 2.5D);
-            case 3 -> new StageConfig(8, 5, 25, 44, 40, 5, 2, 1.2D, 9.0D, 3.0D);
-            case 4 -> new StageConfig(8, 6, 45, 59, 40, 7, 2, 1.2D, 9.0D, 3.5D);
-            case 5 -> new StageConfig(6, 7, 60, 69, 40, 8, 2, 1.5D, 10.0D, 4.0D);
-            case 6 -> new StageConfig(6, 8, 70, 79, 40, 9, 2, 1.5D, 10.0D, 4.5D);
-            case 7 -> new StageConfig(5, 10, 80, 100, 40, 10, 2, 2.0D, 12.0D, 5.0D);
-            default -> new StageConfig(10, 5, 0, 100, 40, 12, 2, 1.0D, 8.0D, 2.0D);
+            case 1 -> new StageConfig(10, 3, 0, 9, 40, 20, 2, 2, 1.0D, 8.0D, 2.0D);
+            case 2 -> new StageConfig(10, 4, 10, 24, 40, 20, 3, 2, 1.0D, 8.0D, 2.5D);
+            case 3 -> new StageConfig(8, 5, 25, 44, 40, 20, 5, 2, 1.2D, 9.0D, 3.0D);
+            case 4 -> new StageConfig(8, 6, 45, 59, 40, 20, 7, 2, 1.2D, 9.0D, 3.5D);
+            case 5 -> new StageConfig(6, 7, 60, 69, 40, 20, 8, 2, 1.5D, 10.0D, 4.0D);
+            case 6 -> new StageConfig(6, 8, 70, 79, 40, 20, 9, 2, 1.5D, 10.0D, 4.5D);
+            case 7 -> new StageConfig(5, 10, 80, 100, 40, 20, 10, 2, 2.0D, 12.0D, 5.0D);
+            default -> new StageConfig(10, 5, 0, 100, 40, 20, 12, 2, 1.0D, 8.0D, 2.0D);
         };
     }
 
@@ -118,6 +118,7 @@ public class GlobalConfigManager {
                 cfg.minScore(),
                 cfg.maxScore(),
                 cfg.watchRequiredTicks() > 0 ? cfg.watchRequiredTicks() : fallback.watchRequiredTicks(),
+                cfg.markExpireSeconds() > 0 ? cfg.markExpireSeconds() : fallback.markExpireSeconds(),
                 cfg.parrotDailyLimit(),
                 cfg.maxActiveParrots() > 0 ? cfg.maxActiveParrots() : fallback.maxActiveParrots(),
                 cfg.uiDrainRate() > 0.0D ? cfg.uiDrainRate() : fallback.uiDrainRate(),
@@ -134,15 +135,31 @@ public class GlobalConfigManager {
     /** 更新指定阶段配置并立即保存到文件 */
     public void updateStageConfig(int stage, int dailyLimit, int maxMarks, int minScore, int maxScore, int watchRequiredTicks, int parrotDailyLimit, int maxActiveParrots) {
         StageConfig existing = getStageConfig(stage);
-        configs.put(stage, new StageConfig(dailyLimit, maxMarks, minScore, maxScore, watchRequiredTicks, parrotDailyLimit, maxActiveParrots,
+        configs.put(stage, new StageConfig(dailyLimit, maxMarks, minScore, maxScore, watchRequiredTicks, existing.markExpireSeconds(), parrotDailyLimit, maxActiveParrots,
                 existing.uiDrainRate(), existing.watchDrainRate(), existing.regenRate()));
+        save();
+    }
+
+    public void updateStageConfig(int stage, int dailyLimit, int maxMarks, int minScore, int maxScore, int watchRequiredTicks, int markExpireSeconds,
+                                  int parrotDailyLimit, int maxActiveParrots) {
+        StageConfig existing = getStageConfig(stage);
+        configs.put(stage, new StageConfig(dailyLimit, maxMarks, minScore, maxScore, watchRequiredTicks, markExpireSeconds, parrotDailyLimit,
+                maxActiveParrots, existing.uiDrainRate(), existing.watchDrainRate(), existing.regenRate()));
         save();
     }
 
     public void updateStageConfig(int stage, int dailyLimit, int maxMarks, int minScore, int maxScore, int parrotDailyLimit,
                                   double uiDrainRate, double watchDrainRate, double regenRate) {
         StageConfig existing = getStageConfig(stage);
-        configs.put(stage, new StageConfig(dailyLimit, maxMarks, minScore, maxScore, existing.watchRequiredTicks(), parrotDailyLimit,
+        configs.put(stage, new StageConfig(dailyLimit, maxMarks, minScore, maxScore, existing.watchRequiredTicks(), existing.markExpireSeconds(), parrotDailyLimit,
+                existing.maxActiveParrots(), uiDrainRate, watchDrainRate, regenRate));
+        save();
+    }
+
+    public void updateStageConfig(int stage, int dailyLimit, int maxMarks, int minScore, int maxScore, int markExpireSeconds, int parrotDailyLimit,
+                                  double uiDrainRate, double watchDrainRate, double regenRate) {
+        StageConfig existing = getStageConfig(stage);
+        configs.put(stage, new StageConfig(dailyLimit, maxMarks, minScore, maxScore, existing.watchRequiredTicks(), markExpireSeconds, parrotDailyLimit,
                 existing.maxActiveParrots(), uiDrainRate, watchDrainRate, regenRate));
         save();
     }
@@ -199,9 +216,21 @@ public class GlobalConfigManager {
                 watchRequiredTicks, parrotDailyLimit, maxActiveParrots);
     }
 
+    public void updateConfig(int stage, int dailyLimit, int maxMarks, int minScore, int maxScore,
+                             int watchRequiredTicks, int markExpireSeconds, int parrotDailyLimit, int maxActiveParrots) {
+        updateStageConfig(stage, dailyLimit, maxMarks, minScore, maxScore,
+                watchRequiredTicks, markExpireSeconds, parrotDailyLimit, maxActiveParrots);
+    }
+
     public void updateConfig(int stage, int dailyLimit, int maxMarks, int minScore, int maxScore, int parrotDailyLimit,
                              double uiDrainRate, double watchDrainRate, double regenRate) {
         updateStageConfig(stage, dailyLimit, maxMarks, minScore, maxScore, parrotDailyLimit,
+                uiDrainRate, watchDrainRate, regenRate);
+    }
+
+    public void updateConfig(int stage, int dailyLimit, int maxMarks, int minScore, int maxScore, int markExpireSeconds, int parrotDailyLimit,
+                             double uiDrainRate, double watchDrainRate, double regenRate) {
+        updateStageConfig(stage, dailyLimit, maxMarks, minScore, maxScore, markExpireSeconds, parrotDailyLimit,
                 uiDrainRate, watchDrainRate, regenRate);
     }
 

@@ -17,29 +17,36 @@ public final class PortalTransform {
                                     Direction sourceFacing,
                                     Vec3d targetCenter,
                                     Direction targetFacing) {
-        return targetCenter.add(mapVector(position.subtract(sourceCenter), sourceFacing, targetFacing));
+        return mapPoint(
+                position,
+                PortalFrame.centered(sourceCenter, sourceFacing, 1, 1),
+                PortalFrame.centered(targetCenter, targetFacing, 1, 1)
+        );
+    }
+
+    public static Vec3d mapPoint(Vec3d position, PortalFrame source, PortalFrame target) {
+        return target.center().add(mapVector(position.subtract(source.center()), source, target));
+    }
+
+    public static Vec3d mapVector(Vec3d vector, PortalFrame source, PortalFrame target) {
+        double width = vector.dotProduct(source.widthAxis());
+        double height = vector.dotProduct(source.heightAxis());
+        double normal = vector.dotProduct(source.normal());
+        return target.widthAxis().multiply(-width)
+                .add(target.heightAxis().multiply(height))
+                .add(target.contentNormal().multiply(normal));
     }
 
     public static Vec3d mapVector(Vec3d vector, Direction sourceFacing, Direction targetFacing) {
-        Basis source = basisFor(sourceFacing);
-        Basis target = basisFor(targetFacing);
-        double right = vector.dotProduct(source.right());
-        double up = vector.dotProduct(source.up());
-        double front = vector.dotProduct(source.front());
-        return target.right().multiply(right)
-                .add(target.up().multiply(up))
-                .add(target.front().multiply(front));
+        return mapVector(
+                vector,
+                PortalFrame.centered(Vec3d.ZERO, sourceFacing, 1, 1),
+                PortalFrame.centered(Vec3d.ZERO, targetFacing, 1, 1)
+        );
     }
 
     public static Vec3d mapVectorFrontToFront(Vec3d vector, Direction sourceFacing, Direction targetFacing) {
-        Basis source = basisFor(sourceFacing);
-        Basis target = basisFor(targetFacing);
-        double right = vector.dotProduct(source.right());
-        double up = vector.dotProduct(source.up());
-        double front = vector.dotProduct(source.front());
-        return target.right().multiply(right)
-                .add(target.up().multiply(up))
-                .add(target.front().multiply(-front));
+        return mapVector(vector, sourceFacing, targetFacing);
     }
 
     public static float mapYaw(float yaw, Direction sourceFacing, Direction targetFacing) {
@@ -51,23 +58,23 @@ public final class PortalTransform {
     }
 
     public static Rotation mapRotationFrontToFront(float yaw, float pitch, Direction sourceFacing, Direction targetFacing) {
-        return rotationFromVector(mapVectorFrontToFront(Vec3d.fromPolar(pitch, yaw), sourceFacing, targetFacing));
+        return mapRotation(yaw, pitch, sourceFacing, targetFacing);
+    }
+
+    public static Rotation mapRotation(float yaw, float pitch, PortalFrame source, PortalFrame target) {
+        return rotationFromVector(mapVector(Vec3d.fromPolar(pitch, yaw), source, target));
     }
 
     public static Vec3d normal(Direction direction) {
-        return new Vec3d(direction.getOffsetX(), direction.getOffsetY(), direction.getOffsetZ());
+        return PortalFrame.normal(direction);
     }
 
     public static Vec3d surfaceWidthAxis(Direction facing) {
-        return facing.getAxis() == Direction.Axis.X
-                ? new Vec3d(0.0D, 0.0D, 1.0D)
-                : new Vec3d(1.0D, 0.0D, 0.0D);
+        return PortalFrame.gridWidthAxis(facing);
     }
 
     public static Vec3d surfaceHeightAxis(Direction facing) {
-        return facing.getAxis() == Direction.Axis.Y
-                ? new Vec3d(0.0D, 0.0D, 1.0D)
-                : new Vec3d(0.0D, 1.0D, 0.0D);
+        return PortalFrame.gridHeightAxis(facing);
     }
 
     public static Rotation rotationFromVector(Vec3d vector) {
@@ -86,19 +93,6 @@ public final class PortalTransform {
         );
     }
 
-    private static Basis basisFor(Direction frontDirection) {
-        Vec3d front = normal(frontDirection);
-        Vec3d preferredUp = frontDirection.getAxis() == Direction.Axis.Y
-                ? new Vec3d(0.0D, 0.0D, 1.0D)
-                : new Vec3d(0.0D, 1.0D, 0.0D);
-        Vec3d right = preferredUp.crossProduct(front).normalize();
-        Vec3d up = front.crossProduct(right).normalize();
-        return new Basis(right, up, front);
-    }
-
     public record Rotation(float yaw, float pitch) {
-    }
-
-    private record Basis(Vec3d right, Vec3d up, Vec3d front) {
     }
 }

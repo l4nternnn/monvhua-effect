@@ -951,27 +951,14 @@ public final class PortalManager {
     }
 
     private static boolean crossedPortalPlane(PortalBlockEntity portal, Vec3d previousPos, Vec3d currentPos) {
-        Vec3d center = portal.getPortalCenter();
-        Vec3d normal = normal(portal.getFacing());
-        double previousSide = previousPos.subtract(center).dotProduct(normal);
-        double currentSide = currentPos.subtract(center).dotProduct(normal);
+        PortalFrame frame = portal.getFrame();
+        double previousSide = previousPos.subtract(frame.center()).dotProduct(frame.normal());
+        double currentSide = currentPos.subtract(frame.center()).dotProduct(frame.normal());
         return previousSide > PLANE_EPSILON && currentSide <= PLANE_EPSILON;
     }
 
     private static boolean isInsidePortalRect(PortalBlockEntity portal, Vec3d pos) {
-        Vec3d local = pos.subtract(Vec3d.ofCenter(portal.getOrigin()));
-        Direction facing = portal.getFacing();
-        Vec3d widthAxis = PortalTransform.surfaceWidthAxis(facing);
-        Vec3d heightAxis = PortalTransform.surfaceHeightAxis(facing);
-        double horizontal = local.dotProduct(widthAxis);
-        double vertical = local.dotProduct(heightAxis);
-        if (heightAxis.y != 0.0D) {
-            vertical += 0.5D;
-        }
-        return horizontal >= -0.1D
-                && horizontal <= portal.getPortalWidth() + 0.1D
-                && vertical >= -0.1D
-                && vertical <= portal.getPortalHeight() + 0.1D;
+        return portal.getFrame().containsProjection(pos, 0.1D);
     }
 
     private static void teleportPlayer(ServerWorld world, ServerPlayerEntity player, PortalBlockEntity portal, PortalLinkData link) {
@@ -980,32 +967,22 @@ public final class PortalManager {
             portal.clearTarget();
             return;
         }
-        Vec3d sourceCenter = portal.getPortalCenter();
-        Vec3d targetCenter = targetPortal.getPortalCenter();
-        Vec3d mapped = PortalTransform.mapPosition(
-                player.getPos(),
-                sourceCenter,
-                portal.getFacing(),
-                targetCenter,
-                targetPortal.getFacing()
-        );
-        Vec3d targetNormal = normal(targetPortal.getFacing());
-        Vec3d mappedVelocity = PortalTransform.mapVectorFrontToFront(
-                player.getVelocity(),
-                portal.getFacing(),
-                targetPortal.getFacing()
-        );
-        double normalOffset = mapped.subtract(targetCenter).dotProduct(targetNormal);
+        PortalFrame sourceFrame = portal.getFrame();
+        PortalFrame targetFrame = targetPortal.getFrame();
+        Vec3d mapped = PortalTransform.mapPoint(player.getPos(), sourceFrame, targetFrame);
+        Vec3d targetNormal = targetFrame.normal();
+        Vec3d mappedVelocity = PortalTransform.mapVector(player.getVelocity(), sourceFrame, targetFrame);
+        double normalOffset = mapped.subtract(targetFrame.center()).dotProduct(targetNormal);
         double exitOffset = Math.max(
                 Math.abs(normalOffset),
                 PortalViewConfig.TELEPORT_EXIT_OFFSET
         );
         Vec3d targetPos = mapped.add(targetNormal.multiply(exitOffset - normalOffset));
-        PortalTransform.Rotation rotation = PortalTransform.mapRotationFrontToFront(
+        PortalTransform.Rotation rotation = PortalTransform.mapRotation(
                 player.getYaw(),
                 player.getPitch(),
-                portal.getFacing(),
-                targetPortal.getFacing()
+                sourceFrame,
+                targetFrame
         );
 
         player.teleport(world, targetPos.x, targetPos.y, targetPos.z,
@@ -1084,8 +1061,7 @@ public final class PortalManager {
     private static BlockPos mapRemoteViewCenter(ServerPlayerEntity player,
                                                 PortalBlockEntity source,
         PortalBlockEntity target) {
-        Vec3d mapped = target.getPortalCenter()
-                .add(normal(target.getFacing()).multiply(0.55D));
+        Vec3d mapped = PortalTransform.mapPoint(player.getEyePos(), source.getFrame(), target.getFrame());
         return BlockPos.ofFloored(mapped.x, mapped.y, mapped.z);
     }
 

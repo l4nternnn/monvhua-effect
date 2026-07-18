@@ -122,6 +122,7 @@ public class general_stage {
         int daily = existing != null ? existing.dailyLimit() : 10;
         int marks = existing != null ? existing.maxMarks() : 3;
         int watchTicks = existing != null ? existing.watchRequiredTicks() : 40;
+        int markExpireSeconds = existing != null ? existing.markExpireSeconds() : 20;
         int parrotDaily = existing != null ? existing.parrotDailyLimit() : 5;
         int maxActive = existing != null ? existing.maxActiveParrots() : 1;
         double uiDrain = existing != null ? existing.uiDrainRate() : 1.0D;
@@ -129,7 +130,7 @@ public class general_stage {
         double regen = existing != null ? existing.regenRate() : 2.0D;
 
         return new GlobalConfigS2C.StageConfig(
-                daily, marks, minScore, maxScore, watchTicks, parrotDaily, maxActive, uiDrain, watchDrain, regen
+                daily, marks, minScore, maxScore, watchTicks, markExpireSeconds, parrotDaily, maxActive, uiDrain, watchDrain, regen
         );
     }
 
@@ -141,6 +142,7 @@ public class general_stage {
                 config.minScore(),
                 config.maxScore(),
                 config.watchRequiredTicks(),
+                config.markExpireSeconds(),
                 config.parrotDailyLimit(),
                 config.maxActiveParrots(),
                 config.uiDrainRate(),

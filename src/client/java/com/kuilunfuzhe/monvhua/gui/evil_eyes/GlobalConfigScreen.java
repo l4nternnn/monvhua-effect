@@ -21,7 +21,7 @@ public class GlobalConfigScreen extends Screen {
     /** 千里眼共7个阶段 */
     private static final int STAGES = 7;
     private int currentStage = 1;
-    private TextFieldWidget dailyField, marksField, minScoreField, maxScoreField, uiDrainField, watchDrainField, regenField;
+    private TextFieldWidget dailyField, marksField, minScoreField, maxScoreField, uiDrainField, watchDrainField, regenField, markExpireField;
     /** 以下两个字段为后续扩展预留（鹦鹉相关功能） */
     private TextFieldWidget parrotDailyField;
     private ButtonWidget saveButton;
@@ -116,15 +116,20 @@ public class GlobalConfigScreen extends Screen {
         regenField.setMaxLength(8);
         addDrawableChild(regenField);
 
-        addDrawableChild(new TextWidget(rightX, rowY + 7*rowHeight + 4, labelWidth, 9, Text.literal("\u6bcf\u65e5\u951a\u70b9\u653e\u7f6e:"), textRenderer));
-        parrotDailyField = new TextFieldWidget(textRenderer, rightX + labelWidth, rowY + 7*rowHeight, inputWidth, 18, Text.empty());
+        addDrawableChild(new TextWidget(rightX, rowY + 7*rowHeight + 4, labelWidth, 9, Text.literal("\u6807\u8bb0\u6d88\u6563(s):"), textRenderer));
+        markExpireField = new TextFieldWidget(textRenderer, rightX + labelWidth, rowY + 7*rowHeight, inputWidth, 18, Text.empty());
+        markExpireField.setMaxLength(4);
+        addDrawableChild(markExpireField);
+
+        addDrawableChild(new TextWidget(rightX, rowY + 8*rowHeight + 4, labelWidth, 9, Text.literal("\u6bcf\u65e5\u951a\u70b9\u653e\u7f6e:"), textRenderer));
+        parrotDailyField = new TextFieldWidget(textRenderer, rightX + labelWidth, rowY + 8*rowHeight, inputWidth, 18, Text.empty());
         parrotDailyField.setMaxLength(3);
         addDrawableChild(parrotDailyField);
 
 
 
         saveButton = ButtonWidget.builder(Text.literal("保存"), btn -> saveConfig())
-                .dimensions(rightX, rowY + 8*rowHeight + 10, 80, 20)
+                .dimensions(rightX, rowY + 9*rowHeight + 10, 80, 20)
                 .build();
         addDrawableChild(saveButton);
     }
@@ -139,6 +144,7 @@ public class GlobalConfigScreen extends Screen {
         uiDrainField.setText(String.valueOf(configs[currentStage].uiDrainRate()));
         watchDrainField.setText(String.valueOf(configs[currentStage].watchDrainRate()));
         regenField.setText(String.valueOf(configs[currentStage].regenRate()));
+        markExpireField.setText(String.valueOf(configs[currentStage].markExpireSeconds()));
         parrotDailyField.setText(String.valueOf(configs[currentStage].parrotDailyLimit()));
     }
 
@@ -152,10 +158,11 @@ public class GlobalConfigScreen extends Screen {
             double watchDrain = Double.parseDouble(watchDrainField.getText().trim());
             double regen = Double.parseDouble(regenField.getText().trim());
             int watchTicks = configs[currentStage] != null ? configs[currentStage].watchRequiredTicks() : 40;
+            int markExpireSeconds = Integer.parseInt(markExpireField.getText().trim());
             int parrotDaily = Integer.parseInt(parrotDailyField.getText().trim());
             int maxActive = configs[currentStage] != null ? configs[currentStage].maxActiveParrots() : 1;
 
-            ClientPlayNetworking.send(new UpdateGlobalConfigC2S(currentStage, daily, marks, minScore, maxScore, watchTicks,parrotDaily, maxActive,
+            ClientPlayNetworking.send(new UpdateGlobalConfigC2S(currentStage, daily, marks, minScore, maxScore, watchTicks, markExpireSeconds, parrotDaily, maxActive,
                     uiDrain, watchDrain, regen));
 
             if (client != null && client.player != null)

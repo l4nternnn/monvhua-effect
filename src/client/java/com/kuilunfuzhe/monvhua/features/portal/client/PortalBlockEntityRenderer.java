@@ -2,8 +2,8 @@ package com.kuilunfuzhe.monvhua.features.portal.client;
 
 import com.kuilunfuzhe.monvhua.features.portal.PortalBlock;
 import com.kuilunfuzhe.monvhua.features.portal.PortalBlockEntity;
+import com.kuilunfuzhe.monvhua.features.portal.PortalFrame;
 import com.kuilunfuzhe.monvhua.features.portal.PortalLinkData;
-import com.kuilunfuzhe.monvhua.features.portal.PortalTransform;
 import com.kuilunfuzhe.monvhua.features.portal.PortalViewConfig;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
@@ -31,24 +31,25 @@ public class PortalBlockEntityRenderer implements BlockEntityRenderer<PortalBloc
         Direction facing = entity.getCachedState().contains(PortalBlock.FACING)
                 ? entity.getCachedState().get(PortalBlock.FACING)
                 : Direction.NORTH;
-        double cameraSide = cameraPos.subtract(entity.getPortalCenter())
-                .dotProduct(PortalTransform.normal(facing));
+        PortalFrame entityFrame = entity.getFrame();
+        double cameraSide = cameraPos.subtract(entityFrame.center())
+                .dotProduct(entityFrame.normal());
         if (cameraSide <= 0.0D) {
             return;
         }
         PortalLinkData link = entity.getLinkData();
         PortalFramebufferRenderer.offerVisiblePortal(entity, cameraPos);
+        if (entity.isActive() && link != null) {
+            return;
+        }
 
-        Identifier viewTexture = entity.isActive() ? PortalFramebufferRenderer.getTextureIdFor(entity) : null;
-        int color = viewTexture == null ? colorForState(entity, link) : 0xFFFFFFFF;
-        RenderLayer layer = viewTexture == null
-                ? RenderLayer.getEntityTranslucent(FALLBACK_TEXTURE)
-                : PortalRenderLayers.surface(viewTexture);
+        int color = colorForState(entity, link);
+        RenderLayer layer = RenderLayer.getEntityTranslucent(FALLBACK_TEXTURE);
         VertexConsumer vertices = vertexConsumers.getBuffer(layer);
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         boolean baseReverse = facing == Direction.SOUTH || facing == Direction.EAST || facing == Direction.DOWN;
         renderFace(matrix, vertices, facing, color, light, overlay,
-                entity.getPortalWidth(), entity.getPortalHeight(), baseReverse, viewTexture != null);
+                entity.getPortalWidth(), entity.getPortalHeight(), baseReverse, false);
     }
 
     @Override
@@ -89,36 +90,31 @@ public class PortalBlockEntityRenderer implements BlockEntityRenderer<PortalBloc
         float r = ((argb >>> 16) & 0xFF) / 255.0F;
         float g = ((argb >>> 8) & 0xFF) / 255.0F;
         float b = (argb & 0xFF) / 255.0F;
-        float nx = facing.getOffsetX();
-        float ny = facing.getOffsetY();
-        float nz = facing.getOffsetZ();
-
         float w = Math.max(1, width);
         float h = Math.max(1, height);
         float horizontalInset = (float) PortalViewConfig.PORTAL_SURFACE_HORIZONTAL_INSET;
         float verticalInset = (float) PortalViewConfig.PORTAL_SURFACE_VERTICAL_INSET;
         double halfWidth = Math.max(0.01D, w * 0.5D - horizontalInset);
         double halfHeight = Math.max(0.01D, h * 0.5D - verticalInset);
-        Vec3d surfaceWidthAxis = PortalTransform.surfaceWidthAxis(facing);
-        Vec3d surfaceHeightAxis = PortalTransform.surfaceHeightAxis(facing);
-        Vec3d renderWidthAxis = facing.getAxis() == Direction.Axis.Z
-                ? surfaceWidthAxis.multiply(-1.0D)
-                : surfaceWidthAxis;
-        Vec3d center = new Vec3d(0.5D, 0.5D, 0.5D)
-                .add(surfaceWidthAxis.multiply((w - 1.0D) * 0.5D))
-                .add(surfaceHeightAxis.multiply((h - 1.0D) * 0.5D));
+        PortalFrame frame = PortalFrame.local(facing, width, height);
+        Vec3d renderWidthAxis = frame.widthAxis();
+        Vec3d renderHeightAxis = frame.heightAxis();
+        Vec3d center = frame.center();
         Vec3d bottomLeft = center
                 .subtract(renderWidthAxis.multiply(halfWidth))
-                .subtract(surfaceHeightAxis.multiply(halfHeight));
+                .subtract(renderHeightAxis.multiply(halfHeight));
         Vec3d bottomRight = center
                 .add(renderWidthAxis.multiply(halfWidth))
-                .subtract(surfaceHeightAxis.multiply(halfHeight));
+                .subtract(renderHeightAxis.multiply(halfHeight));
         Vec3d topRight = center
                 .add(renderWidthAxis.multiply(halfWidth))
-                .add(surfaceHeightAxis.multiply(halfHeight));
+                .add(renderHeightAxis.multiply(halfHeight));
         Vec3d topLeft = center
                 .subtract(renderWidthAxis.multiply(halfWidth))
-                .add(surfaceHeightAxis.multiply(halfHeight));
+                .add(renderHeightAxis.multiply(halfHeight));
+        float nx = (float) frame.normal().x;
+        float ny = (float) frame.normal().y;
+        float nz = (float) frame.normal().z;
         float u0 = reverseU ? 1.0F : 0.0F;
         float u1 = reverseU ? 0.0F : 1.0F;
 

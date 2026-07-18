@@ -204,6 +204,9 @@ public class MonvhuaMod implements ModInitializer {
         ParticlePacket.register();
         StrengthPacket.register();
         AnchorParticleS2C.register();
+        AnchorListS2C.register();
+        SignedItemListS2C.register();
+        UnmarkCooldownS2C.register();
         PlayerStageS2C.register();
         ExplosionParticleS2C.register();
         CameraWatchBindS2CPacket.register();
@@ -225,6 +228,9 @@ public class MonvhuaMod implements ModInitializer {
         UpdateGlobalConfigC2S.register();
         PlaceParrotC2S.register();
         AnchorDestroyC2S.register();
+        RequestAnchorListC2S.register();
+        DeleteSignedItemC2S.register();
+        ClearUnmarkCooldownC2S.register();
         OpenOtherInventoryPayload.register();
         CarryEntityPayload.register();
         PlaceCarriedEntityPayload.register();
@@ -585,7 +591,7 @@ public class MonvhuaMod implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(UpdateGlobalConfigC2S.ID, (packet, context) -> {
             if (context.player().hasPermissionLevel(2)) {
                 configManager.updateStageConfig(packet.stage(), packet.dailyLimit(), packet.maxMarks(),
-                        packet.minScore(), packet.maxScore(), packet.parrotDailyLimit(),
+                        packet.minScore(), packet.maxScore(), packet.markExpireSeconds(), packet.parrotDailyLimit(),
                         packet.uiDrainRate(), packet.watchDrainRate(), packet.regenRate()
                 );
                 for (ServerPlayerEntity player : context.player().getServer().getPlayerManager().getPlayerList()) {
@@ -753,8 +759,21 @@ public class MonvhuaMod implements ModInitializer {
             UUID standId = packet.standId();
             World world = player.getWorld();
             Entity stand = world.getEntity(standId);
+            UUID ownerUuid = Evil_Eyes.armorStandOwner.get(standId);
+            if (ownerUuid == null || !ownerUuid.equals(player.getUuid())) {
+                player.sendMessage(Text.literal("\u00a7cAnchor is not yours"), true);
+                Evil_Eyes.syncAnchorListToClient(player);
+                return;
+            }
+            if (!(stand instanceof ArmorStandEntity)) {
+                Evil_Eyes.armorStandOwner.remove(standId);
+                Evil_Eyes.armorStandSpawnTick.remove(standId);
+                Evil_Eyes.configManager.removeActiveParrot(ownerUuid);
+                Evil_Eyes.syncAnchorListToClient(player);
+                player.sendMessage(Text.literal("§c锚点不存在"), true);
+                return;
+            }
             if (stand instanceof ArmorStandEntity armorStand) {
-                UUID ownerUuid = Evil_Eyes.armorStandOwner.get(standId);
                 Evil_Eyes.sendExplosionToNearbyPlayers(stand, player.getServer());
                 stand.remove(Entity.RemovalReason.DISCARDED);
                 Evil_Eyes.armorStandOwner.remove(standId);
@@ -762,6 +781,7 @@ public class MonvhuaMod implements ModInitializer {
                 if (ownerUuid != null) {
                     Evil_Eyes.configManager.removeActiveParrot(ownerUuid);
                 }
+                Evil_Eyes.syncAnchorListToClient(player);
                 player.sendMessage(Text.literal("§a锚点已破坏"), true);
             } else {
                 player.sendMessage(Text.literal("§c锚点不存在"), true);
@@ -1132,6 +1152,7 @@ public class MonvhuaMod implements ModInitializer {
             stageObj.addProperty("minScore", cfg.minScore());
             stageObj.addProperty("maxScore", cfg.maxScore());
             stageObj.addProperty("watchRequiredTicks", cfg.watchRequiredTicks());
+            stageObj.addProperty("markExpireSeconds", cfg.markExpireSeconds());
             stageObj.addProperty("parrotDailyLimit", cfg.parrotDailyLimit());
             stageObj.addProperty("maxActiveParrots", cfg.maxActiveParrots());
             stageObj.addProperty("uiDrainRate", cfg.uiDrainRate());

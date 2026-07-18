@@ -11,13 +11,18 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.NbtComponent;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemGroups;
+import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryKey;
@@ -26,6 +31,7 @@ import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.EntityHitResult;
@@ -57,15 +63,16 @@ import java.util.concurrent.ConcurrentHashMap;
 public class Evil_Eyes {
     /** 每个玩家的绝对标记上限 */
     public static final int MAX_MARKED_ENTITIES = 5;
+    public static final String SIGNED_EVIL_KEY = "signed_evil";
+    public static final String SIGNED_EVIL_ID_KEY = "signed_evil_id";
     public static Item CLAIRVOYANCE_ITEM;
 
     private static final double ANCHOR_RANGE = 30.0;
     private static final double ANCHOR_RANGE_SQ = ANCHOR_RANGE * ANCHOR_RANGE;
     private static final int TICKS_PER_SECOND = 20;
-    private static final int MARK_EXPIRE_TICKS = 400;          // 20 秒
     private static final int ANCHOR_TIMEOUT_TICKS = 3600;      // 180 秒
     private static final int INITIAL_MARK_TICKS = 40;           // 2 秒
-    private static final int COOLDOWN_TICKS = 100;              // 5 秒
+    private static final int COOLDOWN_TICKS = 20 * TICKS_PER_SECOND;
     private static final double PARTICLE_BROADCAST_RANGE_SQ = 64.0 * 64.0;
     private static final int GAZE_ALERT_TYPE_PLAYER = 0;
     private static final int GAZE_ALERT_TYPE_ANCHOR = 1;
@@ -78,7 +85,7 @@ public class Evil_Eyes {
      * 手动取消标记冷却表：被取消的实体在冷却期内不会被锚点/自动标记重新加回。
      * key=实体UUID, value=冷却结束tick（当前tick+100，即5秒）
      */
-    private static final Map<UUID, Long> recentlyUnmarked = new ConcurrentHashMap<>();
+    private static final Map<UUID, Map<UUID, Long>> recentlyUnmarked = new ConcurrentHashMap<>();
     /**
      * 超出范围追踪表：当标记实体离开标记玩家的30格范围时记录首次检测tick，
      * 持续超出20tick（1秒）后自动移除标记。key=玩家UUID → (实体UUID → 首次超出tick)
@@ -219,6 +226,184 @@ public class Evil_Eyes {
         return mgr.getStageByScore(rawScore);
     }
 
+    private static int configuredMarkExpireTicks(int stage) {
+        int seconds = configManager != null ? configManager.getStageConfig(stage).markExpireSeconds() : 20;
+        return Math.max(1, seconds) * TICKS_PER_SECOND;
+    }
+
+    public static UUID ensureSignedItemId(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return CLEAR_SIGNAL;
+        }
+        NbtComponent existing = stack.get(DataComponentTypes.CUSTOM_DATA);
+        NbtCompound nbt = existing != null ? existing.copyNbt() : new NbtCompound();
+        UUID itemId = parseUuid(nbt.getString(SIGNED_EVIL_ID_KEY).orElse(null));
+        if (itemId == null) {
+            itemId = UUID.randomUUID();
+            nbt.putString(SIGNED_EVIL_ID_KEY, itemId.toString());
+            stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
+        }
+        return itemId;
+    }
+
+    private static UUID parseUuid(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private static UUID signedItemOwner(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return null;
+        }
+        NbtComponent customData = stack.get(DataComponentTypes.CUSTOM_DATA);
+        if (customData == null) {
+            return null;
+        }
+        NbtCompound nbt = customData.copyNbt();
+        return parseUuid(nbt.getString(SIGNED_EVIL_KEY).orElse(null));
+    }
+
+    private static boolean isSignedItemOwnedBy(ItemStack stack, UUID ownerUuid) {
+        UUID signedOwner = signedItemOwner(stack);
+        return signedOwner != null && signedOwner.equals(ownerUuid);
+    }
+
+    private static boolean clearSignedItemMark(ItemStack stack, UUID ownerUuid, UUID itemId) {
+        if (!isSignedItemOwnedBy(stack, ownerUuid)) {
+            return false;
+        }
+        UUID currentId = ensureSignedItemId(stack);
+        if (!currentId.equals(itemId)) {
+            return false;
+        }
+        NbtComponent customData = stack.get(DataComponentTypes.CUSTOM_DATA);
+        if (customData == null) {
+            return false;
+        }
+        NbtCompound nbt = customData.copyNbt();
+        nbt.remove(SIGNED_EVIL_KEY);
+        nbt.remove(SIGNED_EVIL_ID_KEY);
+        stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
+        return true;
+    }
+
+    private static String signedItemLabel(ItemStack stack, ServerPlayerEntity holder) {
+        String itemName = stack.getName().getString();
+        String holderName = holder == null ? "Unknown" : holder.getName().getString();
+        return itemName + " @ " + holderName;
+    }
+
+    public static void syncSignedItemListToClient(ServerPlayerEntity player) {
+        ServerPlayNetworking.send(player, new SignedItemListS2C(true, CLEAR_SIGNAL, ""));
+        UUID ownerUuid = player.getUuid();
+        for (ServerPlayerEntity holder : player.getServer().getPlayerManager().getPlayerList()) {
+            for (int i = 0; i < holder.getInventory().size(); i++) {
+                ItemStack stack = holder.getInventory().getStack(i);
+                if (!isSignedItemOwnedBy(stack, ownerUuid)) {
+                    continue;
+                }
+                UUID itemId = ensureSignedItemId(stack);
+                ServerPlayNetworking.send(player, new SignedItemListS2C(false, itemId, signedItemLabel(stack, holder)));
+            }
+        }
+        for (ServerWorld world : player.getServer().getWorlds()) {
+            for (Entity entity : world.iterateEntities()) {
+                if (!(entity instanceof ItemEntity itemEntity)) {
+                    continue;
+                }
+                ItemStack stack = itemEntity.getStack();
+                if (!isSignedItemOwnedBy(stack, ownerUuid)) {
+                    continue;
+                }
+                UUID itemId = ensureSignedItemId(stack);
+                ServerPlayNetworking.send(player, new SignedItemListS2C(false, itemId, signedItemLabel(stack, null)));
+            }
+        }
+    }
+
+    public static boolean deleteSignedItemMark(ServerPlayerEntity player, UUID itemId) {
+        UUID ownerUuid = player.getUuid();
+        boolean removed = false;
+        for (ServerPlayerEntity holder : player.getServer().getPlayerManager().getPlayerList()) {
+            for (int i = 0; i < holder.getInventory().size(); i++) {
+                ItemStack stack = holder.getInventory().getStack(i);
+                if (clearSignedItemMark(stack, ownerUuid, itemId)) {
+                    holder.getInventory().markDirty();
+                    removed = true;
+                }
+            }
+        }
+        for (ServerWorld world : player.getServer().getWorlds()) {
+            for (Entity entity : world.iterateEntities()) {
+                if (!(entity instanceof ItemEntity itemEntity)) {
+                    continue;
+                }
+                if (clearSignedItemMark(itemEntity.getStack(), ownerUuid, itemId)) {
+                    removed = true;
+                }
+            }
+        }
+        syncSignedItemListToClient(player);
+        return removed;
+    }
+
+    private static void addUnmarkCooldown(UUID playerUuid, UUID targetUuid, long expireTick) {
+        recentlyUnmarked.computeIfAbsent(playerUuid, ignored -> new ConcurrentHashMap<>()).put(targetUuid, expireTick);
+    }
+
+    private static boolean isUnmarkCoolingDown(UUID playerUuid, UUID targetUuid, long now) {
+        Map<UUID, Long> cooldowns = recentlyUnmarked.get(playerUuid);
+        return cooldowns != null && cooldowns.getOrDefault(targetUuid, 0L) > now;
+    }
+
+    public static boolean isUnmarkCoolingDownFor(UUID playerUuid, UUID targetUuid, long now) {
+        return isUnmarkCoolingDown(playerUuid, targetUuid, now);
+    }
+
+    private static void clearUnmarkCooldown(UUID playerUuid, UUID targetUuid) {
+        Map<UUID, Long> cooldowns = recentlyUnmarked.get(playerUuid);
+        if (cooldowns == null) {
+            return;
+        }
+        cooldowns.remove(targetUuid);
+        if (cooldowns.isEmpty()) {
+            recentlyUnmarked.remove(playerUuid);
+        }
+    }
+
+    private static void pruneUnmarkCooldowns(long now) {
+        for (Map.Entry<UUID, Map<UUID, Long>> entry : recentlyUnmarked.entrySet().stream().toList()) {
+            entry.getValue().entrySet().removeIf(cooldown -> cooldown.getValue() <= now);
+            if (entry.getValue().isEmpty()) {
+                recentlyUnmarked.remove(entry.getKey());
+            }
+        }
+    }
+
+    public static void syncUnmarkCooldownListToClient(ServerPlayerEntity player) {
+        ServerPlayNetworking.send(player, new UnmarkCooldownS2C(true, CLEAR_SIGNAL, "", 0));
+        Map<UUID, Long> cooldowns = recentlyUnmarked.get(player.getUuid());
+        if (cooldowns == null) {
+            return;
+        }
+        long now = player.getWorld().getTime();
+        for (Map.Entry<UUID, Long> entry : cooldowns.entrySet()) {
+            int remainingTicks = (int) Math.max(0L, entry.getValue() - now);
+            if (remainingTicks <= 0) {
+                continue;
+            }
+            Entity entity = player.getWorld().getEntity(entry.getKey());
+            String name = entity == null ? entry.getKey().toString().substring(0, 8) : tag_pitch.entityDisplayName(entity);
+            ServerPlayNetworking.send(player, new UnmarkCooldownS2C(false, entry.getKey(), name, remainingTicks));
+        }
+    }
+
     // 保留视线检测方法（虽然后面不用，但其他功能可能调用）
     private static boolean hasLineOfSight(Entity entity, Entity target) {
         World world = entity.getWorld();
@@ -340,6 +525,23 @@ public class Evil_Eyes {
         sendMarkedListToClient(marker, marks, maxMarks);
     }
 
+    public static void syncAnchorListToClient(ServerPlayerEntity player) {
+        ServerPlayNetworking.send(player, new AnchorListS2C(true, CLEAR_SIGNAL, Vec3d.ZERO, ""));
+        int index = 1;
+        for (Map.Entry<UUID, UUID> entry : armorStandOwner.entrySet().stream().toList()) {
+            if (!entry.getValue().equals(player.getUuid())) {
+                continue;
+            }
+            Entity stand = player.getWorld().getEntity(entry.getKey());
+            if (!(stand instanceof ArmorStandEntity) || !stand.isAlive()) {
+                continue;
+            }
+            Vec3d pos = stand.getPos();
+            String label = String.format(Locale.ROOT, "Anchor %d (%.0f, %.0f, %.0f)", index++, pos.x, pos.y, pos.z);
+            ServerPlayNetworking.send(player, new AnchorListS2C(false, entry.getKey(), pos, label));
+        }
+    }
+
     /**
      * 清除指定玩家的所有锚点盔甲架，并释放对应配额。
      *
@@ -437,6 +639,7 @@ public class Evil_Eyes {
                     packet.maxMarks(),
                     packet.minScore(),
                     packet.maxScore(),
+                    packet.markExpireSeconds(),
                     packet.parrotDailyLimit(),
                     packet.uiDrainRate(),
                     packet.watchDrainRate(),
@@ -458,6 +661,26 @@ public class Evil_Eyes {
         // 1. 手动标记/取消标记（不消耗每日次数）
         ServerPlayNetworking.registerGlobalReceiver(ClairvoyanceUiStateC2S.ID, (payload, context) -> {
             CameraWatchManager.setUiState(context.player(), payload.open(), payload.previewCount(), payload.hovered(), payload.expanded());
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(RequestAnchorListC2S.ID, (payload, context) -> {
+            ServerPlayerEntity player = context.player();
+            syncAnchorListToClient(player);
+            syncSignedItemListToClient(player);
+            syncUnmarkCooldownListToClient(player);
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(DeleteSignedItemC2S.ID, (payload, context) -> {
+            ServerPlayerEntity player = context.player();
+            boolean removed = deleteSignedItemMark(player, payload.itemId());
+            player.sendMessage(Text.literal(removed ? "\u00a7a\u5df2\u79fb\u9664\u7269\u54c1\u6807\u8bb0" : "\u00a7c\u672a\u627e\u5230\u7269\u54c1\u6807\u8bb0"), true);
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(ClearUnmarkCooldownC2S.ID, (payload, context) -> {
+            ServerPlayerEntity player = context.player();
+            clearUnmarkCooldown(player.getUuid(), payload.entityUuid());
+            syncUnmarkCooldownListToClient(player);
+            player.sendMessage(Text.literal("\u00a7a\u5df2\u5237\u65b0\u5220\u9664\u51b7\u5374"), true);
         });
 
         ServerPlayNetworking.registerGlobalReceiver(MarkEntityC2S.ID, (payload, context) -> {
@@ -483,9 +706,10 @@ public class Evil_Eyes {
 
             if (marks.containsKey(targetUuid)) {
                 marks.remove(targetUuid);
-                recentlyUnmarked.put(targetUuid, world.getTime() + COOLDOWN_TICKS); // 5秒冷却
+                addUnmarkCooldown(player.getUuid(), targetUuid, world.getTime() + COOLDOWN_TICKS);
                 player.sendMessage(Text.literal("§e已取消标记 " + tag_pitch.entityDisplayName(target)), true);
                 sendMarkedListToClient(player, marks, maxMarks);
+                syncUnmarkCooldownListToClient(player);
             } else {
                 if (marks.size() >= MAX_MARKED_ENTITIES) {
                     player.sendMessage(Text.literal("§c标记已达绝对上限 (" + MAX_MARKED_ENTITIES + " 个)"), true);
@@ -505,10 +729,11 @@ public class Evil_Eyes {
             Map<UUID, Long> marks = playerMarkedEntities.get(player.getUuid());
             if (marks == null || !marks.containsKey(targetUuid)) return;
             marks.remove(targetUuid);
-            recentlyUnmarked.put(targetUuid, player.getWorld().getTime() + COOLDOWN_TICKS);
+            addUnmarkCooldown(player.getUuid(), targetUuid, player.getWorld().getTime() + COOLDOWN_TICKS);
             int stage = getPlayerStage(player, configManager);
             int maxMarks = configManager.getStageConfig(stage).maxMarks();
             sendMarkedListToClient(player, marks, maxMarks);
+            syncUnmarkCooldownListToClient(player);
             player.sendMessage(Text.literal("§e已移除标记"), true);
         });
 
@@ -673,7 +898,7 @@ public class Evil_Eyes {
                 }
             }
             playerMarkedEntities.entrySet().removeIf(entry -> entry.getValue().isEmpty());
-            recentlyUnmarked.entrySet().removeIf(e -> e.getValue() <= now);
+            pruneUnmarkCooldowns(now);
         });
 
         // 7. 自动标记：实体看向手持千里眼的玩家（注视检测）
@@ -691,7 +916,7 @@ public class Evil_Eyes {
                 for (Entity entity : world.getOtherEntities(player, searchBox, e ->
                         canMarkTarget(e) && e != player)) {
                     boolean alreadyMarked = marks.containsKey(entity.getUuid());
-                    if (recentlyUnmarked.getOrDefault(entity.getUuid(), 0L) > world.getTime()) continue;
+                    if (isUnmarkCoolingDown(player.getUuid(), entity.getUuid(), world.getTime())) continue;
                     if (!hasLineOfSight(entity, player)) continue;
                     Vec3d toPlayer = player.getPos().subtract(entity.getPos()).normalize();
                     Vec3d entityLook = entity.getRotationVec(1.0f);
@@ -701,7 +926,7 @@ public class Evil_Eyes {
                     syncGazeAlert(player, entity, GAZE_ALERT_TYPE_PLAYER, now);
                     if (alreadyMarked) continue;
                     if (getCurrentMarkCount(player.getUuid()) >= maxMarks) continue;
-                    marks.put(entity.getUuid(), now + MARK_EXPIRE_TICKS); // 自动标记有效期20秒（400tick）
+                    marks.put(entity.getUuid(), now + configuredMarkExpireTicks(stage));
                     sendMarkedListToClient(player, marks, maxMarks);
                     player.sendMessage(Text.literal(tag_pitch.entityDisplayName(entity) + "在注视着你"), true);
                 }
@@ -770,6 +995,7 @@ public class Evil_Eyes {
             armorStandOwner.put(standUuid, ownerUuid);
             armorStandSpawnTick.put(standUuid, world.getTime());
             configManager.recordPlaceParrot(ownerUuid, stage);
+            syncAnchorListToClient(player);
             player.sendMessage(Text.literal("§a锚点已放置"), true);
 //            LOGGER.info("盔甲架 {} 已生成，存活: {}", standUuid, armorStand.isAlive());
 
@@ -843,7 +1069,7 @@ public class Evil_Eyes {
 
                 for (LivingEntity living : nearby) {
                     boolean alreadyMarked = marks.containsKey(living.getUuid());
-                    if (recentlyUnmarked.getOrDefault(living.getUuid(), 0L) > world.getTime()) continue;
+                    if (isUnmarkCoolingDown(ownerId, living.getUuid(), world.getTime())) continue;
 
                     // 1. 视线检测：从实体眼睛到盔甲架是否有遮挡
                     if (!hasLineOfSight(living, stand)) continue;
@@ -858,7 +1084,7 @@ public class Evil_Eyes {
                     syncGazeAlert(owner, living, GAZE_ALERT_TYPE_ANCHOR, now);
                     if (alreadyMarked) continue;
                     if (getCurrentMarkCount(ownerId) >= maxMarks) continue;
-                    long expire = now + MARK_EXPIRE_TICKS;  // 20秒
+                    long expire = now + configuredMarkExpireTicks(stage);
                     marks.put(living.getUuid(), expire);
                     sendMarkedListToClient(owner, marks, maxMarks);
                     owner.sendMessage(Text.literal("§a[锚点] " + tag_pitch.entityDisplayName(living) + " 在注视着你"), true);

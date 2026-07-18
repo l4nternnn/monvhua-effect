@@ -33,6 +33,12 @@ public final class PortalRenderPipelines {
         return BlockAtlasHolder.PORTAL_BLOCK_ATLAS;
     }
 
+    public static RenderPipeline framebufferArea(boolean depthTest) {
+        return depthTest
+                ? FramebufferAreaHolder.PORTAL_FRAMEBUFFER_AREA
+                : FramebufferAreaHolder.PORTAL_FRAMEBUFFER_AREA_NO_DEPTH;
+    }
+
     private static final class BlockAtlasHolder {
         private static final RenderPipeline PORTAL_BLOCK_ATLAS = RenderPipelines.register(
                 RenderPipeline.builder()
@@ -49,6 +55,38 @@ public final class PortalRenderPipelines {
         );
 
         private BlockAtlasHolder() {
+        }
+    }
+
+    private static final class FramebufferAreaHolder {
+        private static final RenderPipeline PORTAL_FRAMEBUFFER_AREA = RenderPipelines.register(
+                RenderPipeline.builder()
+                        .withLocation(Identifier.of(MonvhuaMod.MOD_ID, "pipeline/portal_framebuffer_area"))
+                        .withVertexShader(Identifier.of(MonvhuaMod.MOD_ID, "core/portal_framebuffer_area"))
+                        .withFragmentShader(Identifier.of(MonvhuaMod.MOD_ID, "core/framebuffer_viewport"))
+                        .withSampler("InSampler")
+                        .withoutBlend()
+                        .withDepthWrite(false)
+                        .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
+                        .withCull(false)
+                        .withVertexFormat(VertexFormats.POSITION_TEXTURE, VertexFormat.DrawMode.TRIANGLES)
+                        .build()
+        );
+        private static final RenderPipeline PORTAL_FRAMEBUFFER_AREA_NO_DEPTH = RenderPipelines.register(
+                RenderPipeline.builder()
+                        .withLocation(Identifier.of(MonvhuaMod.MOD_ID, "pipeline/portal_framebuffer_area_no_depth"))
+                        .withVertexShader(Identifier.of(MonvhuaMod.MOD_ID, "core/portal_framebuffer_area"))
+                        .withFragmentShader(Identifier.of(MonvhuaMod.MOD_ID, "core/framebuffer_viewport"))
+                        .withSampler("InSampler")
+                        .withoutBlend()
+                        .withDepthWrite(false)
+                        .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                        .withCull(false)
+                        .withVertexFormat(VertexFormats.POSITION_TEXTURE, VertexFormat.DrawMode.TRIANGLES)
+                        .build()
+        );
+
+        private FramebufferAreaHolder() {
         }
     }
 
