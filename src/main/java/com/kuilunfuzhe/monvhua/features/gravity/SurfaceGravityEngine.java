@@ -6,6 +6,7 @@ import net.minecraft.block.TrapdoorBlock;
 import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
 import com.kuilunfuzhe.monvhua.mixin.gravity.SurfaceGravityEntityAccessor;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityPose;
 import net.minecraft.entity.MovementType;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.registry.tag.BlockTags;
@@ -74,6 +75,9 @@ public final class SurfaceGravityEngine {
         }
 
         Direction downDirection = state.downDirection;
+        if (downDirection != Direction.DOWN) {
+            state.updateCrouch(input.sneak() || entity.isInPose(EntityPose.CROUCHING), entity.age);
+        }
         Vec3d down = SurfaceGravityBasis.directionVector(downDirection);
         Vec3d up = down.multiply(-1.0D);
         Vec3d velocity = entity.getVelocity();
@@ -495,6 +499,9 @@ public final class SurfaceGravityEngine {
         private float localPitch;
         private float localBodyYaw;
         private float lastLocalBodyYaw;
+        private float crouchProgress;
+        private float lastCrouchProgress;
+        private int lastCrouchUpdateAge = Integer.MIN_VALUE;
         private int detachTicks;
         private int edgeTransferCooldown;
         private int edgeTransferGraceTicks;
@@ -541,6 +548,28 @@ public final class SurfaceGravityEngine {
         public void setLook(float localYaw, float localPitch) {
             this.localYaw = localYaw;
             this.localPitch = Math.clamp(localPitch, -89.0F, 89.0F);
+        }
+
+        public void updateCrouch(boolean crouching, int age) {
+            if (this.lastCrouchUpdateAge == age) {
+                return;
+            }
+            int ticks = this.lastCrouchUpdateAge == Integer.MIN_VALUE
+                    ? 1
+                    : Math.clamp(age - this.lastCrouchUpdateAge, 1, 4);
+            this.lastCrouchUpdateAge = age;
+            for (int i = 0; i < ticks; i++) {
+                this.lastCrouchProgress = this.crouchProgress;
+                float target = crouching ? 1.0F : 0.0F;
+                this.crouchProgress += (target - this.crouchProgress) * 0.5F;
+                if (Math.abs(target - this.crouchProgress) < 0.01F) {
+                    this.crouchProgress = target;
+                }
+            }
+        }
+
+        public float crouchProgress(float tickProgress) {
+            return Math.clamp(MathHelper.lerp(tickProgress, this.lastCrouchProgress, this.crouchProgress), 0.0F, 1.0F);
         }
 
         private void resetBodyYaw() {

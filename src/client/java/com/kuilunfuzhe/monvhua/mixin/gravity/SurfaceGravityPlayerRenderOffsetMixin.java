@@ -21,14 +21,20 @@ public abstract class SurfaceGravityPlayerRenderOffsetMixin {
         MinecraftClient client = MinecraftClient.getInstance();
         Entity entity = client.world == null ? null : client.world.getEntityById(state.id);
         Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
-        if (downDirection == null || downDirection == Direction.DOWN || !state.isInSneakingPose) {
+        if (downDirection == null || downDirection == Direction.DOWN) {
+            return;
+        }
+        float crouchProgress = GravityMagic.getSurfaceCrouchProgress(entity, 1.0F);
+        if (!state.isInSneakingPose && crouchProgress <= 1.0E-4F) {
             return;
         }
 
         double vanillaSneakOffset = -2.0D * state.baseScale / 16.0D;
         Vec3d originalOffset = cir.getReturnValue();
-        Vec3d withoutVanillaSneakOffset = originalOffset.subtract(0.0D, vanillaSneakOffset, 0.0D);
-        Vec3d surfaceSneakOffset = SurfaceGravityBasis.directionVector(downDirection).multiply(-vanillaSneakOffset);
+        Vec3d withoutVanillaSneakOffset = state.isInSneakingPose
+                ? originalOffset.subtract(0.0D, vanillaSneakOffset, 0.0D)
+                : originalOffset;
+        Vec3d surfaceSneakOffset = SurfaceGravityBasis.directionVector(downDirection).multiply(-vanillaSneakOffset * crouchProgress);
         cir.setReturnValue(withoutVanillaSneakOffset.add(surfaceSneakOffset));
     }
 }

@@ -606,6 +606,9 @@ public final class GravityMagic {
         if (direction == null) {
             return entity == null ? Vec3d.ZERO : entity.getCameraPosVec(tickProgress);
         }
+        if (direction == Direction.DOWN) {
+            return entity.getCameraPosVec(tickProgress);
+        }
         Box currentBox = entity.getBoundingBox();
         Vec3d currentAnchor = SurfaceGravityCollision.anchorFromBox(direction, currentBox);
         Vec3d previousAnchor = new Vec3d(entity.lastX, entity.lastY, entity.lastZ);
@@ -615,7 +618,32 @@ public final class GravityMagic {
                 MathHelper.lerp(tickProgress, previousAnchor.z, currentAnchor.z)
         );
         Box box = currentBox.offset(interpolatedAnchor.subtract(currentAnchor));
-        return SurfaceGravityCollision.eyePosFromBox(entity, direction, box);
+        return SurfaceGravityCollision.eyePosFromBox(entity, direction, box, surfaceEyeHeight(entity, tickProgress));
+    }
+
+    public static float getSurfaceCrouchProgress(Entity entity, float tickProgress) {
+        Direction direction = getSurfaceGravityDirection(entity);
+        if (entity == null || direction == null || direction == Direction.DOWN) {
+            return 0.0F;
+        }
+        SurfaceGravityEngine.SurfaceState state = getSurfaceState(entity);
+        if (state == null) {
+            return entity.isInPose(EntityPose.CROUCHING) || entity.isSneaking() ? 1.0F : 0.0F;
+        }
+        state.updateCrouch(entity.isInPose(EntityPose.CROUCHING) || entity.isSneaking(), entity.age);
+        return state.crouchProgress(tickProgress);
+    }
+
+    private static double surfaceEyeHeight(Entity entity, float tickProgress) {
+        SurfaceGravityEngine.SurfaceState state = getSurfaceState(entity);
+        if (state == null) {
+            return entity.getDimensions(entity.getPose()).eyeHeight();
+        }
+        state.updateCrouch(entity.isInPose(EntityPose.CROUCHING) || entity.isSneaking(), entity.age);
+        float crouchProgress = state.crouchProgress(tickProgress);
+        double standingEye = entity.getDimensions(EntityPose.STANDING).eyeHeight();
+        double crouchingEye = entity.getDimensions(EntityPose.CROUCHING).eyeHeight();
+        return MathHelper.lerp(crouchProgress, standingEye, crouchingEye);
     }
 
     public static Vec3d getSurfaceLook(Entity entity) {

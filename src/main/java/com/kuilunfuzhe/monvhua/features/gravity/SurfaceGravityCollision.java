@@ -36,9 +36,13 @@ public final class SurfaceGravityCollision {
     }
 
     public static Vec3d eyePosFromBox(Entity entity, Direction downDirection, Box box) {
-        Direction down = downDirection == null ? Direction.DOWN : downDirection;
         EntityDimensions dimensions = entity.getDimensions(entity.getPose());
-        double eye = dimensions.eyeHeight();
+        return eyePosFromBox(entity, downDirection, box, dimensions.eyeHeight());
+    }
+
+    public static Vec3d eyePosFromBox(Entity entity, Direction downDirection, Box box, double eyeHeight) {
+        Direction down = downDirection == null ? Direction.DOWN : downDirection;
+        double eye = Math.max(0.0D, eyeHeight);
         double x = (box.minX + box.maxX) * 0.5D;
         double y = (box.minY + box.maxY) * 0.5D;
         double z = (box.minZ + box.maxZ) * 0.5D;

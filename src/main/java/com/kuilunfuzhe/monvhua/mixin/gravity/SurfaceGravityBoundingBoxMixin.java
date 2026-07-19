@@ -109,8 +109,7 @@ public abstract class SurfaceGravityBoundingBoxMixin {
         if (downDirection == null || downDirection == Direction.DOWN) {
             return;
         }
-        cir.setReturnValue(SurfaceGravityCollision.eyePosFromBox(entity, downDirection,
-                entity.getBoundingBox()));
+        cir.setReturnValue(GravityMagic.getSurfaceEyePos(entity, 1.0F));
     }
 
     @Inject(method = "getRotationVec", at = @At("HEAD"), cancellable = true)

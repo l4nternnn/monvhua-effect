@@ -12,7 +12,7 @@ public abstract class InvertedSneakLedgeClipMixin {
     @Inject(method = "clipAtLedge", at = @At("HEAD"), cancellable = true)
     private void monvhua$disableNormalSneakLedgeClipInInvertedArea(CallbackInfoReturnable<Boolean> cir) {
         PlayerEntity player = (PlayerEntity) (Object) this;
-        if (GravityMagic.isInInvertedArea(player)) {
+        if (GravityMagic.isInInvertedArea(player) || GravityMagic.hasNonNormalSurfaceGravity(player)) {
             cir.setReturnValue(false);
         }
     }
