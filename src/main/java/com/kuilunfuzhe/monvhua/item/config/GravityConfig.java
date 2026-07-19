@@ -24,12 +24,14 @@ public class GravityConfig {
     private static final double[] DEFAULT_HOLD_DRAIN = {0.0D, 3.0D, 2.7D, 2.4D, 2.0D, 1.6D, 1.2D, 1.0D};
     private static final int[] DEFAULT_EXTRACT_TICKS = {0, 60, 56, 52, 48, 44, 40, 36};
     private static final double DEFAULT_DAMAGE_KILOJOULES_PER_HALF_HEART = 3.0D;
+    private static final float DEFAULT_SURFACE_MOVE_DRAIN_PER_BLOCK = 1.0F;
     private static final int CURRENT_MAX_FORCE_CONFIG_VERSION = 2;
     private static GravityConfig instance;
 
     public int maxForceConfigVersion = CURRENT_MAX_FORCE_CONFIG_VERSION;
     public int forceDurationSeconds = 10;
     public double damageKilojoulesPerHalfHeart = DEFAULT_DAMAGE_KILOJOULES_PER_HALF_HEART;
+    public float surfaceMoveDrainPerBlock = DEFAULT_SURFACE_MOVE_DRAIN_PER_BLOCK;
     public int[] maxPickBlocksByStage = DEFAULT_MAX_PICK_BLOCKS.clone();
     public double[] maxPickHardnessByStage = DEFAULT_MAX_PICK_HARDNESS.clone();
     public double[] maxForceByStage = DEFAULT_MAX_FORCE.clone();
@@ -74,6 +76,7 @@ public class GravityConfig {
         }
         config.forceDurationSeconds = Math.clamp(config.forceDurationSeconds, 1, 600);
         config.damageKilojoulesPerHalfHeart = Math.clamp(config.damageKilojoulesPerHalfHeart, 0.1D, 10000.0D);
+        config.surfaceMoveDrainPerBlock = Math.clamp(config.surfaceMoveDrainPerBlock, 0.0F, 1000.0F);
         config.maxPickBlocksByStage = sanitizeIntStages(config.maxPickBlocksByStage, DEFAULT_MAX_PICK_BLOCKS, 1, 512);
         config.maxPickHardnessByStage = sanitizeDoubleStages(config.maxPickHardnessByStage, DEFAULT_MAX_PICK_HARDNESS, 0.0D, 100.0D);
         config.maxForceByStage = sanitizeMaxForceStages(config.maxForceByStage, config.maxForceConfigVersion < CURRENT_MAX_FORCE_CONFIG_VERSION);
@@ -181,6 +184,14 @@ public class GravityConfig {
 
     public void setEnergyRegen(int stage, double value) {
         energyRegenByStage[stageIndex(stage)] = Math.clamp(value, 0.0D, 1000.0D);
+    }
+
+    public float getSurfaceMoveDrainPerBlock() {
+        return surfaceMoveDrainPerBlock;
+    }
+
+    public void setSurfaceMoveDrainPerBlock(float value) {
+        surfaceMoveDrainPerBlock = Math.clamp(value, 0.0F, 1000.0F);
     }
 
     public double getBlockExtractDrain(int stage) {

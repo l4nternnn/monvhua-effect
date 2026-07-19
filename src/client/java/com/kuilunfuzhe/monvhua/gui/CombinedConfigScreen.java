@@ -561,6 +561,7 @@ public final class CombinedConfigScreen {
             addField(parent, "maxForce", "力上限/xG", cachedGravityConfig.getMaxForce(stage));
             addField(parent, "duration", "作用时间/s", cachedGravityConfig.forceDurationSeconds);
             addField(parent, "damage", "每半心kJ", cachedGravityConfig.damageKilojoulesPerHalfHeart);
+            addField(parent, "surfaceMoveDrain", "异面移动消耗/格", cachedGravityConfig.getSurfaceMoveDrainPerBlock());
             addField(parent, "blockCount", "可抓取方块数", cachedGravityConfig.getMaxPickBlocks(stage));
             addField(parent, "hardness", "最高方块硬度", cachedGravityConfig.getMaxPickHardness(stage));
             addField(parent, "selfDrain", "自身受力消耗/s", cachedGravityConfig.getSelfForceDrain(stage));
@@ -953,6 +954,7 @@ public final class CombinedConfigScreen {
             cachedGravityConfig.setMaxForce(stage, doubleField("maxForce"));
             cachedGravityConfig.setSelfForceDrain(stage, doubleField("selfDrain"));
             cachedGravityConfig.setEnergyRegen(stage, doubleField("regen"));
+            cachedGravityConfig.setSurfaceMoveDrainPerBlock((float) doubleField("surfaceMoveDrain"));
             if (canConfigureGravityBlockGroup()) {
                 cachedGravityConfig.setMaxPickBlocks(stage, intField("blockCount"));
                 cachedGravityConfig.setMaxPickHardness(stage, doubleField("hardness"));

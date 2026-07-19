@@ -164,6 +164,7 @@ public final class GravityMagic {
     private static final Map<UUID, Integer> SELF_FORCE_RECOVERY_TICKS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> SELF_FORCE_IMPACT_COOLDOWNS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> NON_NORMAL_FALL_TICKS = new ConcurrentHashMap<>();
+    private static final Map<UUID, SurfaceDistanceAnchor> SURFACE_DISTANCE_ANCHORS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> CLIENT_DIRECTED_RECOVERY_TICKS = new ConcurrentHashMap<>();
     private static final Set<UUID> THROWN_GROUP_IMPACTS = ConcurrentHashMap.newKeySet();
     private static final Map<UUID, DirectedEntityGravity> ENTITY_GRAVITY = new ConcurrentHashMap<>();
@@ -202,6 +203,9 @@ public final class GravityMagic {
     }
 
     private record AreaEdit(List<AreaSnapshot> added, List<AreaSnapshot> removed) {
+    }
+
+    private record SurfaceDistanceAnchor(RegistryKey<World> world, Direction direction, Vec3d pos) {
     }
 
     private record DirectedForce(Vec3d direction, double acceleration, int ticks) {
@@ -550,7 +554,7 @@ public final class GravityMagic {
         if (EXTRACTING_BLOCK_GROUPS.containsKey(player.getUuid())) {
             player.sendMessage(Text.literal("§c[重力] 正在汇聚方块，无法切换重力"), true);
         } else if (HELD_BLOCK_GROUPS.containsKey(player.getUuid())) {
-            player.sendMessage(Text.literal("§c[重力] 请先扔出方块球，再切换重力"), true);
+            player.sendMessage(Text.literal("§c[重力] 请先扔出方块群，再进行方向切换"), true);
         }
     }
 
@@ -1467,6 +1471,7 @@ public final class GravityMagic {
             return;
         }
         NON_NORMAL_FALL_TICKS.remove(player.getUuid());
+        SURFACE_DISTANCE_ANCHORS.remove(player.getUuid());
         Direction oldDirection = SERVER_SURFACE_GRAVITY_PLAYERS.get(player.getUuid());
         Vec3d oldEye = oldDirection == null ? null : SurfaceGravityCollision.eyePosFromBox(player, oldDirection, player.getBoundingBox());
         SERVER_SURFACE_GRAVITY_PLAYERS.remove(player.getUuid());
@@ -2263,6 +2268,7 @@ public final class GravityMagic {
             boolean selfForceActive = SELF_FORCE_MOTIONS.containsKey(uuid);
             boolean extractingActive = EXTRACTING_BLOCK_GROUPS.containsKey(uuid);
             boolean heldActive = HELD_BLOCK_GROUPS.containsKey(uuid);
+            Direction surfaceDirection = SERVER_SURFACE_GRAVITY_PLAYERS.get(uuid);
             double drain = 0.0D;
             if (selfForceActive) {
                 drain += config.getSelfForceDrain(stage) / 20.0D;
@@ -2273,6 +2279,7 @@ public final class GravityMagic {
             if (heldActive) {
                 drain += config.getBlockHoldDrain(stage) / 20.0D;
             }
+            drain += surfaceMovementDrain(player, surfaceDirection, config.getSurfaceMoveDrainPerBlock());
             double regen = drain > 0.0D ? 0.0D : GravityConfig.getInstance().getEnergyRegen(stage) / 20.0D;
             double next = Math.clamp(energy + regen - drain, 0.0D, MAX_GRAVITY_ENERGY);
             PLAYER_ENERGY.put(uuid, next);
@@ -2287,6 +2294,9 @@ public final class GravityMagic {
                 clearHeldBlockGroup(uuid, true);
                 syncExtractPose(player, 0);
                 removeExtractingSpeedPenalty(player);
+                if (surfaceDirection != null) {
+                    clearSurfaceGravity(player);
+                }
                 player.sendMessage(Text.literal("\u00a7c[重力] 能量已耗尽"), true);
             }
             int syncTicks = ENERGY_SYNC_TICKS.merge(uuid, 1, Integer::sum);
@@ -2295,6 +2305,39 @@ public final class GravityMagic {
                 syncEnergyTo(player);
             }
         }
+    }
+
+    private static double surfaceMovementDrain(ServerPlayerEntity player, Direction surfaceDirection, float drainPerBlock) {
+        if (player == null || surfaceDirection == null || surfaceDirection == Direction.DOWN || drainPerBlock <= 0.0F) {
+            if (player != null) {
+                SURFACE_DISTANCE_ANCHORS.remove(player.getUuid());
+            }
+            return 0.0D;
+        }
+
+        UUID uuid = player.getUuid();
+        SurfaceDistanceAnchor current = new SurfaceDistanceAnchor(player.getWorld().getRegistryKey(), surfaceDirection, player.getPos());
+        SurfaceDistanceAnchor previous = SURFACE_DISTANCE_ANCHORS.put(uuid, current);
+        if (previous == null || previous.direction() != surfaceDirection || !previous.world().equals(current.world())) {
+            return 0.0D;
+        }
+
+        double distance = surfacePlaneDistance(previous.pos(), current.pos(), surfaceDirection);
+        if (!Double.isFinite(distance) || distance <= 1.0E-6D) {
+            return 0.0D;
+        }
+        return distance * drainPerBlock;
+    }
+
+    private static double surfacePlaneDistance(Vec3d from, Vec3d to, Direction downDirection) {
+        double dx = to.x - from.x;
+        double dy = to.y - from.y;
+        double dz = to.z - from.z;
+        return switch (downDirection.getAxis()) {
+            case X -> Math.sqrt(dy * dy + dz * dz);
+            case Y -> Math.sqrt(dx * dx + dz * dz);
+            case Z -> Math.sqrt(dx * dx + dy * dy);
+        };
     }
 
     private static void beginSelfForceRecovery(ServerPlayerEntity player) {
@@ -2657,6 +2700,7 @@ public final class GravityMagic {
         SELF_FORCE_RECOVERY_TICKS.remove(ownerUuid);
         SELF_FORCE_IMPACT_COOLDOWNS.remove(ownerUuid);
         NON_NORMAL_FALL_TICKS.remove(ownerUuid);
+        SURFACE_DISTANCE_ANCHORS.remove(ownerUuid);
         clearExtractingBlockGroup(ownerUuid, discardBlocks);
         clearHeldBlockGroup(ownerUuid, discardBlocks);
         for (ServerWorld world : player.getServer().getWorlds()) {

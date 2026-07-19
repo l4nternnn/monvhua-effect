@@ -316,17 +316,23 @@ public final class GravityClient {
     }
 
     private static void renderSurfaceHud(DrawContext context, MinecraftClient client) {
-        String line = "Surface mode";
+        String line = "模式 重力换向";
         Direction direction = GravityMagic.getSurfaceGravityDirection(client.player);
-        String line2 = direction == null ? "Right-click a block face" : "Falling " + direction.asString();
+        String line2 = direction == null ? "右键一个方块表面" : "方向: " + direction.asString();
         int centerX = context.getScaledWindowWidth() / 2;
         int centerY = context.getScaledWindowHeight() / 2;
         int x = centerX + 20;
         int y = centerY + 20;
-        int width = Math.max(client.textRenderer.getWidth(line), client.textRenderer.getWidth(line2)) + 10;
-        context.fill(x, y, x + width, y + 28, 0x66000000);
+        int width = Math.max(64, Math.max(client.textRenderer.getWidth(line), client.textRenderer.getWidth(line2)) + 10);
+        context.fill(x, y, x + width, y + 35, 0x44000000);
         context.drawText(client.textRenderer, Text.literal(line), x + 5, y + 4, 0xFFFFFFFF, false);
         context.drawText(client.textRenderer, Text.literal(line2), x + 5, y + 16, 0xFF88CCFF, false);
+        int barX = x + 5;
+        int barY = y + 29;
+        int barW = width - 10;
+        int fillW = (int) Math.round(barW * Math.clamp(energy / maxEnergy, 0.0D, 1.0D));
+        context.fill(barX, barY, barX + barW, barY + 4, 0x661A2028);
+        context.fill(barX, barY, barX + fillW, barY + 4, 0xAA66CCFF);
     }
 
     private static void showQuakeHint(String direction, int ticks) {
