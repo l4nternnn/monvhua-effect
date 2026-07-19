@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.features.gravity;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.ShapeContext;
 import net.minecraft.block.TrapdoorBlock;
+import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
 import com.kuilunfuzhe.monvhua.mixin.gravity.SurfaceGravityEntityAccessor;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.MovementType;
@@ -17,6 +18,7 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.shape.VoxelShape;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public final class SurfaceGravityEngine {
@@ -27,7 +29,8 @@ public final class SurfaceGravityEngine {
     private static final double GRAVITY = 0.08D;
     private static final double MAX_FALL_SPEED = 3.92D;
     private static final double JUMP_SPEED = 0.42D;
-    private static final double AIR_DRAG = 0.98D;
+    private static final double AIR_AXIS_DRAG = 0.98D;
+    private static final double AIR_TANGENT_DRAG = 0.91D;
     private static final double GROUND_DRAG = 0.546D;
     private static final double WALK_ACCELERATION = 0.10D;
     private static final double SPRINT_ACCELERATION = 0.13D;
@@ -36,6 +39,14 @@ public final class SurfaceGravityEngine {
     private static final double STEP_HEIGHT = 0.6D;
     private static final double CLIMB_SPEED = 0.20D;
     private static final int JUMP_DETACH_TICKS = 8;
+    private static final int EDGE_TRANSFER_COOLDOWN_TICKS = 6;
+    private static final int EDGE_TRANSFER_GRACE_TICKS = 5;
+    private static final double EDGE_TRANSFER_REACH = 1.10D;
+    private static final double EDGE_TRANSFER_FORWARD_REACH = 1.20D;
+    private static final double EDGE_TRANSFER_SAMPLE_STEP = 0.20D;
+    private static final double EDGE_TRANSFER_LATERAL_REACH = 0.20D;
+    private static final double EDGE_TRANSFER_MIN_MOVEMENT = 1.0E-4D;
+    private static final double EDGE_TRANSFER_OUTER_DOT_MIN = 0.20D;
 
     private SurfaceGravityEngine() {
     }
@@ -55,6 +66,12 @@ public final class SurfaceGravityEngine {
         if (state.detachTicks > 0) {
             state.detachTicks--;
         }
+        if (state.edgeTransferCooldown > 0) {
+            state.edgeTransferCooldown--;
+        }
+        if (state.edgeTransferGraceTicks > 0) {
+            state.edgeTransferGraceTicks--;
+        }
 
         Direction downDirection = state.downDirection;
         Vec3d down = SurfaceGravityBasis.directionVector(downDirection);
@@ -65,9 +82,11 @@ public final class SurfaceGravityEngine {
                 ? findSupport(entity, downDirection, SUPPORT_PROBE)
                 : null;
         boolean climbable = isClimbable(entity, downDirection);
+        boolean canAutoTransfer = isMainHandHoldingGravityWand(entity);
 
         if (support != null) {
             state.attached = true;
+            state.edgeTransferGraceTicks = canAutoTransfer ? EDGE_TRANSFER_GRACE_TICKS : 0;
             Vec3d acceleration = inputAcceleration(input, downDirection, state.localYaw, groundAcceleration(input));
             Vec3d tangential = SurfaceGravityBasis.reject(velocity, down).add(acceleration);
             if (input.sneak()) {
@@ -84,7 +103,7 @@ public final class SurfaceGravityEngine {
                 state.attached = false;
                 Vec3d jumpVelocity = tangential.add(up.multiply(JUMP_SPEED));
                 Vec3d moved = move(entity, jumpVelocity, downDirection);
-                velocity = applyDrag(moved, down, AIR_DRAG);
+                velocity = applyDrag(moved, down, AIR_TANGENT_DRAG);
                 setSurfaceGrounded(entity, false);
             } else {
                 moveAttached(entity, moveVelocity, downDirection);
@@ -92,12 +111,19 @@ public final class SurfaceGravityEngine {
                 velocity = applyDrag(tangential, down, GROUND_DRAG);
                 setSurfaceGrounded(entity, true);
             }
+        } else if (canAutoTransfer && tryEdgeTransfer(entity, input, state, downDirection, velocity)) {
+            Direction nextDown = state.downDirection;
+            Vec3d nextDownVec = SurfaceGravityBasis.directionVector(nextDown);
+            velocity = SurfaceGravityBasis.reject(entity.getVelocity(), nextDownVec).multiply(GROUND_DRAG);
+            setSurfaceGrounded(entity, true);
+        } else if (canAutoTransfer && holdEdgeTransferGrace(entity, input, state, downDirection, velocity)) {
+            velocity = entity.getVelocity();
         } else if (climbable && (input.forward() || input.jump())) {
             state.attached = false;
             Vec3d acceleration = inputAcceleration(input, downDirection, state.localYaw, SNEAK_ACCELERATION);
             Vec3d climbVelocity = SurfaceGravityBasis.reject(velocity, down).add(acceleration).add(up.multiply(CLIMB_SPEED));
             Vec3d moved = move(entity, climbVelocity, downDirection);
-            velocity = applyDrag(moved, down, AIR_DRAG);
+            velocity = applyDrag(moved, down, AIR_TANGENT_DRAG);
             setSurfaceGrounded(entity, false);
         } else {
             state.attached = false;
@@ -106,7 +132,7 @@ public final class SurfaceGravityEngine {
             Vec3d tangential = SurfaceGravityBasis.reject(velocity, down).add(acceleration);
             Vec3d moveVelocity = tangential.add(down.multiply(nextDownSpeed));
             Vec3d moved = move(entity, moveVelocity, downDirection);
-            velocity = applyDrag(moved, down, AIR_DRAG);
+            velocity = applyDrag(moved, down, AIR_TANGENT_DRAG);
             setSurfaceGrounded(entity, false);
         }
 
@@ -141,6 +167,10 @@ public final class SurfaceGravityEngine {
     }
 
     private static Vec3d inputAcceleration(PlayerInput input, Direction downDirection, float localYaw, double acceleration) {
+        return inputMovement(input, downDirection, localYaw).multiply(acceleration);
+    }
+
+    private static Vec3d inputMovement(PlayerInput input, Direction downDirection, float localYaw) {
         double forwardAmount = (input.forward() ? 1.0D : 0.0D) - (input.backward() ? 1.0D : 0.0D);
         double sideAmount = (input.right() ? 1.0D : 0.0D) - (input.left() ? 1.0D : 0.0D);
         if (forwardAmount == 0.0D && sideAmount == 0.0D) {
@@ -153,11 +183,16 @@ public final class SurfaceGravityEngine {
         if (movement.lengthSquared() > 1.0D) {
             movement = movement.normalize();
         }
-        return movement.multiply(acceleration);
+        return movement;
+    }
+
+    private static boolean isMainHandHoldingGravityWand(Entity entity) {
+        return entity instanceof PlayerEntity player
+                && player.getMainHandStack().getItem() == GravityItems.GRAVITY_WAND;
     }
 
     private static Vec3d applyDrag(Vec3d velocity, Vec3d down, double tangentDrag) {
-        double axisSpeed = velocity.dotProduct(down) * AIR_DRAG;
+        double axisSpeed = velocity.dotProduct(down) * AIR_AXIS_DRAG;
         Vec3d tangential = SurfaceGravityBasis.reject(velocity, down).multiply(tangentDrag);
         return tangential.add(down.multiply(axisSpeed));
     }
@@ -199,6 +234,114 @@ public final class SurfaceGravityEngine {
         Vec3d adjusted = entity.getPos().subtract(before);
         updateCollisionFlags(entity, movement, adjusted, downDirection);
         return adjusted;
+    }
+
+    private static boolean tryEdgeTransfer(Entity entity, PlayerInput input, SurfaceState state, Direction oldDown, Vec3d velocity) {
+        if ((!state.attached && state.edgeTransferGraceTicks <= 0)
+                || state.edgeTransferCooldown > 0
+                || input.sneak()
+                || input.jump()) {
+            return false;
+        }
+
+        Vec3d movement = inputMovement(input, oldDown, state.localYaw);
+        if (movement.lengthSquared() <= EDGE_TRANSFER_MIN_MOVEMENT) {
+            movement = SurfaceGravityBasis.reject(velocity, SurfaceGravityBasis.directionVector(oldDown));
+        }
+        if (movement.lengthSquared() <= EDGE_TRANSFER_MIN_MOVEMENT) {
+            return false;
+        }
+
+        Vec3d anchor = entity.getPos();
+        List<Vec3d> probeAnchors = edgeTransferProbeAnchors(anchor, oldDown, movement);
+        Vec3d worldLook = SurfaceGravityBasis.look(oldDown, state.localYaw, state.localPitch);
+        for (Direction candidate : edgeTransferCandidates(oldDown, movement)) {
+            for (Vec3d probeAnchor : probeAnchors) {
+                Box candidateBox = SurfaceGravityCollision.boxAt(entity, candidate, probeAnchor);
+                if (!entity.getWorld().isSpaceEmpty(entity, candidateBox.contract(1.0E-7D))) {
+                    continue;
+                }
+                SurfaceSupport support = findSupport(entity, candidate, EDGE_TRANSFER_REACH, candidateBox);
+                if (support == null) {
+                    continue;
+                }
+
+                SurfaceGravityBasis.LocalView localView = SurfaceGravityBasis.localView(candidate, worldLook);
+                state.setLook(localView.yaw(), localView.pitch());
+                state.setDownDirection(candidate);
+                state.edgeTransferCooldown = EDGE_TRANSFER_COOLDOWN_TICKS;
+                state.attached = true;
+                SurfaceGravityCollision.setAnchorAndRefreshBox(entity, candidate, probeAnchor);
+                snapToSupport(entity, candidate);
+                Vec3d nextDown = SurfaceGravityBasis.directionVector(candidate);
+                entity.setVelocity(SurfaceGravityBasis.reject(velocity, nextDown));
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static List<Vec3d> edgeTransferProbeAnchors(Vec3d anchor, Direction oldDown, Vec3d movement) {
+        Vec3d direction = movement.lengthSquared() <= EDGE_TRANSFER_MIN_MOVEMENT ? Vec3d.ZERO : movement.normalize();
+        Vec3d lateral = SurfaceGravityBasis.directionVector(oldDown).crossProduct(direction);
+        if (lateral.lengthSquared() > EDGE_TRANSFER_MIN_MOVEMENT) {
+            lateral = lateral.normalize();
+        }
+        ArrayList<Vec3d> anchors = new ArrayList<>();
+        for (double distance = 0.0D; distance <= EDGE_TRANSFER_FORWARD_REACH + 1.0E-6D; distance += EDGE_TRANSFER_SAMPLE_STEP) {
+            Vec3d center = anchor.add(direction.multiply(distance));
+            anchors.add(center);
+            if (lateral.lengthSquared() > EDGE_TRANSFER_MIN_MOVEMENT) {
+                anchors.add(center.add(lateral.multiply(EDGE_TRANSFER_LATERAL_REACH)));
+                anchors.add(center.subtract(lateral.multiply(EDGE_TRANSFER_LATERAL_REACH)));
+            }
+        }
+        return anchors;
+    }
+
+    private static boolean holdEdgeTransferGrace(
+            Entity entity,
+            PlayerInput input,
+            SurfaceState state,
+            Direction downDirection,
+            Vec3d velocity
+    ) {
+        if (state.edgeTransferGraceTicks <= 0 || input.sneak() || input.jump()) {
+            return false;
+        }
+        Vec3d down = SurfaceGravityBasis.directionVector(downDirection);
+        Vec3d movement = inputMovement(input, downDirection, state.localYaw);
+        Vec3d tangentialVelocity = SurfaceGravityBasis.reject(velocity, down);
+        if (movement.lengthSquared() <= EDGE_TRANSFER_MIN_MOVEMENT
+                && tangentialVelocity.lengthSquared() <= EDGE_TRANSFER_MIN_MOVEMENT) {
+            return false;
+        }
+        Vec3d moveVelocity = tangentialVelocity.add(movement.multiply(AIR_ACCELERATION));
+        Vec3d moved = move(entity, moveVelocity, downDirection);
+        entity.setVelocity(applyDrag(SurfaceGravityBasis.reject(moved, down), down, AIR_TANGENT_DRAG));
+        state.attached = false;
+        setSurfaceGrounded(entity, false);
+        return true;
+    }
+
+    private static List<Direction> edgeTransferCandidates(Direction oldDown, Vec3d movement) {
+        Vec3d preferred = movement.normalize().multiply(-1.0D);
+        ArrayList<Direction> candidates = new ArrayList<>(4);
+        for (Direction direction : Direction.values()) {
+            if (isPerpendicular(oldDown, direction)
+                    && SurfaceGravityBasis.directionVector(direction).dotProduct(preferred) >= EDGE_TRANSFER_OUTER_DOT_MIN) {
+                candidates.add(direction);
+            }
+        }
+        candidates.sort((a, b) -> Double.compare(
+                SurfaceGravityBasis.directionVector(b).dotProduct(preferred),
+                SurfaceGravityBasis.directionVector(a).dotProduct(preferred)
+        ));
+        return candidates;
+    }
+
+    private static boolean isPerpendicular(Direction a, Direction b) {
+        return a != null && b != null && a.getAxis() != b.getAxis();
     }
 
     public static BlockPos getSurfaceLandingPos(Entity entity, Direction downDirection, float yOffset) {
@@ -253,7 +396,10 @@ public final class SurfaceGravityEngine {
     }
 
     public static SurfaceSupport findSupport(Entity entity, Direction downDirection, double reach) {
-        Box box = entity.getBoundingBox();
+        return findSupport(entity, downDirection, reach, entity.getBoundingBox());
+    }
+
+    private static SurfaceSupport findSupport(Entity entity, Direction downDirection, double reach, Box box) {
         Vec3d down = SurfaceGravityBasis.directionVector(downDirection);
         Box probe = box.offset(down.multiply(reach + SUPPORT_EPSILON));
         Box swept = box.union(probe).expand(0.01D);
@@ -350,6 +496,8 @@ public final class SurfaceGravityEngine {
         private float localBodyYaw;
         private float lastLocalBodyYaw;
         private int detachTicks;
+        private int edgeTransferCooldown;
+        private int edgeTransferGraceTicks;
         private boolean attached;
 
         public SurfaceState(Direction downDirection, float localYaw, float localPitch) {

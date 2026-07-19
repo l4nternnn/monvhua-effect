@@ -117,7 +117,7 @@ public final class GravityCommand {
         String time = StringArgumentType.getString(context, "time");
         int ticks = parseTicks(time);
         if (ticks == 0) {
-            context.getSource().sendError(Text.literal("时间必须是秒数、wuxian 或 无限。"));
+            context.getSource().sendError(Text.literal("时间必须是秒数或“无限”。"));
             return 0;
         }
 

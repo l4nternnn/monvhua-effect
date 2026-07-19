@@ -32,7 +32,7 @@ public class GravityWandItem extends Item {
                 return GravityMagic.applySelfGravityForce(player) ? ActionResult.SUCCESS_SERVER : ActionResult.FAIL;
             }
             if (!GravityMagic.throwHeldBlocks(player)) {
-                player.sendMessage(Text.literal("\u00a7c[Gravity] Ctrl + middle click a block first"), true);
+                player.sendMessage(Text.literal("\u00a7c[重力] 请先按住控制键并用鼠标中键选中方块"), true);
                 return ActionResult.FAIL;
             }
             return ActionResult.SUCCESS_SERVER;
@@ -57,7 +57,7 @@ public class GravityWandItem extends Item {
                 return GravityMagic.applySelfGravityForce(player) ? ActionResult.SUCCESS_SERVER : ActionResult.FAIL;
             }
             if (!GravityMagic.throwHeldBlocks(player)) {
-                player.sendMessage(Text.literal("\u00a7c[Gravity] Ctrl + middle click a block first"), true);
+                player.sendMessage(Text.literal("\u00a7c[重力] 请先按住控制键并用鼠标中键选中方块"), true);
                 return ActionResult.FAIL;
             }
             return ActionResult.SUCCESS_SERVER;
@@ -69,7 +69,7 @@ public class GravityWandItem extends Item {
         if (!player.getCommandTags().contains(SILENCED_TAG)) {
             return false;
         }
-        player.sendMessage(Text.literal("\u00a7cYou cannot focus enough to use gravity magic"), true);
+        player.sendMessage(Text.literal("\u00a7c你无法集中精神使用重力魔法"), true);
         return true;
     }
 }

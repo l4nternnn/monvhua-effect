@@ -567,6 +567,20 @@ public final class GravityMagic {
                 : SERVER_SURFACE_GRAVITY_PLAYERS;
     }
 
+    private static void applySurfaceGravityTransition(Entity entity, Direction direction) {
+        if (entity == null || direction == null) {
+            return;
+        }
+        surfaceGravityPlayers(entity).put(entity.getUuid(), direction);
+        SurfaceGravityEngine.SurfaceState state = getSurfaceState(entity);
+        if (state != null) {
+            state.setDownDirection(direction);
+        }
+        if (!entity.getWorld().isClient() && entity instanceof ServerPlayerEntity player) {
+            syncSurfaceGravity(player);
+        }
+    }
+
     public static SurfaceGravityEngine.SurfaceState getSurfaceState(Entity entity) {
         if (entity == null) {
             return null;
@@ -923,7 +937,7 @@ public final class GravityMagic {
     }
 
     private static boolean canStartBlockGathering(ServerPlayerEntity player) {
-        if (player == null || !player.isOnGround() || hasSurfaceGravity(player)) {
+        if (player == null || !player.isOnGround() || hasNonNormalSurfaceGravity(player)) {
             return false;
         }
         UUID uuid = player.getUuid();
@@ -1060,7 +1074,7 @@ public final class GravityMagic {
             return false;
         }
         if (isSurfaceLogicMode(player)) {
-            player.sendMessage(Text.literal("§c[Gravity] Surface mode needs right-clicking a block face"), true);
+            player.sendMessage(Text.literal("§c[重力] 表面模式需要右键点击方块面"), true);
             return false;
         }
         if (player.isSneaking()) {
@@ -1091,7 +1105,7 @@ public final class GravityMagic {
         player.sendMessage(Text.literal("\u00a7b[重力] 施力目标 -> " + entity.getName().getString()
                 + " 力=" + formatGravityMultiplier(gravity)
                 + " 合力=" + formatGravityMultiplier(netForce.length())
-                + " 持续=" + ticks + "tick"), true);
+                + " 持续=" + ticks + "游戏刻"), true);
         return true;
     }
 
@@ -1381,7 +1395,7 @@ public final class GravityMagic {
                     clearSurfaceGravity(serverPlayer);
                     return ActionResult.SUCCESS_SERVER;
                 }
-                serverPlayer.sendMessage(Text.literal("§c[Gravity] Surface mode targets block faces, not entities"), true);
+                serverPlayer.sendMessage(Text.literal("§c[重力] 表面模式只能选择方块面，不能选择实体"), true);
                 return ActionResult.FAIL;
             }
             if (serverPlayer.isSneaking()) {
@@ -1390,7 +1404,7 @@ public final class GravityMagic {
             if (throwHeldBlocks(serverPlayer)) {
                 return ActionResult.SUCCESS_SERVER;
             }
-            serverPlayer.sendMessage(Text.literal("\u00a7c[重力] Ctrl + 中键选中方块"), true);
+            serverPlayer.sendMessage(Text.literal("\u00a7c[重力] 请先按住控制键并用鼠标中键选中方块"), true);
         }
         return ActionResult.FAIL;
     }
@@ -1408,18 +1422,18 @@ public final class GravityMagic {
         }
         if (player.isSneaking()) {
             clearSurfaceGravity(player);
-            player.sendMessage(Text.literal("§b[Gravity] Surface gravity cleared"), true);
+            player.sendMessage(Text.literal("§b[重力] 已清除表面重力"), true);
             return ActionResult.SUCCESS_SERVER;
         }
         if (hit == null || hit.getType() == HitResult.Type.MISS) {
-            player.sendMessage(Text.literal("§c[Gravity] Right-click a block face to choose a surface"), true);
+            player.sendMessage(Text.literal("§c[重力] 请右键点击方块面来选择表面"), true);
             return ActionResult.FAIL;
         }
 
         Direction gravityDirection = hit.getSide().getOpposite();
         if (gravityDirection == Direction.DOWN) {
             clearSurfaceGravity(player);
-            player.sendMessage(Text.literal("\u00A7b[Gravity] Returned to normal gravity"), true);
+            player.sendMessage(Text.literal("\u00A7b[重力] 已回到正常重力"), true);
             return ActionResult.SUCCESS_SERVER;
         }
         Direction oldDirection = SERVER_SURFACE_GRAVITY_PLAYERS.get(player.getUuid());
@@ -1435,7 +1449,7 @@ public final class GravityMagic {
         player.fallDistance = 0.0F;
         SurfaceGravityCollision.moveKeepingEyeOnSurface(player, gravityDirection, currentEye, hit.getPos());
         syncSurfaceGravity(player);
-        player.sendMessage(Text.literal("§b[Gravity] Surface gravity -> " + gravityDirection.asString()), true);
+        player.sendMessage(Text.literal("§b[重力] 表面重力方向 -> " + directionName(gravityDirection)), true);
         return ActionResult.SUCCESS_SERVER;
     }
 
@@ -1604,7 +1618,7 @@ public final class GravityMagic {
         double gravity = getSelectedGravity(player);
         addAreaGravity(world, origin, AREA_RADIUS, DEFAULT_AREA_HEIGHT, AREA_DURATION_TICKS, gravity);
         player.sendMessage(Text.literal("\u00a7b[重力] 已创建反转行走区域，半径=" + AREA_RADIUS
-                + " 高度=" + DEFAULT_AREA_HEIGHT + " 持续=" + AREA_DURATION_TICKS + "tick"), true);
+                + " 高度=" + DEFAULT_AREA_HEIGHT + " 持续=" + AREA_DURATION_TICKS + "游戏刻"), true);
         return 1;
     }
 
@@ -2191,7 +2205,7 @@ public final class GravityMagic {
         if (player.isSpectator() || player.getAbilities().flying || player.isTouchingWater() || player.isInLava()) {
             return false;
         }
-        if (SELF_FORCE_RECOVERY_TICKS.containsKey(player.getUuid()) || hasSurfaceGravity(player)) {
+        if (SELF_FORCE_RECOVERY_TICKS.containsKey(player.getUuid()) || hasNonNormalSurfaceGravity(player)) {
             return false;
         }
 
@@ -2366,7 +2380,7 @@ public final class GravityMagic {
 
             resetPlayerToNormalGravity(player);
             NON_NORMAL_FALL_TICKS.remove(uuid);
-            player.sendMessage(Text.literal("§c[重力] 非正常下落过久，已回到正常重力"), true);
+            player.sendMessage(Text.literal("§c[重力] 非正常下落过久，将回归正常"), true);
         }
     }
 
@@ -2380,7 +2394,7 @@ public final class GravityMagic {
 
         UUID uuid = player.getUuid();
         Direction surfaceDirection = SERVER_SURFACE_GRAVITY_PLAYERS.get(uuid);
-        if (surfaceDirection != null) {
+        if (surfaceDirection != null && surfaceDirection != Direction.DOWN) {
             return isFallingAlong(player, SurfaceGravityBasis.directionVector(surfaceDirection));
         }
 
@@ -2519,7 +2533,7 @@ public final class GravityMagic {
             group.tickAngles();
             if (group.age > HELD_BLOCK_LIFETIME_TICKS) {
                 clearHeldBlockGroup(ownerUuid, true);
-                player.sendMessage(Text.literal("\u00a7c[重力] 悬浮方块已消散"), true);
+                player.sendMessage(Text.literal("\u00a7c[重力] 方块群已消散"), true);
                 continue;
             }
 
@@ -3029,6 +3043,9 @@ public final class GravityMagic {
             if (directed != null) {
                 return tickDirectedPlayer(entity, input, directed);
             }
+            if (getSurfaceGravityDirection(entity) == null) {
+                initializeNormalSurfaceGravity(entity);
+            }
             Direction surfaceDirection = getSurfaceGravityDirection(entity);
             if (surfaceDirection != null) {
                 SurfaceGravityEngine.SurfaceState surfaceState = surfacePlayerStates(entity).computeIfAbsent(
@@ -3036,7 +3053,12 @@ public final class GravityMagic {
                         uuid -> new SurfaceGravityEngine.SurfaceState(surfaceDirection, entity.getYaw(), entity.getPitch())
                 );
                 surfaceState.setDownDirection(surfaceDirection);
-                return SurfaceGravityEngine.tick(entity, input, surfaceState);
+                boolean handled = SurfaceGravityEngine.tick(entity, input, surfaceState);
+                Direction nextSurfaceDirection = surfaceState.downDirection();
+                if (handled && nextSurfaceDirection != surfaceDirection) {
+                    applySurfaceGravityTransition(entity, nextSurfaceDirection);
+                }
+                return handled;
             }
         }
 
@@ -3317,6 +3339,33 @@ public final class GravityMagic {
 
     private static boolean hasSurfaceGravity(Entity entity) {
         return entity != null && surfaceGravityPlayers(entity).containsKey(entity.getUuid());
+    }
+
+    private static boolean hasNonNormalSurfaceGravity(Entity entity) {
+        Direction direction = getSurfaceGravityDirection(entity);
+        return direction != null && direction != Direction.DOWN;
+    }
+
+    private static void initializeNormalSurfaceGravity(Entity entity) {
+        if (!isSurfaceLogicMode(entity)
+                || entity.isTouchingWater()
+                || entity.isInLava()
+                || entity.hasVehicle()
+                || entity instanceof PlayerEntity player && player.getAbilities().flying) {
+            return;
+        }
+        Vec3d worldLook = entity.getRotationVec(1.0F);
+        SurfaceGravityBasis.LocalView localView = SurfaceGravityBasis.localView(Direction.DOWN, worldLook);
+        surfaceGravityPlayers(entity).put(entity.getUuid(), Direction.DOWN);
+        SurfaceGravityEngine.SurfaceState state = surfacePlayerStates(entity).computeIfAbsent(
+                entity.getUuid(),
+                uuid -> new SurfaceGravityEngine.SurfaceState(Direction.DOWN, localView.yaw(), localView.pitch())
+        );
+        state.setLook(localView.yaw(), localView.pitch());
+        state.setDownDirection(Direction.DOWN);
+        if (!entity.getWorld().isClient() && entity instanceof ServerPlayerEntity player) {
+            syncSurfaceGravity(player);
+        }
     }
 
     public static void clearClientSurfaceGravity(Entity entity) {
@@ -3604,6 +3653,17 @@ public final class GravityMagic {
 
     private static String displayName(LaunchMode mode) {
         return mode == LaunchMode.UP ? "向上" : "向右";
+    }
+
+    private static String directionName(Direction direction) {
+        return switch (direction) {
+            case DOWN -> "下";
+            case UP -> "上";
+            case NORTH -> "北";
+            case SOUTH -> "南";
+            case WEST -> "西";
+            case EAST -> "东";
+        };
     }
 
     private static String describeSpec(GravityAreaSpec spec) {
