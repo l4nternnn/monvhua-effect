@@ -22,7 +22,7 @@ public abstract class SurfaceGravityLimbAnimatorMixin {
         LivingEntity living = (LivingEntity) (Object) this;
         Entity entity = living;
         Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
-        if (downDirection == null) {
+        if (downDirection == null || downDirection == Direction.DOWN) {
             return;
         }
 

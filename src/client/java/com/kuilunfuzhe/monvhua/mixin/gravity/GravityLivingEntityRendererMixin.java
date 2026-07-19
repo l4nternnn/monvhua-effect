@@ -79,7 +79,7 @@ public abstract class GravityLivingEntityRendererMixin {
     @Unique
     private static void monvhua$updateSurfaceGravityHitbox(Entity entity, LivingEntityRenderState state, float tickDelta) {
         Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
-        if (downDirection == null || state.hitbox == null) {
+        if (downDirection == null || downDirection == Direction.DOWN || state.hitbox == null) {
             return;
         }
         Vec3d anchor = SurfaceGravityCollision.anchorFromBox(downDirection, entity.getBoundingBox());
@@ -108,7 +108,7 @@ public abstract class GravityLivingEntityRendererMixin {
     ) {
         Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
         SurfaceGravityEngine.SurfaceState surfaceState = GravityMagic.getSurfaceState(entity);
-        if (downDirection == null || surfaceState == null) {
+        if (downDirection == null || downDirection == Direction.DOWN || surfaceState == null) {
             return;
         }
 

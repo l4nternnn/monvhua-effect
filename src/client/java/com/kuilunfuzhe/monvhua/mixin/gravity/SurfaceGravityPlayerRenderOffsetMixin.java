@@ -21,7 +21,7 @@ public abstract class SurfaceGravityPlayerRenderOffsetMixin {
         MinecraftClient client = MinecraftClient.getInstance();
         Entity entity = client.world == null ? null : client.world.getEntityById(state.id);
         Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
-        if (downDirection == null || !state.isInSneakingPose) {
+        if (downDirection == null || downDirection == Direction.DOWN || !state.isInSneakingPose) {
             return;
         }
 

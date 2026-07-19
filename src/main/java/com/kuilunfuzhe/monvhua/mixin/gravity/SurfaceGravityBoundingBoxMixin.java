@@ -32,7 +32,7 @@ public abstract class SurfaceGravityBoundingBoxMixin {
     private void monvhua$calculateSurfaceGravityBoundingBox(Vec3d pos, CallbackInfoReturnable<Box> cir) {
         Entity entity = (Entity) (Object) this;
         Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
-        if (downDirection == null) {
+        if (downDirection == null || downDirection == Direction.DOWN) {
             return;
         }
         cir.setReturnValue(SurfaceGravityCollision.boxAt(entity, downDirection, pos));
@@ -57,7 +57,7 @@ public abstract class SurfaceGravityBoundingBoxMixin {
     private void monvhua$captureSurfaceGravityAnchorBeforeDimensions(CallbackInfo ci) {
         Entity entity = (Entity) (Object) this;
         Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
-        if (downDirection == null) {
+        if (downDirection == null || downDirection == Direction.DOWN) {
             monvhua$dimensionsSurfaceDirection = null;
             monvhua$dimensionsSurfaceAnchor = null;
             return;
@@ -70,7 +70,7 @@ public abstract class SurfaceGravityBoundingBoxMixin {
     private void monvhua$refreshSurfaceGravityBoxAfterDimensions(CallbackInfo ci) {
         Entity entity = (Entity) (Object) this;
         Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
-        if (downDirection == null) {
+        if (downDirection == null || downDirection == Direction.DOWN) {
             monvhua$dimensionsSurfaceDirection = null;
             monvhua$dimensionsSurfaceAnchor = null;
             return;
@@ -94,7 +94,7 @@ public abstract class SurfaceGravityBoundingBoxMixin {
         }
         Entity entity = (Entity) (Object) this;
         Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
-        if (downDirection == null) {
+        if (downDirection == null || downDirection == Direction.DOWN) {
             return;
         }
         monvhua$refreshingSurfaceGravityBox = true;
@@ -106,7 +106,7 @@ public abstract class SurfaceGravityBoundingBoxMixin {
     private void monvhua$getSurfaceGravityEyePos(CallbackInfoReturnable<Vec3d> cir) {
         Entity entity = (Entity) (Object) this;
         Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
-        if (downDirection == null) {
+        if (downDirection == null || downDirection == Direction.DOWN) {
             return;
         }
         cir.setReturnValue(SurfaceGravityCollision.eyePosFromBox(entity, downDirection,
@@ -116,7 +116,7 @@ public abstract class SurfaceGravityBoundingBoxMixin {
     @Inject(method = "getRotationVec", at = @At("HEAD"), cancellable = true)
     private void monvhua$getSurfaceGravityRotationVec(float tickProgress, CallbackInfoReturnable<Vec3d> cir) {
         Entity entity = (Entity) (Object) this;
-        if (GravityMagic.getSurfaceGravityDirection(entity) == null) {
+        if (!GravityMagic.hasNonNormalSurfaceGravity(entity)) {
             return;
         }
         cir.setReturnValue(GravityMagic.getSurfaceLook(entity));
@@ -126,7 +126,7 @@ public abstract class SurfaceGravityBoundingBoxMixin {
     private void monvhua$getSurfaceGravityLandingPos(CallbackInfoReturnable<BlockPos> cir) {
         Entity entity = (Entity) (Object) this;
         Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
-        if (downDirection == null) {
+        if (downDirection == null || downDirection == Direction.DOWN) {
             return;
         }
         BlockPos pos = SurfaceGravityEngine.getSurfaceLandingPos(entity, downDirection, 0.2F);
@@ -139,7 +139,7 @@ public abstract class SurfaceGravityBoundingBoxMixin {
     private void monvhua$getSurfaceGravitySteppingPos(CallbackInfoReturnable<BlockPos> cir) {
         Entity entity = (Entity) (Object) this;
         Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
-        if (downDirection == null) {
+        if (downDirection == null || downDirection == Direction.DOWN) {
             return;
         }
         BlockPos pos = SurfaceGravityEngine.getSurfaceLandingPos(entity, downDirection, 1.0E-5F);

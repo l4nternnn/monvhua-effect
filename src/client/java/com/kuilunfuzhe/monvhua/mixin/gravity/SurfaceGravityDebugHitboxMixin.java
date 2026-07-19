@@ -33,7 +33,7 @@ public abstract class SurfaceGravityDebugHitboxMixin {
     private void monvhua$renderSurfaceGravityHitboxes(MatrixStack matrices, EntityRenderState state, EntityHitboxAndView hitbox, VertexConsumerProvider vertexConsumers, CallbackInfo ci) {
         Entity entity = monvhua$getEntity(state);
         Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
-        if (entity == null || downDirection == null) {
+        if (entity == null || downDirection == null || downDirection == Direction.DOWN) {
             return;
         }
 

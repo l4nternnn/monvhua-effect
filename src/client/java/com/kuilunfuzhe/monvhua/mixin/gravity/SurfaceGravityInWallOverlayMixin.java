@@ -21,7 +21,7 @@ public abstract class SurfaceGravityInWallOverlayMixin {
     @Inject(method = "getInWallBlockState", at = @At("HEAD"), cancellable = true)
     private static void monvhua$getSurfaceGravityInWallBlockState(PlayerEntity player, CallbackInfoReturnable<BlockState> cir) {
         Direction downDirection = GravityMagic.getSurfaceGravityDirection(player);
-        if (downDirection == null) {
+        if (downDirection == null || downDirection == Direction.DOWN) {
             return;
         }
 

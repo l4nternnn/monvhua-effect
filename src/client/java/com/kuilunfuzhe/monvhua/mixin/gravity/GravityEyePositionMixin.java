@@ -4,6 +4,7 @@ import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityPose;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.spongepowered.asm.mixin.Mixin;
@@ -47,7 +48,8 @@ public abstract class GravityEyePositionMixin {
     @Inject(method = "getEyeY", at = @At("HEAD"), cancellable = true)
     private void monvhua$getInvertedEyeY(CallbackInfoReturnable<Double> cir) {
         Entity entity = (Entity) (Object) this;
-        if (GravityMagic.getSurfaceGravityDirection(entity) != null) {
+        Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
+        if (downDirection != null && downDirection != Direction.DOWN) {
             cir.setReturnValue(GravityMagic.getSurfaceEyePos(entity, 1.0F).y);
             return;
         }
@@ -59,7 +61,8 @@ public abstract class GravityEyePositionMixin {
     @Inject(method = "getCameraPosVec", at = @At("HEAD"), cancellable = true)
     private void monvhua$getInvertedCameraPosVec(float tickProgress, CallbackInfoReturnable<Vec3d> cir) {
         Entity entity = (Entity) (Object) this;
-        if (GravityMagic.getSurfaceGravityDirection(entity) != null) {
+        Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
+        if (downDirection != null && downDirection != Direction.DOWN) {
             cir.setReturnValue(GravityMagic.getSurfaceEyePos(entity, tickProgress));
             return;
         }

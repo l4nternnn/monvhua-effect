@@ -30,11 +30,11 @@ public final class SurfaceGravityClientEngine {
 
     public static boolean isActive(Entity entity) {
         MinecraftClient client = MinecraftClient.getInstance();
-        return entity != null && client.player == entity && GravityMagic.getSurfaceGravityDirection(entity) != null;
+        return entity != null && client.player == entity && GravityMagic.hasNonNormalSurfaceGravity(entity);
     }
 
     public static boolean isRenderActive(Entity entity) {
-        return entity != null && GravityMagic.getSurfaceGravityDirection(entity) != null;
+        return entity != null && GravityMagic.hasNonNormalSurfaceGravity(entity);
     }
 
     public static Vec3d eyePos(Entity entity, float tickProgress) {

@@ -17,7 +17,7 @@ public abstract class SurfaceGravityPlayerPoseMixin {
     private void monvhua$canChangeIntoSurfacePose(EntityPose pose, CallbackInfoReturnable<Boolean> cir) {
         Entity entity = (Entity) (Object) this;
         Direction downDirection = GravityMagic.getSurfaceGravityDirection(entity);
-        if (downDirection == null) {
+        if (downDirection == null || downDirection == Direction.DOWN) {
             return;
         }
         cir.setReturnValue(entity.getWorld().isSpaceEmpty(

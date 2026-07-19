@@ -3097,6 +3097,9 @@ public final class GravityMagic {
                         uuid -> new SurfaceGravityEngine.SurfaceState(surfaceDirection, entity.getYaw(), entity.getPitch())
                 );
                 surfaceState.setDownDirection(surfaceDirection);
+                if (surfaceDirection == Direction.DOWN) {
+                    surfaceState.setLook(entity.getYaw(), entity.getPitch());
+                }
                 boolean handled = SurfaceGravityEngine.tick(entity, input, surfaceState);
                 Direction nextSurfaceDirection = surfaceState.downDirection();
                 if (handled && nextSurfaceDirection != surfaceDirection) {
@@ -3385,7 +3388,7 @@ public final class GravityMagic {
         return entity != null && surfaceGravityPlayers(entity).containsKey(entity.getUuid());
     }
 
-    private static boolean hasNonNormalSurfaceGravity(Entity entity) {
+    public static boolean hasNonNormalSurfaceGravity(Entity entity) {
         Direction direction = getSurfaceGravityDirection(entity);
         return direction != null && direction != Direction.DOWN;
     }
