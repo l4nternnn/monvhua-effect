@@ -42,7 +42,7 @@ public abstract class InvertedPlayerTravelMixin {
     @Inject(method = "jump", at = @At("HEAD"), cancellable = true)
     private void monvhua$cancelSurfaceGravityVanillaJump(CallbackInfo ci) {
         Entity entity = (Entity) (Object) this;
-        if (GravityMagic.getSurfaceGravityDirection(entity) == null) {
+        if (!GravityMagic.hasNonNormalSurfaceGravity(entity)) {
             return;
         }
         if (entity.isTouchingWater() || entity.isInLava() || entity.hasVehicle()) {

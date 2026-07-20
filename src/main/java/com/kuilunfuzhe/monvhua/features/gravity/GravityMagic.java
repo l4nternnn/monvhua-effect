@@ -397,7 +397,7 @@ public final class GravityMagic {
         ServerPlayNetworking.registerGlobalReceiver(GravityPackets.SurfaceLookC2S.ID, (packet, context) -> {
             context.server().execute(() -> {
                 ServerPlayerEntity player = context.player();
-                if (isSurfaceLogicMode(player) && hasSurfaceGravity(player)) {
+                if (isSurfaceLogicMode(player) && hasNonNormalSurfaceGravity(player)) {
                     setSurfaceLook(player, packet.localYaw(), packet.localPitch());
                     syncSurfaceLook(player);
                 }
@@ -3107,7 +3107,8 @@ public final class GravityMagic {
             resetInvertedPlayerState(entity);
             return false;
         }
-        if (hasSurfaceGravity(entity)) {
+        clearNormalSurfaceGravityState(entity);
+        if (hasNonNormalSurfaceGravity(entity)) {
             entity.setNoGravity(true);
             entity.fallDistance = 0.0D;
             return true;
@@ -3138,19 +3139,23 @@ public final class GravityMagic {
             if (directed != null) {
                 return tickDirectedPlayer(entity, input, directed);
             }
-            if (getSurfaceGravityDirection(entity) == null) {
-                initializeNormalSurfaceGravity(entity);
-            }
             Direction surfaceDirection = getSurfaceGravityDirection(entity);
+            if (surfaceDirection == Direction.DOWN) {
+                if (tryNormalSurfaceGravityTransfer(entity, input)) {
+                    return true;
+                }
+                clearNormalSurfaceGravityState(entity);
+                return false;
+            }
+            if (surfaceDirection == null && tryNormalSurfaceGravityTransfer(entity, input)) {
+                return true;
+            }
             if (surfaceDirection != null) {
                 SurfaceGravityEngine.SurfaceState surfaceState = surfacePlayerStates(entity).computeIfAbsent(
                         entity.getUuid(),
                         uuid -> new SurfaceGravityEngine.SurfaceState(surfaceDirection, entity.getYaw(), entity.getPitch())
                 );
                 surfaceState.setDownDirection(surfaceDirection);
-                if (surfaceDirection == Direction.DOWN) {
-                    surfaceState.setLook(entity.getYaw(), entity.getPitch());
-                }
                 boolean handled = SurfaceGravityEngine.tick(entity, input, surfaceState);
                 Direction nextSurfaceDirection = surfaceState.downDirection();
                 if (handled && nextSurfaceDirection != surfaceDirection) {
@@ -3380,7 +3385,8 @@ public final class GravityMagic {
 
     public static void resetInvertedPlayerIfInactive(Entity entity) {
         tickClientDirectedRecovery(entity);
-        if (hasSurfaceGravity(entity)) {
+        clearNormalSurfaceGravityState(entity);
+        if (hasNonNormalSurfaceGravity(entity)) {
             return;
         }
         if (entity != null && !isInInvertedArea(entity)) {
@@ -3442,6 +3448,43 @@ public final class GravityMagic {
     public static boolean hasNonNormalSurfaceGravity(Entity entity) {
         Direction direction = getSurfaceGravityDirection(entity);
         return direction != null && direction != Direction.DOWN;
+    }
+
+    private static boolean tryNormalSurfaceGravityTransfer(Entity entity, PlayerInput input) {
+        if (entity == null || input == null || !isSurfaceLogicMode(entity) || !isMainHandHoldingGravityWand(entity)) {
+            return false;
+        }
+        SurfaceGravityBasis.LocalView localView = SurfaceGravityBasis.localView(Direction.DOWN, entity.getRotationVec(1.0F));
+        SurfaceGravityEngine.SurfaceState state = surfacePlayerStates(entity).computeIfAbsent(
+                entity.getUuid(),
+                uuid -> new SurfaceGravityEngine.SurfaceState(Direction.DOWN, localView.yaw(), localView.pitch())
+        );
+        state.setLook(localView.yaw(), localView.pitch());
+        state.setDownDirection(Direction.DOWN);
+        if (!SurfaceGravityEngine.tryEdgeTransferFromNormalGravity(entity, input, state) || state.downDirection() == Direction.DOWN) {
+            surfacePlayerStates(entity).remove(entity.getUuid(), state);
+            return false;
+        }
+        applySurfaceGravityTransition(entity, state.downDirection());
+        return true;
+    }
+
+    private static boolean isMainHandHoldingGravityWand(Entity entity) {
+        return entity instanceof PlayerEntity player
+                && player.getMainHandStack().getItem() == GravityItems.GRAVITY_WAND;
+    }
+
+    private static boolean clearNormalSurfaceGravityState(Entity entity) {
+        if (entity == null || getSurfaceGravityDirection(entity) != Direction.DOWN) {
+            return false;
+        }
+        surfaceGravityPlayers(entity).remove(entity.getUuid());
+        surfacePlayerStates(entity).remove(entity.getUuid());
+        entity.setNoGravity(false);
+        if (!entity.getWorld().isClient() && entity instanceof ServerPlayerEntity player) {
+            syncSurfaceGravity(player);
+        }
+        return true;
     }
 
     private static void initializeNormalSurfaceGravity(Entity entity) {
@@ -3659,7 +3702,7 @@ public final class GravityMagic {
 
     public static boolean shouldSuppressVanillaGravity(Entity entity) {
         DirectedEntityGravity directed = ENTITY_GRAVITY.get(entity.getUuid());
-        return hasSurfaceGravity(entity) && !shouldIgnoreInvertedPull(entity)
+        return hasNonNormalSurfaceGravity(entity) && !shouldIgnoreInvertedPull(entity)
                 || directed != null && !directed.expired() && directed.world().equals(entity.getWorld().getRegistryKey())
                 || isInInvertedArea(entity) && !shouldIgnoreInvertedPull(entity);
     }

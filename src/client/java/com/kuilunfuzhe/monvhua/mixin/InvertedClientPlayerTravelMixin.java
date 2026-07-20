@@ -40,7 +40,7 @@ public abstract class InvertedClientPlayerTravelMixin {
     private void monvhua$cancelSurfaceGravityVanillaClientJump(CallbackInfo ci) {
         MinecraftClient client = MinecraftClient.getInstance();
         Entity entity = (Entity) (Object) this;
-        if (client.player != entity || GravityMagic.getSurfaceGravityDirection(entity) == null) {
+        if (client.player != entity || !GravityMagic.hasNonNormalSurfaceGravity(entity)) {
             return;
         }
         if (entity.isTouchingWater() || entity.isInLava() || entity.hasVehicle()) {
