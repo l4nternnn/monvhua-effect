@@ -351,10 +351,7 @@ public final class SurfaceGravityEngine {
             Vec3d anchor,
             SurfaceSupport initialSupport
     ) {
-        if (hasCandidateSurfacePath(entity, oldDown, candidateDown, anchor, initialSupport)) {
-            return true;
-        }
-        return hasCurrentSurfaceDropPath(entity, oldDown, candidateDown, anchor);
+        return hasCandidateSurfacePath(entity, oldDown, candidateDown, anchor, initialSupport);
     }
 
     private static boolean hasCandidateSurfacePath(
@@ -393,36 +390,6 @@ public final class SurfaceGravityEngine {
         );
         return optionalSupport == null
                 || Math.abs(optionalSupport.gap() - lastRequiredGap) <= EDGE_TRANSFER_PATH_PLANE_TOLERANCE;
-    }
-
-    private static boolean hasCurrentSurfaceDropPath(
-            Entity entity,
-            Direction oldDown,
-            Direction candidateDown,
-            Vec3d anchor
-    ) {
-        Vec3d outward = SurfaceGravityBasis.directionVector(candidateDown).multiply(-1.0D);
-        if (outward.lengthSquared() <= EDGE_TRANSFER_MIN_MOVEMENT) {
-            return false;
-        }
-
-        for (double back = 0.0D; back <= EDGE_TRANSFER_PATH_STEP + 1.0E-6D; back += EDGE_TRANSFER_SAMPLE_STEP) {
-            Vec3d footAnchor = anchor.subtract(outward.multiply(back));
-            Box footBox = SurfaceGravityCollision.boxAt(entity, oldDown, footAnchor);
-            if (findSupport(entity, oldDown, STEP_DOWN_REACH, footBox) == null) {
-                continue;
-            }
-            if (!hasOldSurfaceSupport(entity, oldDown, footAnchor.add(outward.multiply(EDGE_TRANSFER_PATH_STEP)))
-                    && !hasOldSurfaceSupport(entity, oldDown, footAnchor.add(outward.multiply(EDGE_TRANSFER_PATH_STEP * 2.0D)))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean hasOldSurfaceSupport(Entity entity, Direction oldDown, Vec3d anchor) {
-        Box box = SurfaceGravityCollision.boxAt(entity, oldDown, anchor);
-        return findSupport(entity, oldDown, STEP_DOWN_REACH, box) != null;
     }
 
     private static Box edgeTransferClearanceBox(Entity entity, Direction downDirection, Vec3d anchor) {

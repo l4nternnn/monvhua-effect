@@ -151,7 +151,7 @@ public final class GravityMagic {
     private static final double SELF_FORCE_LANDING_MAX_PROBE_DISTANCE = 7.5D;
     private static final double SELF_FORCE_LANDING_SPEED_LOOKAHEAD = 1.8D;
     private static final double SELF_FORCE_LANDING_EDGE_PADDING = 0.08D;
-    private static final double NON_NORMAL_FALL_RESET_DISTANCE = 15.0D;
+    private static final double NON_NORMAL_FALL_RESET_DISTANCE = 9.0D;
     private static final double NON_NORMAL_FALL_MIN_SPEED = 0.08D;
     private static final double NON_NORMAL_FALL_SPEED_DECAY_EPSILON = 0.01D;
     private static final double NON_NORMAL_FALL_DIRECTION_DOT_MIN = 0.999D;
@@ -2475,7 +2475,7 @@ public final class GravityMagic {
                 continue;
             }
 
-            resetPlayerToNormalGravity(player);
+            resetPlayerToNormalGravity(player, down);
             NON_NORMAL_FALL_STATES.remove(uuid);
             player.sendMessage(Text.literal("§c[重力] 检测到失足下落，已回归正常重力"), true);
         }
@@ -2505,7 +2505,7 @@ public final class GravityMagic {
         return player.getVelocity().dotProduct(normalized) > NON_NORMAL_FALL_MIN_SPEED ? normalized : null;
     }
 
-    private static void resetPlayerToNormalGravity(ServerPlayerEntity player) {
+    private static void resetPlayerToNormalGravity(ServerPlayerEntity player, Vec3d fallDown) {
         if (player == null) {
             return;
         }
@@ -2516,9 +2516,27 @@ public final class GravityMagic {
         SELF_FORCE_IMPACT_COOLDOWNS.remove(uuid);
         SERVER_INVERTED_PLAYER_STATES.remove(uuid);
         clearSurfaceGravity(player);
+        removeNonNormalFallVelocity(player, fallDown);
         player.setNoGravity(false);
         player.fallDistance = 0.0F;
         syncClearDirectedEntityGravity(player);
+    }
+
+    private static void removeNonNormalFallVelocity(ServerPlayerEntity player, Vec3d fallDown) {
+        if (player == null || fallDown == null || fallDown.lengthSquared() <= 1.0E-8D) {
+            return;
+        }
+        Vec3d down = fallDown.normalize();
+        if (down.y <= -0.5D) {
+            return;
+        }
+        Vec3d velocity = player.getVelocity();
+        double fallSpeed = velocity.dotProduct(down);
+        if (fallSpeed <= 0.0D) {
+            return;
+        }
+        player.setVelocity(velocity.subtract(down.multiply(fallSpeed)));
+        player.velocityModified = true;
     }
 
     private static void tickExtractingBlockGroups(MinecraftServer server) {
