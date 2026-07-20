@@ -73,8 +73,8 @@ public final class GravityCommand {
             return 0;
         }
 
-        GravityMagic.LogicMode next = GravityMagic.setLogicMode(player, mode);
-        context.getSource().sendFeedback(() -> Text.literal("§a[重力] 逻辑模式: " + logicName(next)), true);
+        int applied = setLogicForAllOnline(context, mode);
+        context.getSource().sendFeedback(() -> Text.literal("§a[重力] 已将所有在线玩家逻辑模式设为: " + logicName(mode) + " (" + applied + "人)"), true);
         return 1;
     }
 
@@ -85,9 +85,23 @@ public final class GravityCommand {
             return 0;
         }
 
-        GravityMagic.LogicMode next = GravityMagic.toggleLogicMode(player);
-        context.getSource().sendFeedback(() -> Text.literal("§a[重力] 逻辑模式: " + logicName(next)), true);
+        GravityMagic.LogicMode next = GravityMagic.getLogicMode(player) == GravityMagic.LogicMode.SURFACE
+                ? GravityMagic.LogicMode.FORCE
+                : GravityMagic.LogicMode.SURFACE;
+        int applied = setLogicForAllOnline(context, next);
+        context.getSource().sendFeedback(() -> Text.literal("§a[重力] 已将所有在线玩家逻辑模式切换为: " + logicName(next) + " (" + applied + "人)"), true);
         return 1;
+    }
+
+    private static int setLogicForAllOnline(CommandContext<ServerCommandSource> context, GravityMagic.LogicMode mode) {
+        int applied = 0;
+        for (ServerPlayerEntity target : context.getSource().getServer().getPlayerManager().getPlayerList()) {
+            GravityMagic.LogicMode next = GravityMagic.setLogicMode(target, mode);
+            if (next == mode) {
+                applied++;
+            }
+        }
+        return applied;
     }
 
     private static int showLogic(CommandContext<ServerCommandSource> context) {

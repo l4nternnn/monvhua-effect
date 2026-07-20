@@ -20,6 +20,9 @@ public class GravityWandItem extends Item {
 
     @Override
     public ActionResult use(World world, PlayerEntity user, Hand hand) {
+        if (hand != Hand.MAIN_HAND) {
+            return ActionResult.PASS;
+        }
         if (!world.isClient && user instanceof ServerPlayerEntity player) {
             if (isSilenced(player)) {
                 return ActionResult.FAIL;
@@ -44,6 +47,9 @@ public class GravityWandItem extends Item {
     public ActionResult useOnBlock(ItemUsageContext context) {
         World world = context.getWorld();
         PlayerEntity user = context.getPlayer();
+        if (context.getHand() != Hand.MAIN_HAND) {
+            return ActionResult.PASS;
+        }
         if (!world.isClient && user instanceof ServerPlayerEntity player) {
             if (isSilenced(player)) {
                 return ActionResult.FAIL;

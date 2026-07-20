@@ -564,6 +564,14 @@ public final class GravityMagic {
     }
 
     public static Direction getSurfaceGravityDirection(Entity entity) {
+        Direction direction = getStoredSurfaceGravityDirection(entity);
+        if (direction == null || !isMainHandHoldingGravityWand(entity)) {
+            return null;
+        }
+        return direction;
+    }
+
+    private static Direction getStoredSurfaceGravityDirection(Entity entity) {
         if (entity == null) {
             return null;
         }
@@ -969,8 +977,7 @@ public final class GravityMagic {
     }
 
     private static boolean isHoldingGravityWand(ServerPlayerEntity player) {
-        return player.getMainHandStack().getItem() == GravityItems.GRAVITY_WAND
-                || player.getOffHandStack().getItem() == GravityItems.GRAVITY_WAND;
+        return isMainHandHoldingGravityWand(player);
     }
 
     private static boolean canStartBlockGathering(ServerPlayerEntity player) {
@@ -1416,7 +1423,7 @@ public final class GravityMagic {
     }
 
     private static ActionResult useGravityWandOnEntity(PlayerEntity player, World world, Hand hand, Entity entity, net.minecraft.util.hit.EntityHitResult hitResult) {
-        if (player.getStackInHand(hand).getItem() != GravityItems.GRAVITY_WAND) {
+        if (hand != Hand.MAIN_HAND || player.getMainHandStack().getItem() != GravityItems.GRAVITY_WAND) {
             return ActionResult.PASS;
         }
         if (world.isClient()) {
@@ -1449,6 +1456,9 @@ public final class GravityMagic {
     public static ActionResult useGravityWand(ServerPlayerEntity player, BlockHitResult hit) {
         if (player == null) {
             return ActionResult.FAIL;
+        }
+        if (!isMainHandHoldingGravityWand(player)) {
+            return ActionResult.PASS;
         }
         ActionResult blockGroupResult = useActiveBlockGroup(player);
         if (blockGroupResult != ActionResult.PASS) {
@@ -2240,9 +2250,6 @@ public final class GravityMagic {
         if (!isHoldingGravityWand(player)) {
             return false;
         }
-        if (!hasLandingRecoverySource(player)) {
-            return false;
-        }
         if (player.isSpectator() || player.getAbilities().flying || player.isTouchingWater() || player.isInLava()) {
             return false;
         }
@@ -2261,18 +2268,6 @@ public final class GravityMagic {
                 SELF_FORCE_LANDING_MAX_PROBE_DISTANCE
         );
         return hasLandingCollisionBelow(player, probeDistance);
-    }
-
-    private static boolean hasLandingRecoverySource(ServerPlayerEntity player) {
-        if (player == null) {
-            return false;
-        }
-        UUID uuid = player.getUuid();
-        return SELF_FORCE_MOTIONS.containsKey(uuid)
-                || ENTITY_GRAVITY.containsKey(uuid)
-                || SERVER_INVERTED_PLAYER_STATES.containsKey(uuid)
-                || isInInvertedArea(player)
-                || !isSurfaceLogicMode(player);
     }
 
     private static boolean hasLandingCollisionBelow(ServerPlayerEntity player, double distance) {
@@ -2317,6 +2312,10 @@ public final class GravityMagic {
             boolean extractingActive = EXTRACTING_BLOCK_GROUPS.containsKey(uuid);
             boolean heldActive = HELD_BLOCK_GROUPS.containsKey(uuid);
             Direction surfaceDirection = SERVER_SURFACE_GRAVITY_PLAYERS.get(uuid);
+            if (surfaceDirection != null && !isMainHandHoldingGravityWand(player)) {
+                clearSurfaceGravity(player);
+                surfaceDirection = null;
+            }
             double drain = 0.0D;
             if (selfForceActive) {
                 drain += config.getSelfForceDrain(stage) / 20.0D;
@@ -3140,6 +3139,9 @@ public final class GravityMagic {
             resetInvertedPlayerState(entity);
             return false;
         }
+        if (clearSurfaceGravityIfNotMainHand(entity)) {
+            return false;
+        }
         clearNormalSurfaceGravityState(entity);
         if (hasNonNormalSurfaceGravity(entity)) {
             entity.setNoGravity(true);
@@ -3171,6 +3173,9 @@ public final class GravityMagic {
             DirectedEntityGravity directed = ENTITY_GRAVITY.get(entity.getUuid());
             if (directed != null) {
                 return tickDirectedPlayer(entity, input, directed);
+            }
+            if (clearSurfaceGravityIfNotMainHand(entity)) {
+                return false;
             }
             Direction surfaceDirection = getSurfaceGravityDirection(entity);
             if (surfaceDirection == Direction.DOWN) {
@@ -3507,8 +3512,25 @@ public final class GravityMagic {
                 && player.getMainHandStack().getItem() == GravityItems.GRAVITY_WAND;
     }
 
+    private static boolean clearSurfaceGravityIfNotMainHand(Entity entity) {
+        if (entity == null || getStoredSurfaceGravityDirection(entity) == null || isMainHandHoldingGravityWand(entity)) {
+            return false;
+        }
+        if (entity.getWorld().isClient()) {
+            clearClientSurfaceGravity(entity);
+        } else if (entity instanceof ServerPlayerEntity player) {
+            clearSurfaceGravity(player);
+        } else {
+            surfaceGravityPlayers(entity).remove(entity.getUuid());
+            surfacePlayerStates(entity).remove(entity.getUuid());
+            entity.setNoGravity(false);
+            SurfaceGravityCollision.restoreVanillaBox(entity);
+        }
+        return true;
+    }
+
     private static boolean clearNormalSurfaceGravityState(Entity entity) {
-        if (entity == null || getSurfaceGravityDirection(entity) != Direction.DOWN) {
+        if (entity == null || getStoredSurfaceGravityDirection(entity) != Direction.DOWN) {
             return false;
         }
         surfaceGravityPlayers(entity).remove(entity.getUuid());
@@ -3523,6 +3545,7 @@ public final class GravityMagic {
 
     private static void initializeNormalSurfaceGravity(Entity entity) {
         if (!isSurfaceLogicMode(entity)
+                || !isMainHandHoldingGravityWand(entity)
                 || entity.isTouchingWater()
                 || entity.isInLava()
                 || entity.hasVehicle()
