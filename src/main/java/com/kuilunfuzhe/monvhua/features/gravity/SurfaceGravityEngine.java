@@ -224,9 +224,12 @@ public final class SurfaceGravityEngine {
 
         SurfaceGravityCollision.setAnchorAndRefreshBox(entity, downDirection, new Vec3d(beforeX, beforeY, beforeZ));
         Vec3d up = down.multiply(-STEP_HEIGHT);
-        move(entity, moveVelocity.add(up), downDirection);
+        Vec3d stepped = move(entity, moveVelocity.add(up), downDirection);
+        double steppedSq = SurfaceGravityBasis.reject(stepped, down).lengthSquared();
         SurfaceSupport steppedSupport = findSupport(entity, downDirection, STEP_HEIGHT + SUPPORT_PROBE);
-        if (steppedSupport == null) {
+        if (steppedSq < Math.max(movedSq, requestedSq * 0.35D)
+                || steppedSupport == null
+                || steppedSupport.gap() > STEP_HEIGHT * 0.5D) {
             SurfaceGravityCollision.setAnchorAndRefreshBox(entity, downDirection, new Vec3d(normalX, normalY, normalZ));
         }
     }
@@ -243,6 +246,7 @@ public final class SurfaceGravityEngine {
     private static boolean tryEdgeTransfer(Entity entity, PlayerInput input, SurfaceState state, Direction oldDown, Vec3d velocity) {
         if ((!state.attached && state.edgeTransferGraceTicks <= 0)
                 || state.edgeTransferCooldown > 0
+                || state.detachTicks > 0
                 || input.sneak()
                 || input.jump()) {
             return false;
@@ -310,7 +314,7 @@ public final class SurfaceGravityEngine {
             Direction downDirection,
             Vec3d velocity
     ) {
-        if (state.edgeTransferGraceTicks <= 0 || input.sneak() || input.jump()) {
+        if (state.edgeTransferGraceTicks <= 0 || state.detachTicks > 0 || input.sneak() || input.jump()) {
             return false;
         }
         Vec3d down = SurfaceGravityBasis.directionVector(downDirection);

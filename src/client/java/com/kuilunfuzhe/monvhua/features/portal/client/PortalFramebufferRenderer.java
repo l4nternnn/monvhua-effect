@@ -335,7 +335,7 @@ public final class PortalFramebufferRenderer {
         }
         MinecraftClient client = MinecraftClient.getInstance();
         TargetPortalView targetView = targetView(client.world, link);
-        CameraPose pose = transformedCameraPose(mainCamera, portal, targetView);
+        CameraPose pose = mappedPositionCameraPose(mainCamera, portal, targetView);
         BlockPos sourcePos = portal.getPos();
         BlockPos viewCenter = remoteViewCenterFor(pose);
         RemoteRequestState previous = REMOTE_REQUESTS.get(sourcePos);
@@ -403,12 +403,13 @@ public final class PortalFramebufferRenderer {
         PortalRemoteChunkCache.activate(sourcePortal.getPos());
         TargetPortalView targetView = targetView(client.world, link);
 
-        Resolution resolution = fullFrameResolution(client);
+        Resolution resolution = resolutionForLiveView(frame, sourcePortal);
         SimpleFramebuffer framebuffer = slot.prepare(resolution);
-        CameraPose pose = transformedCameraPose(frame.mainCamera(), sourcePortal, targetView);
+        CameraPose pose = mappedPositionCameraPose(frame.mainCamera(), sourcePortal, targetView);
+        Aperture aperture = apertureFor(sourcePortal, targetView);
         float aspect = resolution.width / (float) Math.max(1, resolution.height);
 
-        if (!renderPortalScene(frame, framebuffer, pose, null, aspect)) {
+        if (!renderPortalScene(frame, framebuffer, pose, aperture, aspect)) {
             slot.freeze("render_scene_failed", frameIndex);
             compositeCachedPortalArea(frame, sourcePortal, slot);
             return;
@@ -529,41 +530,19 @@ public final class PortalFramebufferRenderer {
         samples.append(chunkX).append(',').append(chunkZ);
     }
 
-    private static CameraPose fixedTargetCameraPose(TargetPortalView targetPortal) {
-        Vec3d front = normal(targetPortal.facing());
-        Vec3d forward = front.multiply(-1.0D);
-        PortalTransform.Rotation rotation = PortalTransform.rotationFromVector(forward);
-        return new CameraPose(
-                targetPortal.center().add(front.multiply(0.55D)),
-                rotation.yaw(),
-                rotation.pitch(),
-                cameraRotation(forward, PortalTransform.surfaceHeightAxis(targetPortal.facing()))
-        );
-    }
-
-    private static MainCameraSnapshot snapshotMainCamera(Camera camera) {
-        return new MainCameraSnapshot(
-                camera.getPos(),
-                new Quaternionf(camera.getRotation()).normalize()
-        );
-    }
-
-    private static CameraPose transformedCameraPose(MainCameraSnapshot sourceCamera,
-                                                    PortalBlockEntity sourcePortal,
-                                                    TargetPortalView targetPortal) {
+    private static CameraPose mappedPositionCameraPose(MainCameraSnapshot sourceCamera,
+                                                       PortalBlockEntity sourcePortal,
+                                                       TargetPortalView targetPortal) {
         PortalFrame sourceFrame = sourcePortal.getFrame();
         PortalFrame targetFrame = targetFrameFor(targetPortal, sourcePortal);
         Vec3d position = PortalTransform.mapPoint(sourceCamera.position(), sourceFrame, targetFrame);
-        Vec3d forward = cameraVector(sourceCamera, new Vector3f(0.0F, 0.0F, -1.0F));
-        Vec3d up = cameraVector(sourceCamera, new Vector3f(0.0F, 1.0F, 0.0F));
-        Vec3d mappedForward = PortalTransform.mapVector(forward, sourceFrame, targetFrame).normalize();
-        Vec3d mappedUp = PortalTransform.mapVector(up, sourceFrame, targetFrame).normalize();
-        PortalTransform.Rotation rotation = PortalTransform.rotationFromVector(mappedForward);
+        Vec3d forward = targetForwardFromPosition(position, targetFrame);
+        PortalTransform.Rotation rotation = PortalTransform.rotationFromVector(forward);
         return new CameraPose(
                 position,
                 rotation.yaw(),
                 rotation.pitch(),
-                cameraRotation(mappedForward, mappedUp)
+                cameraRotation(forward, targetFrame.heightAxis())
         );
     }
 
@@ -579,10 +558,16 @@ public final class PortalFramebufferRenderer {
         );
     }
 
-    private static Vec3d cameraVector(MainCameraSnapshot camera, Vector3f localVector) {
-        Vector3f vector = new Vector3f(localVector);
-        camera.rotation().transform(vector);
-        return new Vec3d(vector.x, vector.y, vector.z);
+    private static Vec3d targetForwardFromPosition(Vec3d position, PortalFrame targetFrame) {
+        double targetSide = position.subtract(targetFrame.center()).dotProduct(targetFrame.normal());
+        return targetSide <= 0.0D ? targetFrame.normal() : targetFrame.contentNormal();
+    }
+
+    private static MainCameraSnapshot snapshotMainCamera(Camera camera) {
+        return new MainCameraSnapshot(
+                camera.getPos(),
+                new Quaternionf(camera.getRotation()).normalize()
+        );
     }
 
     private static Quaternionf cameraRotation(Vec3d forward, Vec3d up) {
@@ -1120,13 +1105,6 @@ public final class PortalFramebufferRenderer {
         float inverseRange = 1.0F / (far - near);
         projection.m22(-(far + near) * inverseRange);
         projection.m32(-(2.0F * far * near) * inverseRange);
-    }
-
-    private static Resolution fullFrameResolution(MinecraftClient client) {
-        return new Resolution(
-                Math.max(16, client.getWindow().getFramebufferWidth()),
-                Math.max(16, client.getWindow().getFramebufferHeight())
-        );
     }
 
     private static BlockPos remoteViewCenterFor(CameraPose pose) {

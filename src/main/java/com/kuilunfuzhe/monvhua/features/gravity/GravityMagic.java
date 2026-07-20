@@ -146,7 +146,7 @@ public final class GravityMagic {
     private static final int QUAKE_HINT_TICKS = 60;
     private static final double SELF_FORCE_MAX_SPEED = 1.85D;
     private static final double SELF_FORCE_HORIZONTAL_DAMPING = 0.985D;
-    private static final double SELF_FORCE_LANDING_MIN_FALL_SPEED = 0.42D;
+    private static final double SELF_FORCE_LANDING_MIN_FALL_SPEED = 0.72D;
     private static final double SELF_FORCE_LANDING_MIN_PROBE_DISTANCE = 0.85D;
     private static final double SELF_FORCE_LANDING_MAX_PROBE_DISTANCE = 7.5D;
     private static final double SELF_FORCE_LANDING_SPEED_LOOKAHEAD = 1.8D;
