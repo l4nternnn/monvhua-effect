@@ -38,6 +38,7 @@ public final class SurfaceGravityEngine {
     private static final double SNEAK_ACCELERATION = 0.03D;
     private static final double AIR_ACCELERATION = 0.02D;
     private static final double STEP_HEIGHT = 0.6D;
+    private static final double STEP_DOWN_REACH = STEP_HEIGHT + SUPPORT_PROBE;
     private static final double CLIMB_SPEED = 0.20D;
     private static final int JUMP_DETACH_TICKS = 8;
     private static final int EDGE_TRANSFER_COOLDOWN_TICKS = 6;
@@ -86,8 +87,9 @@ public final class SurfaceGravityEngine {
         Vec3d up = down.multiply(-1.0D);
         Vec3d velocity = entity.getVelocity();
         double downSpeed = velocity.dotProduct(down);
+        double supportReach = state.attached ? STEP_DOWN_REACH : SUPPORT_PROBE;
         SurfaceSupport support = state.detachTicks <= 0 && downSpeed >= -0.02D
-                ? findSupport(entity, downDirection, SUPPORT_PROBE)
+                ? findSupport(entity, downDirection, supportReach)
                 : null;
         boolean climbable = isClimbable(entity, downDirection);
         boolean canAutoTransfer = isMainHandHoldingGravityWand(entity);
@@ -101,9 +103,7 @@ public final class SurfaceGravityEngine {
                 tangential = tangential.multiply(0.35D);
             }
             double correction = support.gap() - SUPPORT_TARGET_GAP;
-            double correctionSpeed = Math.abs(correction) <= SUPPORT_CORRECTION_DEADBAND
-                    ? 0.0D
-                    : Math.clamp(correction * 0.35D, -0.04D, 0.04D);
+            double correctionSpeed = supportCorrectionSpeed(correction);
             Vec3d moveVelocity = tangential.add(down.multiply(correctionSpeed));
 
             if (input.jump()) {
@@ -203,6 +203,16 @@ public final class SurfaceGravityEngine {
         double axisSpeed = velocity.dotProduct(down) * AIR_AXIS_DRAG;
         Vec3d tangential = SurfaceGravityBasis.reject(velocity, down).multiply(tangentDrag);
         return tangential.add(down.multiply(axisSpeed));
+    }
+
+    private static double supportCorrectionSpeed(double correction) {
+        if (Math.abs(correction) <= SUPPORT_CORRECTION_DEADBAND) {
+            return 0.0D;
+        }
+        if (correction > SUPPORT_PROBE) {
+            return Math.min(correction, STEP_HEIGHT);
+        }
+        return Math.clamp(correction * 0.35D, -0.04D, 0.04D);
     }
 
     private static void moveAttached(Entity entity, Vec3d moveVelocity, Direction downDirection) {
