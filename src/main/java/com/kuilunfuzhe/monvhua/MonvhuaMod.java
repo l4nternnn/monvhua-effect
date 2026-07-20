@@ -89,6 +89,7 @@ import com.kuilunfuzhe.monvhua.network.plant.PlantMagicPackets;
 import com.kuilunfuzhe.monvhua.network.through.RequestThroughConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughConfigUpdateC2SPacket;
+import com.kuilunfuzhe.monvhua.network.playerlist.PlayerListRestrictS2CPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughStateS2CPacket;
 import com.kuilunfuzhe.monvhua.screen.ModScreenHandlers;
 import com.kuilunfuzhe.monvhua.screen.openback.OtherPlayerInventoryScreenHandler;
@@ -627,6 +628,11 @@ public class MonvhuaMod implements ModInitializer {
                     com.kuilunfuzhe.monvhua.features.floating.floating.hasFullWitchFlight(player),
                     player.getCommandTags().contains("Floating")
             ));
+
+            // 同步玩家列表限制状态
+            if (PlayerListRestrictConfig.getInstance().isEnabled()) {
+                ServerPlayNetworking.send(player, new PlayerListRestrictS2CPacket(true));
+            }
         });
 
         // ===== 6. 持久化加载 =====
@@ -888,7 +894,6 @@ public class MonvhuaMod implements ModInitializer {
             TimelineScheduler.cleanupPlayer(uuid);
             ThroughItem.exitSecrecy(player);
             PaintBucketBlock.dropCarried(player);
-            PlayerListRestrictCommand.onPlayerDisconnect(player);
         });
 
         // ===== 14. 死亡清理 =====
