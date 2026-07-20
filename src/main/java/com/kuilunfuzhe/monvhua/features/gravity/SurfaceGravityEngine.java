@@ -48,6 +48,10 @@ public final class SurfaceGravityEngine {
     private static final double EDGE_TRANSFER_LATERAL_REACH = 0.20D;
     private static final double EDGE_TRANSFER_MIN_MOVEMENT = 1.0E-4D;
     private static final double EDGE_TRANSFER_OUTER_DOT_MIN = 0.20D;
+    private static final int EDGE_TRANSFER_PATH_REQUIRED_BLOCKS = 3;
+    private static final double EDGE_TRANSFER_PATH_STEP = 1.0D;
+    private static final double EDGE_TRANSFER_PATH_CLEARANCE_HEIGHT = 2.0D;
+    private static final double EDGE_TRANSFER_PATH_PLANE_TOLERANCE = 0.12D;
 
     private SurfaceGravityEngine() {
     }
@@ -273,6 +277,9 @@ public final class SurfaceGravityEngine {
                 if (support == null) {
                     continue;
                 }
+                if (!hasEdgeTransferPath(entity, oldDown, candidate, probeAnchor, support)) {
+                    continue;
+                }
 
                 SurfaceGravityBasis.LocalView localView = SurfaceGravityBasis.localView(candidate, worldLook);
                 state.setLook(localView.yaw(), localView.pitch());
@@ -305,6 +312,63 @@ public final class SurfaceGravityEngine {
             }
         }
         return anchors;
+    }
+
+    private static boolean hasEdgeTransferPath(
+            Entity entity,
+            Direction oldDown,
+            Direction candidateDown,
+            Vec3d anchor,
+            SurfaceSupport initialSupport
+    ) {
+        Vec3d path = SurfaceGravityBasis.directionVector(oldDown);
+        if (path.lengthSquared() <= EDGE_TRANSFER_MIN_MOVEMENT || initialSupport == null) {
+            return false;
+        }
+
+        double referenceGap = initialSupport.gap();
+        double lastRequiredGap = referenceGap;
+        for (int i = 0; i < EDGE_TRANSFER_PATH_REQUIRED_BLOCKS; i++) {
+            Vec3d sampleAnchor = anchor.add(path.multiply(i * EDGE_TRANSFER_PATH_STEP));
+            Box clearanceBox = edgeTransferClearanceBox(entity, candidateDown, sampleAnchor);
+            if (!entity.getWorld().isSpaceEmpty(entity, clearanceBox.contract(1.0E-7D))) {
+                return false;
+            }
+            SurfaceSupport support = findSupport(entity, candidateDown, EDGE_TRANSFER_REACH, clearanceBox);
+            if (support == null || Math.abs(support.gap() - referenceGap) > EDGE_TRANSFER_PATH_PLANE_TOLERANCE) {
+                return false;
+            }
+            lastRequiredGap = support.gap();
+        }
+
+        Vec3d optionalAnchor = anchor.add(path.multiply(EDGE_TRANSFER_PATH_REQUIRED_BLOCKS * EDGE_TRANSFER_PATH_STEP));
+        SurfaceSupport optionalSupport = findSupport(
+                entity,
+                candidateDown,
+                EDGE_TRANSFER_REACH,
+                edgeTransferClearanceBox(entity, candidateDown, optionalAnchor)
+        );
+        return optionalSupport == null
+                || Math.abs(optionalSupport.gap() - lastRequiredGap) <= EDGE_TRANSFER_PATH_PLANE_TOLERANCE;
+    }
+
+    private static Box edgeTransferClearanceBox(Entity entity, Direction downDirection, Vec3d anchor) {
+        double halfWidth = entity.getDimensions(entity.getPose()).width() * 0.5D;
+        double height = EDGE_TRANSFER_PATH_CLEARANCE_HEIGHT;
+        return switch (downDirection) {
+            case DOWN -> new Box(anchor.x - halfWidth, anchor.y, anchor.z - halfWidth,
+                    anchor.x + halfWidth, anchor.y + height, anchor.z + halfWidth);
+            case UP -> new Box(anchor.x - halfWidth, anchor.y - height, anchor.z - halfWidth,
+                    anchor.x + halfWidth, anchor.y, anchor.z + halfWidth);
+            case NORTH -> new Box(anchor.x - halfWidth, anchor.y - halfWidth, anchor.z,
+                    anchor.x + halfWidth, anchor.y + halfWidth, anchor.z + height);
+            case SOUTH -> new Box(anchor.x - halfWidth, anchor.y - halfWidth, anchor.z - height,
+                    anchor.x + halfWidth, anchor.y + halfWidth, anchor.z);
+            case WEST -> new Box(anchor.x, anchor.y - halfWidth, anchor.z - halfWidth,
+                    anchor.x + height, anchor.y + halfWidth, anchor.z + halfWidth);
+            case EAST -> new Box(anchor.x - height, anchor.y - halfWidth, anchor.z - halfWidth,
+                    anchor.x, anchor.y + halfWidth, anchor.z + halfWidth);
+        };
     }
 
     private static boolean holdEdgeTransferGrace(
