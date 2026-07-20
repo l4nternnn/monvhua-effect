@@ -2240,6 +2240,9 @@ public final class GravityMagic {
         if (!isHoldingGravityWand(player)) {
             return false;
         }
+        if (!hasLandingRecoverySource(player)) {
+            return false;
+        }
         if (player.isSpectator() || player.getAbilities().flying || player.isTouchingWater() || player.isInLava()) {
             return false;
         }
@@ -2258,6 +2261,18 @@ public final class GravityMagic {
                 SELF_FORCE_LANDING_MAX_PROBE_DISTANCE
         );
         return hasLandingCollisionBelow(player, probeDistance);
+    }
+
+    private static boolean hasLandingRecoverySource(ServerPlayerEntity player) {
+        if (player == null) {
+            return false;
+        }
+        UUID uuid = player.getUuid();
+        return SELF_FORCE_MOTIONS.containsKey(uuid)
+                || ENTITY_GRAVITY.containsKey(uuid)
+                || SERVER_INVERTED_PLAYER_STATES.containsKey(uuid)
+                || isInInvertedArea(player)
+                || !isSurfaceLogicMode(player);
     }
 
     private static boolean hasLandingCollisionBelow(ServerPlayerEntity player, double distance) {
@@ -3499,6 +3514,7 @@ public final class GravityMagic {
         surfaceGravityPlayers(entity).remove(entity.getUuid());
         surfacePlayerStates(entity).remove(entity.getUuid());
         entity.setNoGravity(false);
+        SurfaceGravityCollision.restoreVanillaBox(entity);
         if (!entity.getWorld().isClient() && entity instanceof ServerPlayerEntity player) {
             syncSurfaceGravity(player);
         }
