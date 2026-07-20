@@ -151,8 +151,10 @@ public final class GravityMagic {
     private static final double SELF_FORCE_LANDING_MAX_PROBE_DISTANCE = 7.5D;
     private static final double SELF_FORCE_LANDING_SPEED_LOOKAHEAD = 1.8D;
     private static final double SELF_FORCE_LANDING_EDGE_PADDING = 0.08D;
-    private static final int NON_NORMAL_FALL_RESET_TICKS = 20 * 3;
+    private static final double NON_NORMAL_FALL_RESET_DISTANCE = 15.0D;
     private static final double NON_NORMAL_FALL_MIN_SPEED = 0.08D;
+    private static final double NON_NORMAL_FALL_SPEED_DECAY_EPSILON = 0.01D;
+    private static final double NON_NORMAL_FALL_DIRECTION_DOT_MIN = 0.999D;
     private static final double MAX_GRAVITY_ENERGY = 100.0D;
     private static final int ENERGY_SYNC_INTERVAL_TICKS = 10;
     private static final Map<UUID, LaunchMode> PLAYER_MODES = new ConcurrentHashMap<>();
@@ -163,7 +165,7 @@ public final class GravityMagic {
     private static final Map<UUID, SelfForceMotion> SELF_FORCE_MOTIONS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> SELF_FORCE_RECOVERY_TICKS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> SELF_FORCE_IMPACT_COOLDOWNS = new ConcurrentHashMap<>();
-    private static final Map<UUID, Integer> NON_NORMAL_FALL_TICKS = new ConcurrentHashMap<>();
+    private static final Map<UUID, NonNormalFallState> NON_NORMAL_FALL_STATES = new ConcurrentHashMap<>();
     private static final Map<UUID, SurfaceDistanceAnchor> SURFACE_DISTANCE_ANCHORS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> CLIENT_DIRECTED_RECOVERY_TICKS = new ConcurrentHashMap<>();
     private static final Set<UUID> THROWN_GROUP_IMPACTS = ConcurrentHashMap.newKeySet();
@@ -206,6 +208,9 @@ public final class GravityMagic {
     }
 
     private record SurfaceDistanceAnchor(RegistryKey<World> world, Direction direction, Vec3d pos) {
+    }
+
+    private record NonNormalFallState(RegistryKey<World> world, Vec3d down, Vec3d startPos, double previousSpeed, boolean slowed) {
     }
 
     private record DirectedForce(Vec3d direction, double acceleration, int ticks) {
@@ -1498,7 +1503,7 @@ public final class GravityMagic {
         if (player == null) {
             return;
         }
-        NON_NORMAL_FALL_TICKS.remove(player.getUuid());
+        NON_NORMAL_FALL_STATES.remove(player.getUuid());
         SURFACE_DISTANCE_ANCHORS.remove(player.getUuid());
         Direction oldDirection = SERVER_SURFACE_GRAVITY_PLAYERS.get(player.getUuid());
         Vec3d oldEye = oldDirection == null ? null : SurfaceGravityCollision.eyePosFromBox(player, oldDirection, player.getBoundingBox());
@@ -2439,47 +2444,65 @@ public final class GravityMagic {
     private static void tickNonNormalFallReset(MinecraftServer server) {
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             UUID uuid = player.getUuid();
-            if (!isNonNormalFalling(player)) {
-                NON_NORMAL_FALL_TICKS.remove(uuid);
+            Vec3d down = nonNormalFallDown(player);
+            if (down == null) {
+                NON_NORMAL_FALL_STATES.remove(uuid);
                 continue;
             }
 
-            int ticks = NON_NORMAL_FALL_TICKS.merge(uuid, 1, Integer::sum);
-            if (ticks < NON_NORMAL_FALL_RESET_TICKS) {
+            double speed = player.getVelocity().dotProduct(down);
+            NonNormalFallState state = NON_NORMAL_FALL_STATES.get(uuid);
+            if (state == null
+                    || !state.world().equals(player.getWorld().getRegistryKey())
+                    || state.down().dotProduct(down) < NON_NORMAL_FALL_DIRECTION_DOT_MIN) {
+                NON_NORMAL_FALL_STATES.put(uuid, new NonNormalFallState(
+                        player.getWorld().getRegistryKey(), down, player.getPos(), speed, false));
+                continue;
+            }
+
+            boolean slowed = state.slowed()
+                    || speed + NON_NORMAL_FALL_SPEED_DECAY_EPSILON < state.previousSpeed();
+            double distance = player.getPos().subtract(state.startPos()).dotProduct(down);
+            if (distance < 0.0D) {
+                NON_NORMAL_FALL_STATES.put(uuid, new NonNormalFallState(
+                        player.getWorld().getRegistryKey(), down, player.getPos(), speed, false));
+                continue;
+            }
+
+            NON_NORMAL_FALL_STATES.put(uuid, new NonNormalFallState(
+                    state.world(), down, state.startPos(), speed, slowed));
+            if (distance < NON_NORMAL_FALL_RESET_DISTANCE || slowed) {
                 continue;
             }
 
             resetPlayerToNormalGravity(player);
-            NON_NORMAL_FALL_TICKS.remove(uuid);
-            player.sendMessage(Text.literal("§c[重力] 非正常下落过久，将回归正常"), true);
+            NON_NORMAL_FALL_STATES.remove(uuid);
+            player.sendMessage(Text.literal("§c[重力] 检测到失足下落，已回归正常重力"), true);
         }
     }
 
-    private static boolean isNonNormalFalling(ServerPlayerEntity player) {
+    private static Vec3d nonNormalFallDown(ServerPlayerEntity player) {
         if (player == null || !player.isAlive() || player.isOnGround()) {
-            return false;
+            return null;
         }
         if (player.isSpectator() || player.getAbilities().flying || player.isTouchingWater() || player.isInLava() || player.hasVehicle()) {
-            return false;
+            return null;
         }
 
         UUID uuid = player.getUuid();
         Direction surfaceDirection = SERVER_SURFACE_GRAVITY_PLAYERS.get(uuid);
+        Vec3d down = null;
         if (surfaceDirection != null && surfaceDirection != Direction.DOWN) {
-            return isFallingAlong(player, SurfaceGravityBasis.directionVector(surfaceDirection));
+            down = SurfaceGravityBasis.directionVector(surfaceDirection);
+        } else if (ENTITY_GRAVITY.containsKey(uuid) || SELF_FORCE_MOTIONS.containsKey(uuid)) {
+            down = new Vec3d(0.0D, -1.0D, 0.0D);
         }
 
-        if (ENTITY_GRAVITY.containsKey(uuid) || SELF_FORCE_MOTIONS.containsKey(uuid)) {
-            return player.getVelocity().y < -NON_NORMAL_FALL_MIN_SPEED;
-        }
-        return false;
-    }
-
-    private static boolean isFallingAlong(ServerPlayerEntity player, Vec3d down) {
         if (down == null || down.lengthSquared() <= 1.0E-8D) {
-            return false;
+            return null;
         }
-        return player.getVelocity().dotProduct(down.normalize()) > NON_NORMAL_FALL_MIN_SPEED;
+        Vec3d normalized = down.normalize();
+        return player.getVelocity().dotProduct(normalized) > NON_NORMAL_FALL_MIN_SPEED ? normalized : null;
     }
 
     private static void resetPlayerToNormalGravity(ServerPlayerEntity player) {
@@ -2727,7 +2750,7 @@ public final class GravityMagic {
         SELF_FORCE_MOTIONS.remove(ownerUuid);
         SELF_FORCE_RECOVERY_TICKS.remove(ownerUuid);
         SELF_FORCE_IMPACT_COOLDOWNS.remove(ownerUuid);
-        NON_NORMAL_FALL_TICKS.remove(ownerUuid);
+        NON_NORMAL_FALL_STATES.remove(ownerUuid);
         SURFACE_DISTANCE_ANCHORS.remove(ownerUuid);
         clearExtractingBlockGroup(ownerUuid, discardBlocks);
         clearHeldBlockGroup(ownerUuid, discardBlocks);
