@@ -28,6 +28,21 @@ public final class PortalTransform {
         return target.center().add(mapVector(position.subtract(source.center()), source, target));
     }
 
+    public static Vec3d mapPointToExitSide(Vec3d position, PortalFrame source, PortalFrame target, double minimumExitOffset) {
+        return moveToNormalSide(mapPoint(position, source, target), target, minimumExitOffset);
+    }
+
+    public static Vec3d moveToNormalSide(Vec3d position, PortalFrame frame, double minimumOffset) {
+        Vec3d normal = frame.normal();
+        double currentOffset = position.subtract(frame.center()).dotProduct(normal);
+        double targetOffset = Math.max(Math.abs(currentOffset), Math.max(0.0D, minimumOffset));
+        return position.add(normal.multiply(targetOffset - currentOffset));
+    }
+
+    public static Vec3d mapPointFrontToFront(Vec3d position, PortalFrame source, PortalFrame target) {
+        return target.center().add(mapVectorFrontToFront(position.subtract(source.center()), source, target));
+    }
+
     public static Vec3d mapVector(Vec3d vector, PortalFrame source, PortalFrame target) {
         double width = vector.dotProduct(source.widthAxis());
         double height = vector.dotProduct(source.heightAxis());
@@ -35,6 +50,15 @@ public final class PortalTransform {
         return target.widthAxis().multiply(-width)
                 .add(target.heightAxis().multiply(height))
                 .add(target.contentNormal().multiply(normal));
+    }
+
+    public static Vec3d mapVectorFrontToFront(Vec3d vector, PortalFrame source, PortalFrame target) {
+        double width = vector.dotProduct(source.widthAxis());
+        double height = vector.dotProduct(source.heightAxis());
+        double normal = vector.dotProduct(source.normal());
+        return target.widthAxis().multiply(width)
+                .add(target.heightAxis().multiply(height))
+                .add(target.normal().multiply(normal));
     }
 
     public static Vec3d mapVector(Vec3d vector, Direction sourceFacing, Direction targetFacing) {
@@ -46,7 +70,11 @@ public final class PortalTransform {
     }
 
     public static Vec3d mapVectorFrontToFront(Vec3d vector, Direction sourceFacing, Direction targetFacing) {
-        return mapVector(vector, sourceFacing, targetFacing);
+        return mapVectorFrontToFront(
+                vector,
+                PortalFrame.centered(Vec3d.ZERO, sourceFacing, 1, 1),
+                PortalFrame.centered(Vec3d.ZERO, targetFacing, 1, 1)
+        );
     }
 
     public static float mapYaw(float yaw, Direction sourceFacing, Direction targetFacing) {
@@ -58,7 +86,7 @@ public final class PortalTransform {
     }
 
     public static Rotation mapRotationFrontToFront(float yaw, float pitch, Direction sourceFacing, Direction targetFacing) {
-        return mapRotation(yaw, pitch, sourceFacing, targetFacing);
+        return rotationFromVector(mapVectorFrontToFront(Vec3d.fromPolar(pitch, yaw), sourceFacing, targetFacing));
     }
 
     public static Rotation mapRotation(float yaw, float pitch, PortalFrame source, PortalFrame target) {

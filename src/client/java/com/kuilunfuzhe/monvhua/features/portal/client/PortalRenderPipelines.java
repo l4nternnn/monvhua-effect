@@ -4,11 +4,19 @@ import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.DepthTestFunction;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexFormatElement;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.util.Identifier;
 
 public final class PortalRenderPipelines {
+    private static final VertexFormatElement PORTAL_CLIP_W = registerPortalClipWElement();
+    private static final VertexFormat PORTAL_FRAMEBUFFER_AREA_FORMAT = VertexFormat.builder()
+            .add("Position", VertexFormatElement.POSITION)
+            .add("ClipW", PORTAL_CLIP_W)
+            .add("UV0", VertexFormatElement.UV0)
+            .build();
+
     public static final RenderPipeline PORTAL_SURFACE = RenderPipelines.register(
             RenderPipeline.builder(RenderPipelines.TRANSFORMS_AND_PROJECTION_SNIPPET)
                     .withLocation(Identifier.of(MonvhuaMod.MOD_ID, "pipeline/portal_surface"))
@@ -39,6 +47,21 @@ public final class PortalRenderPipelines {
                 : FramebufferAreaHolder.PORTAL_FRAMEBUFFER_AREA_NO_DEPTH;
     }
 
+    private static VertexFormatElement registerPortalClipWElement() {
+        for (int id = 6; id < VertexFormatElement.MAX_COUNT; id++) {
+            if (VertexFormatElement.byId(id) == null) {
+                return VertexFormatElement.register(
+                        id,
+                        0,
+                        VertexFormatElement.Type.FLOAT,
+                        VertexFormatElement.Usage.GENERIC,
+                        1
+                );
+            }
+        }
+        throw new IllegalStateException("No free vertex format element slot for portal clip W");
+    }
+
     private static final class BlockAtlasHolder {
         private static final RenderPipeline PORTAL_BLOCK_ATLAS = RenderPipelines.register(
                 RenderPipeline.builder()
@@ -63,26 +86,26 @@ public final class PortalRenderPipelines {
                 RenderPipeline.builder()
                         .withLocation(Identifier.of(MonvhuaMod.MOD_ID, "pipeline/portal_framebuffer_area"))
                         .withVertexShader(Identifier.of(MonvhuaMod.MOD_ID, "core/portal_framebuffer_area"))
-                        .withFragmentShader(Identifier.of(MonvhuaMod.MOD_ID, "core/framebuffer_viewport"))
+                        .withFragmentShader(Identifier.of(MonvhuaMod.MOD_ID, "core/portal_framebuffer_area"))
                         .withSampler("InSampler")
                         .withoutBlend()
                         .withDepthWrite(false)
                         .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
                         .withCull(false)
-                        .withVertexFormat(VertexFormats.POSITION_TEXTURE, VertexFormat.DrawMode.TRIANGLES)
+                        .withVertexFormat(PORTAL_FRAMEBUFFER_AREA_FORMAT, VertexFormat.DrawMode.TRIANGLES)
                         .build()
         );
         private static final RenderPipeline PORTAL_FRAMEBUFFER_AREA_NO_DEPTH = RenderPipelines.register(
                 RenderPipeline.builder()
                         .withLocation(Identifier.of(MonvhuaMod.MOD_ID, "pipeline/portal_framebuffer_area_no_depth"))
                         .withVertexShader(Identifier.of(MonvhuaMod.MOD_ID, "core/portal_framebuffer_area"))
-                        .withFragmentShader(Identifier.of(MonvhuaMod.MOD_ID, "core/framebuffer_viewport"))
+                        .withFragmentShader(Identifier.of(MonvhuaMod.MOD_ID, "core/portal_framebuffer_area"))
                         .withSampler("InSampler")
                         .withoutBlend()
                         .withDepthWrite(false)
                         .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
                         .withCull(false)
-                        .withVertexFormat(VertexFormats.POSITION_TEXTURE, VertexFormat.DrawMode.TRIANGLES)
+                        .withVertexFormat(PORTAL_FRAMEBUFFER_AREA_FORMAT, VertexFormat.DrawMode.TRIANGLES)
                         .build()
         );
 

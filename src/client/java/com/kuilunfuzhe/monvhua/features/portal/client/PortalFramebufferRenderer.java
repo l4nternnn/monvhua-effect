@@ -335,7 +335,7 @@ public final class PortalFramebufferRenderer {
         }
         MinecraftClient client = MinecraftClient.getInstance();
         TargetPortalView targetView = targetView(client.world, link);
-        CameraPose pose = mappedPositionCameraPose(mainCamera, portal, targetView);
+        CameraPose pose = apertureCameraPose(mainCamera, portal, targetView);
         BlockPos sourcePos = portal.getPos();
         BlockPos viewCenter = remoteViewCenterFor(pose);
         RemoteRequestState previous = REMOTE_REQUESTS.get(sourcePos);
@@ -405,7 +405,7 @@ public final class PortalFramebufferRenderer {
 
         Resolution resolution = resolutionForLiveView(frame, sourcePortal);
         SimpleFramebuffer framebuffer = slot.prepare(resolution);
-        CameraPose pose = mappedPositionCameraPose(frame.mainCamera(), sourcePortal, targetView);
+        CameraPose pose = apertureCameraPose(frame.mainCamera(), sourcePortal, targetView);
         Aperture aperture = apertureFor(sourcePortal, targetView);
         float aspect = resolution.width / (float) Math.max(1, resolution.height);
 
@@ -530,13 +530,18 @@ public final class PortalFramebufferRenderer {
         samples.append(chunkX).append(',').append(chunkZ);
     }
 
-    private static CameraPose mappedPositionCameraPose(MainCameraSnapshot sourceCamera,
-                                                       PortalBlockEntity sourcePortal,
-                                                       TargetPortalView targetPortal) {
+    private static CameraPose apertureCameraPose(MainCameraSnapshot sourceCamera,
+                                                 PortalBlockEntity sourcePortal,
+                                                 TargetPortalView targetPortal) {
         PortalFrame sourceFrame = sourcePortal.getFrame();
         PortalFrame targetFrame = targetFrameFor(targetPortal, sourcePortal);
-        Vec3d position = PortalTransform.mapPoint(sourceCamera.position(), sourceFrame, targetFrame);
-        Vec3d forward = targetForwardFromPosition(position, targetFrame);
+        Vec3d position = PortalTransform.mapPointToExitSide(
+                sourceCamera.position(),
+                sourceFrame,
+                targetFrame,
+                PortalViewConfig.TELEPORT_EXIT_OFFSET
+        );
+        Vec3d forward = targetFrame.normal();
         PortalTransform.Rotation rotation = PortalTransform.rotationFromVector(forward);
         return new CameraPose(
                 position,
@@ -556,11 +561,6 @@ public final class PortalFramebufferRenderer {
                 sourcePortal.getPortalWidth(),
                 sourcePortal.getPortalHeight()
         );
-    }
-
-    private static Vec3d targetForwardFromPosition(Vec3d position, PortalFrame targetFrame) {
-        double targetSide = position.subtract(targetFrame.center()).dotProduct(targetFrame.normal());
-        return targetSide <= 0.0D ? targetFrame.normal() : targetFrame.contentNormal();
     }
 
     private static MainCameraSnapshot snapshotMainCamera(Camera camera) {
@@ -791,7 +791,7 @@ public final class PortalFramebufferRenderer {
             portalAreaBuffer = null;
         }
 
-        ByteBuffer vertices = ByteBuffer.allocateDirect(6 * 5 * Float.BYTES).order(ByteOrder.nativeOrder());
+        ByteBuffer vertices = ByteBuffer.allocateDirect(6 * 6 * Float.BYTES).order(ByteOrder.nativeOrder());
         putPortalAreaVertex(vertices, quad.bottomLeft());
         putPortalAreaVertex(vertices, quad.bottomRight());
         putPortalAreaVertex(vertices, quad.topRight());
@@ -805,11 +805,12 @@ public final class PortalFramebufferRenderer {
     }
 
     private static void putPortalAreaVertex(ByteBuffer buffer, PortalScreenVertex vertex) {
-        buffer.putFloat(vertex.x());
-        buffer.putFloat(vertex.y());
-        buffer.putFloat(vertex.z());
-        buffer.putFloat(vertex.x());
-        buffer.putFloat(vertex.y());
+        buffer.putFloat(vertex.clipX());
+        buffer.putFloat(vertex.clipY());
+        buffer.putFloat(vertex.clipZ());
+        buffer.putFloat(vertex.clipW());
+        buffer.putFloat(vertex.u());
+        buffer.putFloat(vertex.v());
     }
 
     private static void applyCameraPose(Camera camera, CameraPose pose) {
@@ -1078,17 +1079,22 @@ public final class PortalFramebufferRenderer {
             return projectionForAspect(original, fallbackAspect);
         }
 
-        Matrix4f projection = new Matrix4f(original);
-        projection.m00(2.0F / width);
-        projection.m20((maxX + minX) / width);
-        projection.m11(2.0F / height);
-        projection.m21((maxY + minY) / height);
-        setPerspectiveDepth(
-                projection,
-                minimumDepth - (float) PortalViewConfig.PORTAL_NEAR_PLANE_BIAS,
+        float near = Math.max(
+                0.001F,
+                minimumDepth - (float) PortalViewConfig.PORTAL_NEAR_PLANE_BIAS
+        );
+        float far = Math.max(
+                near + 1.0F,
                 Math.max(extractFarPlane(original), PortalViewConfig.PORTAL_MINIMUM_FAR_PLANE)
         );
-        return projection;
+        return new Matrix4f().setFrustum(
+                minX * near,
+                maxX * near,
+                minY * near,
+                maxY * near,
+                near,
+                far
+        );
     }
 
     private static float extractFarPlane(Matrix4f projection) {
@@ -1097,14 +1103,6 @@ public final class PortalFramebufferRenderer {
             return 4096.0F;
         }
         return Math.max(1.0F, Math.abs(projection.m32() / denominator));
-    }
-
-    private static void setPerspectiveDepth(Matrix4f projection, float requestedNear, float requestedFar) {
-        float near = Math.max(0.001F, requestedNear);
-        float far = Math.max(near + 1.0F, requestedFar);
-        float inverseRange = 1.0F / (far - near);
-        projection.m22(-(far + near) * inverseRange);
-        projection.m32(-(2.0F * far * near) * inverseRange);
     }
 
     private static BlockPos remoteViewCenterFor(CameraPose pose) {
@@ -1120,29 +1118,43 @@ public final class PortalFramebufferRenderer {
         Vec3d center = portalFrame.center();
         Vec3d horizontal = portalFrame.widthAxis();
         Vec3d vertical = portalFrame.heightAxis();
-        double halfWidth = Math.max(0.01D, portal.getPortalWidth() * 0.5D);
-        double halfHeight = Math.max(0.01D, portal.getPortalHeight() * 0.5D);
+        double halfWidth = Math.max(
+                0.01D,
+                portal.getPortalWidth() * 0.5D - PortalViewConfig.PORTAL_SURFACE_HORIZONTAL_INSET
+        );
+        double halfHeight = Math.max(
+                0.01D,
+                portal.getPortalHeight() * 0.5D - PortalViewConfig.PORTAL_SURFACE_VERTICAL_INSET
+        );
         Quaternionf worldToCamera = new Quaternionf(frame.mainCamera().rotation()).conjugate();
 
         PortalScreenVertex bottomLeft = projectPortalCorner(
                 frame,
                 worldToCamera,
-                center.subtract(horizontal.multiply(halfWidth)).subtract(vertical.multiply(halfHeight))
+                center.subtract(horizontal.multiply(halfWidth)).subtract(vertical.multiply(halfHeight)),
+                0.0F,
+                0.0F
         );
         PortalScreenVertex bottomRight = projectPortalCorner(
                 frame,
                 worldToCamera,
-                center.add(horizontal.multiply(halfWidth)).subtract(vertical.multiply(halfHeight))
+                center.add(horizontal.multiply(halfWidth)).subtract(vertical.multiply(halfHeight)),
+                1.0F,
+                0.0F
         );
         PortalScreenVertex topRight = projectPortalCorner(
                 frame,
                 worldToCamera,
-                center.add(horizontal.multiply(halfWidth)).add(vertical.multiply(halfHeight))
+                center.add(horizontal.multiply(halfWidth)).add(vertical.multiply(halfHeight)),
+                1.0F,
+                1.0F
         );
         PortalScreenVertex topLeft = projectPortalCorner(
                 frame,
                 worldToCamera,
-                center.subtract(horizontal.multiply(halfWidth)).add(vertical.multiply(halfHeight))
+                center.subtract(horizontal.multiply(halfWidth)).add(vertical.multiply(halfHeight)),
+                0.0F,
+                1.0F
         );
         if (bottomLeft == null || bottomRight == null || topRight == null || topLeft == null) {
             return null;
@@ -1161,7 +1173,8 @@ public final class PortalFramebufferRenderer {
         return new PortalScreenQuad(bottomLeft, bottomRight, topRight, topLeft);
     }
 
-    private static PortalScreenVertex projectPortalCorner(RenderFrame frame, Quaternionf worldToCamera, Vec3d corner) {
+    private static PortalScreenVertex projectPortalCorner(RenderFrame frame, Quaternionf worldToCamera,
+                                                          Vec3d corner, float u, float v) {
         Vector3f cameraCorner = new Vector3f(
                 (float) (corner.x - frame.mainCamera().position().x),
                 (float) (corner.y - frame.mainCamera().position().y),
@@ -1183,68 +1196,17 @@ public final class PortalFramebufferRenderer {
         return new PortalScreenVertex(
                 ndcX * 0.5F + 0.5F,
                 ndcY * 0.5F + 0.5F,
-                MathHelper.clamp(ndcZ, -0.9999F, 0.9999F)
+                clip.x,
+                clip.y,
+                MathHelper.clamp(ndcZ, -0.9999F, 0.9999F) * clip.w,
+                clip.w,
+                u,
+                v
         );
     }
 
     private static float screenArea(PortalScreenVertex a, PortalScreenVertex b, PortalScreenVertex c) {
         return (b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x());
-    }
-
-    private static ScreenBounds screenBoundsForPortal(RenderFrame frame, PortalBlockEntity portal) {
-        int framebufferWidth = frame.client().getWindow().getFramebufferWidth();
-        int framebufferHeight = frame.client().getWindow().getFramebufferHeight();
-        if (framebufferWidth <= 0 || framebufferHeight <= 0) {
-            return null;
-        }
-
-        PortalFrame portalFrame = portal.getFrame();
-        Vec3d center = portalFrame.center();
-        Vec3d horizontal = portalFrame.widthAxis();
-        Vec3d vertical = portalFrame.heightAxis();
-        double halfWidth = Math.max(0.01D, portal.getPortalWidth() * 0.5D);
-        double halfHeight = Math.max(0.01D, portal.getPortalHeight() * 0.5D);
-        Quaternionf worldToCamera = new Quaternionf(frame.mainCamera().rotation()).conjugate();
-
-        float minX = Float.POSITIVE_INFINITY;
-        float minY = Float.POSITIVE_INFINITY;
-        float maxX = Float.NEGATIVE_INFINITY;
-        float maxY = Float.NEGATIVE_INFINITY;
-        for (int horizontalSign : new int[]{-1, 1}) {
-            for (int verticalSign : new int[]{-1, 1}) {
-                Vec3d corner = center
-                        .add(horizontal.multiply(halfWidth * horizontalSign))
-                        .add(vertical.multiply(halfHeight * verticalSign));
-                Vector3f cameraCorner = new Vector3f(
-                        (float) (corner.x - frame.mainCamera().position().x),
-                        (float) (corner.y - frame.mainCamera().position().y),
-                        (float) (corner.z - frame.mainCamera().position().z)
-                );
-                worldToCamera.transform(cameraCorner);
-                Vector4f clip = new Vector4f(cameraCorner.x, cameraCorner.y, cameraCorner.z, 1.0F);
-                frame.perspectiveProjection().transform(clip);
-                if (clip.w <= 1.0E-5F) {
-                    return null;
-                }
-                float ndcX = clip.x / clip.w;
-                float ndcY = clip.y / clip.w;
-                float screenX = (ndcX * 0.5F + 0.5F) * framebufferWidth;
-                float screenY = (0.5F - ndcY * 0.5F) * framebufferHeight;
-                minX = Math.min(minX, screenX);
-                minY = Math.min(minY, screenY);
-                maxX = Math.max(maxX, screenX);
-                maxY = Math.max(maxY, screenY);
-            }
-        }
-
-        int left = MathHelper.clamp(MathHelper.floor(minX), 0, framebufferWidth);
-        int top = MathHelper.clamp(MathHelper.floor(minY), 0, framebufferHeight);
-        int right = MathHelper.clamp(MathHelper.ceil(maxX), 0, framebufferWidth);
-        int bottom = MathHelper.clamp(MathHelper.ceil(maxY), 0, framebufferHeight);
-        if (right <= left || bottom <= top) {
-            return null;
-        }
-        return new ScreenBounds(left, top, right - left, bottom - top);
     }
 
     private static Resolution resolutionFor(PortalBlockEntity portal, int maximumSide) {
@@ -1370,16 +1332,15 @@ public final class PortalFramebufferRenderer {
     private record Resolution(int width, int height) {
     }
 
-    private record ScreenBounds(int x, int y, int width, int height) {
-    }
-
     private record PortalScreenQuad(PortalScreenVertex bottomLeft,
                                     PortalScreenVertex bottomRight,
                                     PortalScreenVertex topRight,
                                     PortalScreenVertex topLeft) {
     }
 
-    private record PortalScreenVertex(float x, float y, float z) {
+    private record PortalScreenVertex(float x, float y,
+                                      float clipX, float clipY, float clipZ, float clipW,
+                                      float u, float v) {
     }
 
     private record PublishDecision(boolean publish, String detail) {

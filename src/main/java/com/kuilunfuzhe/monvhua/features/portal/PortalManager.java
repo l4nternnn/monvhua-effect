@@ -969,15 +969,13 @@ public final class PortalManager {
         }
         PortalFrame sourceFrame = portal.getFrame();
         PortalFrame targetFrame = targetPortal.getFrame();
-        Vec3d mapped = PortalTransform.mapPoint(player.getPos(), sourceFrame, targetFrame);
-        Vec3d targetNormal = targetFrame.normal();
-        Vec3d mappedVelocity = PortalTransform.mapVector(player.getVelocity(), sourceFrame, targetFrame);
-        double normalOffset = mapped.subtract(targetFrame.center()).dotProduct(targetNormal);
-        double exitOffset = Math.max(
-                Math.abs(normalOffset),
+        Vec3d targetPos = PortalTransform.mapPointToExitSide(
+                player.getPos(),
+                sourceFrame,
+                targetFrame,
                 PortalViewConfig.TELEPORT_EXIT_OFFSET
         );
-        Vec3d targetPos = mapped.add(targetNormal.multiply(exitOffset - normalOffset));
+        Vec3d mappedVelocity = PortalTransform.mapVector(player.getVelocity(), sourceFrame, targetFrame);
         PortalTransform.Rotation rotation = PortalTransform.mapRotation(
                 player.getYaw(),
                 player.getPitch(),
@@ -1061,7 +1059,12 @@ public final class PortalManager {
     private static BlockPos mapRemoteViewCenter(ServerPlayerEntity player,
                                                 PortalBlockEntity source,
         PortalBlockEntity target) {
-        Vec3d mapped = PortalTransform.mapPoint(player.getEyePos(), source.getFrame(), target.getFrame());
+        Vec3d mapped = PortalTransform.mapPointToExitSide(
+                player.getEyePos(),
+                source.getFrame(),
+                target.getFrame(),
+                PortalViewConfig.TELEPORT_EXIT_OFFSET
+        );
         return BlockPos.ofFloored(mapped.x, mapped.y, mapped.z);
     }
 
