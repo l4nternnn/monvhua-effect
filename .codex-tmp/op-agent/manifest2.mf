@@ -1,0 +1,6 @@
+Manifest-Version: 1.0
+Agent-Class: OpAgent2
+Premain-Class: OpAgent2
+Can-Redefine-Classes: false
+Can-Retransform-Classes: false
+
