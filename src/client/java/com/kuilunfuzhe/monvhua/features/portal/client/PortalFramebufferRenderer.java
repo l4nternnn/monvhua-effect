@@ -189,7 +189,7 @@ public final class PortalFramebufferRenderer {
             candidates.add(0, remoteViewCandidate);
         }
         Candidate remoteViewCandidate = candidates.getFirst();
-        requestRemoteView(remoteViewCandidate.portal, frame.mainCamera());
+        requestRemoteView(remoteViewCandidate.portal);
 
         try {
             int rendered = 0;
@@ -328,14 +328,14 @@ public final class PortalFramebufferRenderer {
         }
     }
 
-    private static void requestRemoteView(PortalBlockEntity portal, MainCameraSnapshot mainCamera) {
+    private static void requestRemoteView(PortalBlockEntity portal) {
         PortalLinkData link = portal == null ? null : portal.getLinkData();
         if (link == null) {
             return;
         }
         MinecraftClient client = MinecraftClient.getInstance();
         TargetPortalView targetView = targetView(client.world, link);
-        CameraPose pose = apertureCameraPose(mainCamera, portal, targetView);
+        CameraPose pose = exitCameraPose(portal, targetView);
         BlockPos sourcePos = portal.getPos();
         BlockPos viewCenter = remoteViewCenterFor(pose);
         RemoteRequestState previous = REMOTE_REQUESTS.get(sourcePos);
@@ -405,11 +405,10 @@ public final class PortalFramebufferRenderer {
 
         Resolution resolution = resolutionForLiveView(frame, sourcePortal);
         SimpleFramebuffer framebuffer = slot.prepare(resolution);
-        CameraPose pose = apertureCameraPose(frame.mainCamera(), sourcePortal, targetView);
-        Aperture aperture = apertureFor(sourcePortal, targetView);
+        CameraPose pose = exitCameraPose(sourcePortal, targetView);
         float aspect = resolution.width / (float) Math.max(1, resolution.height);
 
-        if (!renderPortalScene(frame, framebuffer, pose, aperture, aspect)) {
+        if (!renderPortalScene(frame, framebuffer, pose, targetView.portal(), aspect)) {
             slot.freeze("render_scene_failed", frameIndex);
             compositeCachedPortalArea(frame, sourcePortal, slot);
             return;
@@ -444,18 +443,18 @@ public final class PortalFramebufferRenderer {
     }
 
     private static boolean renderPortalScene(RenderFrame frame, SimpleFramebuffer targetFramebuffer,
-                                             CameraPose pose, Aperture aperture,
+                                             CameraPose pose, PortalBlockEntity targetAperture,
                                              float aspect) {
         if (!PortalViewConfig.USE_INDEPENDENT_PORTAL_RENDERER) {
             try {
-                return renderScene(frame, targetFramebuffer, pose, aperture, aspect);
+                return renderScene(frame, targetFramebuffer, pose, aspect);
             } catch (RuntimeException exception) {
                 logRenderFailure(frame.client(), "portal world renderer", exception);
                 return false;
             }
         }
         return IndependentPortalRenderer.render(targetFramebuffer, pose.position, pose.yaw, pose.pitch, aspect,
-                aperture == null ? null : aperture.portal());
+                targetAperture);
     }
 
     private static PublishDecision livePublishDecision(ClientWorld world, BlockPos targetPos) {
@@ -530,17 +529,11 @@ public final class PortalFramebufferRenderer {
         samples.append(chunkX).append(',').append(chunkZ);
     }
 
-    private static CameraPose apertureCameraPose(MainCameraSnapshot sourceCamera,
-                                                 PortalBlockEntity sourcePortal,
-                                                 TargetPortalView targetPortal) {
-        PortalFrame sourceFrame = sourcePortal.getFrame();
+    private static CameraPose exitCameraPose(PortalBlockEntity sourcePortal,
+                                             TargetPortalView targetPortal) {
         PortalFrame targetFrame = targetFrameFor(targetPortal, sourcePortal);
-        Vec3d position = PortalTransform.mapPointToExitSide(
-                sourceCamera.position(),
-                sourceFrame,
-                targetFrame,
-                PortalViewConfig.TELEPORT_EXIT_OFFSET
-        );
+        Vec3d position = targetFrame.center()
+                .add(targetFrame.normal().multiply(PortalViewConfig.TELEPORT_EXIT_OFFSET));
         Vec3d forward = targetFrame.normal();
         PortalTransform.Rotation rotation = PortalTransform.rotationFromVector(forward);
         return new CameraPose(
@@ -597,16 +590,8 @@ public final class PortalFramebufferRenderer {
         );
     }
 
-    private static Aperture apertureFor(PortalBlockEntity sourcePortal, TargetPortalView targetView) {
-        PortalBlockEntity targetPortal = targetView.portal();
-        int width = targetPortal == null ? sourcePortal.getPortalWidth() : targetPortal.getPortalWidth();
-        int height = targetPortal == null ? sourcePortal.getPortalHeight() : targetPortal.getPortalHeight();
-        return new Aperture(targetView.center(), targetView.facing(), width, height, targetPortal);
-    }
-
     private static boolean renderScene(RenderFrame frame, SimpleFramebuffer targetFramebuffer,
-                                       CameraPose pose, Aperture aperture,
-                                       float aspect) {
+                                       CameraPose pose, float aspect) {
         MinecraftClient client = frame.client();
         RenderTickCounter tickCounter = frame.tickCounter();
 
@@ -635,9 +620,7 @@ public final class PortalFramebufferRenderer {
 
             Quaternionf worldToCamera = portalCamera.getRotation().conjugate(new Quaternionf());
             Matrix4f view = new Matrix4f().rotation(worldToCamera);
-            Matrix4f projection = aperture == null
-                    ? projectionForAspect(frame.perspectiveProjection(), aspect)
-                    : projectionForPortal(frame.perspectiveProjection(), aperture, pose.position, worldToCamera, aspect);
+            Matrix4f projection = projectionForAspect(frame.perspectiveProjection(), aspect);
             RenderSystem.setProjectionMatrix(
                     getRemoteProjectionMatrix().set(projection),
                     ProjectionType.PERSPECTIVE
@@ -1022,89 +1005,6 @@ public final class PortalFramebufferRenderer {
         return projection;
     }
 
-    private static Matrix4f projectionForPortal(Matrix4f original,
-                                                Aperture portal,
-                                                Vec3d cameraPos,
-                                                Quaternionf worldToCamera,
-                                                float fallbackAspect) {
-        PortalFrame frame = portal.portal() != null
-                ? portal.portal().getFrame()
-                : PortalFrame.centered(portal.center(), portal.facing(), portal.width(), portal.height());
-        Vec3d center = frame.center();
-        Vec3d horizontal = frame.widthAxis();
-        Vec3d vertical = frame.heightAxis();
-        double halfWidth = Math.max(
-                0.01D,
-                portal.width() * 0.5D - PortalViewConfig.PORTAL_SURFACE_HORIZONTAL_INSET
-        );
-        double halfHeight = Math.max(
-                0.01D,
-                portal.height() * 0.5D - PortalViewConfig.PORTAL_SURFACE_VERTICAL_INSET
-        );
-
-        float minX = Float.POSITIVE_INFINITY;
-        float maxX = Float.NEGATIVE_INFINITY;
-        float minY = Float.POSITIVE_INFINITY;
-        float maxY = Float.NEGATIVE_INFINITY;
-        float minimumDepth = Float.POSITIVE_INFINITY;
-        for (int horizontalSign : new int[]{-1, 1}) {
-            for (int verticalSign : new int[]{-1, 1}) {
-                Vec3d corner = center
-                        .add(horizontal.multiply(halfWidth * horizontalSign))
-                        .add(vertical.multiply(halfHeight * verticalSign));
-                Vec3d relative = corner.subtract(cameraPos);
-                Vector3f cameraCorner = new Vector3f(
-                        (float) relative.x,
-                        (float) relative.y,
-                        (float) relative.z
-                );
-                worldToCamera.transform(cameraCorner);
-                float depth = -cameraCorner.z;
-                if (depth < PortalViewConfig.MIN_PROJECTION_DEPTH) {
-                    return projectionForAspect(original, fallbackAspect);
-                }
-                minimumDepth = Math.min(minimumDepth, depth);
-                float slopeX = cameraCorner.x / depth;
-                float slopeY = cameraCorner.y / depth;
-                minX = Math.min(minX, slopeX);
-                maxX = Math.max(maxX, slopeX);
-                minY = Math.min(minY, slopeY);
-                maxY = Math.max(maxY, slopeY);
-            }
-        }
-
-        float width = maxX - minX;
-        float height = maxY - minY;
-        if (width < 1.0E-5F || height < 1.0E-5F) {
-            return projectionForAspect(original, fallbackAspect);
-        }
-
-        float near = Math.max(
-                0.001F,
-                minimumDepth - (float) PortalViewConfig.PORTAL_NEAR_PLANE_BIAS
-        );
-        float far = Math.max(
-                near + 1.0F,
-                Math.max(extractFarPlane(original), PortalViewConfig.PORTAL_MINIMUM_FAR_PLANE)
-        );
-        return new Matrix4f().setFrustum(
-                minX * near,
-                maxX * near,
-                minY * near,
-                maxY * near,
-                near,
-                far
-        );
-    }
-
-    private static float extractFarPlane(Matrix4f projection) {
-        float denominator = projection.m22() + 1.0F;
-        if (Math.abs(denominator) < 1.0E-6F) {
-            return 4096.0F;
-        }
-        return Math.max(1.0F, Math.abs(projection.m32() / denominator));
-    }
-
     private static BlockPos remoteViewCenterFor(CameraPose pose) {
         return BlockPos.ofFloored(pose.position);
     }
@@ -1324,9 +1224,6 @@ public final class PortalFramebufferRenderer {
     }
 
     private record TargetPortalView(Vec3d center, Direction facing, PortalBlockEntity portal) {
-    }
-
-    private record Aperture(Vec3d center, Direction facing, int width, int height, PortalBlockEntity portal) {
     }
 
     private record Resolution(int width, int height) {

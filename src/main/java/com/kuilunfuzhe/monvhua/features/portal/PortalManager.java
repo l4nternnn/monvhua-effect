@@ -1059,12 +1059,9 @@ public final class PortalManager {
     private static BlockPos mapRemoteViewCenter(ServerPlayerEntity player,
                                                 PortalBlockEntity source,
         PortalBlockEntity target) {
-        Vec3d mapped = PortalTransform.mapPointToExitSide(
-                player.getEyePos(),
-                source.getFrame(),
-                target.getFrame(),
-                PortalViewConfig.TELEPORT_EXIT_OFFSET
-        );
+        PortalFrame targetFrame = target.getFrame();
+        Vec3d mapped = targetFrame.center()
+                .add(targetFrame.normal().multiply(PortalViewConfig.TELEPORT_EXIT_OFFSET));
         return BlockPos.ofFloored(mapped.x, mapped.y, mapped.z);
     }
 
