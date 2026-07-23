@@ -32,6 +32,7 @@ public final class PortalPackets {
         BindGroupC2S.register();
         DeleteGroupC2S.register();
         RequestRemoteViewC2S.register();
+        CloseRemoteViewC2S.register();
     }
 
     public static void registerReceivers() {
@@ -44,6 +45,11 @@ public final class PortalPackets {
                         context.player(),
                         packet.sourcePos(),
                         packet.viewCenter()
+                )));
+        ServerPlayNetworking.registerGlobalReceiver(CloseRemoteViewC2S.ID, (packet, context) ->
+                context.server().execute(() -> PortalManager.closeRemoteViewRequest(
+                        context.player(),
+                        packet.sourcePos()
                 )));
     }
 
@@ -361,6 +367,38 @@ public final class PortalPackets {
         private void write(RegistryByteBuf buf) {
             buf.writeBlockPos(sourcePos);
             buf.writeBlockPos(viewCenter);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record CloseRemoteViewC2S(BlockPos sourcePos) implements CustomPayload {
+        public static final Id<CloseRemoteViewC2S> ID =
+                new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "portal_remote_view_close"));
+        public static final PacketCodec<RegistryByteBuf, CloseRemoteViewC2S> CODEC =
+                PacketCodec.of(CloseRemoteViewC2S::write, CloseRemoteViewC2S::new);
+        private static boolean registered;
+
+        public CloseRemoteViewC2S {
+            sourcePos = sourcePos == null ? BlockPos.ORIGIN : sourcePos.toImmutable();
+        }
+
+        private CloseRemoteViewC2S(RegistryByteBuf buf) {
+            this(buf.readBlockPos());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeBlockPos(sourcePos);
         }
 
         public static void register() {

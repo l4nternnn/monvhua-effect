@@ -55,7 +55,9 @@ public class WorldRendererHookMixin {
 		}
 		PortalFramebufferRenderer.renderNearestPortal(
 			tickCounter,
-			camera
+			camera,
+			positionMatrix,
+			projectionMatrix
 		);
 		MirrorViewportRenderer.renderFullScreenMirror(tickCounter, fog, fogColor, camera, positionMatrix, projectionMatrix);
 		if (ClairvoyanceViewportRenderer.shouldRenderPreviewWorld()) {

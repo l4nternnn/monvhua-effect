@@ -21,6 +21,9 @@ public final class PortalViewConfig {
     public static final int REMOTE_RENDER_THREADS = 2;
     public static final int REMOTE_BUFFER_BUILDER_COUNT = 2;
     public static final int LIVE_VIEW_UPDATE_INTERVAL_FRAMES = 1;
+    public static final boolean USE_SCREEN_ALIGNED_PORTAL_VIEW = false;
+    public static final boolean PORTAL_VIEW_FLIP_U = false;
+    public static final boolean PORTAL_VIEW_FLIP_V = false;
     public static final boolean USE_INDEPENDENT_PORTAL_RENDERER = false;
     public static final boolean INDEPENDENT_PORTAL_TERRAIN_BAND = true;
     public static final int INDEPENDENT_PORTAL_TERRAIN_COLUMNS = 48;
@@ -57,6 +60,7 @@ public final class PortalViewConfig {
     public static final float PORTAL_MINIMUM_FAR_PLANE = 16384.0F;
 
     public static final double PORTAL_NEAR_PLANE_BIAS = 0.005D;
+    public static final double PORTAL_VIEW_MIN_EXIT_OFFSET = 0.05D;
     public static final double MIN_PROJECTION_DEPTH = 0.01D;
     public static final double PORTAL_SURFACE_HORIZONTAL_INSET = 0.03D;
     public static final double PORTAL_SURFACE_VERTICAL_INSET = 0.05D;

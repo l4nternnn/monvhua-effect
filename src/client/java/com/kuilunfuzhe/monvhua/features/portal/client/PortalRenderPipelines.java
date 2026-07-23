@@ -47,6 +47,12 @@ public final class PortalRenderPipelines {
                 : FramebufferAreaHolder.PORTAL_FRAMEBUFFER_AREA_NO_DEPTH;
     }
 
+    public static RenderPipeline framebufferScreenArea(boolean depthTest) {
+        return depthTest
+                ? FramebufferScreenAreaHolder.PORTAL_FRAMEBUFFER_SCREEN_AREA
+                : FramebufferScreenAreaHolder.PORTAL_FRAMEBUFFER_SCREEN_AREA_NO_DEPTH;
+    }
+
     private static VertexFormatElement registerPortalClipWElement() {
         for (int id = 6; id < VertexFormatElement.MAX_COUNT; id++) {
             if (VertexFormatElement.byId(id) == null) {
@@ -110,6 +116,38 @@ public final class PortalRenderPipelines {
         );
 
         private FramebufferAreaHolder() {
+        }
+    }
+
+    private static final class FramebufferScreenAreaHolder {
+        private static final RenderPipeline PORTAL_FRAMEBUFFER_SCREEN_AREA = RenderPipelines.register(
+                RenderPipeline.builder()
+                        .withLocation(Identifier.of(MonvhuaMod.MOD_ID, "pipeline/portal_framebuffer_screen_area"))
+                        .withVertexShader(Identifier.of(MonvhuaMod.MOD_ID, "core/portal_framebuffer_screen_area"))
+                        .withFragmentShader(Identifier.of(MonvhuaMod.MOD_ID, "core/portal_framebuffer_screen_area"))
+                        .withSampler("InSampler")
+                        .withoutBlend()
+                        .withDepthWrite(false)
+                        .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
+                        .withCull(false)
+                        .withVertexFormat(PORTAL_FRAMEBUFFER_AREA_FORMAT, VertexFormat.DrawMode.TRIANGLES)
+                        .build()
+        );
+        private static final RenderPipeline PORTAL_FRAMEBUFFER_SCREEN_AREA_NO_DEPTH = RenderPipelines.register(
+                RenderPipeline.builder()
+                        .withLocation(Identifier.of(MonvhuaMod.MOD_ID, "pipeline/portal_framebuffer_screen_area_no_depth"))
+                        .withVertexShader(Identifier.of(MonvhuaMod.MOD_ID, "core/portal_framebuffer_screen_area"))
+                        .withFragmentShader(Identifier.of(MonvhuaMod.MOD_ID, "core/portal_framebuffer_screen_area"))
+                        .withSampler("InSampler")
+                        .withoutBlend()
+                        .withDepthWrite(false)
+                        .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
+                        .withCull(false)
+                        .withVertexFormat(PORTAL_FRAMEBUFFER_AREA_FORMAT, VertexFormat.DrawMode.TRIANGLES)
+                        .build()
+        );
+
+        private FramebufferScreenAreaHolder() {
         }
     }
 

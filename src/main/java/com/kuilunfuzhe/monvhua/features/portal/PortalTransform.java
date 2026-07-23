@@ -32,6 +32,26 @@ public final class PortalTransform {
         return moveToNormalSide(mapPoint(position, source, target), target, minimumExitOffset);
     }
 
+    public static Vec3d mapPointForView(Vec3d position, PortalFrame source, PortalFrame target, double minimumDepth) {
+        Vec3d local = position.subtract(source.center());
+        double width = local.dotProduct(source.widthAxis());
+        double height = local.dotProduct(source.heightAxis());
+        double depth = local.dotProduct(source.normal());
+        double safeDepth = withSignedMinimum(depth, minimumDepth);
+        return target.center()
+                .add(target.widthAxis().multiply(-width))
+                .add(target.heightAxis().multiply(height))
+                .add(target.contentNormal().multiply(safeDepth));
+    }
+
+    private static double withSignedMinimum(double value, double minimumMagnitude) {
+        double safeMinimum = Math.max(0.0D, minimumMagnitude);
+        if (Math.abs(value) >= safeMinimum) {
+            return value;
+        }
+        return value < 0.0D ? -safeMinimum : safeMinimum;
+    }
+
     public static Vec3d moveToNormalSide(Vec3d position, PortalFrame frame, double minimumOffset) {
         Vec3d normal = frame.normal();
         double currentOffset = position.subtract(frame.center()).dotProduct(normal);

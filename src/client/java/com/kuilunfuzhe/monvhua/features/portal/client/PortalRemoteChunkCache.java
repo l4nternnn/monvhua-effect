@@ -37,11 +37,11 @@ public final class PortalRemoteChunkCache {
         BlockPos immutableSource = sourcePos.toImmutable();
         CacheSlot slot = SLOTS.get(immutableSource);
         if (!active || client.world == null) {
+            boolean wasActiveSource = immutableSource.equals(activeSourcePos);
             if (slot != null && newGeneration >= slot.generation) {
                 slot.generation = newGeneration;
-                slot.active = false;
                 MonvhuaMod.LOGGER.info(
-                        "[Monvhua] Portal remote cache slot retained: source={} gen={} target={} accepted={} loaded={} fresh={}",
+                        "[Monvhua] Portal remote cache slot deactivated: source={} gen={} target={} accepted={} loaded={} fresh={}",
                         immutableSource,
                         slot.generation,
                         slot.targetPos,
@@ -49,6 +49,14 @@ public final class PortalRemoteChunkCache {
                         slot.chunks.size(),
                         freshChunkCount(slot)
                 );
+                SLOTS.remove(immutableSource);
+                slot.clearData();
+            }
+            if (wasActiveSource) {
+                activeSourcePos = null;
+                PortalHorizonCache.clear(immutableSource);
+                PortalHorizonCache.activate(null);
+                PortalFramebufferRenderer.onRemoteViewChanged();
             }
             return;
         }
@@ -179,8 +187,9 @@ public final class PortalRemoteChunkCache {
     }
 
     public static boolean isFresh(ClientWorld clientWorld, int chunkX, int chunkZ) {
-        return accepts(clientWorld, chunkX, chunkZ)
-                && activeSlot().chunks.containsKey(ChunkPos.toLong(chunkX, chunkZ));
+        CacheSlot slot = activeSlot();
+        return accepts(slot, clientWorld, chunkX, chunkZ)
+                && slot.chunks.containsKey(ChunkPos.toLong(chunkX, chunkZ));
     }
 
     public static boolean isRenderable(ClientWorld clientWorld, int chunkX, int chunkZ) {
@@ -189,10 +198,11 @@ public final class PortalRemoteChunkCache {
     }
 
     public static void adopt(ClientWorld clientWorld, WorldChunk chunk) {
-        if (chunk == null || !accepts(clientWorld, chunk.getPos().x, chunk.getPos().z)) {
+        CacheSlot slot = activeSlot();
+        if (chunk == null || !accepts(slot, clientWorld, chunk.getPos().x, chunk.getPos().z)) {
             return;
         }
-        activeSlot().chunks.put(chunk.getPos().toLong(), chunk);
+        slot.chunks.put(chunk.getPos().toLong(), chunk);
         PortalFramebufferRenderer.onRemoteChunkLoaded(chunk.getPos().x, chunk.getPos().z);
     }
 
@@ -265,7 +275,6 @@ public final class PortalRemoteChunkCache {
             slot.chunks.put(key, chunk);
         }
         chunk.loadFromPacket(sectionsData, heightmaps, blockEntityVisitor);
-        clientWorld.resetChunkColor(chunk.getPos());
         if (sourcePos.equals(activeSourcePos)) {
             PortalFramebufferRenderer.onRemoteChunkLoaded(chunkX, chunkZ);
         }
@@ -381,6 +390,14 @@ public final class PortalRemoteChunkCache {
 
     public static BlockPos getActiveSourcePos() {
         return activeSourcePos;
+    }
+
+    public static boolean isActiveSource(BlockPos sourcePos) {
+        if (sourcePos == null) {
+            return false;
+        }
+        CacheSlot slot = SLOTS.get(sourcePos);
+        return slot != null && slot.active;
     }
 
     private static LongOpenHashSet buildAcceptedChunks(BlockPos target, BlockPos centerPos, int radius) {
@@ -508,11 +525,16 @@ public final class PortalRemoteChunkCache {
     private static CacheSlot activeSlot() {
         BlockPos contextSource = PortalRemoteRenderContext.getRemoteSourcePos();
         BlockPos sourcePos = contextSource == null ? activeSourcePos : contextSource;
-        return sourcePos == null ? null : SLOTS.get(sourcePos);
+        if (sourcePos == null) {
+            return null;
+        }
+        CacheSlot slot = SLOTS.get(sourcePos);
+        return slot != null && slot.active ? slot : null;
     }
 
     private static boolean accepts(CacheSlot slot, ClientWorld clientWorld, int chunkX, int chunkZ) {
         return slot != null
+                && slot.active
                 && slot.world == clientWorld
                 && slot.acceptedChunks.contains(ChunkPos.toLong(chunkX, chunkZ));
     }

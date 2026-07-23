@@ -209,6 +209,14 @@ public final class PortalManager {
         requestRemoteView(player, sourcePos, null);
     }
 
+    public static void closeRemoteViewRequest(ServerPlayerEntity player, BlockPos sourcePos) {
+        if (player == null || sourcePos == null) {
+            return;
+        }
+        RemoteViewKey remoteViewKey = new RemoteViewKey(player.getUuid(), sourcePos);
+        closeRemoteView(player, REMOTE_VIEWS.remove(remoteViewKey));
+    }
+
     public static void requestRemoteView(ServerPlayerEntity player, BlockPos sourcePos, BlockPos requestedViewCenter) {
         RemoteViewKey remoteViewKey = new RemoteViewKey(player.getUuid(), sourcePos);
         if (!(player.getWorld() instanceof ServerWorld world)
@@ -1059,9 +1067,23 @@ public final class PortalManager {
     private static BlockPos mapRemoteViewCenter(ServerPlayerEntity player,
                                                 PortalBlockEntity source,
         PortalBlockEntity target) {
+        PortalFrame sourceFrame = source.getFrame();
         PortalFrame targetFrame = target.getFrame();
-        Vec3d mapped = targetFrame.center()
-                .add(targetFrame.normal().multiply(PortalViewConfig.TELEPORT_EXIT_OFFSET));
+        PortalViewTransform.View view = PortalViewTransform.compute(
+                player.getEyePos(),
+                sourceFrame,
+                targetFrame,
+                PortalViewConfig.PORTAL_VIEW_MIN_EXIT_OFFSET
+        );
+        if (view != null) {
+            return view.remoteViewCenter(PortalViewConfig.REMOTE_VIEW_CENTER_LEAD_BLOCKS);
+        }
+        Vec3d mapped = PortalTransform.mapPointForView(
+                player.getEyePos(),
+                sourceFrame,
+                targetFrame,
+                PortalViewConfig.PORTAL_VIEW_MIN_EXIT_OFFSET
+        );
         return BlockPos.ofFloored(mapped.x, mapped.y, mapped.z);
     }
 

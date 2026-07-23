@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.mixin.portal;
 
+import com.kuilunfuzhe.monvhua.features.portal.client.PortalRemoteChunkCache;
 import com.kuilunfuzhe.monvhua.features.portal.client.PortalRemoteRenderContext;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
@@ -37,7 +38,7 @@ public abstract class SodiumChunkJobRemoteContextMixin {
 
     @WrapMethod(method = "execute")
     private void monvhua$runWithRemoteContext(ChunkBuildContext context, Operation<Void> original) {
-        if (monvhua$remoteSourcePos == null) {
+        if (monvhua$remoteSourcePos == null || !PortalRemoteChunkCache.isActiveSource(monvhua$remoteSourcePos)) {
             original.call(context);
             return;
         }
@@ -48,7 +49,8 @@ public abstract class SodiumChunkJobRemoteContextMixin {
         try {
             original.call(context);
         } finally {
-            if (previousPortalPass && previousSourcePos != null) {
+            if (previousPortalPass && previousSourcePos != null
+                    && PortalRemoteChunkCache.isActiveSource(previousSourcePos)) {
                 PortalRemoteRenderContext.beginWorkerPass(previousSourcePos);
             } else {
                 PortalRemoteRenderContext.endWorkerPass();
