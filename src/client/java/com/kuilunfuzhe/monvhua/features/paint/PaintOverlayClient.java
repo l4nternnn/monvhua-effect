@@ -1573,9 +1573,10 @@ public final class PaintOverlayClient {
                                                                       MinecraftClient client, Vec3d hitPos,
                                                                       BlockPos pos, Direction face) {
         Set<EditorHistoryTarget> keys = new HashSet<>();
+        int radius = MathHelper.clamp(selectedRadius(tool),
+                PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_MANUAL_RADIUS);
         if (tool == EditorTool.ERASER && clearFace) {
-            int blockRadius = Math.max(0, MathHelper.clamp(selectedRadius(tool),
-                    PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_MANUAL_RADIUS) - 1);
+            int blockRadius = Math.max(0, radius - 1);
             for (int a = -blockRadius; a <= blockRadius; a++) {
                 for (int b = -blockRadius; b <= blockRadius; b++) {
                     if (a * a + b * b <= blockRadius * blockRadius) {
@@ -1584,8 +1585,10 @@ public final class PaintOverlayClient {
                     }
                 }
             }
+        } else if (radius <= PaintOverlayFeature.MIN_RADIUS) {
+            keys.add(EditorHistoryTarget.block(new PaintOverlayStore.FaceKey(pos, face)));
         } else if (client != null && client.world != null && hitPos != null) {
-            for (PaintOverlayStore.FaceKey key : PaintSurfaceTargeting.collectFaces(client.world, hitPos, selectedRadius(tool))) {
+            for (PaintOverlayStore.FaceKey key : PaintSurfaceTargeting.collectFaces(client.world, hitPos, radius)) {
                 keys.add(EditorHistoryTarget.block(key));
             }
         }

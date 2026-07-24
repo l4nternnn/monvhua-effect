@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.paint;
 
 import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
+import com.kuilunfuzhe.monvhua.item.paint.PaintBrushItem;
 import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.client.MinecraftClient;
@@ -52,7 +53,12 @@ public final class PaintToolTargetPreviewRenderer {
                     PaintOverlayClient.selectedRadius(PaintOverlayClient.EditorTool.ERASER), color);
             return;
         }
-        VoxelCubeMesh mesh = VoxelCubeMesh.forRadius(previewRadiusPixels(tool));
+        int radius = previewRadiusPixels(tool);
+        if (radius <= PaintOverlayFeature.MIN_RADIUS) {
+            appendSinglePixel(vertices, matrix, camera, pos, hit.getSide(), hit.getPos(), color);
+            return;
+        }
+        VoxelCubeMesh mesh = VoxelCubeMesh.forRadius(radius);
         Vec3d center = hit.getPos();
         double x = center.x - camera.x;
         double y = center.y - camera.y;
@@ -186,6 +192,58 @@ public final class PaintToolTargetPreviewRenderer {
                 .light(LightmapTextureManager.MAX_LIGHT_COORDINATE)
                 .normal(mesh.normal(index), mesh.normal(index + 1), mesh.normal(index + 2));
         }
+    }
+
+    private static void appendSinglePixel(VertexConsumer vertices, Matrix4f matrix, Vec3d camera,
+                                          BlockPos pos, Direction face, Vec3d hitPos, int color) {
+        int[] pixel = PaintBrushItem.getPixel(hitPos, pos, face);
+        Vec3d normal = normal(face);
+        Vec3d offset = normal.multiply(0.006D);
+        Vec3d p00 = pixelPoint(pos, face, pixel[0], pixel[1]).add(offset);
+        Vec3d p10 = pixelPoint(pos, face, pixel[0] + 1, pixel[1]).add(offset);
+        Vec3d p11 = pixelPoint(pos, face, pixel[0] + 1, pixel[1] + 1).add(offset);
+        Vec3d p01 = pixelPoint(pos, face, pixel[0], pixel[1] + 1).add(offset);
+        appendQuad(vertices, matrix, camera, p00, p10, p11, p01, normal, color);
+    }
+
+    private static Vec3d pixelPoint(BlockPos pos, Direction face, int edgeX, int edgeY) {
+        double u = MathHelper.clamp(edgeX * PIXEL_SIZE, 0.0D, 1.0D);
+        double v = MathHelper.clamp(edgeY * PIXEL_SIZE, 0.0D, 1.0D);
+        double minX = pos.getX();
+        double minY = pos.getY();
+        double minZ = pos.getZ();
+        double maxX = minX + 1.0D;
+        double maxY = minY + 1.0D;
+        double maxZ = minZ + 1.0D;
+        return switch (face) {
+            case UP -> new Vec3d(minX + u, maxY, minZ + v);
+            case DOWN -> new Vec3d(minX + u, minY, maxZ - v);
+            case NORTH -> new Vec3d(maxX - u, maxY - v, minZ);
+            case SOUTH -> new Vec3d(minX + u, maxY - v, maxZ);
+            case WEST -> new Vec3d(minX, maxY - v, minZ + u);
+            case EAST -> new Vec3d(maxX, maxY - v, maxZ - u);
+        };
+    }
+
+    private static void appendQuad(VertexConsumer vertices, Matrix4f matrix, Vec3d camera,
+                                   Vec3d p00, Vec3d p10, Vec3d p11, Vec3d p01,
+                                   Vec3d normal, int color) {
+        double orientation = p10.subtract(p00).crossProduct(p11.subtract(p00)).dotProduct(normal);
+        if (orientation < 0.0D) {
+            appendVertex(vertices, matrix, camera, p00, normal, color);
+            appendVertex(vertices, matrix, camera, p01, normal, color);
+            appendVertex(vertices, matrix, camera, p11, normal, color);
+            appendVertex(vertices, matrix, camera, p00, normal, color);
+            appendVertex(vertices, matrix, camera, p11, normal, color);
+            appendVertex(vertices, matrix, camera, p10, normal, color);
+            return;
+        }
+        appendVertex(vertices, matrix, camera, p00, normal, color);
+        appendVertex(vertices, matrix, camera, p10, normal, color);
+        appendVertex(vertices, matrix, camera, p11, normal, color);
+        appendVertex(vertices, matrix, camera, p00, normal, color);
+        appendVertex(vertices, matrix, camera, p11, normal, color);
+        appendVertex(vertices, matrix, camera, p01, normal, color);
     }
 
     private static void appendFaceModeDisk(VertexConsumer vertices, Matrix4f matrix, Vec3d camera,

@@ -681,8 +681,11 @@ public final class PaintOverlayFeature {
         if (brushUse == null) {
             return;
         }
-        int changedPixels = paintOnSurfacesLimited(world, hitPos, brushUse.settings(),
-                paintBudget(player, brushUse.stack()));
+        int budget = paintBudget(player, brushUse.stack());
+        int radius = MathHelper.clamp(brushUse.settings().radius(), MIN_RADIUS, MAX_MANUAL_RADIUS);
+        int changedPixels = radius <= MIN_RADIUS
+                ? paintAtLimited(world, pos, face, x, y, brushUse.settings(), budget)
+                : paintOnSurfacesLimited(world, hitPos, brushUse.settings(), budget);
         if (changedPixels > 0 && !player.isCreative()) {
             PaintBrushItem.consumePaint(brushUse.stack(), PaintBrushItem.getSelectedSlot(brushUse.stack()), PaintConfig.getInstance().scaledConsumption(changedPixels));
             player.getInventory().markDirty();
@@ -695,8 +698,11 @@ public final class PaintOverlayFeature {
         if (brushUse == null) {
             return;
         }
-        int changedPixels = sprayOnSurfacesLimited(world, hitPos, brushUse.settings(),
-                paintBudget(player, brushUse.stack()));
+        int budget = paintBudget(player, brushUse.stack());
+        int radius = MathHelper.clamp(brushUse.settings().radius(), MIN_RADIUS, MAX_MANUAL_RADIUS);
+        int changedPixels = radius <= MIN_RADIUS
+                ? sprayAtLimited(world, pos, face, x, y, brushUse.settings(), budget)
+                : sprayOnSurfacesLimited(world, hitPos, brushUse.settings(), budget);
         if (changedPixels > 0 && !player.isCreative()) {
             PaintBrushItem.consumePaint(brushUse.stack(), PaintBrushItem.getSelectedSlot(brushUse.stack()), PaintConfig.getInstance().scaledConsumption(changedPixels));
             player.getInventory().markDirty();
@@ -767,6 +773,18 @@ public final class PaintOverlayFeature {
         PaintOverlayStore store = PaintOverlayStore.get(world);
         int radius = MathHelper.clamp(settings.radius(), MIN_RADIUS, MAX_MANUAL_RADIUS);
         int[] pixels = store.getPixels(pos, face);
+        if (radius <= MIN_RADIUS) {
+            if (x < 0 || x >= PaintOverlayStore.SIZE || y < 0 || y >= PaintOverlayStore.SIZE) {
+                return 0;
+            }
+            int index = y * PaintOverlayStore.SIZE + x;
+            int color = sprayColor(pixels[index], settings.color(), 1.0F);
+            if (!store.setPixel(pos, face, x, y, color)) {
+                return 0;
+            }
+            broadcastFace(world, pos, face, store.getPixels(pos, face));
+            return 1;
+        }
         Random random = Random.create(spraySeed(world, pos, face, x, y));
         int dotCount = MathHelper.clamp(radius * radius * 3, 6, 384);
         int changedPixels = 0;
@@ -882,6 +900,11 @@ public final class PaintOverlayFeature {
     }
 
     private static void eraseAt(ServerWorld world, BlockPos pos, Direction face, int x, int y, int radius, Vec3d hitPos) {
+        radius = MathHelper.clamp(radius, MIN_RADIUS, MAX_MANUAL_RADIUS);
+        if (radius <= MIN_RADIUS) {
+            eraseAt(world, pos, face, x, y, radius);
+            return;
+        }
         PaintOverlayStore store = PaintOverlayStore.get(world);
         Set<PaintOverlayStore.FaceKey> changedFaces = new LinkedHashSet<>();
         for (PaintSurfaceTargeting.SurfacePixel target : PaintSurfaceTargeting.collect(world, hitPos, radius)) {
