@@ -2,10 +2,11 @@
 
 uniform sampler2D InSampler;
 
-noperspective in vec2 texCoord;
+noperspective in vec3 projectedTexCoord;
 
 out vec4 fragColor;
 
 void main() {
+    vec2 texCoord = projectedTexCoord.xy / max(projectedTexCoord.z, 0.000001);
     fragColor = texture(InSampler, texCoord);
 }

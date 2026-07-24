@@ -12,7 +12,39 @@ final class PortalApertureProjection {
     }
 
     static Matrix4f create(Vec3d cameraPosition, Quaternionf cameraRotation,
-                           PortalViewTransform.Aperture aperture) {
+                            PortalViewTransform.Aperture aperture) {
+        ProjectionBounds bounds = projectionBounds(cameraPosition, cameraRotation, aperture);
+        if (bounds == null) {
+            return null;
+        }
+
+        return new Matrix4f().setFrustum(
+                bounds.left(),
+                bounds.right(),
+                bounds.bottom(),
+                bounds.top(),
+                bounds.near(),
+                bounds.far()
+        );
+    }
+
+    static CornerUvs textureCoordinates(Vec3d cameraPosition, Quaternionf cameraRotation,
+                                        PortalViewTransform.Aperture aperture) {
+        ProjectionBounds bounds = projectionBounds(cameraPosition, cameraRotation, aperture);
+        if (bounds == null) {
+            return null;
+        }
+
+        return new CornerUvs(
+                textureCoordinate(bounds.bottomLeft(), bounds),
+                textureCoordinate(bounds.bottomRight(), bounds),
+                textureCoordinate(bounds.topRight(), bounds),
+                textureCoordinate(bounds.topLeft(), bounds)
+        );
+    }
+
+    private static ProjectionBounds projectionBounds(Vec3d cameraPosition, Quaternionf cameraRotation,
+                                                     PortalViewTransform.Aperture aperture) {
         if (cameraPosition == null || cameraRotation == null || aperture == null) {
             return null;
         }
@@ -32,7 +64,7 @@ final class PortalApertureProjection {
         );
         float near = Math.max(
                 (float) PortalViewConfig.MIN_PROJECTION_DEPTH,
-                apertureDepth + (float) PortalViewConfig.PORTAL_NEAR_PLANE_BIAS
+                apertureDepth - (float) PortalViewConfig.PORTAL_NEAR_PLANE_BIAS
         );
         float far = Math.max(PortalViewConfig.PORTAL_MINIMUM_FAR_PLANE, near + 1024.0F);
 
@@ -50,7 +82,18 @@ final class PortalApertureProjection {
                 || right - left < 1.0E-4F || top - bottom < 1.0E-4F) {
             return null;
         }
-        return new Matrix4f().setFrustum(left, right, bottom, top, near, far);
+        return new ProjectionBounds(
+                near,
+                far,
+                left,
+                right,
+                bottom,
+                top,
+                bottomLeft,
+                bottomRight,
+                topRight,
+                topLeft
+        );
     }
 
     private static CameraPoint toCamera(Vec3d cameraPosition, Quaternionf worldToCamera, Vec3d worldPoint) {
@@ -71,6 +114,14 @@ final class PortalApertureProjection {
         return point.y() * near / point.depth();
     }
 
+    private static CornerUv textureCoordinate(CameraPoint point, ProjectionBounds bounds) {
+        float u = (projectedX(point, bounds.near()) - bounds.left())
+                / (bounds.right() - bounds.left());
+        float v = (projectedY(point, bounds.near()) - bounds.bottom())
+                / (bounds.top() - bounds.bottom());
+        return new CornerUv(u, v, point.depth());
+    }
+
     private static float min(float a, float b, float c, float d) {
         return Math.min(Math.min(a, b), Math.min(c, d));
     }
@@ -85,5 +136,17 @@ final class PortalApertureProjection {
                     && Float.isFinite(depth)
                     && depth > PortalViewConfig.MIN_PROJECTION_DEPTH;
         }
+    }
+
+    record CornerUv(float u, float v, float textureW) {
+    }
+
+    record CornerUvs(CornerUv bottomLeft, CornerUv bottomRight, CornerUv topRight, CornerUv topLeft) {
+    }
+
+    private record ProjectionBounds(float near, float far,
+                                    float left, float right, float bottom, float top,
+                                    CameraPoint bottomLeft, CameraPoint bottomRight,
+                                    CameraPoint topRight, CameraPoint topLeft) {
     }
 }

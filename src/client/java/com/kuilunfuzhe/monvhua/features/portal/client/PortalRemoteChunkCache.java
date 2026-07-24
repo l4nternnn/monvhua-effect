@@ -36,12 +36,12 @@ public final class PortalRemoteChunkCache {
         MinecraftClient client = MinecraftClient.getInstance();
         BlockPos immutableSource = sourcePos.toImmutable();
         CacheSlot slot = SLOTS.get(immutableSource);
-        if (!active || client.world == null) {
+        if (client.world == null) {
             boolean wasActiveSource = immutableSource.equals(activeSourcePos);
             if (slot != null && newGeneration >= slot.generation) {
                 slot.generation = newGeneration;
                 MonvhuaMod.LOGGER.info(
-                        "[Monvhua] Portal remote cache slot deactivated: source={} gen={} target={} accepted={} loaded={} fresh={}",
+                        "[Monvhua] Portal remote cache slot cleared: source={} gen={} target={} accepted={} loaded={} fresh={}",
                         immutableSource,
                         slot.generation,
                         slot.targetPos,
@@ -51,6 +51,29 @@ public final class PortalRemoteChunkCache {
                 );
                 SLOTS.remove(immutableSource);
                 slot.clearData();
+            }
+            if (wasActiveSource) {
+                activeSourcePos = null;
+                PortalHorizonCache.clear(immutableSource);
+                PortalHorizonCache.activate(null);
+                PortalFramebufferRenderer.onRemoteViewChanged();
+            }
+            return;
+        }
+        if (!active) {
+            boolean wasActiveSource = immutableSource.equals(activeSourcePos);
+            if (slot != null && newGeneration >= slot.generation) {
+                slot.generation = newGeneration;
+                slot.active = false;
+                MonvhuaMod.LOGGER.info(
+                        "[Monvhua] Portal remote cache slot retained: source={} gen={} target={} accepted={} loaded={} fresh={}",
+                        immutableSource,
+                        slot.generation,
+                        slot.targetPos,
+                        slot.acceptedChunks.size(),
+                        slot.chunks.size(),
+                        freshChunkCount(slot)
+                );
             }
             if (wasActiveSource) {
                 activeSourcePos = null;
@@ -178,8 +201,20 @@ public final class PortalRemoteChunkCache {
                 + " fresh=" + freshChunkCount(slot);
     }
 
+    public static String debugSummary(BlockPos sourcePos, ClientWorld clientWorld) {
+        return debugSummary(sourcePos, slotForSource(sourcePos), clientWorld);
+    }
+
     public static WorldChunk get(ClientWorld clientWorld, int chunkX, int chunkZ) {
         CacheSlot slot = activeSlot();
+        if (slot == null || slot.world != clientWorld) {
+            return null;
+        }
+        return slot.chunks.get(ChunkPos.toLong(chunkX, chunkZ));
+    }
+
+    public static WorldChunk get(BlockPos sourcePos, ClientWorld clientWorld, int chunkX, int chunkZ) {
+        CacheSlot slot = slotForSource(sourcePos);
         if (slot == null || slot.world != clientWorld) {
             return null;
         }
@@ -309,6 +344,18 @@ public final class PortalRemoteChunkCache {
         if (slot == null || slot.world != clientWorld) {
             return;
         }
+        appendSections(slot, clientWorld, sections);
+    }
+
+    public static void appendSections(BlockPos sourcePos, ClientWorld clientWorld, LongOpenHashSet sections) {
+        CacheSlot slot = slotForSource(sourcePos);
+        if (slot == null || slot.world != clientWorld) {
+            return;
+        }
+        appendSections(slot, clientWorld, sections);
+    }
+
+    private static void appendSections(CacheSlot slot, ClientWorld clientWorld, LongOpenHashSet sections) {
         for (WorldChunk chunk : slot.chunks.values()) {
             ChunkSection[] chunkSections = chunk.getSectionArray();
             ChunkPos pos = chunk.getPos();
@@ -326,6 +373,11 @@ public final class PortalRemoteChunkCache {
 
     public static int size(ClientWorld clientWorld) {
         CacheSlot slot = activeSlot();
+        return slot != null && slot.world == clientWorld ? slot.chunks.size() : 0;
+    }
+
+    public static int size(BlockPos sourcePos, ClientWorld clientWorld) {
+        CacheSlot slot = slotForSource(sourcePos);
         return slot != null && slot.world == clientWorld ? slot.chunks.size() : 0;
     }
 
@@ -525,6 +577,14 @@ public final class PortalRemoteChunkCache {
     private static CacheSlot activeSlot() {
         BlockPos contextSource = PortalRemoteRenderContext.getRemoteSourcePos();
         BlockPos sourcePos = contextSource == null ? activeSourcePos : contextSource;
+        if (sourcePos == null) {
+            return null;
+        }
+        CacheSlot slot = slotForSource(sourcePos);
+        return slot != null && slot.active ? slot : null;
+    }
+
+    private static CacheSlot slotForSource(BlockPos sourcePos) {
         if (sourcePos == null) {
             return null;
         }

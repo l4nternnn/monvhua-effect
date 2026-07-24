@@ -10,11 +10,13 @@ import net.minecraft.client.render.VertexFormats;
 import net.minecraft.util.Identifier;
 
 public final class PortalRenderPipelines {
-    private static final VertexFormatElement PORTAL_CLIP_W = registerPortalClipWElement();
+    private static final VertexFormatElement PORTAL_CLIP_W = registerPortalGenericFloatElement("clip W");
+    private static final VertexFormatElement PORTAL_TEXTURE_W = registerPortalGenericFloatElement("texture W");
     private static final VertexFormat PORTAL_FRAMEBUFFER_AREA_FORMAT = VertexFormat.builder()
             .add("Position", VertexFormatElement.POSITION)
             .add("ClipW", PORTAL_CLIP_W)
             .add("UV0", VertexFormatElement.UV0)
+            .add("TextureW", PORTAL_TEXTURE_W)
             .build();
 
     public static final RenderPipeline PORTAL_SURFACE = RenderPipelines.register(
@@ -53,7 +55,7 @@ public final class PortalRenderPipelines {
                 : FramebufferScreenAreaHolder.PORTAL_FRAMEBUFFER_SCREEN_AREA_NO_DEPTH;
     }
 
-    private static VertexFormatElement registerPortalClipWElement() {
+    private static VertexFormatElement registerPortalGenericFloatElement(String name) {
         for (int id = 6; id < VertexFormatElement.MAX_COUNT; id++) {
             if (VertexFormatElement.byId(id) == null) {
                 return VertexFormatElement.register(
@@ -65,7 +67,7 @@ public final class PortalRenderPipelines {
                 );
             }
         }
-        throw new IllegalStateException("No free vertex format element slot for portal clip W");
+        throw new IllegalStateException("No free vertex format element slot for portal " + name);
     }
 
     private static final class BlockAtlasHolder {

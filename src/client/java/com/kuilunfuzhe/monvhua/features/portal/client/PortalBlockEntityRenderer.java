@@ -39,17 +39,24 @@ public class PortalBlockEntityRenderer implements BlockEntityRenderer<PortalBloc
         }
         PortalLinkData link = entity.getLinkData();
         PortalFramebufferRenderer.offerVisiblePortal(entity, cameraPos);
-        if (entity.isActive() && link != null) {
+        if (entity.isActive() && link != null && PortalFramebufferRenderer.shouldUseLiveScreenComposite(entity)) {
             return;
         }
 
-        int color = colorForState(entity, link);
-        RenderLayer layer = RenderLayer.getEntityTranslucent(FALLBACK_TEXTURE);
+        Identifier portalTexture = entity.isActive() && link != null
+                ? PortalFramebufferRenderer.getTextureIdFor(entity)
+                : null;
+        boolean portalSurface = portalTexture != null;
+        int color = portalSurface ? 0xFFFFFFFF : colorForState(entity, link);
+        RenderLayer layer = portalSurface
+                ? PortalRenderLayers.surface(portalTexture)
+                : RenderLayer.getEntityTranslucent(FALLBACK_TEXTURE);
         VertexConsumer vertices = vertexConsumers.getBuffer(layer);
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         boolean baseReverse = facing == Direction.SOUTH || facing == Direction.EAST || facing == Direction.DOWN;
+        boolean reverseU = portalSurface ? PortalViewConfig.PORTAL_VIEW_FLIP_U : baseReverse;
         renderFace(matrix, vertices, facing, color, light, overlay,
-                entity.getPortalWidth(), entity.getPortalHeight(), baseReverse, false);
+                entity.getPortalWidth(), entity.getPortalHeight(), reverseU, portalSurface);
     }
 
     @Override

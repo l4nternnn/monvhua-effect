@@ -1071,12 +1071,15 @@ public final class PortalManager {
         PortalFrame targetFrame = target.getFrame();
         PortalViewTransform.View view = PortalViewTransform.compute(
                 player.getEyePos(),
+                player.getRotationVec(1.0F),
+                new Vec3d(0.0D, 1.0D, 0.0D),
                 sourceFrame,
                 targetFrame,
-                PortalViewConfig.PORTAL_VIEW_MIN_EXIT_OFFSET
+                PortalViewConfig.PORTAL_VIEW_MIN_EXIT_OFFSET,
+                PortalViewConfig.REMOTE_VIEW_CENTER_LEAD_BLOCKS
         );
         if (view != null) {
-            return view.remoteViewCenter(PortalViewConfig.REMOTE_VIEW_CENTER_LEAD_BLOCKS);
+            return view.remoteViewCenter();
         }
         Vec3d mapped = PortalTransform.mapPointForView(
                 player.getEyePos(),

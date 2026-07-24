@@ -8,35 +8,71 @@ public final class PortalViewTransform {
     }
 
     public static View compute(Vec3d eye, PortalFrame source, PortalFrame target, double minimumDepth) {
+        if (source == null) {
+            return null;
+        }
+        return compute(
+                eye,
+                source.normal().multiply(-1.0D),
+                source.heightAxis(),
+                source,
+                target,
+                minimumDepth,
+                PortalViewConfig.REMOTE_VIEW_CENTER_LEAD_BLOCKS
+        );
+    }
+
+    public static View compute(Vec3d eye, Vec3d cameraForward, Vec3d cameraUp,
+                               PortalFrame source, PortalFrame target,
+                               double minimumDepth, double leadBlocks) {
         if (eye == null || source == null || target == null) {
             return null;
         }
 
-        Vec3d local = eye.subtract(source.center());
-        double width = local.dotProduct(source.widthAxis());
-        double height = local.dotProduct(source.heightAxis());
-        double depth = local.dotProduct(source.normal());
-        double safeDepth = signedMinimum(depth, minimumDepth);
-
-        Vec3d position = target.center()
-                .add(target.widthAxis().multiply(width))
-                .add(target.heightAxis().multiply(height))
-                .add(target.contentNormal().multiply(safeDepth));
-        Vec3d forward = safeNormalize(target.normal());
-        Vec3d up = safeNormalize(target.heightAxis());
-        if (forward == null || up == null || Math.abs(forward.dotProduct(up)) > 0.999D) {
+        Vec3d position = PortalTransform.mapPointForView(eye, source, target, minimumDepth);
+        Vec3d forward = safeNormalize(PortalTransform.mapVector(cameraForward, source, target));
+        Vec3d mappedUp = safeNormalize(PortalTransform.mapVector(cameraUp, source, target));
+        if (forward == null) {
             return null;
         }
 
         Aperture aperture = apertureFor(target);
         Vec3d centerRay = safeNormalize(aperture.center().subtract(position));
-        if (centerRay == null || !allCornersInFront(position, forward, aperture)) {
+        if (centerRay == null) {
+            centerRay = forward;
+        }
+        Vec3d up = safeUp(forward, mappedUp, target.heightAxis());
+        BlockPos remoteViewCenter = PortalRemoteViewPlanner.viewCenter(position, centerRay, leadBlocks);
+        if (remoteViewCenter == null) {
             return null;
         }
-        return new View(position, forward, up, centerRay, aperture);
+        PortalClipPlane clipPlane = new PortalClipPlane(target.center(), target.normal());
+        return new View(position, forward, up, centerRay, aperture, remoteViewCenter, clipPlane);
+    }
+
+    private static Vec3d safeUp(Vec3d forward, Vec3d requestedUp, Vec3d fallbackUp) {
+        Vec3d up = requestedUp;
+        if (up == null || Math.abs(forward.dotProduct(up)) > 0.999D) {
+            up = safeNormalize(fallbackUp);
+        }
+        if (up == null || Math.abs(forward.dotProduct(up)) > 0.999D) {
+            up = Math.abs(forward.y) < 0.999D ? new Vec3d(0.0D, 1.0D, 0.0D) : new Vec3d(1.0D, 0.0D, 0.0D);
+        }
+        Vec3d right = safeNormalize(forward.crossProduct(up));
+        if (right == null) {
+            return new Vec3d(0.0D, 1.0D, 0.0D);
+        }
+        Vec3d orthogonalUp = safeNormalize(right.crossProduct(forward));
+        if (orthogonalUp == null) {
+            return new Vec3d(0.0D, 1.0D, 0.0D);
+        }
+        return orthogonalUp;
     }
 
     public static Aperture apertureFor(PortalFrame frame) {
+        if (frame == null) {
+            return null;
+        }
         double halfWidth = Math.max(
                 0.01D,
                 frame.width() * 0.5D - PortalViewConfig.PORTAL_SURFACE_HORIZONTAL_INSET
@@ -57,22 +93,6 @@ public final class PortalViewTransform {
         );
     }
 
-    private static boolean allCornersInFront(Vec3d position, Vec3d forward, Aperture aperture) {
-        double minDepth = PortalViewConfig.MIN_PROJECTION_DEPTH;
-        return aperture.bottomLeft().subtract(position).dotProduct(forward) > minDepth
-                && aperture.bottomRight().subtract(position).dotProduct(forward) > minDepth
-                && aperture.topRight().subtract(position).dotProduct(forward) > minDepth
-                && aperture.topLeft().subtract(position).dotProduct(forward) > minDepth;
-    }
-
-    private static double signedMinimum(double value, double minimumMagnitude) {
-        double safeMinimum = Math.max(0.0D, minimumMagnitude);
-        if (Math.abs(value) >= safeMinimum) {
-            return value;
-        }
-        return value < 0.0D ? -safeMinimum : safeMinimum;
-    }
-
     private static Vec3d safeNormalize(Vec3d vector) {
         if (vector == null || !isFinite(vector) || vector.lengthSquared() < 1.0E-10D) {
             return null;
@@ -85,10 +105,14 @@ public final class PortalViewTransform {
         return Double.isFinite(vector.x) && Double.isFinite(vector.y) && Double.isFinite(vector.z);
     }
 
-    public record View(Vec3d position, Vec3d forward, Vec3d up, Vec3d centerRay, Aperture aperture) {
+    public record View(Vec3d position, Vec3d forward, Vec3d up,
+                       Vec3d centerRay, Aperture aperture,
+                       BlockPos remoteViewCenter, PortalClipPlane clipPlane) {
         public BlockPos remoteViewCenter(double leadBlocks) {
-            double safeLead = Math.max(0.0D, leadBlocks);
-            return BlockPos.ofFloored(position.add(centerRay.multiply(safeLead)));
+            if (remoteViewCenter != null && Math.abs(leadBlocks - PortalViewConfig.REMOTE_VIEW_CENTER_LEAD_BLOCKS) < 1.0E-6D) {
+                return remoteViewCenter;
+            }
+            return PortalRemoteViewPlanner.viewCenter(position, centerRay, leadBlocks);
         }
     }
 

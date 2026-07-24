@@ -22,8 +22,21 @@ public final class PortalViewConfig {
     public static final int REMOTE_BUFFER_BUILDER_COUNT = 2;
     public static final int LIVE_VIEW_UPDATE_INTERVAL_FRAMES = 1;
     public static final boolean USE_SCREEN_ALIGNED_PORTAL_VIEW = false;
+    // Keep points and rays on the same width sign; splitting them causes live-view parallax drift.
+    public static final boolean PORTAL_LIVE_VIEW_MIRROR_POSITION_WIDTH = true;
+    public static final boolean PORTAL_LIVE_VIEW_MIRROR_DIRECTION_WIDTH = PORTAL_LIVE_VIEW_MIRROR_POSITION_WIDTH;
+    public static final boolean PORTAL_LIVE_VIEW_MIRROR_WIDTH = PORTAL_LIVE_VIEW_MIRROR_POSITION_WIDTH;
     public static final boolean PORTAL_VIEW_FLIP_U = false;
     public static final boolean PORTAL_VIEW_FLIP_V = false;
+    public static final boolean PORTAL_OBLIQUE_CLIP_ENABLED = true;
+    public static final int PORTAL_CANDIDATE_GRACE_FRAMES = 8;
+    public static final double PORTAL_AIM_RETAIN_DISTANCE = 128.0D;
+    public static final int MAX_CACHED_PORTAL_FRAME_AGE = 20;
+    public static final double MAX_CACHED_PORTAL_POSITION_DELTA = 0.75D;
+    public static final float MAX_CACHED_PORTAL_ROTATION_DOT_DELTA = 0.03F;
+    public static final int SCREEN_ALIGNED_MAX_CACHED_PORTAL_FRAME_AGE = 1;
+    public static final double SCREEN_ALIGNED_MAX_CACHED_PORTAL_POSITION_DELTA = 0.05D;
+    public static final float SCREEN_ALIGNED_MAX_CACHED_PORTAL_ROTATION_DOT_DELTA = 0.0005F;
     public static final boolean USE_INDEPENDENT_PORTAL_RENDERER = false;
     public static final boolean INDEPENDENT_PORTAL_TERRAIN_BAND = true;
     public static final int INDEPENDENT_PORTAL_TERRAIN_COLUMNS = 48;
