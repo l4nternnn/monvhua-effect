@@ -305,6 +305,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private final int[] previewSurfaceLocation = new int[2];
     private Vector3f currentGizmoCenter = new Vector3f();
     private final Vector3f dragStartGizmoCenter = new Vector3f();
+    private final Vector3f dragStartMoveOffsetVector = new Vector3f();
     private float dragStartMouseX;
     private float dragStartMouseY;
     private float dragStartMoveOffset;
@@ -3491,6 +3492,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private void clearActiveGizmoDrag() {
         draggingMoveAxis = MoveAxis.NONE;
         draggingRotationAxis = RotationAxis.NONE;
+        dragStartMoveOffsetVector.set(0.0F, 0.0F, 0.0F);
         dragStartMoveOffset = 0.0F;
         dragStartAxisScreenX = 0.0F;
         dragStartAxisScreenY = 0.0F;
@@ -3930,6 +3932,45 @@ public class BodyPoseEditorFragment extends Fragment {
         return best;
     }
 
+    private RotationDragBasis screenRotationDragBasis(RotationAxis axis, double px, double py) {
+        RotationDragBasis basis = nearestScreenRotationDragBasis(axis, px, py, true);
+        return basis != null ? basis : nearestScreenRotationDragBasis(axis, px, py, false);
+    }
+
+    private RotationDragBasis nearestScreenRotationDragBasis(RotationAxis axis, double px, double py,
+                                                             boolean visibleOnly) {
+        double best = Double.MAX_VALUE;
+        ScreenPoint bestStart = null;
+        ScreenPoint bestEnd = null;
+        ScreenPoint previous = screenRotationRingPoint(axis, 0);
+        for (int i = 1; i <= ROTATION_RING_SEGMENTS; i++) {
+            ScreenPoint current = screenRotationRingPoint(axis, i);
+            if (!visibleOnly || isScreenRotationRingSegmentVisible(axis, i)) {
+                double distance = distanceToSegment(px, py, previous, current);
+                if (distance < best) {
+                    best = distance;
+                    bestStart = previous;
+                    bestEnd = current;
+                }
+            }
+            previous = current;
+        }
+        if (bestStart == null || bestEnd == null) {
+            return null;
+        }
+        double tangentX = bestEnd.x - bestStart.x;
+        double tangentY = bestEnd.y - bestStart.y;
+        double segmentLength = Math.sqrt(tangentX * tangentX + tangentY * tangentY);
+        if (segmentLength < 0.001D) {
+            return null;
+        }
+        double radiansPerSegment = Math.PI * 2.0D / ROTATION_RING_SEGMENTS;
+        return new RotationDragBasis(
+                (float) (tangentX / segmentLength),
+                (float) (tangentY / segmentLength),
+                (float) (segmentLength / radiansPerSegment));
+    }
+
     private void updateHoveredScreenGizmo(float x, float y) {
         if (isRotationGizmoMode()) {
             hoveredMoveAxis = MoveAxis.NONE;
@@ -3953,6 +3994,7 @@ public class BodyPoseEditorFragment extends Fragment {
         dragStartMoveOffset = usesSelectedPartGizmoTarget()
                 ? getSelectedPoseOffset(axis)
                 : getActiveOffset(axis);
+        dragStartMoveOffsetVector.set(getActiveOffsetX(), getActiveOffsetY(), getActiveOffsetZ());
         draggingMoveAxis = axis;
         draggingRotationAxis = RotationAxis.NONE;
         draggingPreview = false;
@@ -3986,6 +4028,21 @@ public class BodyPoseEditorFragment extends Fragment {
         if (usesSelectedPartGizmoTarget() && poseEditMode == PoseEditMode.TRUE_SKELETAL) {
             deltaUnits = trueSkeletalModelOffset(deltaUnits);
         }
+        if (shouldDragWholeBodyOffsetAlongWorldPlacementAxis()) {
+            float previousX = getActiveOffsetX();
+            float previousY = getActiveOffsetY();
+            float previousZ = getActiveOffsetZ();
+            Vector3f delta = worldPlacementModelOffsetDelta(axis, deltaUnits);
+            setActiveOffset(MoveAxis.X, dragStartMoveOffsetVector.x + delta.x);
+            setActiveOffset(MoveAxis.Y, dragStartMoveOffsetVector.y + delta.y);
+            setActiveOffset(MoveAxis.Z, dragStartMoveOffsetVector.z + delta.z);
+            if (Math.abs(getActiveOffsetX() - previousX) > 0.0001F
+                    || Math.abs(getActiveOffsetY() - previousY) > 0.0001F
+                    || Math.abs(getActiveOffsetZ() - previousZ) > 0.0001F) {
+                previewTransformDirty = true;
+            }
+            return;
+        }
         float previous = usesSelectedPartGizmoTarget()
                 ? getSelectedPoseOffset(axis)
                 : getActiveOffset(axis);
@@ -4003,14 +4060,42 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
+    private boolean shouldDragWholeBodyOffsetAlongWorldPlacementAxis() {
+        return isWorldPlacementOverlayActive()
+                && !usesSelectedPartGizmoTarget()
+                && !hasSelectedItemModel();
+    }
+
+    private Vector3f worldPlacementModelOffsetDelta(MoveAxis axis, float amount) {
+        Vector3f delta = switch (axis) {
+            case X -> new Vector3f(amount, 0.0F, 0.0F);
+            case Y -> new Vector3f(0.0F, amount, 0.0F);
+            case Z -> new Vector3f(0.0F, 0.0F, amount);
+            default -> new Vector3f();
+        };
+        boolean trueSkeletalMode = isTrueSkeletalPoseMode();
+        return new Matrix4f()
+                .rotateX((float) Math.toRadians(trueSkeletalMode ? -modelPitch : modelPitch))
+                .rotateY((float) Math.toRadians(trueSkeletalMode ? modelYaw : -modelYaw))
+                .rotateZ((float) Math.toRadians(trueSkeletalMode ? -modelRoll : modelRoll))
+                .transformDirection(delta);
+    }
+
     private void dragScreenGizmoRotation(RotationAxis axis, double mouseX, double mouseY, double deltaX, double deltaY) {
         if (axis == RotationAxis.NONE) {
             return;
         }
-        ScreenPoint center = screenGizmoCenter();
-        double previousAngle = Math.atan2(mouseY - deltaY - center.y, mouseX - deltaX - center.x);
-        double currentAngle = Math.atan2(mouseY - center.y, mouseX - center.x);
-        float degrees = -normalizeDegrees((float) Math.toDegrees(currentAngle - previousAngle));
+        RotationDragBasis basis = screenRotationDragBasis(axis, mouseX - deltaX, mouseY - deltaY);
+        float degrees;
+        if (basis != null) {
+            double tangentDelta = deltaX * basis.tangentX + deltaY * basis.tangentY;
+            degrees = -normalizeDegrees((float) Math.toDegrees(tangentDelta / basis.pixelsPerRadian));
+        } else {
+            ScreenPoint center = screenGizmoCenter();
+            double previousAngle = Math.atan2(mouseY - deltaY - center.y, mouseX - deltaX - center.x);
+            double currentAngle = Math.atan2(mouseY - center.y, mouseX - center.x);
+            degrees = -normalizeDegrees((float) Math.toDegrees(currentAngle - previousAngle));
+        }
         degrees *= getRotationAxisDragSign(axis);
         if (usesSelectedPartGizmoTarget()) {
             switch (axis) {
@@ -7075,6 +7160,9 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private record ReeditTarget(int entityId, ItemStack stack, Vec3d pos) {
+    }
+
+    private record RotationDragBasis(float tangentX, float tangentY, float pixelsPerRadian) {
     }
 
     private static final class ScreenPoint {
