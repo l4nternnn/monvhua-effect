@@ -11,6 +11,7 @@ import com.kuilunfuzhe.monvhua.features.carryentity.CarryTransformDebugCommand;
 import com.kuilunfuzhe.monvhua.features.area_tip.AreaTipClient;
 import com.kuilunfuzhe.monvhua.features.binding.PlayerBindingClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceEnergyClient;
+import com.kuilunfuzhe.monvhua.features.dissolve.client.DissolveClientFeature;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.SignedEvilTooltipClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.ClientCameraWatchReceiver;
@@ -121,6 +122,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         PossessionClient.initialize();
         initializeOptionalAxiomAreaTip();
         PaintOverlayClient.initialize();
+        DissolveClientFeature.initializeClient();
         DrawingBoardClient.initialize();
         DhCompat.init(); // 远处地平线兼容初始化
         EmfCompat.init(); // Entity Model Features 兼容初始化

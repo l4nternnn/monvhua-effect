@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.mixin;
 
 import com.kuilunfuzhe.monvhua.features.paint.PlayerSkinPaintManager;
+import com.kuilunfuzhe.monvhua.features.dissolve.client.DissolveClientFeature;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.render.entity.PlayerEntityRenderer;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
@@ -31,5 +32,6 @@ public class PlayerEntityRendererMixin {
                 ((PlayerEntityRenderStateAccessor) state).setSkinTextures(modified);
             }
         }
+        DissolveClientFeature.overrideSkinTexture(player, state);
     }
 }

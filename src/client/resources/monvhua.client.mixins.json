@@ -65,6 +65,7 @@
 		"PlayerEntityRenderStateAccessor",
 		"PlayerEntityRendererInvoker",
 		"PlayerEntityRendererMixin",
+		"DissolveLivingEntityRendererMixin",
 		"PlayerListHudMixin",
 		"possession.PossessionInputRedirectMixin",
 		"possession.PossessionHandStackMixin",

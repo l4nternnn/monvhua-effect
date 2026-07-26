@@ -23,6 +23,7 @@ import com.kuilunfuzhe.monvhua.features.binding.PlayerBindingFeature;
 import com.kuilunfuzhe.monvhua.features.block.body.BodyPartManager;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryEvents;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
+import com.kuilunfuzhe.monvhua.features.dissolve.DissolveFeature;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ViewingModeBlocker;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.server.CameraWatchManager;
 import com.kuilunfuzhe.monvhua.features.guidance.Gazeguidance;
@@ -676,6 +677,7 @@ public class MonvhuaMod implements ModInitializer {
         PortalItems.initialize();
         PaintItems.initialize();
         PaintOverlayFeature.initialize();
+        DissolveFeature.initializeServer();
         InjuredBleedingFeature.initialize();
         HotBackpackSaveFeature.initialize();
         PlayerBindingFeature.initialize();

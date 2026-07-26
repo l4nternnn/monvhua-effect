@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.paint;
 
 import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
+import com.kuilunfuzhe.monvhua.features.dissolve.DissolveFeature;
 import com.kuilunfuzhe.monvhua.command.PaintGraffitiCommand;
 import com.kuilunfuzhe.monvhua.item.config.PaintConfig;
 import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
@@ -517,6 +518,9 @@ public final class PaintOverlayFeature {
         if (target.getPos().squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
             return;
         }
+        if (!DissolveFeature.canPaintPlayer(target.getUuid())) {
+            return;
+        }
 
         boolean clear;
         int color;
@@ -556,6 +560,9 @@ public final class PaintOverlayFeature {
         }
         Entity entity = world.getEntityById(packet.entityId());
         if (!(entity instanceof ServerPlayerEntity target)) {
+            return;
+        }
+        if (!DissolveFeature.canPaintPlayer(target.getUuid())) {
             return;
         }
         if (!target.getUuid().equals(player.getUuid())

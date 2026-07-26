@@ -13,6 +13,7 @@ import com.kuilunfuzhe.monvhua.network.binding.BindingPackets;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryTransformPackets;
 import com.kuilunfuzhe.monvhua.network.drawingboard.DrawingBoardPackets;
+import com.kuilunfuzhe.monvhua.network.dissolve.DissolvePackets;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingEnergySyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
@@ -89,6 +90,7 @@ public class ModNetworking {
         SecretPackets.registerS2C();
         FantasyS2CPacket.register();
         PlayerListRestrictS2CPacket.register();
+        DissolvePackets.registerS2C();
 
     }
 
