@@ -66,6 +66,7 @@ final class DissolveClientController {
             state.incrementElapsed();
             Entity entity = client.world.getEntityById(state.entityId());
             if (entity instanceof PlayerEntity player) {
+                DissolvePixelParticleEmitter.tick(client, player, state);
                 DissolveParticleEmitter.tick(client, player, state);
             }
             if (state.elapsedTicks() > state.profile().durationTicks() + 80) {

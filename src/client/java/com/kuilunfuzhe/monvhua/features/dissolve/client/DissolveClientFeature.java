@@ -1,7 +1,10 @@
 package com.kuilunfuzhe.monvhua.features.dissolve.client;
 
+import com.kuilunfuzhe.monvhua.features.dissolve.DissolveParticleTypes;
+import com.kuilunfuzhe.monvhua.features.dissolve.client.particle.DissolvePixelParticle;
 import com.kuilunfuzhe.monvhua.mixin.PlayerEntityRenderStateAccessor;
 import com.kuilunfuzhe.monvhua.network.dissolve.DissolvePackets;
+import net.fabricmc.fabric.api.client.particle.v1.ParticleFactoryRegistry;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -24,6 +27,10 @@ public final class DissolveClientFeature {
             return;
         }
         initialized = true;
+        ParticleFactoryRegistry.getInstance().register(
+                DissolveParticleTypes.DISSOLVE_PIXEL,
+                DissolvePixelParticle.Factory::new
+        );
         ClientTickEvents.END_CLIENT_TICK.register(DissolveClientController::tick);
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> DissolveClientController.clearAll());
         ClientPlayNetworking.registerGlobalReceiver(DissolvePackets.StartS2C.ID, (packet, context) ->

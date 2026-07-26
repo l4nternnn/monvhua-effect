@@ -16,6 +16,7 @@ public final class DissolveFeature {
             return;
         }
         serverInitialized = true;
+        DissolveParticleTypes.register();
         DissolveServerController.initialize();
     }
 

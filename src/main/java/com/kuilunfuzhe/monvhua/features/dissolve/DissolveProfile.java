@@ -20,6 +20,15 @@ public record DissolveProfile(
         double particleLeftSpeed,
         double particleUpSpeed,
         double particleRandomSpeed,
+        boolean pixelParticleEnabled,
+        int maxPixelParticlesPerTick,
+        float pixelParticleScale,
+        int pixelParticleLifetimeTicks,
+        double pixelParticleLeftSpeed,
+        double pixelParticleUpSpeed,
+        double pixelParticleRandomSpeed,
+        boolean pixelParticleUseSkinColor,
+        int pixelParticleFixedColor,
         boolean freezeTarget,
         boolean hideNameTag
 ) {
@@ -35,12 +44,21 @@ public record DissolveProfile(
             0.10F,
             0.08F,
             2,
-            12,
+            0,
             4,
             0.03F,
             0.045D,
             0.075D,
             0.025D,
+            true,
+            120,
+            0.035F,
+            22,
+            0.025D,
+            0.045D,
+            0.006D,
+            true,
+            0xFFFFFFFF,
             true,
             true
     );
@@ -63,6 +81,12 @@ public record DissolveProfile(
         particleLeftSpeed = clamp(particleLeftSpeed, 0.0D, 1.0D);
         particleUpSpeed = clamp(particleUpSpeed, 0.0D, 1.0D);
         particleRandomSpeed = clamp(particleRandomSpeed, 0.0D, 1.0D);
+        maxPixelParticlesPerTick = clamp(maxPixelParticlesPerTick, 0, 4096);
+        pixelParticleScale = clamp(pixelParticleScale, 0.001F, 0.25F);
+        pixelParticleLifetimeTicks = clamp(pixelParticleLifetimeTicks, 1, 20 * 10);
+        pixelParticleLeftSpeed = clamp(pixelParticleLeftSpeed, 0.0D, 1.0D);
+        pixelParticleUpSpeed = clamp(pixelParticleUpSpeed, 0.0D, 1.0D);
+        pixelParticleRandomSpeed = clamp(pixelParticleRandomSpeed, 0.0D, 1.0D);
     }
 
     public static DissolveProfile read(RegistryByteBuf buf) {
@@ -84,6 +108,15 @@ public record DissolveProfile(
                 buf.readDouble(),
                 buf.readDouble(),
                 buf.readDouble(),
+                buf.readBoolean(),
+                buf.readVarInt(),
+                buf.readFloat(),
+                buf.readVarInt(),
+                buf.readDouble(),
+                buf.readDouble(),
+                buf.readDouble(),
+                buf.readBoolean(),
+                buf.readInt(),
                 buf.readBoolean(),
                 buf.readBoolean()
         );
@@ -107,6 +140,15 @@ public record DissolveProfile(
         buf.writeDouble(particleLeftSpeed);
         buf.writeDouble(particleUpSpeed);
         buf.writeDouble(particleRandomSpeed);
+        buf.writeBoolean(pixelParticleEnabled);
+        buf.writeVarInt(maxPixelParticlesPerTick);
+        buf.writeFloat(pixelParticleScale);
+        buf.writeVarInt(pixelParticleLifetimeTicks);
+        buf.writeDouble(pixelParticleLeftSpeed);
+        buf.writeDouble(pixelParticleUpSpeed);
+        buf.writeDouble(pixelParticleRandomSpeed);
+        buf.writeBoolean(pixelParticleUseSkinColor);
+        buf.writeInt(pixelParticleFixedColor);
         buf.writeBoolean(freezeTarget);
         buf.writeBoolean(hideNameTag);
     }
@@ -130,6 +172,15 @@ public record DissolveProfile(
                 particleLeftSpeed,
                 particleUpSpeed,
                 particleRandomSpeed,
+                pixelParticleEnabled,
+                maxPixelParticlesPerTick,
+                pixelParticleScale,
+                pixelParticleLifetimeTicks,
+                pixelParticleLeftSpeed,
+                pixelParticleUpSpeed,
+                pixelParticleRandomSpeed,
+                pixelParticleUseSkinColor,
+                pixelParticleFixedColor,
                 freezeTarget,
                 hideNameTag
         );

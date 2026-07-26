@@ -7,6 +7,8 @@ import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.util.Identifier;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -20,6 +22,8 @@ final class DissolveTextureController {
     private int imageWidth;
     private int imageHeight;
     private int[] basePixels = new int[0];
+    private boolean[] emittedPixels = new boolean[0];
+    private final Deque<DissolvePixelEvent> pendingPixelEvents = new ArrayDeque<>();
     private int lastUploadedElapsed = Integer.MIN_VALUE;
 
     DissolveTextureController(UUID targetUuid) {
@@ -42,6 +46,8 @@ final class DissolveTextureController {
         imageWidth = baseImage.getWidth();
         imageHeight = baseImage.getHeight();
         basePixels = new int[imageWidth * imageHeight];
+        emittedPixels = new boolean[basePixels.length];
+        pendingPixelEvents.clear();
         NativeImage skinImage = new NativeImage(imageWidth, imageHeight, false);
         NativeImage edgeImage = new NativeImage(imageWidth, imageHeight, false);
         for (int y = 0; y < imageHeight; y++) {
@@ -102,6 +108,14 @@ final class DissolveTextureController {
                 );
                 skinImage.setColorArgb(x, y, mask.transparent() ? 0 : base);
                 edgeImage.setColorArgb(x, y, mask.edge() ? ((edgeAlpha << 24) | 0x00FFFFFF) : 0);
+                if (profile.pixelParticleEnabled() && mask.transparent() && !emittedPixels[index]) {
+                    emittedPixels[index] = true;
+                    pendingPixelEvents.addLast(new DissolvePixelEvent(
+                            mask.point().x(),
+                            mask.point().y(),
+                            base
+                    ));
+                }
             }
         }
         skinTexture.upload();
@@ -115,6 +129,10 @@ final class DissolveTextureController {
 
     Identifier edgeTextureId() {
         return edgeTextureId;
+    }
+
+    DissolvePixelEvent pollPixelEvent() {
+        return pendingPixelEvents.pollFirst();
     }
 
     void destroy() {
@@ -133,6 +151,8 @@ final class DissolveTextureController {
         imageWidth = 0;
         imageHeight = 0;
         basePixels = new int[0];
+        emittedPixels = new boolean[0];
+        pendingPixelEvents.clear();
         lastUploadedElapsed = Integer.MIN_VALUE;
     }
 
@@ -158,5 +178,8 @@ final class DissolveTextureController {
         } catch (Exception ignored) {
         }
         return null;
+    }
+
+    record DissolvePixelEvent(float bodyX, float bodyY, int argb) {
     }
 }
