@@ -1,7 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.dissolve.server;
 
 import com.kuilunfuzhe.monvhua.features.dissolve.DissolveFeature;
-import com.kuilunfuzhe.monvhua.features.dissolve.DissolveProfile;
+import com.kuilunfuzhe.monvhua.features.dissolve.DissolveConfig;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import net.minecraft.command.CommandRegistryAccess;
@@ -22,7 +22,7 @@ public final class DissolveCommand {
                 .requires(source -> source.hasPermissionLevel(2))
                 .then(CommandManager.argument("target", EntityArgumentType.player())
                         .executes(context -> start(context.getSource(), EntityArgumentType.getPlayer(context, "target"),
-                                DissolveProfile.DEFAULT.durationTicks()))
+                                DissolveConfig.getInstance().durationTicks()))
                         .then(CommandManager.argument("durationTicks", IntegerArgumentType.integer(1, 20 * 60))
                                 .executes(context -> start(context.getSource(),
                                         EntityArgumentType.getPlayer(context, "target"),
@@ -33,7 +33,7 @@ public final class DissolveCommand {
     }
 
     private static int start(ServerCommandSource source, ServerPlayerEntity target, int durationTicks) {
-        DissolveProfile profile = DissolveProfile.DEFAULT.withDurationTicks(durationTicks);
+        var profile = DissolveConfig.getInstance().toProfileWithDurationTicks(durationTicks);
         if (!DissolveFeature.start(target, profile)) {
             source.sendError(Text.literal("无法开始消散效果: " + target.getName().getString()));
             return 0;

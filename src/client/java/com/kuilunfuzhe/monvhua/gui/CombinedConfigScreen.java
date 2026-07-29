@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.gui;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.kuilunfuzhe.monvhua.features.dissolve.DissolveConfig;
 import com.kuilunfuzhe.monvhua.features.hot_backpack_save.HotBackpackSaveClient;
 import com.kuilunfuzhe.monvhua.features.textarea.TextAreaHudClient;
 import com.kuilunfuzhe.monvhua.gui.stage.general_stage;
@@ -15,6 +16,7 @@ import com.kuilunfuzhe.monvhua.item.config.PaintConfig;
 import com.kuilunfuzhe.monvhua.item.config.PlantMagicConfig;
 import com.kuilunfuzhe.monvhua.item.config.SecretConfig;
 import com.kuilunfuzhe.monvhua.item.config.ThroughConfig;
+import com.kuilunfuzhe.monvhua.network.dissolve.DissolvePackets;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.RequestConfigC2SPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.UpdateConfigC2SPacket;
@@ -87,6 +89,7 @@ public final class CombinedConfigScreen {
     private static PaintConfig cachedPaintConfig;
     private static GravityConfig cachedGravityConfig;
     private static InjuredBleedingConfig cachedInjuredBleedingConfig;
+    private static DissolveConfig cachedDissolveConfig;
     private static CombinedConfigFragment activeFragment;
     private static final ScreenUiState UI_STATE = ScreenUiState.load();
     private static float uiScale = UI_STATE.uiScale;
@@ -198,6 +201,12 @@ public final class CombinedConfigScreen {
         refreshActiveFragment(null, true);
     }
 
+    public static void receiveDissolveConfig(DissolveConfig config) {
+        if (config == null) return;
+        cachedDissolveConfig = config;
+        refreshActiveFragment(ConfigType.DISSOLVE, false);
+    }
+
     private static void ensureDefaults() {
         if (cachedGazeConfig == null) cachedGazeConfig = new GazeConfig();
         if (cachedMirrorConfig == null) cachedMirrorConfig = new MirrorConfig();
@@ -209,6 +218,7 @@ public final class CombinedConfigScreen {
         if (cachedPaintConfig == null) cachedPaintConfig = new PaintConfig();
         if (cachedGravityConfig == null) cachedGravityConfig = new GravityConfig();
         if (cachedInjuredBleedingConfig == null) cachedInjuredBleedingConfig = new InjuredBleedingConfig();
+        if (cachedDissolveConfig == null) cachedDissolveConfig = DissolveConfig.getInstance();
     }
 
     private static void requestAllConfigs() {
@@ -223,6 +233,7 @@ public final class CombinedConfigScreen {
         ClientPlayNetworking.send(new PaintOverlayPackets.RequestPaintConfigC2S());
         ClientPlayNetworking.send(new GravityPackets.RequestConfigC2S());
         ClientPlayNetworking.send(new InjuredBleedingPackets.RequestConfigC2S());
+        ClientPlayNetworking.send(new DissolvePackets.RequestConfigC2S());
     }
 
     private static final ScreenCallback NON_PAUSING_CALLBACK = new ScreenCallback() {
@@ -252,7 +263,8 @@ public final class CombinedConfigScreen {
         SECRET("窃密"),
         PLANT("植物"),
         PAINT("绘制"),
-        GRAVITY("重力");
+        GRAVITY("重力"),
+        DISSOLVE("消散");
 
         final String label;
 
@@ -438,6 +450,7 @@ public final class CombinedConfigScreen {
                 case PLANT -> buildPlant(centerPanel);
                 case PAINT -> buildPaint(centerPanel);
                 case GRAVITY -> buildGravity(centerPanel);
+                case DISSOLVE -> buildDissolve(centerPanel);
             }
             rebuilding = false;
         }
@@ -455,6 +468,7 @@ public final class CombinedConfigScreen {
             addDivider(rightPanel);
             addRightConfigButton("绘制配置", ConfigType.PAINT, false);
             addRightConfigButton("受伤血迹配置", currentType, true);
+            addRightConfigButton("消散配置", ConfigType.DISSOLVE, false);
             Button playerArchive = button(getContext(), "玩家存档");
             playerArchive.setOnClickListener(v -> HotBackpackSaveClient.openAfterWorldFrame(MinecraftClient.getInstance().currentScreen));
             rightPanel.addView(playerArchive, blockParams());
@@ -555,6 +569,12 @@ public final class CombinedConfigScreen {
             addField(parent, "consumption", "每像素消耗倍率", cachedPaintConfig.brushConsumptionMultiplier);
             addField(parent, "bucketLoads", "油漆桶取色次数", cachedPaintConfig.bucketBrushLoads);
             addSave(parent, "保存绘制", this::savePaint);
+        }
+
+        private void buildDissolve(LinearLayout parent) {
+            addField(parent, "dissolveSpeed", "整体消散速度", cachedDissolveConfig.dissolveSpeed);
+            addField(parent, "pixelParticleLifetimeTicks", "飘散粒子消散时长/tick", cachedDissolveConfig.pixelParticleLifetimeTicks);
+            addSave(parent, "保存消散", this::saveDissolve);
         }
 
         private void buildGravity(LinearLayout parent) {
@@ -873,6 +893,7 @@ public final class CombinedConfigScreen {
                     case PLANT -> stagePlantFields();
                     case PAINT -> stagePaintFields();
                     case GRAVITY -> stageGravityFields();
+                    case DISSOLVE -> stageDissolveFields();
                 }
                 return true;
             } catch (NumberFormatException e) {
@@ -946,6 +967,13 @@ public final class CombinedConfigScreen {
             config.brushConsumptionMultiplier = doubleField("consumption");
             config.bucketBrushLoads = intField("bucketLoads");
             cachedPaintConfig = PaintConfig.fromJson(config.toJson());
+        }
+
+        private void stageDissolveFields() {
+            cachedDissolveConfig = DissolveConfig.fromValues(
+                    doubleField("dissolveSpeed"),
+                    intField("pixelParticleLifetimeTicks")
+            );
         }
 
         private void stageGravityFields() {
@@ -1061,6 +1089,16 @@ public final class CombinedConfigScreen {
             }
         }
 
+        private void saveDissolve() {
+            try {
+                stageDissolveFields();
+                ClientPlayNetworking.send(new DissolvePackets.UpdateConfigC2S(cachedDissolveConfig.toJson()));
+                message("消散配置已提交");
+            } catch (NumberFormatException e) {
+                invalid();
+            }
+        }
+
         private void saveGravity() {
             try {
                 stageGravityFields();
@@ -1150,11 +1188,11 @@ public final class CombinedConfigScreen {
         }
 
         private static boolean usesStage(ConfigType type) {
-            return type != ConfigType.PAINT;
+            return type != ConfigType.PAINT && type != ConfigType.DISSOLVE;
         }
 
         private static boolean isLeftNavType(ConfigType type) {
-            return type != ConfigType.PAINT;
+            return type != ConfigType.PAINT && type != ConfigType.DISSOLVE;
         }
 
         private void message(String text) {

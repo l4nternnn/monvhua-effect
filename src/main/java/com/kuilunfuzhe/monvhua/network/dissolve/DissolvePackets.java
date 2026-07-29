@@ -19,6 +19,12 @@ public final class DissolvePackets {
         StartS2C.register();
         StopS2C.register();
         FinishS2C.register();
+        ConfigS2C.register();
+    }
+
+    public static void registerC2S() {
+        RequestConfigC2S.register();
+        UpdateConfigC2S.register();
     }
 
     public record StartS2C(UUID targetUuid, int entityId, int elapsedTicks, long seed,
@@ -110,6 +116,76 @@ public final class DissolvePackets {
         public static void register() {
             if (!registered) {
                 PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record ConfigS2C(String json) implements CustomPayload {
+        public static final Id<ConfigS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "dissolve_config"));
+        public static final PacketCodec<RegistryByteBuf, ConfigS2C> CODEC = PacketCodec.of(ConfigS2C::write, ConfigS2C::new);
+        private static boolean registered;
+
+        private ConfigS2C(RegistryByteBuf buf) {
+            this(buf.readString());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(json);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record RequestConfigC2S() implements CustomPayload {
+        public static final Id<RequestConfigC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "request_dissolve_config"));
+        public static final PacketCodec<RegistryByteBuf, RequestConfigC2S> CODEC = PacketCodec.unit(new RequestConfigC2S());
+        private static boolean registered;
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record UpdateConfigC2S(String json) implements CustomPayload {
+        public static final Id<UpdateConfigC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "update_dissolve_config"));
+        public static final PacketCodec<RegistryByteBuf, UpdateConfigC2S> CODEC = PacketCodec.of(UpdateConfigC2S::write, UpdateConfigC2S::new);
+        private static boolean registered;
+
+        private UpdateConfigC2S(RegistryByteBuf buf) {
+            this(buf.readString());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeString(json);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
                 registered = true;
             }
         }

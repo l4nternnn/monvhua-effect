@@ -1,7 +1,9 @@
 package com.kuilunfuzhe.monvhua.features.dissolve.client;
 
 import com.kuilunfuzhe.monvhua.features.dissolve.DissolveParticleTypes;
+import com.kuilunfuzhe.monvhua.features.dissolve.DissolveConfig;
 import com.kuilunfuzhe.monvhua.features.dissolve.client.particle.DissolvePixelParticle;
+import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 import com.kuilunfuzhe.monvhua.mixin.PlayerEntityRenderStateAccessor;
 import com.kuilunfuzhe.monvhua.network.dissolve.DissolvePackets;
 import net.fabricmc.fabric.api.client.particle.v1.ParticleFactoryRegistry;
@@ -39,6 +41,12 @@ public final class DissolveClientFeature {
                 context.client().execute(() -> DissolveClientController.stop(packet.targetUuid())));
         ClientPlayNetworking.registerGlobalReceiver(DissolvePackets.FinishS2C.ID, (packet, context) ->
                 context.client().execute(() -> DissolveClientController.stop(packet.targetUuid())));
+        ClientPlayNetworking.registerGlobalReceiver(DissolvePackets.ConfigS2C.ID, (packet, context) ->
+                context.client().execute(() -> {
+                    DissolveConfig config = DissolveConfig.fromJson(packet.json());
+                    DissolveConfig.syncInstance(config);
+                    CombinedConfigScreen.receiveDissolveConfig(config);
+                }));
     }
 
     public static void overrideSkinTexture(AbstractClientPlayerEntity player, PlayerEntityRenderState state) {

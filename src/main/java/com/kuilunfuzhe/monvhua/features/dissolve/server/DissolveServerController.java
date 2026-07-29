@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.dissolve.server;
 
 import com.kuilunfuzhe.monvhua.features.dissolve.DissolveFeature;
+import com.kuilunfuzhe.monvhua.features.dissolve.DissolveConfig;
 import com.kuilunfuzhe.monvhua.features.dissolve.DissolveLock;
 import com.kuilunfuzhe.monvhua.features.dissolve.DissolveProfile;
 import com.kuilunfuzhe.monvhua.network.dissolve.DissolvePackets;
@@ -13,6 +14,7 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.text.Text;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
@@ -51,6 +53,10 @@ public final class DissolveServerController {
                 stop(player.getUuid(), DissolveFeature.StopReason.DEATH);
             }
         });
+        ServerPlayNetworking.registerGlobalReceiver(DissolvePackets.RequestConfigC2S.ID, (packet, context) ->
+                context.server().execute(() -> syncConfigTo(context.player())));
+        ServerPlayNetworking.registerGlobalReceiver(DissolvePackets.UpdateConfigC2S.ID, (packet, context) ->
+                context.server().execute(() -> updateConfig(context.player(), packet.json())));
         CommandRegistrationCallback.EVENT.register(DissolveCommand::register);
     }
 
@@ -89,6 +95,27 @@ public final class DissolveServerController {
 
     public static boolean isDissolving(UUID targetUuid) {
         return targetUuid != null && STATES.containsKey(targetUuid);
+    }
+
+    public static void syncConfigTo(ServerPlayerEntity player) {
+        if (player != null) {
+            ServerPlayNetworking.send(player, new DissolvePackets.ConfigS2C(DissolveConfig.getInstance().toJson()));
+        }
+    }
+
+    private static void updateConfig(ServerPlayerEntity player, String json) {
+        if (player == null || (!player.hasPermissionLevel(2) && !player.isCreative())) {
+            return;
+        }
+        DissolveConfig config = DissolveConfig.fromJson(json);
+        DissolveConfig.setInstance(config);
+        if (player.getServer() != null) {
+            DissolvePackets.ConfigS2C sync = new DissolvePackets.ConfigS2C(config.toJson());
+            for (ServerPlayerEntity target : player.getServer().getPlayerManager().getPlayerList()) {
+                ServerPlayNetworking.send(target, sync);
+            }
+        }
+        player.sendMessage(Text.literal("§aDissolve config updated"), true);
     }
 
     private static void tick(MinecraftServer server) {

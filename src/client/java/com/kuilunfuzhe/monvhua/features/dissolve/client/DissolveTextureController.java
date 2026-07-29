@@ -110,11 +110,7 @@ final class DissolveTextureController {
                 edgeImage.setColorArgb(x, y, mask.edge() ? ((edgeAlpha << 24) | 0x00FFFFFF) : 0);
                 if (profile.pixelParticleEnabled() && mask.transparent() && !emittedPixels[index]) {
                     emittedPixels[index] = true;
-                    pendingPixelEvents.addLast(new DissolvePixelEvent(
-                            mask.point().x(),
-                            mask.point().y(),
-                            base
-                    ));
+                    pendingPixelEvents.addLast(new DissolvePixelEvent(mask.point(), base));
                 }
             }
         }
@@ -180,6 +176,6 @@ final class DissolveTextureController {
         return null;
     }
 
-    record DissolvePixelEvent(float bodyX, float bodyY, int argb) {
+    record DissolvePixelEvent(DissolveSkinMapper.BodyPoint point, int argb) {
     }
 }

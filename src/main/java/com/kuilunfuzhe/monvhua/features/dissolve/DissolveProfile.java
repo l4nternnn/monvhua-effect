@@ -186,6 +186,39 @@ public record DissolveProfile(
         );
     }
 
+    public DissolveProfile withPixelParticleLifetimeTicks(int pixelParticleLifetimeTicks) {
+        return new DissolveProfile(
+                durationTicks,
+                edgeBand,
+                noiseStrength,
+                edgeAlpha,
+                originX,
+                originY,
+                angleDegrees,
+                startPadding,
+                endPadding,
+                surfaceDepthDelay,
+                textureUploadIntervalTicks,
+                particlesPerTick,
+                particleDelayTicks,
+                particleTrailRatio,
+                particleLeftSpeed,
+                particleUpSpeed,
+                particleRandomSpeed,
+                pixelParticleEnabled,
+                maxPixelParticlesPerTick,
+                pixelParticleScale,
+                pixelParticleLifetimeTicks,
+                pixelParticleLeftSpeed,
+                pixelParticleUpSpeed,
+                pixelParticleRandomSpeed,
+                pixelParticleUseSkinColor,
+                pixelParticleFixedColor,
+                freezeTarget,
+                hideNameTag
+        );
+    }
+
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
     }

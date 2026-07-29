@@ -133,5 +133,6 @@ public class ModNetworking {
         SilencePacket.register();
         RequestSilenceTargetsC2SPacket.register();
         SecretPackets.registerC2S();
+        DissolvePackets.registerC2S();
     }
 }

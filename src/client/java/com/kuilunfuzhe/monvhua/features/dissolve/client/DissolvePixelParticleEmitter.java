@@ -22,9 +22,6 @@ final class DissolvePixelParticleEmitter {
 
         double yaw = Math.toRadians(player.bodyYaw);
         Vec3d left = new Vec3d(-Math.cos(yaw), 0.0D, -Math.sin(yaw));
-        Vec3d front = new Vec3d(-Math.sin(yaw), 0.0D, Math.cos(yaw));
-        double width = Math.max(0.3D, player.getWidth());
-        double height = Math.max(1.0D, player.getHeight());
 
         for (int i = 0; i < profile.maxPixelParticlesPerTick(); i++) {
             DissolveTextureController.DissolvePixelEvent event = state.textureController().pollPixelEvent();
@@ -32,12 +29,7 @@ final class DissolvePixelParticleEmitter {
                 return;
             }
 
-            double localX = (event.bodyX() - 0.5D) * width * 1.8D;
-            double localY = (1.0D - event.bodyY()) * height;
-            Vec3d pos = player.getPos()
-                    .add(0.0D, localY, 0.0D)
-                    .add(left.multiply(localX))
-                    .add(front.multiply(width * 0.35D));
+            Vec3d pos = DissolvePixelPositionMapper.toWorldPos(player, event.point());
             double randomSpeed = profile.pixelParticleRandomSpeed();
             Vec3d random = new Vec3d(
                     client.world.random.nextDouble() - 0.5D,
