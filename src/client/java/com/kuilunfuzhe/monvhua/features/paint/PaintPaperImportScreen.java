@@ -3,6 +3,8 @@ package com.kuilunfuzhe.monvhua.features.paint;
 import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
+import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
+import com.kuilunfuzhe.monvhua.features.paint.PaintPaperStore;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.DrawContext;
@@ -28,6 +30,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 
 public class PaintPaperImportScreen extends Screen {
@@ -36,7 +40,7 @@ public class PaintPaperImportScreen extends Screen {
     private static final int LIST_WIDTH = 210;
     private static final int ROW_HEIGHT = 18;
     private static final int PREVIEW_SIZE = 210;
-    private static final int MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+    private static final int MAX_UPLOAD_BYTES = PaintOverlayPackets.MAX_IMPORTED_IMAGE_BYTES;
     private static final Map<Path, CachedImage> IMAGE_CACHE = new HashMap<>();
 
     private final List<ImageEntry> images = new ArrayList<>();
@@ -244,21 +248,48 @@ public class PaintPaperImportScreen extends Screen {
                     + ", max " + PaintPaperStore.MAX_IMPORTED_IMAGE_PIXELS + " pixels";
             return;
         }
-        byte[] imageBytes;
         try {
             long size = Files.size(entry.path());
             if (size > MAX_UPLOAD_BYTES) {
                 status = "图片过大，最大 8 MiB";
                 return;
             }
-            imageBytes = Files.readAllBytes(entry.path());
         } catch (IOException e) {
             status = "读取图片失败: " + e.getMessage();
             return;
         }
         importing = true;
         status = "正在上传...";
-        SafeClientNetworking.send(new PaintOverlayPackets.ImportPaintPaperC2S(entry.name(), imageBytes));
+        importing = true;
+        status = "正在处理本地图片...";
+        CompletableFuture.supplyAsync(() -> createLocalPaper(entry))
+                .whenComplete((paper, error) -> client.execute(() -> {
+                    importing = false;
+                    if (error != null || paper == null) {
+                        status = "读取图片失败或文件过大";
+                        return;
+                    }
+                    PaintOverlayClient.installLocalImportedPaper(paper.id(), paper.name(), paper.width(), paper.height(), paper.pngBytes(), paper.sha256());
+                    status = "本地画纸已准备: " + paper.width() + "x" + paper.height();
+                }));
+    }
+
+    private static LocalPaper createLocalPaper(ImageEntry entry) {
+        try {
+            long size = Files.size(entry.path());
+            if (size <= 0 || size > MAX_UPLOAD_BYTES) {
+                return null;
+            }
+            byte[] bytes = Files.readAllBytes(entry.path());
+            BufferedImage image = ImageIO.read(new java.io.ByteArrayInputStream(bytes));
+            if (image == null || (long) image.getWidth() * image.getHeight() > PaintPaperStore.MAX_IMPORTED_IMAGE_PIXELS) {
+                return null;
+            }
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            return new LocalPaper(UUID.randomUUID(), entry.name(), image.getWidth(), image.getHeight(), bytes, digest.digest(bytes));
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     public static void receiveImportResult(PaintOverlayPackets.ImportPaintPaperResultS2C result) {
@@ -420,6 +451,9 @@ public class PaintPaperImportScreen extends Screen {
     }
 
     private record ImageEntry(Path path, String name, int width, int height, Identifier textureId) {
+    }
+
+    private record LocalPaper(UUID id, String name, int width, int height, byte[] pngBytes, byte[] sha256) {
     }
 
     private record CachedImage(Path path, long lastModified, long size, int width, int height,

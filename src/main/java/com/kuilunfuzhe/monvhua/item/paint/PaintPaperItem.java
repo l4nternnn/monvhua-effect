@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.item.paint;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayFeature;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayStore;
 import com.kuilunfuzhe.monvhua.features.paint.PaintPaperStore;
+import com.kuilunfuzhe.monvhua.features.paint.PaintSurface;
 import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.NbtComponent;
@@ -154,26 +155,7 @@ public class PaintPaperItem extends Item {
     }
 
     private static BlockPos areaPos(BlockPos origin, Direction face, int x, int y) {
-        BlockPos right = rightOffset(face);
-        BlockPos down = downOffset(face);
-        return origin.add(right.getX() * x + down.getX() * y, right.getY() * x + down.getY() * y, right.getZ() * x + down.getZ() * y);
-    }
-
-    private static BlockPos rightOffset(Direction face) {
-        return switch (face) {
-            case NORTH -> new BlockPos(-1, 0, 0);
-            case EAST -> new BlockPos(0, 0, -1);
-            case WEST -> new BlockPos(0, 0, 1);
-            default -> new BlockPos(1, 0, 0);
-        };
-    }
-
-    private static BlockPos downOffset(Direction face) {
-        return switch (face) {
-            case UP -> new BlockPos(0, 0, 1);
-            case DOWN -> new BlockPos(0, 0, -1);
-            default -> new BlockPos(0, -1, 0);
-        };
+        return PaintSurface.blockAt(origin, face, x, y);
     }
 
     private static UUID getPaperId(ItemStack stack) {
@@ -208,17 +190,26 @@ public class PaintPaperItem extends Item {
         stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(data));
     }
 
-    /** Applies an imported image at its original pixel size, anchored by its top-left world microcell. */
+    public static BlockPos areaPositionForImport(BlockPos origin, Direction face, int x, int y) {
+        return areaPos(origin, face, x, y);
+    }
+
+    /** Applies an imported image with nearest-neighbor scaling to a target microcell rectangle. */
     public static boolean placeImportedImage(ServerWorld world, ServerPlayerEntity player, PaintPaperStore.ImportedImage image,
-                                             BlockPos origin, Direction face, int anchorMicroX, int anchorMicroY) {
+                                             BlockPos origin, Direction face, int anchorMicroX, int anchorMicroY,
+                                             int targetWidth, int targetHeight) {
         if (image == null || !image.isUsable()) {
             return false;
         }
+        targetWidth = MathHelper.clamp(targetWidth, 1, image.width());
+        targetHeight = MathHelper.clamp(targetHeight, 1, image.height());
         java.util.Map<PaintOverlayStore.FaceKey, int[]> changedFaces = new java.util.LinkedHashMap<>();
         int[] source = image.pixels();
-        for (int imageY = 0; imageY < image.height(); imageY++) {
-            for (int imageX = 0; imageX < image.width(); imageX++) {
-                int color = source[imageY * image.width() + imageX];
+        for (int imageY = 0; imageY < targetHeight; imageY++) {
+            int sourceY = imageY * image.height() / targetHeight;
+            for (int imageX = 0; imageX < targetWidth; imageX++) {
+                int sourceX = imageX * image.width() / targetWidth;
+                int color = source[sourceY * image.width() + sourceX];
                 if ((color >>> 24) == 0) {
                     continue;
                 }

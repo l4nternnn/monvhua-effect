@@ -18,7 +18,7 @@ import java.util.UUID;
 import java.util.stream.IntStream;
 
 public class PaintPaperStore extends PersistentState {
-    public static final int MAX_IMPORTED_IMAGE_PIXELS = 2_000_000;
+    public static final int MAX_IMPORTED_IMAGE_PIXELS = 8_388_608;
     private static final Codec<int[]> PIXELS_CODEC = Codec.INT_STREAM.xmap(IntStream::toArray, Arrays::stream);
     public static final Codec<Cell> CELL_CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.fieldOf("x").forGetter(Cell::x),

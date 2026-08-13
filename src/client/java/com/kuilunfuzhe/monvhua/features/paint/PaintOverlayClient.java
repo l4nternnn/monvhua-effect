@@ -124,6 +124,8 @@ public final class PaintOverlayClient {
     private static List<EditorGeometryPreview> editorGeometryPreviews = List.of();
     private static ImportedPaperPreview importedPaperPreview;
     private static ImportedPaperTexture importedPaperTexture;
+    private static LocalImportedPaper localImportedPaper;
+    private static LocalPaperUpload localPaperUpload;
     private static boolean importedPaperPreviewEscapeWasDown;
 
     private PaintOverlayClient() {
@@ -148,11 +150,16 @@ public final class PaintOverlayClient {
             tickBrushSlotKeys(client);
             tickContinuousPainting(client);
             tickImportedPaperPreview(client);
+            tickLocalPaperUpload(client);
             rebuildDirtyFaceMeshes();
             rebuildDirtyChunks();
             finishPendingEditorHistoryIfIdle(false);
         });
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
+            if (world.isClient() && localImportedPaper != null && player != null
+                    && player.getStackInHand(hand).isOf(PaintItems.PAINT_PAPER)) {
+                return ActionResult.SUCCESS;
+            }
             if (!world.isClient() || player == null
                     || world.getBlockState(hitResult.getBlockPos()).getBlock() != PaintItems.PAINT_BUCKET_BLOCK) {
                 return ActionResult.PASS;
@@ -206,9 +213,13 @@ public final class PaintOverlayClient {
                 context.client().execute(() -> applyImportedPaperImage(packet)));
         ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.ImportPaintPaperResultS2C.ID, (packet, context) ->
                 context.client().execute(() -> PaintPaperImportScreen.receiveImportResult(packet)));
+        ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PlaceImportedPaperResultS2C.ID, (packet, context) ->
+                context.client().execute(() -> receiveLocalPaperPlacementResult(packet)));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
             clearWorldPaintCache();
             clearImportedPaperPreview();
+            localImportedPaper = null;
+            localPaperUpload = null;
         }));
         PaintBucketCarryClientState.initialize();
     }
@@ -358,7 +369,7 @@ public final class PaintOverlayClient {
     }
 
     public static String formatDisplayRadius(int microcellRadius) {
-        return String.format(java.util.Locale.ROOT, "%.1f", displayRadius(microcellRadius));
+        return String.format(java.util.Locale.ROOT, "%.2f", displayRadius(microcellRadius));
     }
 
     public static int microcellRadiusFromDisplay(double displayRadius) {
@@ -652,28 +663,32 @@ public final class PaintOverlayClient {
         if (!preview.imageId().equals(texture.imageId())) {
             return;
         }
-        boolean valid = isImportedPaperPlacementValid(MinecraftClient.getInstance(), preview, texture);
+        PaperRectangle rectangle = preview.rectangle();
+        boolean valid = rectangle != null && isImportedPaperPlacementValid(MinecraftClient.getInstance(), preview, rectangle);
         float pulse = (float) (0.46D + 0.22D * Math.sin(System.currentTimeMillis() / 260.0D));
         int alpha = MathHelper.clamp((int) ((valid ? pulse : 0.32F) * 255.0F), 28, 190);
         VertexConsumer vertices = context.consumers().getBuffer(net.minecraft.client.render.RenderLayer.getEntityTranslucent(texture.textureId()));
-        int minBlockX = Math.floorDiv(preview.microX(), PaintOverlayStore.SIZE);
-        int minBlockY = Math.floorDiv(preview.microY(), PaintOverlayStore.SIZE);
-        int maxBlockX = Math.floorDiv(preview.microX() + texture.width() - 1, PaintOverlayStore.SIZE);
-        int maxBlockY = Math.floorDiv(preview.microY() + texture.height() - 1, PaintOverlayStore.SIZE);
+        if (rectangle == null) {
+            return;
+        }
+        int minBlockX = Math.floorDiv(rectangle.microX(), PaintOverlayStore.SIZE);
+        int minBlockY = Math.floorDiv(rectangle.microY(), PaintOverlayStore.SIZE);
+        int maxBlockX = Math.floorDiv(rectangle.microX() + rectangle.width() - 1, PaintOverlayStore.SIZE);
+        int maxBlockY = Math.floorDiv(rectangle.microY() + rectangle.height() - 1, PaintOverlayStore.SIZE);
         for (int blockY = minBlockY; blockY <= maxBlockY; blockY++) {
             for (int blockX = minBlockX; blockX <= maxBlockX; blockX++) {
-                int imageX0 = Math.max(0, blockX * PaintOverlayStore.SIZE - preview.microX());
-                int imageY0 = Math.max(0, blockY * PaintOverlayStore.SIZE - preview.microY());
-                int imageX1 = Math.min(texture.width(), (blockX + 1) * PaintOverlayStore.SIZE - preview.microX());
-                int imageY1 = Math.min(texture.height(), (blockY + 1) * PaintOverlayStore.SIZE - preview.microY());
-                BlockPos target = paperAreaPos(preview.pos(), preview.face(), blockX, blockY);
-                int localX0 = preview.microX() + imageX0 - blockX * PaintOverlayStore.SIZE;
-                int localY0 = preview.microY() + imageY0 - blockY * PaintOverlayStore.SIZE;
-                int localX1 = preview.microX() + imageX1 - blockX * PaintOverlayStore.SIZE;
-                int localY1 = preview.microY() + imageY1 - blockY * PaintOverlayStore.SIZE;
+                int imageX0 = Math.max(0, blockX * PaintOverlayStore.SIZE - rectangle.microX());
+                int imageY0 = Math.max(0, blockY * PaintOverlayStore.SIZE - rectangle.microY());
+                int imageX1 = Math.min(rectangle.width(), (blockX + 1) * PaintOverlayStore.SIZE - rectangle.microX());
+                int imageY1 = Math.min(rectangle.height(), (blockY + 1) * PaintOverlayStore.SIZE - rectangle.microY());
+                BlockPos target = PaintSurface.blockAt(preview.pos(), preview.face(), blockX, blockY);
+                int localX0 = rectangle.microX() + imageX0 - blockX * PaintOverlayStore.SIZE;
+                int localY0 = rectangle.microY() + imageY0 - blockY * PaintOverlayStore.SIZE;
+                int localX1 = rectangle.microX() + imageX1 - blockX * PaintOverlayStore.SIZE;
+                int localY1 = rectangle.microY() + imageY1 - blockY * PaintOverlayStore.SIZE;
                 appendImportedPaperQuad(vertices, matrix, camera, target, preview.face(), localX0, localY0, localX1, localY1,
-                        imageX0 / (float) texture.width(), imageY0 / (float) texture.height(),
-                        imageX1 / (float) texture.width(), imageY1 / (float) texture.height(), alpha, valid);
+                        imageX0 / (float) rectangle.width(), imageY0 / (float) rectangle.height(),
+                        imageX1 / (float) rectangle.width(), imageY1 / (float) rectangle.height(), alpha, valid);
             }
         }
     }
@@ -683,17 +698,17 @@ public final class PaintOverlayClient {
         return client == null || client.world == null;
     }
 
-    private static boolean isImportedPaperPlacementValid(MinecraftClient client, ImportedPaperPreview preview, ImportedPaperTexture texture) {
+    private static boolean isImportedPaperPlacementValid(MinecraftClient client, ImportedPaperPreview preview, PaperRectangle rectangle) {
         if (client == null || client.world == null) {
             return false;
         }
-        int minBlockX = Math.floorDiv(preview.microX(), PaintOverlayStore.SIZE);
-        int minBlockY = Math.floorDiv(preview.microY(), PaintOverlayStore.SIZE);
-        int maxBlockX = Math.floorDiv(preview.microX() + texture.width() - 1, PaintOverlayStore.SIZE);
-        int maxBlockY = Math.floorDiv(preview.microY() + texture.height() - 1, PaintOverlayStore.SIZE);
+        int minBlockX = Math.floorDiv(rectangle.microX(), PaintOverlayStore.SIZE);
+        int minBlockY = Math.floorDiv(rectangle.microY(), PaintOverlayStore.SIZE);
+        int maxBlockX = Math.floorDiv(rectangle.microX() + rectangle.width() - 1, PaintOverlayStore.SIZE);
+        int maxBlockY = Math.floorDiv(rectangle.microY() + rectangle.height() - 1, PaintOverlayStore.SIZE);
         for (int blockY = minBlockY; blockY <= maxBlockY; blockY++) {
             for (int blockX = minBlockX; blockX <= maxBlockX; blockX++) {
-                BlockPos target = paperAreaPos(preview.pos(), preview.face(), blockX, blockY);
+                BlockPos target = PaintSurface.blockAt(preview.pos(), preview.face(), blockX, blockY);
                 if (!PaintOverlayFeature.canPlacePaint(client.world, target) || client.world.isAir(target)) {
                     return false;
                 }
@@ -705,18 +720,17 @@ public final class PaintOverlayClient {
     private static void appendImportedPaperQuad(VertexConsumer vertices, Matrix4f matrix, Vec3d camera, BlockPos pos, Direction face,
                                                 int x0, int y0, int x1, int y1, float u0, float v0, float u1, float v1,
                                                 int alpha, boolean valid) {
-        Vec3d normal = new Vec3d(face.getOffsetX(), face.getOffsetY(), face.getOffsetZ());
-        Vec3d p00 = paperFacePoint(pos, face, x0, y0);
-        Vec3d p10 = paperFacePoint(pos, face, x1, y0);
-        Vec3d p11 = paperFacePoint(pos, face, x1, y1);
-        Vec3d p01 = paperFacePoint(pos, face, x0, y1);
+        Vec3d normal = PaintSurface.normal(face);
+        Vec3d p00 = PaintSurface.point(pos, face, x0, y0, STEP, OFFSET);
+        Vec3d p10 = PaintSurface.point(pos, face, x1, y0, STEP, OFFSET);
+        Vec3d p11 = PaintSurface.point(pos, face, x1, y1, STEP, OFFSET);
+        Vec3d p01 = PaintSurface.point(pos, face, x0, y1, STEP, OFFSET);
         int red = valid ? 255 : 255;
         int green = valid ? 255 : 86;
         int blue = valid ? 255 : 86;
+        // Entity translucent is a QUADS layer: exactly four vertices form one image fragment.
         appendImportedPaperVertex(vertices, matrix, camera, p00, normal, u0, v0, red, green, blue, alpha);
         appendImportedPaperVertex(vertices, matrix, camera, p10, normal, u1, v0, red, green, blue, alpha);
-        appendImportedPaperVertex(vertices, matrix, camera, p11, normal, u1, v1, red, green, blue, alpha);
-        appendImportedPaperVertex(vertices, matrix, camera, p00, normal, u0, v0, red, green, blue, alpha);
         appendImportedPaperVertex(vertices, matrix, camera, p11, normal, u1, v1, red, green, blue, alpha);
         appendImportedPaperVertex(vertices, matrix, camera, p01, normal, u0, v1, red, green, blue, alpha);
     }
@@ -728,28 +742,15 @@ public final class PaintOverlayClient {
                 .light(LightmapTextureManager.MAX_LIGHT_COORDINATE).normal((float) normal.x, (float) normal.y, (float) normal.z);
     }
 
-    private static Vec3d paperFacePoint(BlockPos pos, Direction face, int x, int y) {
-        double u = x * STEP;
-        double v = y * STEP;
-        return switch (face) {
-            case UP -> new Vec3d(pos.getX() + u, pos.getY() + 1.0D + OFFSET, pos.getZ() + v);
-            case DOWN -> new Vec3d(pos.getX() + u, pos.getY() - OFFSET, pos.getZ() + 1.0D - v);
-            case NORTH -> new Vec3d(pos.getX() + 1.0D - u, pos.getY() + 1.0D - v, pos.getZ() - OFFSET);
-            case SOUTH -> new Vec3d(pos.getX() + u, pos.getY() + 1.0D - v, pos.getZ() + 1.0D + OFFSET);
-            case WEST -> new Vec3d(pos.getX() - OFFSET, pos.getY() + 1.0D - v, pos.getZ() + u);
-            case EAST -> new Vec3d(pos.getX() + 1.0D + OFFSET, pos.getY() + 1.0D - v, pos.getZ() + 1.0D - u);
-        };
-    }
-
-    private static BlockPos paperAreaPos(BlockPos origin, Direction face, int x, int y) {
-        return switch (face) {
-            case NORTH -> origin.add(-x, -y, 0);
-            case EAST -> origin.add(0, -y, -x);
-            case WEST -> origin.add(0, -y, x);
-            case UP -> origin.add(x, 0, y);
-            case DOWN -> origin.add(x, 0, -y);
-            case SOUTH -> origin.add(x, -y, 0);
-        };
+    private static PlaneMicroCoord projectToPreviewPlane(BlockPos origin, Direction face, BlockHitResult hit) {
+        if (hit.getSide() != face) {
+            return null;
+        }
+        BlockPos pos = hit.getBlockPos();
+        int[] local = PaintBrushItem.getPixel(hit.getPos(), pos, hit.getSide());
+        return new PlaneMicroCoord(
+                PaintSurface.blockU(origin, pos, face) * PaintOverlayStore.SIZE + local[0],
+                PaintSurface.blockV(origin, pos, face) * PaintOverlayStore.SIZE + local[1]);
     }
 
     private static void renderEditorPreview(VertexConsumer vertices, Matrix4f matrix, Vec3d camera) {
@@ -2369,8 +2370,7 @@ public final class PaintOverlayClient {
         if (client == null || client.player == null || client.currentScreen != null) {
             return false;
         }
-        ItemStack paper = importedImagePaper(client);
-        if (paper.isEmpty()) {
+        if (localImportedPaper == null || !isHoldingPaintPaper(client)) {
             return false;
         }
         BlockHitResult hit = crosshairBlockHit(client);
@@ -2378,23 +2378,89 @@ public final class PaintOverlayClient {
             return true;
         }
         int[] pixel = PaintBrushItem.getPixel(hit.getPos(), hit.getBlockPos(), hit.getSide());
-        UUID imageId = PaintPaperItem.getImportedImageId(paper);
-        if (imageId == null) {
-            return true;
-        }
+        UUID imageId = localImportedPaper.id();
         if (importedPaperPreview == null || !imageId.equals(importedPaperPreview.imageId())) {
-            importedPaperPreview = new ImportedPaperPreview(imageId, hit.getBlockPos(), hit.getSide(), pixel[0], pixel[1]);
-            SafeClientNetworking.send(new PaintOverlayPackets.RequestImportedPaperImageC2S(imageId));
+            importedPaperPreview = new ImportedPaperPreview(imageId, hit.getBlockPos(), hit.getSide(), pixel[0], pixel[1], pixel[0], pixel[1]);
+            installLocalPaperTexture(localImportedPaper);
             return true;
         }
-        if (importedPaperTexture == null || !imageId.equals(importedPaperTexture.imageId())) {
-            SafeClientNetworking.send(new PaintOverlayPackets.RequestImportedPaperImageC2S(imageId));
+        if (localPaperUpload != null) {
             return true;
         }
-        SafeClientNetworking.send(new PaintOverlayPackets.PlaceImportedPaperC2S(
-                hit.getBlockPos(), hit.getSide(), pixel[0], pixel[1]));
-        clearImportedPaperPreview();
+        PaperRectangle rectangle = importedPaperPreview.rectangle();
+        if (rectangle == null || rectangle.width() > localImportedPaper.width() || rectangle.height() > localImportedPaper.height()) {
+            client.player.sendMessage(Text.literal("目标矩形超过图片原始尺寸"), true);
+            return true;
+        }
+        localPaperUpload = new LocalPaperUpload(localImportedPaper, importedPaperPreview.pos(), importedPaperPreview.face(),
+                rectangle.microX(), rectangle.microY(), rectangle.width(), rectangle.height(), 0, false);
+        SafeClientNetworking.send(new PaintOverlayPackets.PlaceImportedPaperBeginC2S(
+                imageId, localImportedPaper.name(), localImportedPaper.width(), localImportedPaper.height(),
+                localImportedPaper.pngBytes().length, localImportedPaper.sha256(), importedPaperPreview.pos(), importedPaperPreview.face(),
+                rectangle.microX(), rectangle.microY(), rectangle.width(), rectangle.height()));
         return true;
+    }
+
+    public static void installLocalImportedPaper(UUID id, String name, int width, int height, byte[] pngBytes, byte[] sha256) {
+        localImportedPaper = new LocalImportedPaper(id, name, width, height, pngBytes, sha256);
+        installLocalPaperTexture(localImportedPaper);
+    }
+
+    private static void installLocalPaperTexture(LocalImportedPaper paper) {
+        try {
+            NativeImage image = NativeImage.read(new ByteArrayInputStream(paper.pngBytes()));
+            if (image.getWidth() != paper.width() || image.getHeight() != paper.height()) {
+                image.close();
+                return;
+            }
+            clearImportedPaperTexture();
+            Identifier id = Identifier.of(com.kuilunfuzhe.monvhua.MonvhuaMod.MOD_ID, "dynamic/local_imported_paper/" + paper.id());
+            NativeImageBackedTexture texture = new NativeImageBackedTexture(() -> "monvhua local imported paper", image);
+            texture.setFilter(false, false);
+            MinecraftClient.getInstance().getTextureManager().registerTexture(id, texture);
+            importedPaperTexture = new ImportedPaperTexture(paper.id(), paper.width(), paper.height(), id);
+        } catch (IOException ignored) {
+        }
+    }
+
+    private static void tickLocalPaperUpload(MinecraftClient client) {
+        if (localPaperUpload == null || client == null || client.player == null) {
+            return;
+        }
+        LocalPaperUpload upload = localPaperUpload;
+        if (!upload.started()) {
+            localPaperUpload = upload.withStarted(true);
+            return;
+        }
+        byte[] bytes = upload.paper().pngBytes();
+        if (upload.offset() < bytes.length) {
+            int end = Math.min(bytes.length, upload.offset() + PaintOverlayPackets.IMPORTED_IMAGE_CHUNK_BYTES);
+            SafeClientNetworking.send(new PaintOverlayPackets.PlaceImportedPaperChunkC2S(
+                    upload.paper().id(), upload.offset() / PaintOverlayPackets.IMPORTED_IMAGE_CHUNK_BYTES,
+                    Arrays.copyOfRange(bytes, upload.offset(), end)));
+            localPaperUpload = upload.withOffset(end);
+            return;
+        }
+        if (upload.committed()) {
+            return;
+        }
+        SafeClientNetworking.send(new PaintOverlayPackets.PlaceImportedPaperCommitC2S(upload.paper().id()));
+        localPaperUpload = upload.withCommitted(true);
+    }
+
+    private static void receiveLocalPaperPlacementResult(PaintOverlayPackets.PlaceImportedPaperResultS2C packet) {
+        if (localPaperUpload == null || !packet.imageId().equals(localPaperUpload.paper().id())) {
+            return;
+        }
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player != null) {
+            client.player.sendMessage(Text.literal(packet.message()), true);
+        }
+        if (packet.success()) {
+            localImportedPaper = null;
+            clearImportedPaperPreview();
+        }
+        localPaperUpload = null;
     }
 
     private static void tickImportedPaperPreview(MinecraftClient client) {
@@ -2413,8 +2479,11 @@ public final class PaintOverlayClient {
             return;
         }
         importedPaperPreviewEscapeWasDown = escapeDown;
-        ItemStack paper = importedImagePaper(client);
-        if (paper.isEmpty() || !importedPaperPreview.imageId().equals(PaintPaperItem.getImportedImageId(paper))) {
+        if (localPaperUpload != null) {
+            return;
+        }
+        if (localImportedPaper == null || !importedPaperPreview.imageId().equals(localImportedPaper.id())
+                || !isHoldingPaintPaper(client)) {
             clearImportedPaperPreview();
             return;
         }
@@ -2422,21 +2491,13 @@ public final class PaintOverlayClient {
         if (hit == null) {
             return;
         }
-        int[] pixel = PaintBrushItem.getPixel(hit.getPos(), hit.getBlockPos(), hit.getSide());
-        importedPaperPreview = new ImportedPaperPreview(importedPaperPreview.imageId(), hit.getBlockPos(), hit.getSide(), pixel[0], pixel[1]);
-    }
-
-    private static ItemStack importedImagePaper(MinecraftClient client) {
-        if (client == null || client.player == null) {
-            return ItemStack.EMPTY;
+        if (hit.getSide() != importedPaperPreview.face()) {
+            return;
         }
-        if (PaintPaperItem.isImportedImage(client.player.getMainHandStack())) {
-            return client.player.getMainHandStack();
+        PlaneMicroCoord end = projectToPreviewPlane(importedPaperPreview.pos(), importedPaperPreview.face(), hit);
+        if (end != null) {
+            importedPaperPreview = importedPaperPreview.withEnd(end.x(), end.y());
         }
-        if (PaintPaperItem.isImportedImage(client.player.getOffHandStack())) {
-            return client.player.getOffHandStack();
-        }
-        return ItemStack.EMPTY;
     }
 
     private static boolean isValidPaperTarget(MinecraftClient client, BlockHitResult hit) {
@@ -3099,11 +3160,55 @@ public final class PaintOverlayClient {
         }
     }
 
-    private record ImportedPaperPreview(UUID imageId, BlockPos pos, Direction face, int microX, int microY) {
+    private record ImportedPaperPreview(UUID imageId, BlockPos pos, Direction face, int startX, int startY, int endX, int endY) {
         private ImportedPaperPreview { pos = pos.toImmutable(); }
+
+        private ImportedPaperPreview withEnd(int x, int y) {
+            return new ImportedPaperPreview(imageId, pos, face, startX, startY, x, y);
+        }
+
+        private PaperRectangle rectangle() {
+            if (endX < startX || endY < startY) {
+                return null;
+            }
+            return new PaperRectangle(startX, startY, endX - startX + 1, endY - startY + 1);
+        }
     }
 
     private record ImportedPaperTexture(UUID imageId, int width, int height, Identifier textureId) {
+    }
+
+    private record LocalImportedPaper(UUID id, String name, int width, int height, byte[] pngBytes, byte[] sha256) {
+        private LocalImportedPaper {
+            pngBytes = pngBytes == null ? new byte[0] : pngBytes.clone();
+            sha256 = sha256 == null ? new byte[0] : sha256.clone();
+        }
+    }
+
+    private record LocalPaperUpload(LocalImportedPaper paper, BlockPos pos, Direction face, int microX, int microY,
+                                    int targetWidth, int targetHeight, int offset, boolean started, boolean committed) {
+        private LocalPaperUpload(LocalImportedPaper paper, BlockPos pos, Direction face, int microX, int microY,
+                                 int targetWidth, int targetHeight, int offset, boolean started) {
+            this(paper, pos, face, microX, microY, targetWidth, targetHeight, offset, started, false);
+        }
+
+        private LocalPaperUpload withOffset(int value) {
+            return new LocalPaperUpload(paper, pos, face, microX, microY, targetWidth, targetHeight, value, started, committed);
+        }
+
+        private LocalPaperUpload withStarted(boolean value) {
+            return new LocalPaperUpload(paper, pos, face, microX, microY, targetWidth, targetHeight, offset, value, committed);
+        }
+
+        private LocalPaperUpload withCommitted(boolean value) {
+            return new LocalPaperUpload(paper, pos, face, microX, microY, targetWidth, targetHeight, offset, started, value);
+        }
+    }
+
+    private record PlaneMicroCoord(int x, int y) {
+    }
+
+    private record PaperRectangle(int microX, int microY, int width, int height) {
     }
 
     public record ScreenPanAnchor(Vec3d point, double distance) {

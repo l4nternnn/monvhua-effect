@@ -19,6 +19,7 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.Identifier;
@@ -35,19 +36,24 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiPredicate;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 import javax.imageio.ImageIO;
 
 public final class PaintOverlayFeature {
     public static final int DEFAULT_COLOR = 0xFFFF2A4F;
     public static final int DEFAULT_RADIUS = 1;
     public static final int MIN_RADIUS = 1;
-    public static final int MAX_RADIUS = 8;
-    public static final int MAX_MANUAL_RADIUS = 100;
+    public static final int MAX_RADIUS = 16;
+    public static final int MAX_MANUAL_RADIUS = 200;
     public static final int DEFAULT_PAPER_SIZE = 3;
     public static final int MIN_PAPER_SIZE = 1;
     public static final int MAX_PAPER_SIZE = 25;
@@ -57,20 +63,28 @@ public final class PaintOverlayFeature {
     private static final Map<UUID, Integer> PAPER_SIZES = new ConcurrentHashMap<>();
     private static final Map<UUID, PlayerSyncKey> PLAYER_SYNC_KEYS = new ConcurrentHashMap<>();
     private static final Map<UUID, List<PaintOverlayPackets.PlayerPaintStrokeS2C>> PLAYER_PAINT_STROKES = new ConcurrentHashMap<>();
+    private static final Map<UUID, ImportedPaperUpload> IMPORTED_PAPER_UPLOADS = new ConcurrentHashMap<>();
     private static volatile boolean allowNonFullBlockPainting = true;
 
     private PaintOverlayFeature() {
     }
 
     public static void initialize() {
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            long now = System.currentTimeMillis();
+            IMPORTED_PAPER_UPLOADS.entrySet().removeIf(entry -> now - entry.getValue().createdAt() > 30_000L);
+        });
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 server.execute(() -> {
                     recordSyncKey(handler.getPlayer());
                     sendNearbyFullSync(handler.getPlayer());
                     broadcastStoredPlayerPaint(handler.getPlayer());
                 }));
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
-                PLAYER_SYNC_KEYS.remove(handler.getPlayer().getUuid()));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            UUID playerId = handler.getPlayer().getUuid();
+            PLAYER_SYNC_KEYS.remove(playerId);
+            IMPORTED_PAPER_UPLOADS.remove(playerId);
+        });
         ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register((player, origin, destination) -> {
             recordSyncKey(player);
             sendNearbyFullSync(player);
@@ -90,6 +104,12 @@ public final class PaintOverlayFeature {
                         context.player(), packet.filename(), packet.imageBytes())));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PlaceImportedPaperC2S.ID, (packet, context) ->
                 context.server().execute(() -> handleImportedPaperPlacement(context.player(), packet)));
+        ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PlaceImportedPaperBeginC2S.ID, (packet, context) ->
+                context.server().execute(() -> beginImportedPaperUpload(context.player(), packet)));
+        ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PlaceImportedPaperChunkC2S.ID, (packet, context) ->
+                context.server().execute(() -> receiveImportedPaperChunk(context.player(), packet)));
+        ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PlaceImportedPaperCommitC2S.ID, (packet, context) ->
+                context.server().execute(() -> commitImportedPaperUpload(context.player(), packet)));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.RequestImportedPaperImageC2S.ID, (packet, context) ->
                 context.server().execute(() -> sendImportedPaperPreview(context.player(), packet.imageId())));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PaintStrokeC2S.ID, (packet, context) ->
@@ -395,7 +415,179 @@ public final class PaintOverlayFeature {
         if (image == null || !image.isUsable()) {
             return;
         }
-        PaintPaperItem.placeImportedImage(world, player, image, packet.pos(), packet.face(), packet.microX(), packet.microY());
+        PaintPaperItem.placeImportedImage(world, player, image, packet.pos(), packet.face(), packet.microX(), packet.microY(),
+                image.width(), image.height());
+    }
+
+    private static void beginImportedPaperUpload(ServerPlayerEntity player, PaintOverlayPackets.PlaceImportedPaperBeginC2S packet) {
+        if (!(player.getWorld() instanceof ServerWorld world) || !hasHeldPaintPaper(player)
+                || Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED
+                || !PaintOverlayFeature.canPlacePaint(world, packet.pos())) {
+            sendImportedPaperResult(player, packet.imageId(), false, "画纸放置目标无效");
+            return;
+        }
+        if (packet.imageId() == null || packet.width() <= 0 || packet.height() <= 0
+                || (long) packet.width() * packet.height() > PaintPaperStore.MAX_IMPORTED_IMAGE_PIXELS
+                || packet.totalBytes() <= 0 || packet.sha256().length != 32) {
+            sendImportedPaperResult(player, packet.imageId(), false, "图片尺寸或校验信息无效");
+            return;
+        }
+        IMPORTED_PAPER_UPLOADS.put(player.getUuid(), new ImportedPaperUpload(
+                packet.imageId(), packet.name(), packet.width(), packet.height(), packet.totalBytes(),
+                packet.sha256(), packet.pos(), packet.face(), packet.microX(), packet.microY(), packet.targetWidth(), packet.targetHeight(),
+                new ByteArrayOutputStream(packet.totalBytes()), 0, System.currentTimeMillis()));
+    }
+
+    private static void receiveImportedPaperChunk(ServerPlayerEntity player, PaintOverlayPackets.PlaceImportedPaperChunkC2S packet) {
+        ImportedPaperUpload upload = IMPORTED_PAPER_UPLOADS.get(player.getUuid());
+        if (upload == null || !upload.imageId().equals(packet.imageId())
+                || packet.sequence() != upload.nextSequence()
+                || packet.bytes().length == 0
+                || upload.bytes().size() + packet.bytes().length > upload.totalBytes()) {
+            return;
+        }
+        upload.bytes().writeBytes(packet.bytes());
+        upload.nextSequence(upload.nextSequence() + 1);
+    }
+
+    private static void commitImportedPaperUpload(ServerPlayerEntity player, PaintOverlayPackets.PlaceImportedPaperCommitC2S packet) {
+        ImportedPaperUpload upload = IMPORTED_PAPER_UPLOADS.remove(player.getUuid());
+        if (upload == null || !upload.imageId().equals(packet.imageId()) || upload.bytes().size() != upload.totalBytes()) {
+            sendImportedPaperResult(player, packet.imageId(), false, "图片分片未完整接收");
+            return;
+        }
+        byte[] bytes = upload.bytes().toByteArray();
+        CompletableFuture.supplyAsync(() -> decodeUploadedPaper(upload, bytes))
+                .handle((result, error) -> error == null ? result : ImportedPaperDecodeResult.error("图片处理失败"))
+                .thenAccept(result -> {
+                    MinecraftServer server = player.getServer();
+                    if (server != null) {
+                        server.execute(() -> finishImportedPaperUpload(player, upload, result));
+                    }
+                });
+    }
+
+    private static ImportedPaperDecodeResult decodeUploadedPaper(ImportedPaperUpload upload, byte[] bytes) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            if (!Arrays.equals(upload.sha256(), digest.digest(bytes))) {
+                return ImportedPaperDecodeResult.error("图片校验失败");
+            }
+            BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
+            if (image == null || image.getWidth() != upload.width() || image.getHeight() != upload.height()) {
+                return ImportedPaperDecodeResult.error("图片尺寸校验失败");
+            }
+            int[] pixels = new int[upload.width() * upload.height()];
+            image.getRGB(0, 0, upload.width(), upload.height(), pixels, 0, upload.width());
+            return new ImportedPaperDecodeResult(null, pixels);
+        } catch (IOException | NoSuchAlgorithmException e) {
+            return ImportedPaperDecodeResult.error("图片解码失败");
+        }
+    }
+
+    private static void finishImportedPaperUpload(ServerPlayerEntity player, ImportedPaperUpload upload, ImportedPaperDecodeResult result) {
+        if (result.error() != null) {
+            sendImportedPaperResult(player, upload.imageId(), false, result.error());
+            return;
+        }
+        if (!(player.getWorld() instanceof ServerWorld world) || !hasHeldPaintPaper(player)
+                || Vec3d.ofCenter(upload.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED
+                || !canPlaceImportedImage(world, upload)) {
+            sendImportedPaperResult(player, upload.imageId(), false, "放置目标已失效");
+            return;
+        }
+        PaintPaperStore.ImportedImage image = new PaintPaperStore.ImportedImage(
+                upload.imageId(), upload.name(), upload.width(), upload.height(), result.pixels());
+        if (!PaintPaperItem.placeImportedImage(world, player, image, upload.pos(), upload.face(), upload.microX(), upload.microY(),
+                upload.targetWidth(), upload.targetHeight())) {
+            sendImportedPaperResult(player, upload.imageId(), false, "图片没有可放置的像素或目标无效");
+            return;
+        }
+        consumeHeldPaintPaper(player);
+        sendImportedPaperResult(player, upload.imageId(), true, "图片已放置并消耗一次性画纸");
+    }
+
+    private static boolean hasHeldPaintPaper(ServerPlayerEntity player) {
+        return player.getMainHandStack().isOf(PaintItems.PAINT_PAPER) || player.getOffHandStack().isOf(PaintItems.PAINT_PAPER);
+    }
+
+    private static void consumeHeldPaintPaper(ServerPlayerEntity player) {
+        if (player.getMainHandStack().isOf(PaintItems.PAINT_PAPER)) {
+            player.getMainHandStack().decrement(1);
+        } else if (player.getOffHandStack().isOf(PaintItems.PAINT_PAPER)) {
+            player.getOffHandStack().decrement(1);
+        }
+    }
+
+    private static boolean canPlaceImportedImage(ServerWorld world, ImportedPaperUpload upload) {
+        int minX = Math.floorDiv(upload.microX(), PaintOverlayStore.SIZE);
+        int minY = Math.floorDiv(upload.microY(), PaintOverlayStore.SIZE);
+        int maxX = Math.floorDiv(upload.microX() + upload.targetWidth() - 1, PaintOverlayStore.SIZE);
+        int maxY = Math.floorDiv(upload.microY() + upload.targetHeight() - 1, PaintOverlayStore.SIZE);
+        for (int y = minY; y <= maxY; y++) {
+            for (int x = minX; x <= maxX; x++) {
+                BlockPos target = PaintPaperItem.areaPositionForImport(upload.pos(), upload.face(), x, y);
+                if (world.isAir(target) || !canPlacePaint(world, target)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static void sendImportedPaperResult(ServerPlayerEntity player, UUID imageId, boolean success, String message) {
+        if (imageId != null) {
+            ServerPlayNetworking.send(player, new PaintOverlayPackets.PlaceImportedPaperResultS2C(imageId, success, message));
+        }
+        player.sendMessage(net.minecraft.text.Text.literal(message), true);
+    }
+
+    private static final class ImportedPaperUpload {
+        private final UUID imageId;
+        private final String name;
+        private final int width;
+        private final int height;
+        private final int totalBytes;
+        private final byte[] sha256;
+        private final BlockPos pos;
+        private final Direction face;
+        private final int microX;
+        private final int microY;
+        private final int targetWidth;
+        private final int targetHeight;
+        private final ByteArrayOutputStream bytes;
+        private int nextSequence;
+        private final long createdAt;
+
+        private ImportedPaperUpload(UUID imageId, String name, int width, int height, int totalBytes, byte[] sha256,
+                                    BlockPos pos, Direction face, int microX, int microY, int targetWidth, int targetHeight,
+                                    ByteArrayOutputStream bytes,
+                                    int nextSequence, long createdAt) {
+            this.imageId = imageId; this.name = name; this.width = width; this.height = height;
+            this.totalBytes = totalBytes; this.sha256 = sha256.clone(); this.pos = pos.toImmutable(); this.face = face;
+            this.microX = microX; this.microY = microY; this.targetWidth = targetWidth; this.targetHeight = targetHeight;
+            this.bytes = bytes; this.nextSequence = nextSequence; this.createdAt = createdAt;
+        }
+        private UUID imageId() { return imageId; }
+        private String name() { return name; }
+        private int width() { return width; }
+        private int height() { return height; }
+        private int totalBytes() { return totalBytes; }
+        private byte[] sha256() { return sha256; }
+        private BlockPos pos() { return pos; }
+        private Direction face() { return face; }
+        private int microX() { return microX; }
+        private int microY() { return microY; }
+        private int targetWidth() { return targetWidth; }
+        private int targetHeight() { return targetHeight; }
+        private ByteArrayOutputStream bytes() { return bytes; }
+        private int nextSequence() { return nextSequence; }
+        private void nextSequence(int value) { nextSequence = value; }
+        private long createdAt() { return createdAt; }
+    }
+
+    private record ImportedPaperDecodeResult(String error, int[] pixels) {
+        private static ImportedPaperDecodeResult error(String message) { return new ImportedPaperDecodeResult(message, new int[0]); }
     }
 
     private static ItemStack findImportedImagePaper(ServerPlayerEntity player) {

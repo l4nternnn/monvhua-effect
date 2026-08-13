@@ -20,7 +20,7 @@ import java.util.stream.IntStream;
 public class PaintOverlayStore extends PersistentState {
     /** Original paint pixels are subdivided into this many independently paintable cells per axis. */
     public static final int BASE_SIZE = 16;
-    public static final int SUBDIVISION = 2;
+    public static final int SUBDIVISION = 4;
     public static final int SIZE = BASE_SIZE * SUBDIVISION;
     public static final int FACE_PIXELS = SIZE * SIZE;
     private static final Codec<int[]> PIXELS_CODEC = Codec.INT_STREAM.xmap(IntStream::toArray, Arrays::stream);
