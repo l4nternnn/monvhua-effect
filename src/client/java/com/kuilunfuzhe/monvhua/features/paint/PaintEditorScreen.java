@@ -256,7 +256,7 @@ public class PaintEditorScreen extends Screen {
         hexField.setTextPredicate(PaintEditorScreen::isValidHexInput);
         hexField.setChangedListener(this::onHexChanged);
         radiusField = addDrawableChild(new TextFieldWidget(textRenderer, rightX + 50, BRUSH_RADIUS_Y - 13, RADIUS_FIELD_WIDTH, 18, Text.literal("尺寸")));
-        radiusField.setMaxLength(3);
+        radiusField.setMaxLength(4);
         radiusField.setTextPredicate(PaintEditorScreen::isValidRadiusInput);
         radiusField.setChangedListener(this::onRadiusChanged);
         radiusField.visible = false;
@@ -1835,10 +1835,10 @@ public class PaintEditorScreen extends Screen {
             return;
         }
         try {
-            int value = Integer.parseInt(text);
-            int clamped = MathHelper.clamp(value, PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_MANUAL_RADIUS);
+            double value = Double.parseDouble(text);
+            int clamped = PaintOverlayClient.microcellRadiusFromDisplay(value);
             PaintOverlayClient.setSelectedRadius(radiusFieldTool, clamped);
-            if (value != clamped) {
+            if (Math.abs(value - PaintOverlayClient.displayRadius(clamped)) > 1.0E-6D) {
                 updateRadiusField();
             }
         } catch (NumberFormatException ignored) {
@@ -1850,7 +1850,7 @@ public class PaintEditorScreen extends Screen {
             return;
         }
         updatingRadiusField = true;
-        radiusField.setText(String.valueOf(PaintOverlayClient.selectedRadius(radiusFieldTool)));
+        radiusField.setText(PaintOverlayClient.formatDisplayRadius(PaintOverlayClient.selectedRadius(radiusFieldTool)));
         updatingRadiusField = false;
     }
 
@@ -3442,15 +3442,21 @@ public class PaintEditorScreen extends Screen {
     }
 
     private static boolean isValidRadiusInput(String text) {
-        if (text.length() > 3) {
+        if (text.length() > 4) {
             return false;
         }
+        boolean decimalPoint = false;
         for (int i = 0; i < text.length(); i++) {
-            if (!Character.isDigit(text.charAt(i))) {
+            char character = text.charAt(i);
+            if (character == '.' && !decimalPoint) {
+                decimalPoint = true;
+                continue;
+            }
+            if (!Character.isDigit(character)) {
                 return false;
             }
         }
-        return true;
+        return !text.startsWith(".");
     }
 
     private static String stripHexPrefix(String text) {

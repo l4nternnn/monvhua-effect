@@ -724,7 +724,15 @@ public final class PaintOverlayFeature {
             return 0;
         }
         PaintOverlayStore store = PaintOverlayStore.get(world);
+        int[] before = store.getPixels(pos, face);
         int radius = MathHelper.clamp(settings.radius(), MIN_RADIUS, MAX_MANUAL_RADIUS);
+        if (radius == MIN_RADIUS) {
+            if (store.setPixel(pos, face, x, y, settings.color())) {
+                broadcastPixelChanges(world, pos, face, before, store.getPixels(pos, face));
+                return 1;
+            }
+            return 0;
+        }
         int radiusSquared = radius * radius;
         int changedPixels = 0;
         for (int dy = -radius + 1; dy <= radius - 1; dy++) {
@@ -743,7 +751,7 @@ public final class PaintOverlayFeature {
         if (changedPixels <= 0) {
             return 0;
         }
-        broadcastFace(world, pos, face, store.getPixels(pos, face));
+        broadcastPixelChanges(world, pos, face, before, store.getPixels(pos, face));
         return changedPixels;
     }
 
@@ -780,6 +788,7 @@ public final class PaintOverlayFeature {
         PaintOverlayStore store = PaintOverlayStore.get(world);
         int radius = MathHelper.clamp(settings.radius(), MIN_RADIUS, MAX_MANUAL_RADIUS);
         int[] pixels = store.getPixels(pos, face);
+        int[] before = pixels.clone();
         if (radius <= MIN_RADIUS) {
             if (x < 0 || x >= PaintOverlayStore.SIZE || y < 0 || y >= PaintOverlayStore.SIZE) {
                 return 0;
@@ -789,7 +798,7 @@ public final class PaintOverlayFeature {
             if (!store.setPixel(pos, face, x, y, color)) {
                 return 0;
             }
-            broadcastFace(world, pos, face, store.getPixels(pos, face));
+            broadcastPixelChanges(world, pos, face, before, store.getPixels(pos, face));
             return 1;
         }
         Random random = Random.create(spraySeed(world, pos, face, x, y));
@@ -818,7 +827,7 @@ public final class PaintOverlayFeature {
         if (changedPixels <= 0 || !store.setPixels(pos, face, pixels)) {
             return 0;
         }
-        broadcastFace(world, pos, face, pixels);
+        broadcastPixelChanges(world, pos, face, before, pixels);
         return changedPixels;
     }
 
@@ -833,6 +842,7 @@ public final class PaintOverlayFeature {
         }
         PaintOverlayStore store = PaintOverlayStore.get(world);
         Map<PaintOverlayStore.FaceKey, int[]> facePixels = new LinkedHashMap<>();
+        Map<PaintOverlayStore.FaceKey, int[]> previousPixels = new LinkedHashMap<>();
         Set<PaintOverlayStore.FaceKey> changedFaces = new LinkedHashSet<>();
         Random random = Random.create(spraySeed(world, BlockPos.ofFloored(hitPos), Direction.UP,
                 MathHelper.floor(hitPos.x * PaintOverlayStore.SIZE), MathHelper.floor(hitPos.y * PaintOverlayStore.SIZE)));
@@ -850,7 +860,11 @@ public final class PaintOverlayFeature {
                 continue;
             }
             PaintOverlayStore.FaceKey key = target.key();
-            int[] pixels = facePixels.computeIfAbsent(key, ignored -> store.getPixels(key.pos(), key.face()));
+            int[] pixels = facePixels.computeIfAbsent(key, ignored -> {
+                int[] existing = store.getPixels(key.pos(), key.face());
+                previousPixels.put(key, existing.clone());
+                return existing;
+            });
             int index = target.y() * PaintOverlayStore.SIZE + target.x();
             int color = sprayColor(pixels[index], settings.color(), falloff);
             if (pixels[index] != color) {
@@ -862,7 +876,7 @@ public final class PaintOverlayFeature {
         for (PaintOverlayStore.FaceKey key : changedFaces) {
             int[] pixels = facePixels.get(key);
             if (pixels != null && store.setPixels(key.pos(), key.face(), pixels)) {
-                broadcastFace(world, key.pos(), key.face(), pixels);
+                broadcastPixelChanges(world, key.pos(), key.face(), previousPixels.get(key), pixels);
             }
         }
         return changedPixels;
@@ -890,6 +904,13 @@ public final class PaintOverlayFeature {
     public static void eraseAt(ServerWorld world, BlockPos pos, Direction face, int x, int y, int radius) {
         PaintOverlayStore store = PaintOverlayStore.get(world);
         radius = MathHelper.clamp(radius, MIN_RADIUS, MAX_MANUAL_RADIUS);
+        int[] before = store.getPixels(pos, face);
+        if (radius == MIN_RADIUS) {
+            if (store.setPixel(pos, face, x, y, 0)) {
+                broadcastPixelChanges(world, pos, face, before, store.getPixels(pos, face));
+            }
+            return;
+        }
         int radiusSquared = radius * radius;
         boolean changed = false;
         for (int dy = -radius + 1; dy <= radius - 1; dy++) {
@@ -903,7 +924,7 @@ public final class PaintOverlayFeature {
         if (!changed) {
             return;
         }
-        broadcastFace(world, pos, face, store.getPixels(pos, face));
+        broadcastPixelChanges(world, pos, face, before, store.getPixels(pos, face));
     }
 
     private static void eraseAt(ServerWorld world, BlockPos pos, Direction face, int x, int y, int radius, Vec3d hitPos) {
@@ -1070,7 +1091,9 @@ public final class PaintOverlayFeature {
         if (!(player.getWorld() instanceof ServerWorld world)) {
             return;
         }
-        List<PaintOverlayPackets.FaceData> faces = PaintOverlayStore.get(world).toStoredFaces().stream()
+        int syncChunkRadius = (int) Math.ceil(Math.sqrt(SYNC_DISTANCE_SQUARED) / 16.0D);
+        List<PaintOverlayPackets.FaceData> faces = PaintOverlayStore.get(world)
+                .getStoredFacesNear(new ChunkPos(player.getBlockPos()), syncChunkRadius).stream()
                 .filter(face -> isNear(player, face.pos()))
                 .map(face -> new PaintOverlayPackets.FaceData(face.pos(), face.face(), face.pixels()))
                 .toList();
@@ -1106,6 +1129,42 @@ public final class PaintOverlayFeature {
                 ServerPlayNetworking.send(player, packet);
             }
         }
+    }
+
+    private static void broadcastPixelChanges(ServerWorld world, BlockPos pos, Direction face,
+                                              int[] before, int[] after) {
+        int minX = PaintOverlayStore.SIZE;
+        int minY = PaintOverlayStore.SIZE;
+        int maxX = -1;
+        int maxY = -1;
+        for (int y = 0; y < PaintOverlayStore.SIZE; y++) {
+            for (int x = 0; x < PaintOverlayStore.SIZE; x++) {
+                int index = y * PaintOverlayStore.SIZE + x;
+                if (before[index] == after[index]) {
+                    continue;
+                }
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x);
+                maxY = Math.max(maxY, y);
+            }
+        }
+        if (maxX < minX || maxY < minY) {
+            return;
+        }
+        int width = maxX - minX + 1;
+        int height = maxY - minY + 1;
+        if (width * height * 4 >= PaintOverlayStore.FACE_PIXELS * 3) {
+            broadcastFace(world, pos, face, after);
+            return;
+        }
+        int[] patchPixels = new int[width * height];
+        for (int y = 0; y < height; y++) {
+            System.arraycopy(after, (minY + y) * PaintOverlayStore.SIZE + minX,
+                    patchPixels, y * width, width);
+        }
+        broadcastRegionPatch(world, new PaintOverlayPackets.FaceRegionPatch(
+                pos, face, minX, minY, width, height, patchPixels));
     }
 
     private static void broadcastPlayerPaint(ServerWorld world, ServerPlayerEntity target, PaintOverlayPackets.PlayerPaintStrokeS2C packet) {

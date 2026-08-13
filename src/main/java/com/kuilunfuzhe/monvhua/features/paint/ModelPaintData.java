@@ -11,8 +11,9 @@ import java.util.List;
 
 public final class ModelPaintData {
     public static final String MODEL_PAINT_KEY = "model_paint_faces";
-    public static final int SIZE = PaintOverlayStore.SIZE;
-    public static final int FACE_PIXELS = PaintOverlayStore.FACE_PIXELS;
+    // Model skins keep their native 16x16 texture density; only world paint faces use microcells.
+    public static final int SIZE = PaintOverlayStore.BASE_SIZE;
+    public static final int FACE_PIXELS = SIZE * SIZE;
 
     private ModelPaintData() {
     }

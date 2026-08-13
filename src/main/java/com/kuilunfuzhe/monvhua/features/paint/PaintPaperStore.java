@@ -21,6 +21,7 @@ public class PaintPaperStore extends PersistentState {
     public static final Codec<Cell> CELL_CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.fieldOf("x").forGetter(Cell::x),
             Codec.INT.fieldOf("y").forGetter(Cell::y),
+            Codec.INT.optionalFieldOf("grid_size", PaintOverlayStore.BASE_SIZE).forGetter(Cell::gridSize),
             PIXELS_CODEC.fieldOf("pixels").forGetter(Cell::pixels)
     ).apply(instance, Cell::new));
     public static final Codec<PaperData> PAPER_DATA_CODEC = RecordCodecBuilder.create(instance -> instance.group(
@@ -67,8 +68,32 @@ public class PaintPaperStore extends PersistentState {
 
     private static int[] sanitizePixels(int[] source) {
         int[] pixels = new int[PaintOverlayStore.FACE_PIXELS];
+        if (source == null) {
+            return pixels;
+        }
         System.arraycopy(source, 0, pixels, 0, Math.min(source.length, pixels.length));
         return pixels;
+    }
+
+    private static int[] expandPixels(int[] source, int sourceGridSize) {
+        if (sourceGridSize == PaintOverlayStore.SIZE) {
+            return sanitizePixels(source);
+        }
+        int[] expanded = new int[PaintOverlayStore.FACE_PIXELS];
+        if (source == null || sourceGridSize <= 0) {
+            return expanded;
+        }
+        for (int y = 0; y < PaintOverlayStore.SIZE; y++) {
+            int sourceY = Math.min(sourceGridSize - 1, y * sourceGridSize / PaintOverlayStore.SIZE);
+            for (int x = 0; x < PaintOverlayStore.SIZE; x++) {
+                int sourceX = Math.min(sourceGridSize - 1, x * sourceGridSize / PaintOverlayStore.SIZE);
+                int sourceIndex = sourceY * sourceGridSize + sourceX;
+                if (sourceIndex < source.length) {
+                    expanded[y * PaintOverlayStore.SIZE + x] = source[sourceIndex];
+                }
+            }
+        }
+        return expanded;
     }
 
     private static boolean hasPixels(int[] pixels) {
@@ -80,9 +105,23 @@ public class PaintPaperStore extends PersistentState {
         return false;
     }
 
-    public record Cell(int x, int y, int[] pixels) {
+    public record Cell(int x, int y, int gridSize, int[] pixels) {
         public Cell {
-            pixels = sanitizePixels(pixels);
+            gridSize = gridSize > 0 ? gridSize : PaintOverlayStore.BASE_SIZE;
+            pixels = expandPixels(pixels, gridSize);
+            gridSize = PaintOverlayStore.SIZE;
+        }
+
+        public Cell(int x, int y, int[] pixels) {
+            this(x, y, inferGridSize(pixels), pixels);
+        }
+
+        private static int inferGridSize(int[] pixels) {
+            if (pixels == null || pixels.length == 0) {
+                return PaintOverlayStore.SIZE;
+            }
+            int inferred = (int) Math.round(Math.sqrt(pixels.length));
+            return inferred * inferred == pixels.length ? inferred : PaintOverlayStore.SIZE;
         }
 
         private boolean isVisible() {

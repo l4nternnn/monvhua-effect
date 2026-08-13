@@ -10,6 +10,7 @@ import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
@@ -66,6 +67,7 @@ import java.util.Set;
 
 public final class PaintOverlayClient {
     private static final double MAX_RENDER_DISTANCE_SQUARED = 96.0D * 96.0D;
+    private static final double CACHE_DISTANCE_SQUARED = 144.0D * 144.0D;
     private static final float STEP = 1.0F / PaintOverlayStore.SIZE;
     private static final float OFFSET = 0.003F;
     private static final int MAX_RECENT_COLORS = 3;
@@ -82,6 +84,10 @@ public final class PaintOverlayClient {
     private static final Map<PaintOverlayStore.FaceKey, FaceMesh> FACE_MESHES = new HashMap<>();
     private static final Map<ChunkPos, ChunkMesh> CHUNK_MESHES = new HashMap<>();
     private static final Map<ChunkPos, Set<PaintOverlayStore.FaceKey>> CHUNK_FACE_KEYS = new HashMap<>();
+    private static final Set<ChunkPos> DIRTY_CHUNKS = new HashSet<>();
+    private static final Set<PaintOverlayStore.FaceKey> DIRTY_FACE_MESHES = new HashSet<>();
+    private static final int MAX_FACE_MESH_BUILDS_PER_TICK = 24;
+    private static final int MAX_CHUNK_REBUILDS_PER_FRAME = 8;
     private static final List<Integer> RECENT_COLORS = new ArrayList<>();
     private static final List<Integer> FAVORITE_COLORS = new ArrayList<>();
     private static final List<EditorHistoryStep> EDITOR_HISTORY = new ArrayList<>();
@@ -132,6 +138,8 @@ public final class PaintOverlayClient {
             }
             tickBrushSlotKeys(client);
             tickContinuousPainting(client);
+            rebuildDirtyFaceMeshes();
+            rebuildDirtyChunks();
             finishPendingEditorHistoryIfIdle(false);
         });
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
@@ -184,6 +192,7 @@ public final class PaintOverlayClient {
                     PaintConfig.syncInstance(config);
                     CombinedConfigScreen.receivePaintConfig(config);
                 }));
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(PaintOverlayClient::clearWorldPaintCache));
         PaintBucketCarryClientState.initialize();
     }
 
@@ -324,6 +333,23 @@ public final class PaintOverlayClient {
             return selectedSprayRadius;
         }
         return selectedBrushRadius;
+    }
+
+    /** Converts the integer microcell radius to the user-facing original-pixel unit. */
+    public static double displayRadius(int microcellRadius) {
+        return microcellRadius / (double) PaintOverlayStore.SUBDIVISION;
+    }
+
+    public static String formatDisplayRadius(int microcellRadius) {
+        return String.format(java.util.Locale.ROOT, "%.1f", displayRadius(microcellRadius));
+    }
+
+    public static int microcellRadiusFromDisplay(double displayRadius) {
+        if (!Double.isFinite(displayRadius)) {
+            return PaintOverlayFeature.MIN_RADIUS;
+        }
+        return MathHelper.clamp((int) Math.round(displayRadius * PaintOverlayStore.SUBDIVISION),
+                PaintOverlayFeature.MIN_RADIUS, PaintOverlayFeature.MAX_MANUAL_RADIUS);
     }
 
     public static int selectedPaperSize() {
@@ -1992,7 +2018,7 @@ public final class PaintOverlayClient {
         boolean eraser = isHoldingEraser(client);
         boolean spray = !eraser && isHoldingSprayCan(client);
         String radiusText = paper ? "纸 " + selectedPaperSize + "x" + selectedPaperSize
-                : "半径 " + selectedRadius(eraser ? EditorTool.ERASER : (spray ? EditorTool.SPRAY : EditorTool.BRUSH));
+                : "半径 " + formatDisplayRadius(selectedRadius(eraser ? EditorTool.ERASER : (spray ? EditorTool.SPRAY : EditorTool.BRUSH)));
         String colorText = paper ? "纸张" : (eraser ? (eraserFaceMode ? "整面" : "像素") : (spray ? "喷漆 " + toHex(selectedColor) : toHex(selectedColor)));
         int width = 96;
         int height = 30;
@@ -2193,11 +2219,6 @@ public final class PaintOverlayClient {
     }
 
     private static void applyFullSync(List<PaintOverlayPackets.FaceData> faces) {
-        FACE_PIXELS.clear();
-        FACE_MESHES.clear();
-        CHUNK_MESHES.clear();
-        CHUNK_FACE_KEYS.clear();
-        Set<ChunkPos> dirtyChunks = new HashSet<>();
         for (PaintOverlayPackets.FaceData face : faces) {
             if (!hasPixels(face.pixels())) {
                 continue;
@@ -2205,13 +2226,41 @@ public final class PaintOverlayClient {
             PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(face.pos(), face.face());
             ChunkPos chunkPos = chunkPos(key.pos());
             FACE_PIXELS.put(key, copyPixels(face.pixels()));
-            putFaceMesh(key, buildMesh(key, face.pixels()), chunkPos);
-            dirtyChunks.add(chunkPos);
+            removeFaceMesh(key, chunkPos);
+            queueFaceMeshRebuild(key);
         }
-        for (ChunkPos chunkPos : dirtyChunks) {
-            rebuildChunkMesh(chunkPos);
+        trimDistantPaintCache();
+    }
+
+    private static void clearWorldPaintCache() {
+        FACE_PIXELS.clear();
+        FACE_MESHES.clear();
+        CHUNK_MESHES.clear();
+        CHUNK_FACE_KEYS.clear();
+        DIRTY_CHUNKS.clear();
+        DIRTY_FACE_MESHES.clear();
+    }
+
+    private static void trimDistantPaintCache() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.player == null) {
+            return;
+        }
+        List<PaintOverlayStore.FaceKey> expired = new ArrayList<>();
+        for (PaintOverlayStore.FaceKey key : FACE_PIXELS.keySet()) {
+            if (Vec3d.ofCenter(key.pos()).squaredDistanceTo(client.player.getEyePos()) > CACHE_DISTANCE_SQUARED) {
+                expired.add(key);
+            }
+        }
+        for (PaintOverlayStore.FaceKey key : expired) {
+            FACE_PIXELS.remove(key);
+            DIRTY_FACE_MESHES.remove(key);
+            ChunkPos chunkPos = chunkPos(key.pos());
+            removeFaceMesh(key, chunkPos);
+            markChunkDirty(chunkPos);
         }
     }
+
 
     private static void applyPlayerPaint(PaintOverlayPackets.PlayerPaintStrokeS2C packet) {
         MinecraftClient client = MinecraftClient.getInstance();
@@ -2264,15 +2313,17 @@ public final class PaintOverlayClient {
         if (!hasPixels(after)) {
             FACE_PIXELS.remove(key);
             removeFaceMesh(key, chunkPos);
-            rebuildChunkMesh(chunkPos);
+            DIRTY_FACE_MESHES.remove(key);
+            markChunkDirty(chunkPos);
             if (recordHistory && !Arrays.equals(before, after)) {
                 recordEditorFaceUpdate(key, before, after);
             }
             return;
         }
         FACE_PIXELS.put(key, after);
-        putFaceMesh(key, buildMesh(key, after), chunkPos);
-        rebuildChunkMesh(chunkPos);
+        removeFaceMesh(key, chunkPos);
+        queueFaceMeshRebuild(key);
+        markChunkDirty(chunkPos);
         if (recordHistory && !Arrays.equals(before, after)) {
             recordEditorFaceUpdate(key, before, after);
         }
@@ -2289,11 +2340,13 @@ public final class PaintOverlayClient {
         if (!hasPixels(after)) {
             FACE_PIXELS.remove(key);
             removeFaceMesh(key, chunkPos);
+            DIRTY_FACE_MESHES.remove(key);
         } else {
             FACE_PIXELS.put(key, after);
-            putFaceMesh(key, buildMesh(key, after), chunkPos);
+            removeFaceMesh(key, chunkPos);
+            queueFaceMeshRebuild(key);
         }
-        rebuildChunkMesh(chunkPos);
+        markChunkDirty(chunkPos);
         if (recordHistory && !Arrays.equals(before, after)) {
             recordEditorFaceUpdate(key, before, after);
         }
@@ -2348,7 +2401,7 @@ public final class PaintOverlayClient {
                 new Box(key.pos()).expand(0.01D),
                 buildFaceMesh(key.face(), pixels, 1),
                 buildFaceMesh(key.face(), pixels, 2),
-                buildFaceMesh(key.face(), pixels, 4)
+                buildFaceMesh(key.face(), pixels, 8)
         );
     }
 
@@ -2406,11 +2459,10 @@ public final class PaintOverlayClient {
     }
 
     private static int cellColor(int[] pixels, int startX, int startY, int cellSize) {
-        int alphaTotal = 0;
-        int redTotal = 0;
-        int greenTotal = 0;
-        int blueTotal = 0;
-        int filled = 0;
+        long alphaTotal = 0;
+        long redTotal = 0;
+        long greenTotal = 0;
+        long blueTotal = 0;
         int total = cellSize * cellSize;
         for (int y = 0; y < cellSize; y++) {
             for (int x = 0; x < cellSize; x++) {
@@ -2420,22 +2472,18 @@ public final class PaintOverlayClient {
                     continue;
                 }
                 alphaTotal += alpha;
-                redTotal += (color >>> 16) & 0xFF;
-                greenTotal += (color >>> 8) & 0xFF;
-                blueTotal += color & 0xFF;
-                filled++;
+                redTotal += ((color >>> 16) & 0xFF) * (long) alpha;
+                greenTotal += ((color >>> 8) & 0xFF) * (long) alpha;
+                blueTotal += (color & 0xFF) * (long) alpha;
             }
         }
-        if (filled == 0) {
+        if (alphaTotal == 0) {
             return 0;
         }
-        if (cellSize > 1 && filled * 4 < total) {
-            return 0;
-        }
-        int alpha = MathHelper.clamp((alphaTotal / filled) * filled / total, 64, 255);
-        int red = quantizeLodColor(redTotal / filled, cellSize);
-        int green = quantizeLodColor(greenTotal / filled, cellSize);
-        int blue = quantizeLodColor(blueTotal / filled, cellSize);
+        int alpha = MathHelper.clamp((int) (alphaTotal / total), 1, 255);
+        int red = quantizeLodColor((int) (redTotal / alphaTotal), cellSize);
+        int green = quantizeLodColor((int) (greenTotal / alphaTotal), cellSize);
+        int blue = quantizeLodColor((int) (blueTotal / alphaTotal), cellSize);
         return (alpha << 24) | (red << 16) | (green << 8) | blue;
     }
 
@@ -2496,6 +2544,48 @@ public final class PaintOverlayClient {
 
     private static ChunkPos chunkPos(BlockPos pos) {
         return new ChunkPos(pos.getX() >> 4, pos.getZ() >> 4);
+    }
+
+    private static void markChunkDirty(ChunkPos chunkPos) {
+        DIRTY_CHUNKS.add(chunkPos);
+    }
+
+    private static void queueFaceMeshRebuild(PaintOverlayStore.FaceKey key) {
+        DIRTY_FACE_MESHES.add(key);
+    }
+
+    private static void rebuildDirtyFaceMeshes() {
+        if (DIRTY_FACE_MESHES.isEmpty()) {
+            return;
+        }
+        int rebuilt = 0;
+        var iterator = DIRTY_FACE_MESHES.iterator();
+        while (iterator.hasNext() && rebuilt < MAX_FACE_MESH_BUILDS_PER_TICK) {
+            PaintOverlayStore.FaceKey key = iterator.next();
+            iterator.remove();
+            int[] pixels = FACE_PIXELS.get(key);
+            if (pixels == null || !hasPixels(pixels)) {
+                continue;
+            }
+            ChunkPos chunkPos = chunkPos(key.pos());
+            putFaceMesh(key, buildMesh(key, pixels), chunkPos);
+            markChunkDirty(chunkPos);
+            rebuilt++;
+        }
+    }
+
+    private static void rebuildDirtyChunks() {
+        if (DIRTY_CHUNKS.isEmpty()) {
+            return;
+        }
+        int rebuilt = 0;
+        var iterator = DIRTY_CHUNKS.iterator();
+        while (iterator.hasNext() && rebuilt < MAX_CHUNK_REBUILDS_PER_FRAME) {
+            ChunkPos chunkPos = iterator.next();
+            iterator.remove();
+            rebuildChunkMesh(chunkPos);
+            rebuilt++;
+        }
     }
 
     private static void putFaceMesh(PaintOverlayStore.FaceKey key, FaceMesh mesh, ChunkPos chunkPos) {
