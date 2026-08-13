@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.item.paint;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayFeature;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayStore;
 import com.kuilunfuzhe.monvhua.features.paint.PaintPaperStore;
+import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.NbtComponent;
 import net.minecraft.item.Item;
@@ -15,6 +16,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
 
 import java.util.ArrayList;
@@ -24,6 +26,7 @@ import java.util.UUID;
 public class PaintPaperItem extends Item {
     private static final String DATA_ID = "paint_paper_id";
     private static final String DATA_SIZE = "paint_paper_size";
+    private static final String DATA_IMPORTED_IMAGE = "paint_paper_imported_image";
 
     public PaintPaperItem(Settings settings) {
         super(settings);
@@ -38,6 +41,9 @@ public class PaintPaperItem extends Item {
 
         ItemStack stack = context.getStack();
         UUID existingId = getPaperId(stack);
+        if (existingId != null && isImportedImage(stack)) {
+            return ActionResult.SUCCESS;
+        }
         if (existingId != null && !player.isSneaking()) {
             paste(world, player, stack, existingId, context.getBlockPos(), context.getSide());
             return ActionResult.SUCCESS;
@@ -54,6 +60,24 @@ public class PaintPaperItem extends Item {
 
     public static boolean hasSavedGraffiti(ItemStack stack) {
         return getPaperId(stack) != null;
+    }
+
+    public static boolean isImportedImage(ItemStack stack) {
+        NbtCompound data = getData(stack);
+        return data != null && data.getBoolean(DATA_IMPORTED_IMAGE, false);
+    }
+
+    public static UUID getImportedImageId(ItemStack stack) {
+        return isImportedImage(stack) ? getPaperId(stack) : null;
+    }
+
+    public static ItemStack createImportedImagePaper(ServerWorld world, String displayName, int width, int height, int[] pixels) {
+        UUID id = UUID.randomUUID();
+        PaintPaperStore.get(world).putImportedImage(new PaintPaperStore.ImportedImage(id, displayName, width, height, pixels));
+        ItemStack stack = new ItemStack(PaintItems.PAINT_PAPER);
+        writeImportedImageData(stack, id, width, height);
+        stack.set(DataComponentTypes.CUSTOM_NAME, Text.literal(displayName));
+        return stack;
     }
 
     public static ItemStack createSavedPaper(ServerWorld world, String displayName, int size, List<PaintPaperStore.Cell> cells) {
@@ -180,6 +204,66 @@ public class PaintPaperItem extends Item {
         }
         data.putString(DATA_ID, id.toString());
         data.putInt(DATA_SIZE, size);
+        data.remove(DATA_IMPORTED_IMAGE);
+        stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(data));
+    }
+
+    /** Applies an imported image at its original pixel size, anchored by its top-left world microcell. */
+    public static boolean placeImportedImage(ServerWorld world, ServerPlayerEntity player, PaintPaperStore.ImportedImage image,
+                                             BlockPos origin, Direction face, int anchorMicroX, int anchorMicroY) {
+        if (image == null || !image.isUsable()) {
+            return false;
+        }
+        java.util.Map<PaintOverlayStore.FaceKey, int[]> changedFaces = new java.util.LinkedHashMap<>();
+        int[] source = image.pixels();
+        for (int imageY = 0; imageY < image.height(); imageY++) {
+            for (int imageX = 0; imageX < image.width(); imageX++) {
+                int color = source[imageY * image.width() + imageX];
+                if ((color >>> 24) == 0) {
+                    continue;
+                }
+                int globalX = anchorMicroX + imageX;
+                int globalY = anchorMicroY + imageY;
+                int blockX = Math.floorDiv(globalX, PaintOverlayStore.SIZE);
+                int blockY = Math.floorDiv(globalY, PaintOverlayStore.SIZE);
+                BlockPos target = areaPos(origin, face, blockX, blockY);
+                if (world.isAir(target)
+                        || world.getBlockState(target).getBlock() == ModBlocks.DRAWING_BOARD
+                        || world.getBlockState(target).getBlock() == PaintItems.PAINT_BUCKET_BLOCK
+                        || !PaintOverlayFeature.canPlacePaint(world, target)) {
+                    player.sendMessage(Text.literal("画纸: 目标平面不连续或不可绘制"), true);
+                    return false;
+                }
+                PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(target, face);
+                int[] pixels = changedFaces.computeIfAbsent(key,
+                        ignored -> PaintOverlayStore.get(world).getPixels(target, face));
+                int localX = Math.floorMod(globalX, PaintOverlayStore.SIZE);
+                int localY = Math.floorMod(globalY, PaintOverlayStore.SIZE);
+                pixels[localY * PaintOverlayStore.SIZE + localX] = color;
+            }
+        }
+        int changed = 0;
+        for (java.util.Map.Entry<PaintOverlayStore.FaceKey, int[]> entry : changedFaces.entrySet()) {
+            PaintOverlayStore.FaceKey key = entry.getKey();
+            if (PaintOverlayFeature.setFacePixels(world, key.pos(), key.face(), entry.getValue())) {
+                changed++;
+            }
+        }
+        if (changed > 0) {
+            player.sendMessage(Text.literal("画纸: 已按原图尺寸放置 " + image.width() + "x" + image.height()), true);
+        }
+        return changed > 0;
+    }
+
+    private static void writeImportedImageData(ItemStack stack, UUID id, int width, int height) {
+        NbtCompound data = getData(stack);
+        if (data == null) {
+            data = new NbtCompound();
+        }
+        data.putString(DATA_ID, id.toString());
+        data.putBoolean(DATA_IMPORTED_IMAGE, true);
+        data.putInt("paint_paper_image_width", width);
+        data.putInt("paint_paper_image_height", height);
         stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(data));
     }
 

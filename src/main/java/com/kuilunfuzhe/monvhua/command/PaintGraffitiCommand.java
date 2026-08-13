@@ -11,6 +11,8 @@ import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayFeature;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayStore;
 import com.kuilunfuzhe.monvhua.features.paint.PaintPaperStore;
 import com.kuilunfuzhe.monvhua.item.paint.PaintPaperItem;
+import com.kuilunfuzhe.monvhua.network.paint.PaintOverlayPackets;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.command.CommandRegistryAccess;
 import net.minecraft.command.argument.BlockPosArgumentType;
 import net.minecraft.item.ItemStack;
@@ -239,30 +241,78 @@ public final class PaintGraffitiCommand {
         return 1;
     }
 
-    public static void importUploadedImage(ServerPlayerEntity player, String filename, double scale, byte[] imageBytes) {
+    public static void importUploadedImage(ServerPlayerEntity player, String filename, byte[] imageBytes) {
         if (player == null) {
             return;
         }
         if (imageBytes == null || imageBytes.length == 0) {
-            player.sendMessage(Text.literal("No uploaded image data."), false);
+            completeUploadedImport(player, false, "No uploaded image data.", 0, 0);
             return;
         }
         if (imageBytes.length > MAX_UPLOADED_IMAGE_BYTES) {
-            player.sendMessage(Text.literal("Uploaded image is too large, max 8 MiB."), false);
+            completeUploadedImport(player, false, "Uploaded image is too large, max 8 MiB.", 0, 0);
             return;
         }
 
         MinecraftServer server = player.getServer();
         if (server == null) {
+            completeUploadedImport(player, false, "Image import server is unavailable.", 0, 0);
             return;
         }
         UUID playerId = player.getUuid();
         String safeFilename = safeFilename(filename);
-        double safeScale = Math.max(0.05D, Math.min(8.0D, scale));
         byte[] copiedBytes = imageBytes.clone();
-        player.sendMessage(Text.literal("Started importing uploaded " + safeFilename + " at " + formatScale(safeScale) + "x..."), false);
-        CompletableFuture.supplyAsync(() -> loadImport(safeFilename, copiedBytes, safeScale))
-                .thenAccept(result -> server.execute(() -> finishImport(server, playerId, result)));
+        player.sendMessage(Text.literal("Started importing uploaded " + safeFilename + " at original size..."), false);
+        CompletableFuture.supplyAsync(() -> loadUploadedOriginal(safeFilename, copiedBytes))
+                .handle((result, error) -> error == null ? result
+                        : OriginalImportResult.error("Failed to process uploaded image."))
+                .thenAccept(result -> server.execute(() -> finishOriginalImport(server, playerId, result)));
+    }
+
+    private static OriginalImportResult loadUploadedOriginal(String filename, byte[] imageBytes) {
+        try (ByteArrayInputStream input = new ByteArrayInputStream(imageBytes)) {
+            BufferedImage image = ImageIO.read(input);
+            if (image == null) {
+                return OriginalImportResult.error("Unsupported uploaded image file: " + filename);
+            }
+            long pixelCount = (long) image.getWidth() * image.getHeight();
+            if (pixelCount <= 0 || pixelCount > PaintPaperStore.MAX_IMPORTED_IMAGE_PIXELS) {
+                return OriginalImportResult.error("Image dimensions are too large: " + image.getWidth() + "x" + image.getHeight());
+            }
+            int[] pixels = new int[(int) pixelCount];
+            for (int y = 0; y < image.getHeight(); y++) {
+                for (int x = 0; x < image.getWidth(); x++) {
+                    int argb = image.getRGB(x, y);
+                    pixels[y * image.getWidth() + x] = ((argb >>> 24) & 0xFF) < IMPORT_ALPHA_THRESHOLD ? 0 : argb;
+                }
+            }
+            return new OriginalImportResult(null, filename, image.getWidth(), image.getHeight(), pixels);
+        } catch (IOException e) {
+            return OriginalImportResult.error("Failed to read uploaded image: " + e.getMessage());
+        }
+    }
+
+    private static void finishOriginalImport(MinecraftServer server, UUID playerId, OriginalImportResult result) {
+        ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+        if (player == null) {
+            return;
+        }
+        if (result.error() != null) {
+            completeUploadedImport(player, false, result.error(), 0, 0);
+            return;
+        }
+        ItemStack paper = PaintPaperItem.createImportedImagePaper(player.getWorld(), baseName(result.filename()),
+                result.width(), result.height(), result.pixels());
+        if (!player.getInventory().insertStack(paper)) {
+            player.dropItem(paper, false);
+        }
+        completeUploadedImport(player, true, "Imported " + result.filename() + " at original size "
+                + result.width() + "x" + result.height() + ".", result.width(), result.height());
+    }
+
+    private static void completeUploadedImport(ServerPlayerEntity player, boolean success, String message, int width, int height) {
+        player.sendMessage(Text.literal(message), false);
+        ServerPlayNetworking.send(player, new PaintOverlayPackets.ImportPaintPaperResultS2C(success, message, width, height));
     }
 
     private static ImportResult loadImport(Path imagePath, double scale) {
@@ -493,6 +543,12 @@ public final class PaintGraffitiCommand {
     private record ImportResult(String error, String filename, double scale, int paperColumns, int paperRows, List<ImportedPaper> papers) {
         private static ImportResult error(String message) {
             return new ImportResult(message, "", 1.0D, 0, 0, List.of());
+        }
+    }
+
+    private record OriginalImportResult(String error, String filename, int width, int height, int[] pixels) {
+        private static OriginalImportResult error(String message) {
+            return new OriginalImportResult(message, "", 0, 0, new int[0]);
         }
     }
 }

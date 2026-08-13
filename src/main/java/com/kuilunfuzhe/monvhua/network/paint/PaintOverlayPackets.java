@@ -15,6 +15,7 @@ import net.minecraft.util.math.Vec3d;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 
 public final class PaintOverlayPackets {
     private static final int MAX_FACE_UPDATES = 4096;
@@ -31,12 +32,16 @@ public final class PaintOverlayPackets {
         ClearPlayerPaintS2C.register();
         PaintBucketCarryS2C.register();
         PaintConfigS2C.register();
+        ImportedPaperImageS2C.register();
+        ImportPaintPaperResultS2C.register();
     }
 
     public static void registerC2S() {
         BrushSettingsC2S.register();
         PaperSizeC2S.register();
         ImportPaintPaperC2S.register();
+        PlaceImportedPaperC2S.register();
+        RequestImportedPaperImageC2S.register();
         PaintStrokeC2S.register();
         EditorPaintStrokeC2S.register();
         EditorModelPaintStrokeC2S.register();
@@ -623,7 +628,7 @@ public final class PaintOverlayPackets {
         }
     }
 
-    public record ImportPaintPaperC2S(String filename, double scale, byte[] imageBytes) implements CustomPayload {
+    public record ImportPaintPaperC2S(String filename, byte[] imageBytes) implements CustomPayload {
         private static final int MAX_IMAGE_BYTES = 8 * 1024 * 1024;
         public static final Id<ImportPaintPaperC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "import_paint_paper"));
         public static final PacketCodec<RegistryByteBuf, ImportPaintPaperC2S> CODEC = PacketCodec.of(ImportPaintPaperC2S::write, ImportPaintPaperC2S::new);
@@ -634,7 +639,6 @@ public final class PaintOverlayPackets {
             if (filename.length() > 128) {
                 filename = filename.substring(0, 128);
             }
-            scale = Math.max(0.05D, Math.min(8.0D, scale));
             imageBytes = imageBytes == null ? new byte[0] : imageBytes.clone();
             if (imageBytes.length > MAX_IMAGE_BYTES) {
                 byte[] limited = new byte[MAX_IMAGE_BYTES];
@@ -644,18 +648,156 @@ public final class PaintOverlayPackets {
         }
 
         private ImportPaintPaperC2S(RegistryByteBuf buf) {
-            this(buf.readString(128), buf.readDouble(), buf.readByteArray(MAX_IMAGE_BYTES));
+            this(buf.readString(128), buf.readByteArray(MAX_IMAGE_BYTES));
         }
 
         private void write(RegistryByteBuf buf) {
             buf.writeString(filename);
-            buf.writeDouble(scale);
             buf.writeByteArray(imageBytes);
         }
 
         public static void register() {
             if (!registered) {
                 PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    /** Confirms a two-stage imported-image paper placement. Coordinates are the image's top-left microcell. */
+    public record PlaceImportedPaperC2S(BlockPos pos, Direction face, int microX, int microY) implements CustomPayload {
+        public static final Id<PlaceImportedPaperC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "place_imported_paint_paper"));
+        public static final PacketCodec<RegistryByteBuf, PlaceImportedPaperC2S> CODEC = PacketCodec.of(PlaceImportedPaperC2S::write, PlaceImportedPaperC2S::new);
+        private static boolean registered = false;
+
+        public PlaceImportedPaperC2S {
+            pos = pos.toImmutable();
+            face = face == null ? Direction.UP : face;
+            microX = MathHelper.clamp(microX, 0, PaintOverlayStore.SIZE - 1);
+            microY = MathHelper.clamp(microY, 0, PaintOverlayStore.SIZE - 1);
+        }
+
+        private PlaceImportedPaperC2S(RegistryByteBuf buf) {
+            this(buf.readBlockPos(), Direction.byIndex(buf.readVarInt()), buf.readVarInt(), buf.readVarInt());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeBlockPos(pos);
+            buf.writeVarInt(face.getIndex());
+            buf.writeVarInt(microX);
+            buf.writeVarInt(microY);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record RequestImportedPaperImageC2S(UUID imageId) implements CustomPayload {
+        public static final Id<RequestImportedPaperImageC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "request_imported_paint_paper_image"));
+        public static final PacketCodec<RegistryByteBuf, RequestImportedPaperImageC2S> CODEC = PacketCodec.of(RequestImportedPaperImageC2S::write, RequestImportedPaperImageC2S::new);
+        private static boolean registered = false;
+
+        private RequestImportedPaperImageC2S(RegistryByteBuf buf) {
+            this(buf.readUuid());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeUuid(imageId);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record ImportedPaperImageS2C(UUID imageId, int width, int height, byte[] pngBytes) implements CustomPayload {
+        private static final int MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+        public static final Id<ImportedPaperImageS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "imported_paint_paper_image"));
+        public static final PacketCodec<RegistryByteBuf, ImportedPaperImageS2C> CODEC = PacketCodec.of(ImportedPaperImageS2C::write, ImportedPaperImageS2C::new);
+        private static boolean registered = false;
+
+        public ImportedPaperImageS2C {
+            width = Math.max(0, width);
+            height = Math.max(0, height);
+            pngBytes = pngBytes == null ? new byte[0] : Arrays.copyOf(pngBytes, Math.min(pngBytes.length, MAX_IMAGE_BYTES));
+        }
+
+        private ImportedPaperImageS2C(RegistryByteBuf buf) {
+            this(buf.readUuid(), buf.readVarInt(), buf.readVarInt(), buf.readByteArray(MAX_IMAGE_BYTES));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeUuid(imageId);
+            buf.writeVarInt(width);
+            buf.writeVarInt(height);
+            buf.writeByteArray(pngBytes);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    /** Completes the asynchronous image-paper import request on the client. */
+    public record ImportPaintPaperResultS2C(boolean success, String message, int width, int height) implements CustomPayload {
+        private static final int MAX_MESSAGE_LENGTH = 256;
+        public static final Id<ImportPaintPaperResultS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "import_paint_paper_result"));
+        public static final PacketCodec<RegistryByteBuf, ImportPaintPaperResultS2C> CODEC = PacketCodec.of(ImportPaintPaperResultS2C::write, ImportPaintPaperResultS2C::new);
+        private static boolean registered = false;
+
+        public ImportPaintPaperResultS2C {
+            message = message == null ? "" : message;
+            if (message.length() > MAX_MESSAGE_LENGTH) {
+                message = message.substring(0, MAX_MESSAGE_LENGTH);
+            }
+            width = Math.max(0, width);
+            height = Math.max(0, height);
+        }
+
+        private ImportPaintPaperResultS2C(RegistryByteBuf buf) {
+            this(buf.readBoolean(), buf.readString(MAX_MESSAGE_LENGTH), buf.readVarInt(), buf.readVarInt());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeBoolean(success);
+            buf.writeString(message);
+            buf.writeVarInt(width);
+            buf.writeVarInt(height);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
                 registered = true;
             }
         }

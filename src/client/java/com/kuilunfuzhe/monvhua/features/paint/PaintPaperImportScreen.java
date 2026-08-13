@@ -45,7 +45,6 @@ public class PaintPaperImportScreen extends Screen {
     private int scroll;
     private int panelX;
     private int panelY;
-    private double scale = 1.0D;
     private ImageEntry previewEntry;
     private boolean importing;
     private String status = "";
@@ -81,8 +80,6 @@ public class PaintPaperImportScreen extends Screen {
         }
         if (clickList(mouseX, mouseY)
                 || clickButton(refreshX(), buttonY(), 58, 18, mouseX, mouseY, this::reloadImages)
-                || clickButton(minusX(), buttonY(), 22, 18, mouseX, mouseY, () -> setScale(scale - 0.05D))
-                || clickButton(plusX(), buttonY(), 22, 18, mouseX, mouseY, () -> setScale(scale + 0.05D))
                 || (!importing && clickButton(importX(), buttonY(), 64, 18, mouseX, mouseY, this::importSelected))) {
             return true;
         }
@@ -94,10 +91,6 @@ public class PaintPaperImportScreen extends Screen {
         if (isInside(listX(), listY(), LIST_WIDTH, listHeight(), mouseX, mouseY)) {
             int maxScroll = Math.max(0, images.size() - visibleRows());
             scroll = MathHelper.clamp(scroll - (int) Math.signum(verticalAmount), 0, maxScroll);
-            return true;
-        }
-        if (isInside(previewX(), previewY(), PREVIEW_SIZE, PREVIEW_SIZE, mouseX, mouseY)) {
-            setScale(scale + Math.signum(verticalAmount) * 0.05D);
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
@@ -200,21 +193,19 @@ public class PaintPaperImportScreen extends Screen {
         int y = previewY();
         ImageEntry entry = selectedEntry();
         context.drawText(textRenderer, Text.literal("缩放"), infoX, y, 0xFFFFFFFF, false);
-        context.drawText(textRenderer, Text.literal(formatScale(scale) + "x"), infoX, y + 14, 0xFFE6E6E6, false);
+        context.drawText(textRenderer, Text.literal("原图尺寸"), infoX, y + 14, 0xFFE6E6E6, false);
 
         if (entry != null) {
-            int scaledWidth = Math.max(1, (int) Math.round(entry.width() * scale));
-            int scaledHeight = Math.max(1, (int) Math.round(entry.height() * scale));
-            int paperColumns = Math.max(1, (scaledWidth + 399) / 400);
-            int paperRows = Math.max(1, (scaledHeight + 399) / 400);
+            int scaledWidth = entry.width();
+            int scaledHeight = entry.height();
+            int paperColumns = Math.max(1, (scaledWidth + PaintOverlayStore.SIZE - 1) / PaintOverlayStore.SIZE);
+            int paperRows = Math.max(1, (scaledHeight + PaintOverlayStore.SIZE - 1) / PaintOverlayStore.SIZE);
             context.drawText(textRenderer, Text.literal("原图 " + entry.width() + "x" + entry.height()), infoX, y + 38, 0xFFB8B8C2, false);
             context.drawText(textRenderer, Text.literal("缩放后 " + scaledWidth + "x" + scaledHeight), infoX, y + 52, 0xFFB8B8C2, false);
             context.drawText(textRenderer, Text.literal("纸张 " + paperColumns + "x" + paperRows), infoX, y + 66, 0xFFB8B8C2, false);
         }
 
         drawButton(context, refreshX(), buttonY(), 58, 18, "刷新", true);
-        drawButton(context, minusX(), buttonY(), 22, 18, "-", true);
-        drawButton(context, plusX(), buttonY(), 22, 18, "+", true);
         drawButton(context, importX(), buttonY(), 64, 18, importing ? "处理中" : "导入", entry != null && !importing);
         if (!status.isEmpty()) {
             context.drawText(textRenderer, Text.literal(status), infoX, buttonY() - 18, 0xFFE6E6E6, false);
@@ -247,6 +238,12 @@ public class PaintPaperImportScreen extends Screen {
         if (entry == null || client.player == null) {
             return;
         }
+        long pixelCount = (long) entry.width() * entry.height();
+        if (pixelCount > PaintPaperStore.MAX_IMPORTED_IMAGE_PIXELS) {
+            status = "Image dimensions are too large: " + entry.width() + "x" + entry.height()
+                    + ", max " + PaintPaperStore.MAX_IMPORTED_IMAGE_PIXELS + " pixels";
+            return;
+        }
         byte[] imageBytes;
         try {
             long size = Files.size(entry.path());
@@ -261,11 +258,16 @@ public class PaintPaperImportScreen extends Screen {
         }
         importing = true;
         status = "正在上传...";
-        SafeClientNetworking.send(new PaintOverlayPackets.ImportPaintPaperC2S(entry.name(), scale, imageBytes));
+        SafeClientNetworking.send(new PaintOverlayPackets.ImportPaintPaperC2S(entry.name(), imageBytes));
     }
 
-    private void setScale(double nextScale) {
-        scale = MathHelper.clamp(nextScale, 0.05D, 8.0D);
+    public static void receiveImportResult(PaintOverlayPackets.ImportPaintPaperResultS2C result) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (!(client.currentScreen instanceof PaintPaperImportScreen screen)) {
+            return;
+        }
+        screen.importing = false;
+        screen.status = result.message();
     }
 
     private ImageEntry selectedEntry() {
@@ -304,16 +306,8 @@ public class PaintPaperImportScreen extends Screen {
         return panelX + 12;
     }
 
-    private int minusX() {
-        return previewX() + PREVIEW_SIZE + 16;
-    }
-
-    private int plusX() {
-        return minusX() + 28;
-    }
-
     private int importX() {
-        return plusX() + 34;
+        return previewX() + PREVIEW_SIZE + 16;
     }
 
     private boolean clickButton(int x, int y, int width, int height, double mouseX, double mouseY, Runnable action) {
@@ -364,10 +358,6 @@ public class PaintPaperImportScreen extends Screen {
     private static boolean isImageFile(Path path) {
         String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
         return name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".bmp");
-    }
-
-    private static String formatScale(double scale) {
-        return String.format(Locale.ROOT, "%.2f", scale);
     }
 
     @Override

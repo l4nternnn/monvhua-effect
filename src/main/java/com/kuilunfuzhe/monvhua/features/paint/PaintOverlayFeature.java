@@ -37,6 +37,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiPredicate;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import javax.imageio.ImageIO;
 
 public final class PaintOverlayFeature {
     public static final int DEFAULT_COLOR = 0xFFFF2A4F;
@@ -83,7 +87,11 @@ public final class PaintOverlayFeature {
                 context.server().execute(() -> setPaperSize(context.player(), packet.size())));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.ImportPaintPaperC2S.ID, (packet, context) ->
                 context.server().execute(() -> PaintGraffitiCommand.importUploadedImage(
-                        context.player(), packet.filename(), packet.scale(), packet.imageBytes())));
+                        context.player(), packet.filename(), packet.imageBytes())));
+        ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PlaceImportedPaperC2S.ID, (packet, context) ->
+                context.server().execute(() -> handleImportedPaperPlacement(context.player(), packet)));
+        ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.RequestImportedPaperImageC2S.ID, (packet, context) ->
+                context.server().execute(() -> sendImportedPaperPreview(context.player(), packet.imageId())));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.PaintStrokeC2S.ID, (packet, context) ->
                 context.server().execute(() -> handlePaintStroke(context.player(), packet)));
         ServerPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.EditorPaintStrokeC2S.ID, (packet, context) ->
@@ -365,6 +373,69 @@ public final class PaintOverlayFeature {
             return;
         }
         PaintPaperItem.useFromEditor(world, player, paper, packet.pos(), packet.face(), packet.save());
+    }
+
+    private static void handleImportedPaperPlacement(ServerPlayerEntity player, PaintOverlayPackets.PlaceImportedPaperC2S packet) {
+        if (!(player.getWorld() instanceof ServerWorld world)) {
+            return;
+        }
+        if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED
+                || !PaintOverlayFeature.canPlacePaint(world, packet.pos())) {
+            return;
+        }
+        ItemStack paper = findImportedImagePaper(player);
+        if (paper == ItemStack.EMPTY) {
+            return;
+        }
+        java.util.UUID imageId = PaintPaperItem.getImportedImageId(paper);
+        if (imageId == null) {
+            return;
+        }
+        PaintPaperStore.ImportedImage image = PaintPaperStore.get(world).getImportedImage(imageId);
+        if (image == null || !image.isUsable()) {
+            return;
+        }
+        PaintPaperItem.placeImportedImage(world, player, image, packet.pos(), packet.face(), packet.microX(), packet.microY());
+    }
+
+    private static ItemStack findImportedImagePaper(ServerPlayerEntity player) {
+        if (PaintPaperItem.isImportedImage(player.getMainHandStack())) {
+            return player.getMainHandStack();
+        }
+        if (PaintPaperItem.isImportedImage(player.getOffHandStack())) {
+            return player.getOffHandStack();
+        }
+        return ItemStack.EMPTY;
+    }
+
+    private static void sendImportedPaperPreview(ServerPlayerEntity player, UUID imageId) {
+        ItemStack paper = findImportedImagePaper(player);
+        if (paper == ItemStack.EMPTY || !imageId.equals(PaintPaperItem.getImportedImageId(paper))) {
+            return;
+        }
+        PaintPaperStore.ImportedImage image = PaintPaperStore.get(player.getWorld()).getImportedImage(imageId);
+        if (image == null || !image.isUsable()) {
+            return;
+        }
+        byte[] pngBytes = encodePreviewPng(image);
+        if (pngBytes.length == 0) {
+            return;
+        }
+        ServerPlayNetworking.send(player, new PaintOverlayPackets.ImportedPaperImageS2C(
+                image.id(), image.width(), image.height(), pngBytes));
+    }
+
+    private static byte[] encodePreviewPng(PaintPaperStore.ImportedImage image) {
+        BufferedImage buffered = new BufferedImage(image.width(), image.height(), BufferedImage.TYPE_INT_ARGB);
+        buffered.setRGB(0, 0, image.width(), image.height(), image.pixels(), 0, image.width());
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            if (!ImageIO.write(buffered, "png", output) || output.size() > 8 * 1024 * 1024) {
+                return new byte[0];
+            }
+            return output.toByteArray();
+        } catch (IOException ignored) {
+            return new byte[0];
+        }
     }
 
     private static void handleFillPaintBucket(ServerPlayerEntity player, PaintOverlayPackets.FillPaintBucketC2S packet) {

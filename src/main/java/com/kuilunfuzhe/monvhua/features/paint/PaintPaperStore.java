@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.features.paint;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import com.mojang.datafixers.util.Either;
 import net.minecraft.datafixer.DataFixTypes;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Uuids;
@@ -17,6 +18,7 @@ import java.util.UUID;
 import java.util.stream.IntStream;
 
 public class PaintPaperStore extends PersistentState {
+    public static final int MAX_IMPORTED_IMAGE_PIXELS = 2_000_000;
     private static final Codec<int[]> PIXELS_CODEC = Codec.INT_STREAM.xmap(IntStream::toArray, Arrays::stream);
     public static final Codec<Cell> CELL_CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.fieldOf("x").forGetter(Cell::x),
@@ -29,8 +31,21 @@ public class PaintPaperStore extends PersistentState {
             Codec.INT.fieldOf("size").forGetter(PaperData::size),
             CELL_CODEC.listOf().fieldOf("cells").forGetter(PaperData::cells)
     ).apply(instance, PaperData::new));
-    public static final Codec<PaintPaperStore> CODEC = PAPER_DATA_CODEC.listOf()
-            .xmap(PaintPaperStore::new, PaintPaperStore::toPapers);
+    public static final Codec<ImportedImage> IMPORTED_IMAGE_CODEC = RecordCodecBuilder.create(instance -> instance.group(
+            Uuids.CODEC.fieldOf("id").forGetter(ImportedImage::id),
+            Codec.STRING.fieldOf("name").forGetter(ImportedImage::name),
+            Codec.INT.fieldOf("width").forGetter(ImportedImage::width),
+            Codec.INT.fieldOf("height").forGetter(ImportedImage::height),
+            PIXELS_CODEC.fieldOf("pixels").forGetter(ImportedImage::pixels)
+    ).apply(instance, ImportedImage::new));
+    private static final Codec<StoreData> STORE_DATA_CODEC = RecordCodecBuilder.create(instance -> instance.group(
+            PAPER_DATA_CODEC.listOf().optionalFieldOf("papers", List.of()).forGetter(StoreData::papers),
+            IMPORTED_IMAGE_CODEC.listOf().optionalFieldOf("imported_images", List.of()).forGetter(StoreData::importedImages)
+    ).apply(instance, StoreData::new));
+    public static final Codec<PaintPaperStore> CODEC = Codec.either(PAPER_DATA_CODEC.listOf(), STORE_DATA_CODEC)
+            .xmap(data -> data.map(PaintPaperStore::new,
+                            stored -> new PaintPaperStore(stored.papers(), stored.importedImages())),
+                    store -> Either.right(new StoreData(store.toPapers(), store.toImportedImages())));
     public static final PersistentStateType<PaintPaperStore> TYPE = new PersistentStateType<>(
             "monvhua_paint_papers",
             PaintPaperStore::new,
@@ -39,6 +54,7 @@ public class PaintPaperStore extends PersistentState {
     );
 
     private final Map<UUID, PaperData> papers = new HashMap<>();
+    private final Map<UUID, ImportedImage> importedImages = new HashMap<>();
 
     public PaintPaperStore() {
     }
@@ -46,6 +62,15 @@ public class PaintPaperStore extends PersistentState {
     private PaintPaperStore(List<PaperData> entries) {
         for (PaperData entry : entries) {
             papers.put(entry.id(), entry.sanitized());
+        }
+    }
+
+    private PaintPaperStore(List<PaperData> paperEntries, List<ImportedImage> imageEntries) {
+        this(paperEntries);
+        for (ImportedImage image : imageEntries) {
+            if (image.isUsable()) {
+                importedImages.put(image.id(), image);
+            }
         }
     }
 
@@ -62,8 +87,27 @@ public class PaintPaperStore extends PersistentState {
         markDirty();
     }
 
+    public ImportedImage getImportedImage(UUID id) {
+        return importedImages.get(id);
+    }
+
+    public void putImportedImage(ImportedImage image) {
+        if (!image.isUsable()) {
+            return;
+        }
+        importedImages.put(image.id(), image);
+        markDirty();
+    }
+
     private List<PaperData> toPapers() {
         return new ArrayList<>(papers.values());
+    }
+
+    private List<ImportedImage> toImportedImages() {
+        return new ArrayList<>(importedImages.values());
+    }
+
+    private record StoreData(List<PaperData> papers, List<ImportedImage> importedImages) {
     }
 
     private static int[] sanitizePixels(int[] source) {
@@ -142,6 +186,26 @@ public class PaintPaperStore extends PersistentState {
                 }
             }
             return new PaperData(id, size, visible);
+        }
+    }
+
+    /** Original imported image data. One image pixel maps to one world microcell. */
+    public record ImportedImage(UUID id, String name, int width, int height, int[] pixels) {
+        public ImportedImage {
+            name = name == null || name.isBlank() ? "image" : name;
+            width = Math.max(0, width);
+            height = Math.max(0, height);
+            int expected = safePixelCount(width, height);
+            pixels = pixels == null ? new int[0] : Arrays.copyOf(pixels, Math.min(pixels.length, expected));
+        }
+
+        public boolean isUsable() {
+            return id != null && width > 0 && height > 0 && pixels.length == safePixelCount(width, height);
+        }
+
+        private static int safePixelCount(int width, int height) {
+            long count = (long) width * height;
+            return count > 0 && count <= MAX_IMPORTED_IMAGE_PIXELS ? (int) count : 0;
         }
     }
 }
