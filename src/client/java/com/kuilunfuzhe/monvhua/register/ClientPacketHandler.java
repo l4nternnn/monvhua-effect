@@ -165,6 +165,10 @@ public class ClientPacketHandler {
             context.client().execute(() -> Evil_EyesClient.setViewMode(packet.mode()));
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(ViewLogicS2C.ID, (packet, context) -> {
+            context.client().execute(() -> Evil_EyesClient.setViewLogicMode(packet.mode()));
+        });
+
         // 3. 实体标记更新
         ClientPlayNetworking.registerGlobalReceiver(EntityMarkedS2C.ID, (packet, context) -> {
             context.client().execute(() -> {
@@ -453,6 +457,7 @@ public class ClientPacketHandler {
             CarryPoseTuning.resetTransformConfig();
             ActionPoseClientState.clear();
             Evil_EyesClient.setViewMode("viewport");
+            Evil_EyesClient.setViewLogicMode("six");
             com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceViewportRenderer.cleanup();
             com.kuilunfuzhe.monvhua.features.floating.floating.syncFullWitchTag(false, false);
             com.kuilunfuzhe.monvhua.features.floating.floating.resetStageRanges();

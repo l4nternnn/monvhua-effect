@@ -32,6 +32,7 @@ public final class EvilEyesPackets {
         ClairvoyanceEnergyS2C.register();
         OpenUIS2C.register();
         ViewModeS2C.register();
+        ViewLogicS2C.register();
         EntityMarkedS2C.register();
         ClairvoyanceGazeAlertS2C.register();
         SelectView.register();
@@ -554,6 +555,25 @@ public final class EvilEyesPackets {
         public static final Id<ViewModeS2C> ID = new Id<>(Identifier.of("monvhua", "clairvoyance_view_mode"));
         public static final PacketCodec<PacketByteBuf, ViewModeS2C> CODEC =
                 PacketCodec.tuple(PacketCodecs.STRING, ViewModeS2C::mode, ViewModeS2C::new);
+        private static boolean registered = false;
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record ViewLogicS2C(String mode) implements CustomPayload {
+        public static final Id<ViewLogicS2C> ID = new Id<>(Identifier.of("monvhua", "clairvoyance_view_logic"));
+        public static final PacketCodec<PacketByteBuf, ViewLogicS2C> CODEC =
+                PacketCodec.tuple(PacketCodecs.STRING, ViewLogicS2C::mode, ViewLogicS2C::new);
         private static boolean registered = false;
 
         public static void register() {

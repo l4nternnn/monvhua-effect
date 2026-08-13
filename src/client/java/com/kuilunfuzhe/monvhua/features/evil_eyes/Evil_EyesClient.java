@@ -59,6 +59,7 @@ public class Evil_EyesClient {
     private static long pendingMarkedSyncGeneration = -1L;
     private static long pendingMarkedSyncTick = -1L;
     private static volatile String viewMode = "viewport";
+    private static volatile String viewLogicMode = "six";
 
     public record MarkedEntityName(String name, String tag) {
     }
@@ -85,6 +86,18 @@ public class Evil_EyesClient {
 
     public static boolean isViewportMode() {
         return "viewport".equals(viewMode);
+    }
+
+    public static void setViewLogicMode(String mode) {
+        viewLogicMode = "single".equals(mode) ? "single" : "six";
+    }
+
+    public static String getViewLogicMode() {
+        return viewLogicMode;
+    }
+
+    public static boolean isSingleSelectedMode() {
+        return "single".equals(viewLogicMode);
     }
 
     public static void beginMarkedListSync(MinecraftClient client) {

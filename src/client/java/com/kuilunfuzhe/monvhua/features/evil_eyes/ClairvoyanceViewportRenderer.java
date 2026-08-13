@@ -32,16 +32,18 @@ public final class ClairvoyanceViewportRenderer {
 	private static final AtomicBoolean renderingPreview = new AtomicBoolean(false);
 	private static final double CAMERA_DISTANCE = 4.0;
 	private static final int MAX_TARGETS = 6;
+	private static final int SINGLE_SLOT = MAX_TARGETS;
+	private static final int SLOT_COUNT = MAX_TARGETS + 1;
 	private static final long IDLE_RENDER_INTERVAL_TICKS = 40L;
-	private static final int[] INITIAL_LOAD_ORDER = new int[]{4, 1, 0, 2, 3, 5};
+	private static final int[] INITIAL_LOAD_ORDER = new int[]{0, 1, 2, 3, 4, 5};
 
-	private static final UUID[] selectedTargets = new UUID[MAX_TARGETS];
-	private static final SimpleFramebuffer[] previewFramebuffers = new SimpleFramebuffer[MAX_TARGETS];
-	private static final Float[] smoothYaws = new Float[MAX_TARGETS];
-	private static final Double[] smoothDistances = new Double[MAX_TARGETS];
-	private static final Vec3d[] smoothCameraPositions = new Vec3d[MAX_TARGETS];
-	private static final long[] lastPreviewRenderTicks = new long[MAX_TARGETS];
-	private static final boolean[] firstFrameRendered = new boolean[MAX_TARGETS];
+	private static final UUID[] selectedTargets = new UUID[SLOT_COUNT];
+	private static final SimpleFramebuffer[] previewFramebuffers = new SimpleFramebuffer[SLOT_COUNT];
+	private static final Float[] smoothYaws = new Float[SLOT_COUNT];
+	private static final Double[] smoothDistances = new Double[SLOT_COUNT];
+	private static final Vec3d[] smoothCameraPositions = new Vec3d[SLOT_COUNT];
+	private static final long[] lastPreviewRenderTicks = new long[SLOT_COUNT];
+	private static final boolean[] firstFrameRendered = new boolean[SLOT_COUNT];
 	private static int hoveredSlot = -1;
 	private static int expandedSlot = -1;
 
@@ -65,15 +67,40 @@ public final class ClairvoyanceViewportRenderer {
 		return selectedTargets[0];
 	}
 
+	public static void setSingleSelectedTarget(UUID target) {
+		if (target == null) {
+			clearSlot(SINGLE_SLOT);
+			return;
+		}
+		if (!target.equals(selectedTargets[SINGLE_SLOT])) {
+			selectedTargets[SINGLE_SLOT] = target;
+			lastPreviewRenderTicks[SINGLE_SLOT] = 0L;
+			firstFrameRendered[SINGLE_SLOT] = false;
+			resetSmoothing(SINGLE_SLOT);
+		}
+	}
+
+	public static UUID getSingleSelectedTarget() {
+		return selectedTargets[SINGLE_SLOT];
+	}
+
+	public static boolean hasSingleSelectedTarget() {
+		return selectedTargets[SINGLE_SLOT] != null;
+	}
+
 	public static void clearSelectedTarget(UUID target) {
 		if (target == null) {
 			clearAllTargets();
+			clearSlot(SINGLE_SLOT);
 			return;
 		}
 		for (int i = 0; i < MAX_TARGETS; i++) {
 			if (target.equals(selectedTargets[i])) {
 				clearSlot(i);
 			}
+		}
+		if (target.equals(selectedTargets[SINGLE_SLOT])) {
+			clearSlot(SINGLE_SLOT);
 		}
 		compactTargets();
 	}
@@ -131,12 +158,17 @@ public final class ClairvoyanceViewportRenderer {
 		MinecraftClient client = MinecraftClient.getInstance();
 		return Evil_EyesClient.isViewportMode()
 			&& client.currentScreen instanceof com.kuilunfuzhe.monvhua.gui.evil_eyes.Evil_eyesScreen
-			&& hasPreviewTarget();
+			&& (Evil_EyesClient.isSingleSelectedMode() ? hasSingleSelectedTarget() : hasPreviewTarget());
 	}
 
 	public static void renderPreviewWorld(RenderTickCounter tickCounter, GpuBufferSlice fog, Vector4f fogColor, Camera mainCamera, Matrix4f positionMatrix, Matrix4f projectionMatrix) {
 		MinecraftClient client = MinecraftClient.getInstance();
-		if (client.world == null || client.player == null || !hasPreviewTarget()) return;
+		if (client.world == null || client.player == null) return;
+		if (Evil_EyesClient.isSingleSelectedMode()) {
+			renderSinglePreviewWorld(client, tickCounter, fog, fogColor, mainCamera, positionMatrix, projectionMatrix);
+			return;
+		}
+		if (!hasPreviewTarget()) return;
 		if (renderingPreview.getAndSet(true)) return;
 
 		try {
@@ -155,6 +187,25 @@ public final class ClairvoyanceViewportRenderer {
 				firstFrameRendered[slot] = true;
 			}
 			compactTargets();
+		} finally {
+			renderingPreview.set(false);
+		}
+	}
+
+	private static void renderSinglePreviewWorld(MinecraftClient client, RenderTickCounter tickCounter, GpuBufferSlice fog, Vector4f fogColor, Camera mainCamera, Matrix4f positionMatrix, Matrix4f projectionMatrix) {
+		UUID targetId = selectedTargets[SINGLE_SLOT];
+		if (targetId == null) return;
+		if (renderingPreview.getAndSet(true)) return;
+
+		try {
+			Entity target = client.world.getEntity(targetId);
+			if (target == null || !target.isAlive()) {
+				clearSlot(SINGLE_SLOT);
+				return;
+			}
+			renderPreviewSlot(SINGLE_SLOT, client, target, tickCounter, fog, fogColor, mainCamera, positionMatrix, projectionMatrix);
+			lastPreviewRenderTicks[SINGLE_SLOT] = client.world.getTime();
+			firstFrameRendered[SINGLE_SLOT] = true;
 		} finally {
 			renderingPreview.set(false);
 		}
@@ -248,6 +299,15 @@ public final class ClairvoyanceViewportRenderer {
 
 	public static void renderPreviewRect(DrawContext context, int slot, int x, int y, int width, int height) {
 		if (slot < 0 || slot >= MAX_TARGETS) return;
+		renderPreviewSlotRect(context, slot, x, y, width, height);
+	}
+
+	public static void renderSingleSelectedRect(DrawContext context, int x, int y, int width, int height) {
+		renderPreviewSlotRect(context, SINGLE_SLOT, x, y, width, height);
+	}
+
+	private static void renderPreviewSlotRect(DrawContext context, int slot, int x, int y, int width, int height) {
+		if (slot < 0 || slot >= SLOT_COUNT) return;
 		SimpleFramebuffer previewFramebuffer = previewFramebuffers[slot];
 		if (selectedTargets[slot] == null) return;
 		MinecraftClient client = MinecraftClient.getInstance();
@@ -270,7 +330,7 @@ public final class ClairvoyanceViewportRenderer {
 	}
 
 	public static void cleanup() {
-		for (int i = 0; i < MAX_TARGETS; i++) {
+		for (int i = 0; i < SLOT_COUNT; i++) {
 			if (previewFramebuffers[i] != null) {
 				previewFramebuffers[i].delete();
 				previewFramebuffers[i] = null;

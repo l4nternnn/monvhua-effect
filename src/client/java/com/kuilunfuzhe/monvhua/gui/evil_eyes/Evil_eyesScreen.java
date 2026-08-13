@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.gui.evil_eyes;
 
 import com.kuilunfuzhe.monvhua.event.tag_pitch;
+import com.kuilunfuzhe.monvhua.event.KeyBindingHandler;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceEnergyClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceViewportRenderer;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_EyesClient;
@@ -111,6 +112,18 @@ public class Evil_eyesScreen extends Screen {
     private long pendingDeleteUntil;
     private DeleteKey lastDelete;
     private long lastDeleteAt;
+    private UUID selectedMarkedEntityUuid;
+    private int markedColumnWidth;
+    private int markedScrollOffset;
+    private int markedTotalRows;
+    private boolean draggingMarkedScrollbar;
+    private int markedScrollbarDragOffset;
+    private int cooldownColumnX;
+    private int cooldownColumnWidth;
+    private int cooldownScrollOffset;
+    private int cooldownTotalRows;
+    private boolean draggingCooldownScrollbar;
+    private int cooldownScrollbarDragOffset;
 
     public Evil_eyesScreen() {
         super(Text.empty());
@@ -207,9 +220,13 @@ public class Evil_eyesScreen extends Screen {
             return;
         }
         boolean open = true;
-        int previewCount = Evil_EyesClient.isViewportMode() ? ClairvoyanceViewportRenderer.previewTargetCount() : 0;
-        boolean hovered = Evil_EyesClient.isViewportMode() && ClairvoyanceViewportRenderer.hasTargetAtSlot(hoveredSlot);
-        boolean expanded = expandedSlot >= 0;
+        boolean viewport = Evil_EyesClient.isViewportMode();
+        boolean single = viewport && Evil_EyesClient.isSingleSelectedMode();
+        int previewCount = viewport
+                ? (single ? (selectedMarkedEntityUuid != null ? 1 : 0) : ClairvoyanceViewportRenderer.previewTargetCount())
+                : 0;
+        boolean hovered = viewport && !single && ClairvoyanceViewportRenderer.hasTargetAtSlot(hoveredSlot);
+        boolean expanded = viewport && !single && expandedSlot >= 0;
         if (!force && lastUiOpen == open && lastPreviewCount == previewCount && lastHovered == hovered && lastExpanded == expanded) {
             return;
         }
@@ -279,39 +296,203 @@ public class Evil_eyesScreen extends Screen {
         markedRows.clear();
         cooldownRows.clear();
         if (Evil_EyesClient.isViewportMode()) {
-            ClairvoyanceViewportRenderer.syncPreviewTargets(currentMarks.keySet());
+            if (selectedMarkedEntityUuid != null && !currentMarks.containsKey(selectedMarkedEntityUuid)) {
+                ClairvoyanceViewportRenderer.clearSelectedTarget(selectedMarkedEntityUuid);
+                selectedMarkedEntityUuid = null;
+            }
+            if (Evil_EyesClient.isSingleSelectedMode()) {
+                expandedSlot = -1;
+                hoveredSlot = -1;
+                ClairvoyanceViewportRenderer.setInteractiveSlots(-1, -1);
+                ClairvoyanceViewportRenderer.setSingleSelectedTarget(selectedMarkedEntityUuid);
+            } else {
+                ClairvoyanceViewportRenderer.syncPreviewTargets(currentMarks.keySet());
+            }
             syncUiState(false);
         }
 
         int rowHeight = 24;
         int rowGap = 5;
-        int markedWidth = Math.max(60, Math.min((int) (listBounds.width * 0.58F), listBounds.width - 72));
-        int cooldownX = listBounds.x + markedWidth + 8;
-        int cooldownWidth = Math.max(48, listBounds.x + listBounds.width - cooldownX);
-        int yOffset = 20;
-        for (UUID uuid : currentMarks.keySet()) {
-            DisplayName name = getEntityName(uuid);
-            markedRows.add(new MarkedRow(uuid, name, listBounds.x, listBounds.y + yOffset, markedWidth, rowHeight));
-            yOffset += rowHeight + rowGap;
-            if (yOffset + rowHeight > listBounds.height) {
-                break;
-            }
-        }
-        int cooldownYOffset = 20;
+        int rawMarkedWidth = Math.max(60, Math.min((int) (listBounds.width * 0.58F), listBounds.width - 72));
         long now = currentClientTick();
+
+        List<MarkedRowData> markEntries = new ArrayList<>();
+        for (UUID uuid : currentMarks.keySet()) {
+            if (isUnmarkCooldownActive(uuid, now)) {
+                continue;
+            }
+            markEntries.add(new MarkedRowData(uuid, getEntityName(uuid)));
+        }
+        markEntries.sort((a, b) -> a.name.plain().compareToIgnoreCase(b.name.plain()));
+
+        List<CooldownRowData> cooldownEntries = new ArrayList<>();
         for (Map.Entry<UUID, Evil_EyesClient.CooldownEntry> entry : Evil_EyesClient.localUnmarkCooldowns.entrySet()) {
             int remainingTicks = (int) Math.max(0L, entry.getValue().expireTick() - now);
             if (remainingTicks <= 0) {
                 continue;
             }
             DisplayName name = new DisplayName(Text.literal(entry.getValue().name()), entry.getValue().name());
-            cooldownRows.add(new CooldownRow(entry.getKey(), name, remainingTicks, cooldownX, listBounds.y + cooldownYOffset, cooldownWidth, rowHeight));
-            cooldownYOffset += rowHeight + rowGap;
-            if (cooldownYOffset + rowHeight > listBounds.height) {
-                break;
-            }
+            cooldownEntries.add(new CooldownRowData(entry.getKey(), name, remainingTicks));
+        }
+        cooldownEntries.sort((a, b) -> a.name.plain().compareToIgnoreCase(b.name.plain()));
+
+        markedTotalRows = markEntries.size();
+        cooldownTotalRows = cooldownEntries.size();
+        clampMarkedScrollOffset();
+        clampCooldownScrollOffset();
+        markedColumnWidth = Math.max(48, rawMarkedWidth - (hasMarkedScrollbar() ? 8 : 0));
+        cooldownColumnX = listBounds.x + rawMarkedWidth + 8;
+        cooldownColumnWidth = Math.max(48, listBounds.x + listBounds.width - cooldownColumnX - (hasCooldownScrollbar() ? 8 : 0));
+        int visibleRows = visibleMarkedRowCapacity();
+        int markedEnd = Math.min(markedTotalRows, markedScrollOffset + visibleRows);
+        for (int index = markedScrollOffset; index < markedEnd; index++) {
+            int rowY = listBounds.y + 20 + (index - markedScrollOffset) * (rowHeight + rowGap);
+            MarkedRowData data = markEntries.get(index);
+            markedRows.add(new MarkedRow(data.uuid, data.name, listBounds.x, rowY, markedColumnWidth, rowHeight));
+        }
+        int cooldownEnd = Math.min(cooldownTotalRows, cooldownScrollOffset + visibleRows);
+        for (int index = cooldownScrollOffset; index < cooldownEnd; index++) {
+            int rowY = listBounds.y + 20 + (index - cooldownScrollOffset) * (rowHeight + rowGap);
+            CooldownRowData data = cooldownEntries.get(index);
+            cooldownRows.add(new CooldownRow(data.uuid, data.name, data.remainingTicks, cooldownColumnX, rowY, cooldownColumnWidth, rowHeight));
         }
         refreshResourceRows();
+    }
+
+    private boolean isUnmarkCooldownActive(UUID uuid, long now) {
+        Evil_EyesClient.CooldownEntry cooldown = Evil_EyesClient.localUnmarkCooldowns.get(uuid);
+        return cooldown != null && cooldown.expireTick() > now;
+    }
+
+    private int visibleMarkedRowCapacity() {
+        int availableHeight = Math.max(0, listBounds.height - 24);
+        return Math.max(1, (availableHeight + 5) / 29);
+    }
+
+    private int maxMarkedScrollOffset() {
+        return Math.max(0, markedTotalRows - visibleMarkedRowCapacity());
+    }
+
+    private void clampMarkedScrollOffset() {
+        markedScrollOffset = MathHelper.clamp(markedScrollOffset, 0, maxMarkedScrollOffset());
+    }
+
+    private boolean hasMarkedScrollbar() {
+        return maxMarkedScrollOffset() > 0;
+    }
+
+    private int markedScrollbarX() {
+        return listBounds.x + Math.max(48, markedColumnWidth) + 1;
+    }
+
+    private int markedScrollbarTrackY() {
+        return listBounds.y + 20;
+    }
+
+    private int markedScrollbarTrackHeight() {
+        return Math.max(16, listBounds.height - 26);
+    }
+
+    private int markedScrollbarThumbHeight() {
+        int trackHeight = markedScrollbarTrackHeight();
+        if (markedTotalRows <= 0) {
+            return trackHeight;
+        }
+        int thumb = Math.round(trackHeight * (visibleMarkedRowCapacity() / (float) markedTotalRows));
+        return MathHelper.clamp(thumb, 16, trackHeight);
+    }
+
+    private int markedScrollbarThumbY() {
+        int maxOffset = maxMarkedScrollOffset();
+        if (maxOffset <= 0) {
+            return markedScrollbarTrackY();
+        }
+        int travel = markedScrollbarTrackHeight() - markedScrollbarThumbHeight();
+        return markedScrollbarTrackY() + Math.round(travel * (markedScrollOffset / (float) maxOffset));
+    }
+
+    private boolean containsMarkedScrollbar(double mouseX, double mouseY) {
+        return hasMarkedScrollbar()
+                && mouseX >= markedScrollbarX()
+                && mouseX < markedScrollbarX() + 5
+                && mouseY >= markedScrollbarTrackY()
+                && mouseY < markedScrollbarTrackY() + markedScrollbarTrackHeight();
+    }
+
+    private void updateMarkedScrollFromMouse(double mouseY) {
+        int maxOffset = maxMarkedScrollOffset();
+        if (maxOffset <= 0) {
+            markedScrollOffset = 0;
+            return;
+        }
+        int trackY = markedScrollbarTrackY();
+        int travel = Math.max(1, markedScrollbarTrackHeight() - markedScrollbarThumbHeight());
+        float progress = (float) ((mouseY - markedScrollbarDragOffset - trackY) / travel);
+        markedScrollOffset = MathHelper.clamp(Math.round(progress * maxOffset), 0, maxOffset);
+        refreshEntityRows();
+    }
+
+    private int maxCooldownScrollOffset() {
+        return Math.max(0, cooldownTotalRows - visibleMarkedRowCapacity());
+    }
+
+    private void clampCooldownScrollOffset() {
+        cooldownScrollOffset = MathHelper.clamp(cooldownScrollOffset, 0, maxCooldownScrollOffset());
+    }
+
+    private boolean hasCooldownScrollbar() {
+        return maxCooldownScrollOffset() > 0;
+    }
+
+    private int cooldownScrollbarX() {
+        return listBounds.x + listBounds.width - 6;
+    }
+
+    private int cooldownScrollbarTrackY() {
+        return listBounds.y + 20;
+    }
+
+    private int cooldownScrollbarTrackHeight() {
+        return Math.max(16, listBounds.height - 26);
+    }
+
+    private int cooldownScrollbarThumbHeight() {
+        int trackHeight = cooldownScrollbarTrackHeight();
+        if (cooldownTotalRows <= 0) {
+            return trackHeight;
+        }
+        int thumb = Math.round(trackHeight * (visibleMarkedRowCapacity() / (float) cooldownTotalRows));
+        return MathHelper.clamp(thumb, 16, trackHeight);
+    }
+
+    private int cooldownScrollbarThumbY() {
+        int maxOffset = maxCooldownScrollOffset();
+        if (maxOffset <= 0) {
+            return cooldownScrollbarTrackY();
+        }
+        int travel = cooldownScrollbarTrackHeight() - cooldownScrollbarThumbHeight();
+        return cooldownScrollbarTrackY() + Math.round(travel * (cooldownScrollOffset / (float) maxOffset));
+    }
+
+    private boolean containsCooldownScrollbar(double mouseX, double mouseY) {
+        return hasCooldownScrollbar()
+                && mouseX >= cooldownScrollbarX()
+                && mouseX < cooldownScrollbarX() + 5
+                && mouseY >= cooldownScrollbarTrackY()
+                && mouseY < cooldownScrollbarTrackY() + cooldownScrollbarTrackHeight();
+    }
+
+    private void updateCooldownScrollFromMouse(double mouseY) {
+        int maxOffset = maxCooldownScrollOffset();
+        if (maxOffset <= 0) {
+            cooldownScrollOffset = 0;
+            return;
+        }
+        int trackY = cooldownScrollbarTrackY();
+        int travel = Math.max(1, cooldownScrollbarTrackHeight() - cooldownScrollbarThumbHeight());
+        float progress = (float) ((mouseY - cooldownScrollbarDragOffset - trackY) / travel);
+        cooldownScrollOffset = MathHelper.clamp(Math.round(progress * maxOffset), 0, maxOffset);
+        refreshEntityRows();
     }
 
     private void refreshResourceRows() {
@@ -377,26 +558,36 @@ public class Evil_eyesScreen extends Screen {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         syncLayoutBounds();
+        resourceBounds = resourceListBounds();
         drawHeader(context);
+        drawUsageHint(context);
         ClairvoyanceEnergyClient.renderBar(context, mainBounds.x + 16, mainBounds.y - 14, 132, 7, true);
         drawMarkedRows(context, mouseX, mouseY);
 
         if (Evil_EyesClient.isViewportMode()) {
             drawRotatedScaledTexture(context, VIEW_PART_BACKGROUND, viewBounds, VIEW_PART_TEXTURE_WIDTH, VIEW_PART_TEXTURE_HEIGHT);
-            updateViewAnimations(mouseX, mouseY);
-            ClairvoyanceViewportRenderer.setInteractiveSlots(hoveredSlot, expandedSlot);
-            syncUiState(false);
-            for (int slot = 0; slot < VIEW_SLOTS; slot++) {
-                if (slot == expandedSlot || slot == hoveredSlot) {
-                    continue;
+            if (Evil_EyesClient.isSingleSelectedMode()) {
+                expandedSlot = -1;
+                hoveredSlot = -1;
+                ClairvoyanceViewportRenderer.setInteractiveSlots(-1, -1);
+                renderSinglePreview(context);
+                syncUiState(false);
+            } else {
+                updateViewAnimations(mouseX, mouseY);
+                ClairvoyanceViewportRenderer.setInteractiveSlots(hoveredSlot, expandedSlot);
+                syncUiState(false);
+                for (int slot = 0; slot < VIEW_SLOTS; slot++) {
+                    if (slot == expandedSlot || slot == hoveredSlot) {
+                        continue;
+                    }
+                    renderPreviewSlot(context, slot, animatedViewBounds(slot));
                 }
-                renderPreviewSlot(context, slot, animatedViewBounds(slot));
-            }
-            if (hoveredSlot >= 0 && hoveredSlot < VIEW_SLOTS && hoveredSlot != expandedSlot) {
-                renderPreviewSlot(context, hoveredSlot, animatedViewBounds(hoveredSlot));
-            }
-            if (expandedSlot >= 0 && expandedSlot < VIEW_SLOTS) {
-                renderPreviewSlot(context, expandedSlot, animatedViewBounds(expandedSlot));
+                if (hoveredSlot >= 0 && hoveredSlot < VIEW_SLOTS && hoveredSlot != expandedSlot) {
+                    renderPreviewSlot(context, hoveredSlot, animatedViewBounds(hoveredSlot));
+                }
+                if (expandedSlot >= 0 && expandedSlot < VIEW_SLOTS) {
+                    renderPreviewSlot(context, expandedSlot, animatedViewBounds(expandedSlot));
+                }
             }
         } else {
             drawHintPanel(context);
@@ -413,15 +604,42 @@ public class Evil_eyesScreen extends Screen {
         context.drawTextWithShadow(textRenderer, count, mainBounds.x + 16, mainBounds.y + 14, PALE_GOLD);
     }
 
+    private void drawUsageHint(DrawContext context) {
+        int x = mainBounds.x + 16;
+        int energyY = mainBounds.y - 14;
+        int y = energyY - 46;
+        if (y < 6) {
+            y = mainBounds.y + 30;
+        }
+        int maxWidth = Math.max(120, Math.min(560, width - x - 8));
+        String actionKey = clairvoyanceActionKeyName();
+        String markEntity = "标记实体: 主手千里眼对准目标持续注视；或按[" + actionKey + "]手动标记";
+        String anchor = "放置锚点: 主手千里眼对准方块，按[" + actionKey + "]放置";
+        String markItem = "标记物品: 潜行+副手千里眼+主手物品，左键攻击/破坏";
+        String viewMode = Evil_EyesClient.isSingleSelectedMode()
+                ? "观看[单视角]: 右键使用千里眼打开，左键左下目标切换当前视角"
+                : "观看[六视角]: 右键使用千里眼打开，自动预览最多6个，右键小窗放大";
+        context.drawTextWithShadow(textRenderer, trimToWidth(markEntity, maxWidth), x, y, TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, trimToWidth(anchor, maxWidth), x, y + 10, TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, trimToWidth(markItem, maxWidth), x, y + 20, TEXT_MUTED);
+        context.drawTextWithShadow(textRenderer, trimToWidth(viewMode, maxWidth), x, y + 30, PALE_GOLD);
+    }
+
+    private String clairvoyanceActionKeyName() {
+        if (KeyBindingHandler.markKey == null) {
+            return "V";
+        }
+        return KeyBindingHandler.markKey.getBoundKeyLocalizedText().getString();
+    }
+
     private void drawMarkedRows(DrawContext context, int mouseX, int mouseY) {
         if (markedRows.isEmpty()) {
             context.drawTextWithShadow(textRenderer, "No marked targets", listBounds.x + 6, listBounds.y + 22, TEXT_MUTED);
             context.drawTextWithShadow(textRenderer, "Marked targets will appear here", listBounds.x + 6, listBounds.y + 36, TEXT_MUTED);
         } else {
-            UUID selected = ClairvoyanceViewportRenderer.getSelectedTarget();
             for (MarkedRow row : markedRows) {
                 boolean hover = row.contains(mouseX, mouseY);
-                boolean selectedRow = row.uuid.equals(selected);
+                boolean selectedRow = row.uuid.equals(selectedMarkedEntityUuid);
                 int fill = selectedRow ? CARD_BG_SELECTED : (hover ? CARD_BG_HOVER : CARD_BG);
                 int border = selectedRow ? ARCANE_BLUE : (hover ? AMETHYST : ACCENT_SOFT);
                 drawRoundedPanel(context, row.x, row.y, row.width, row.height, 6, fill, border);
@@ -439,6 +657,8 @@ public class Evil_eyesScreen extends Screen {
             }
         }
         drawCooldownRows(context, mouseX, mouseY);
+        drawMarkedScrollbar(context);
+        drawCooldownScrollbar(context);
     }
 
     private void drawCooldownRows(DrawContext context, int mouseX, int mouseY) {
@@ -461,6 +681,32 @@ public class Evil_eyesScreen extends Screen {
             drawRoundedPanel(context, row.deleteX(), row.y + 4, 16, 16, 5, deleteHover ? 0x66B91C1C : 0x334A3B2C, deleteHover ? DANGER : ACCENT);
             context.drawCenteredTextWithShadow(textRenderer, "x", row.deleteX() + 8, row.y + 8, deleteHover ? DANGER : TEXT_MUTED);
         }
+    }
+
+    private void drawMarkedScrollbar(DrawContext context) {
+        if (!hasMarkedScrollbar()) {
+            return;
+        }
+        int x = markedScrollbarX();
+        int trackY = markedScrollbarTrackY();
+        int trackHeight = markedScrollbarTrackHeight();
+        int thumbY = markedScrollbarThumbY();
+        int thumbHeight = markedScrollbarThumbHeight();
+        context.fill(x, trackY, x + 5, trackY + trackHeight, 0x331E1530);
+        context.fill(x + 1, thumbY, x + 4, thumbY + thumbHeight, draggingMarkedScrollbar ? AMETHYST : ACCENT);
+    }
+
+    private void drawCooldownScrollbar(DrawContext context) {
+        if (!hasCooldownScrollbar()) {
+            return;
+        }
+        int x = cooldownScrollbarX();
+        int trackY = cooldownScrollbarTrackY();
+        int trackHeight = cooldownScrollbarTrackHeight();
+        int thumbY = cooldownScrollbarThumbY();
+        int thumbHeight = cooldownScrollbarThumbHeight();
+        context.fill(x, trackY, x + 5, trackY + trackHeight, 0x331E1530);
+        context.fill(x + 1, thumbY, x + 4, thumbY + thumbHeight, draggingCooldownScrollbar ? AMETHYST : ACCENT);
     }
 
     private void drawResourceRows(DrawContext context, int mouseX, int mouseY) {
@@ -510,6 +756,38 @@ public class Evil_eyesScreen extends Screen {
         withRotation(context, bounds, () -> {
             ClairvoyanceViewportRenderer.renderPreviewRect(context, slot, bounds.x, bounds.y, bounds.width, bounds.height);
         });
+    }
+
+    private void renderSinglePreview(DrawContext context) {
+        DraggableResizableLayout.Bounds bounds = singlePreviewBounds();
+        if (selectedMarkedEntityUuid == null) {
+            drawRoundedPanel(context, bounds.x, bounds.y, bounds.width, bounds.height, 7, 0x661E1530, ACCENT_SOFT);
+            context.drawTextWithShadow(textRenderer, "Select a marked target", bounds.x + 14, bounds.y + 14, TEXT_MAIN);
+            context.drawTextWithShadow(textRenderer, "Single view follows the lower-left selection.", bounds.x + 14, bounds.y + 32, TEXT_MUTED);
+            return;
+        }
+        withRotation(context, bounds, () -> {
+            drawRoundedPanel(context, bounds.x, bounds.y, bounds.width, bounds.height, 7, 0x661E1530, ACCENT_SOFT);
+            ClairvoyanceViewportRenderer.renderSingleSelectedRect(context, bounds.x + 2, bounds.y + 2, bounds.width - 4, bounds.height - 4);
+        });
+    }
+
+    private DraggableResizableLayout.Bounds singlePreviewBounds() {
+        DraggableResizableLayout.Bounds base = viewSlotBounds[0];
+        DraggableResizableLayout.Bounds resources = resourceBounds.width > 0 ? resourceBounds : resourceListBounds();
+        int x = Math.max(8, width / 3);
+        int maxRight = Math.max(x + 80, resources.x - 12);
+        int maxWidth = Math.max(80, maxRight - x);
+        int targetWidth = Math.min(maxWidth, Math.max(120, Math.round(width * 0.46F)));
+        float aspect = base.width > 0 && base.height > 0 ? base.width / (float) base.height : VIEW_SLOT_TEXTURE_WIDTH / (float) VIEW_SLOT_TEXTURE_HEIGHT;
+        int targetHeight = Math.round(targetWidth / Math.max(0.1F, aspect));
+        int maxHeight = Math.max(60, height - 36);
+        if (targetHeight > maxHeight) {
+            targetHeight = maxHeight;
+            targetWidth = Math.max(80, Math.min(maxWidth, Math.round(targetHeight * aspect)));
+        }
+        int y = MathHelper.clamp((height - targetHeight) / 2, 12, Math.max(12, height - targetHeight - 12));
+        return new DraggableResizableLayout.Bounds(x, y, targetWidth, targetHeight, base.rotationDegrees);
     }
 
     private void updateViewAnimations(int mouseX, int mouseY) {
@@ -654,7 +932,7 @@ public class Evil_eyesScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 1 && Evil_EyesClient.isViewportMode()) {
+        if (button == 1 && Evil_EyesClient.isViewportMode() && !Evil_EyesClient.isSingleSelectedMode()) {
             if (expandedSlot >= 0) {
                 expandedSlot = -1;
                 syncUiState(true);
@@ -673,9 +951,34 @@ public class Evil_eyesScreen extends Screen {
             return true;
         }
         if (button == 0) {
+            if (clickMarkedScrollbar(mouseX, mouseY)) {
+                return true;
+            }
+            if (clickCooldownScrollbar(mouseX, mouseY)) {
+                return true;
+            }
             return clickResourceRow(mouseX, mouseY) || clickCooldownRow(mouseX, mouseY) || clickMarkedRow(mouseX, mouseY);
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (contains(listBounds, mouseX, mouseY) && verticalAmount != 0.0D) {
+            int delta = verticalAmount > 0.0D ? -1 : 1;
+            if (mouseX >= cooldownColumnX) {
+                if (hasCooldownScrollbar()) {
+                    cooldownScrollOffset = MathHelper.clamp(cooldownScrollOffset + delta, 0, maxCooldownScrollOffset());
+                    refreshEntityRows();
+                    return true;
+                }
+            } else if (hasMarkedScrollbar()) {
+                markedScrollOffset = MathHelper.clamp(markedScrollOffset + delta, 0, maxMarkedScrollOffset());
+                refreshEntityRows();
+                return true;
+            }
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
     @Override
@@ -690,6 +993,14 @@ public class Evil_eyesScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (draggingMarkedScrollbar && button == 0) {
+            updateMarkedScrollFromMouse(mouseY);
+            return true;
+        }
+        if (draggingCooldownScrollbar && button == 0) {
+            updateCooldownScrollFromMouse(mouseY);
+            return true;
+        }
         if (LAYOUT_EDITING_ENABLED && layout != null && layout.mouseDragged(mouseX, mouseY, button)) {
             syncLayoutBounds();
             refreshEntityRows();
@@ -700,6 +1011,14 @@ public class Evil_eyesScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (draggingMarkedScrollbar && button == 0) {
+            draggingMarkedScrollbar = false;
+            return true;
+        }
+        if (draggingCooldownScrollbar && button == 0) {
+            draggingCooldownScrollbar = false;
+            return true;
+        }
         if (LAYOUT_EDITING_ENABLED && layout != null && layout.isEditing()) {
             DraggableResizableLayout.DragResult result = layout.mouseReleased(mouseX, mouseY, button);
             syncLayoutBounds();
@@ -709,6 +1028,38 @@ public class Evil_eyesScreen extends Screen {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
+    private boolean clickMarkedScrollbar(double mouseX, double mouseY) {
+        if (!containsMarkedScrollbar(mouseX, mouseY)) {
+            return false;
+        }
+        int thumbY = markedScrollbarThumbY();
+        int thumbHeight = markedScrollbarThumbHeight();
+        if (mouseY >= thumbY && mouseY < thumbY + thumbHeight) {
+            markedScrollbarDragOffset = (int) Math.round(mouseY - thumbY);
+        } else {
+            markedScrollbarDragOffset = thumbHeight / 2;
+            updateMarkedScrollFromMouse(mouseY);
+        }
+        draggingMarkedScrollbar = true;
+        return true;
+    }
+
+    private boolean clickCooldownScrollbar(double mouseX, double mouseY) {
+        if (!containsCooldownScrollbar(mouseX, mouseY)) {
+            return false;
+        }
+        int thumbY = cooldownScrollbarThumbY();
+        int thumbHeight = cooldownScrollbarThumbHeight();
+        if (mouseY >= thumbY && mouseY < thumbY + thumbHeight) {
+            cooldownScrollbarDragOffset = (int) Math.round(mouseY - thumbY);
+        } else {
+            cooldownScrollbarDragOffset = thumbHeight / 2;
+            updateCooldownScrollFromMouse(mouseY);
+        }
+        draggingCooldownScrollbar = true;
+        return true;
+    }
+
     private boolean clickMarkedRow(double mouseX, double mouseY) {
         for (MarkedRow row : markedRows) {
             if (!row.contains(mouseX, mouseY)) {
@@ -716,6 +1067,10 @@ public class Evil_eyesScreen extends Screen {
             }
             if (row.containsDelete(mouseX, mouseY)) {
                 ClairvoyanceViewportRenderer.clearSelectedTarget(row.uuid);
+                if (row.uuid.equals(selectedMarkedEntityUuid)) {
+                    selectedMarkedEntityUuid = null;
+                }
+                Evil_EyesClient.receiveUnmarkCooldown(false, row.uuid, row.name.plain(), 400);
                 removeFromLocalList(row.uuid);
                 ClientPlayNetworking.send(new UnmarkEntityC2S(row.uuid));
                 syncUiState(true);
@@ -791,17 +1146,20 @@ public class Evil_eyesScreen extends Screen {
 
     private void selectRow(MarkedRow row) {
         if (Evil_EyesClient.isViewportMode()) {
-            ClairvoyanceViewportRenderer.setSelectedTarget(row.uuid);
-            ClairvoyanceViewportRenderer.syncPreviewTargets(currentMarks.keySet());
+            selectedMarkedEntityUuid = row.uuid;
+            if (Evil_EyesClient.isSingleSelectedMode()) {
+                ClairvoyanceViewportRenderer.setSingleSelectedTarget(row.uuid);
+            }
             syncUiState(true);
             if (client != null && client.player != null) {
-                client.player.sendMessage(Text.literal("\u00a7aPreview: " + row.name), true);
+                client.player.sendMessage(Text.literal("\u00a7aSelected: " + row.name.plain()), true);
             }
             return;
         }
+        selectedMarkedEntityUuid = row.uuid;
         ClientPlayNetworking.send(new SelectView(row.uuid));
         if (client != null && client.player != null) {
-            client.player.sendMessage(Text.literal("\u00a7aViewing " + row.name), true);
+            client.player.sendMessage(Text.literal("\u00a7aViewing " + row.name.plain()), true);
         }
     }
 
@@ -818,6 +1176,12 @@ public class Evil_eyesScreen extends Screen {
     }
 
     private record DisplayName(Text text, String plain) {
+    }
+
+    private record MarkedRowData(UUID uuid, DisplayName name) {
+    }
+
+    private record CooldownRowData(UUID uuid, DisplayName name, int remainingTicks) {
     }
 
     private record MarkedRow(UUID uuid, DisplayName name, int x, int y, int width, int height) {

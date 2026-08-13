@@ -7,6 +7,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.ViewLogicS2C;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.ViewModeS2C;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.command.CommandRegistryAccess;
@@ -41,7 +42,8 @@ public class ClairvoyanceCommand {
     private static LiteralArgumentBuilder<ServerCommandSource> clairvoyanceRoot(String name) {
         return CommandManager.literal(name)
                 .then(clearAnchorsCommand("clearanchors_清除锚点"))
-                .then(viewModeCommand("viewmode_观看模式"));
+                .then(viewModeCommand("viewmode_观看模式"))
+                .then(viewLogicCommand("viewlogic_显示逻辑"));
     }
 
     private static LiteralArgumentBuilder<ServerCommandSource> clearAnchorsCommand(String name) {
@@ -94,6 +96,34 @@ public class ClairvoyanceCommand {
         String displayName = getViewModeDisplayName(mode);
         player.sendMessage(Text.literal("§a已切换到观看模式: " + displayName), false);
         return 1;
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> viewLogicCommand(String name) {
+        return CommandManager.literal(name)
+                .then(CommandManager.literal("six_六视角")
+                        .executes(ctx -> setViewLogic(ctx, "six")))
+                .then(CommandManager.literal("single_单视角")
+                        .executes(ctx -> setViewLogic(ctx, "single")))
+                .executes(ctx -> {
+                    ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+                    String current = MonvhuaMod.VIEW_LOGIC_PREFERENCE.getOrDefault(player.getUuid(), "six");
+                    player.sendMessage(Text.literal("§6当前显示逻辑: " + getViewLogicDisplayName(current)), false);
+                    player.sendMessage(Text.literal("§7使用 /clairvoyance_千里眼 viewlogic_显示逻辑 <six_六视角|single_单视角> 切换"), false);
+                    return 1;
+                });
+    }
+
+    private static int setViewLogic(CommandContext<ServerCommandSource> ctx, String mode) throws CommandSyntaxException {
+        ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+        String normalized = "single".equals(mode) ? "single" : "six";
+        MonvhuaMod.VIEW_LOGIC_PREFERENCE.put(player.getUuid(), normalized);
+        ServerPlayNetworking.send(player, new ViewLogicS2C(normalized));
+        player.sendMessage(Text.literal("§a已切换到显示逻辑: " + getViewLogicDisplayName(normalized)), false);
+        return 1;
+    }
+
+    private static String getViewLogicDisplayName(String mode) {
+        return "single".equals(mode) ? "§e单视角" : "§b六视角";
     }
 
     private static String getViewModeDisplayName(String mode) {

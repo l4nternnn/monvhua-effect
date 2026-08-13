@@ -501,7 +501,7 @@ public final class CombinedConfigScreen {
             addField(parent, "uiDrain", "界面消耗/s", cfg.uiDrainRate());
             addField(parent, "watchDrain", "注视消耗/s", cfg.watchDrainRate());
             addField(parent, "regen", "恢复/s", cfg.regenRate());
-            addField(parent, "markExpire", "\u6807\u8bb0\u6d88\u6563/s", cfg.markExpireSeconds());
+            addField(parent, "markExpire", "标记持续时间/s", cfg.markExpireSeconds());
             addField(parent, "parrotDaily", "锚点每日次数", cfg.parrotDailyLimit());
             addSave(parent, "保存千里眼", this::saveEvil);
         }

@@ -164,6 +164,7 @@ public class MonvhuaMod implements ModInitializer {
             new ScreenHandlerType<>(OtherPlayerInventoryScreenHandler::new, FeatureSet.empty());
     public static final Map<ServerPlayerEntity, ServerPlayerEntity> VIEWING_MAP = new ConcurrentHashMap<>();
     public static final Map<UUID, String> VIEW_MODE_PREFERENCE = new ConcurrentHashMap<>();
+    public static final Map<UUID, String> VIEW_LOGIC_PREFERENCE = new ConcurrentHashMap<>();
 
     private int tickCounter = 0;
 
@@ -193,6 +194,7 @@ public class MonvhuaMod implements ModInitializer {
         ClairvoyanceEnergyS2C.register();
         OpenUIS2C.register();
         ViewModeS2C.register();
+        ViewLogicS2C.register();
         EntityMarkedS2C.register();
         ClairvoyanceGazeAlertS2C.register();
         ToggleImagesS2CPacket.register();
@@ -892,6 +894,7 @@ public class MonvhuaMod implements ModInitializer {
             VIEWING_MAP.remove(player);
             VIEWING_MAP.values().removeIf(v -> v == player);
             VIEW_MODE_PREFERENCE.remove(uuid);
+            VIEW_LOGIC_PREFERENCE.remove(uuid);
             MirrorCommand.cleanup(uuid);
             TimelineScheduler.cleanupPlayer(uuid);
             ThroughItem.exitSecrecy(player);

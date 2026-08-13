@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.item.evil_eyes;
 import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.OpenUIS2C;
+import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.ViewLogicS2C;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.ViewModeS2C;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.player.PlayerEntity;
@@ -50,6 +51,7 @@ public class ClairvoyanceItem extends Item {
             String mode = "viewport";
             MonvhuaMod.VIEW_MODE_PREFERENCE.put(player.getUuid(), mode);
             ServerPlayNetworking.send(player, new ViewModeS2C(mode));
+            ServerPlayNetworking.send(player, new ViewLogicS2C(MonvhuaMod.VIEW_LOGIC_PREFERENCE.getOrDefault(player.getUuid(), "six")));
             ServerPlayNetworking.send(player, new OpenUIS2C());
         }
         return ActionResult.SUCCESS;

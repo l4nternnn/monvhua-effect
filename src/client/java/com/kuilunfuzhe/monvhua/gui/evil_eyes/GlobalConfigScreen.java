@@ -116,7 +116,7 @@ public class GlobalConfigScreen extends Screen {
         regenField.setMaxLength(8);
         addDrawableChild(regenField);
 
-        addDrawableChild(new TextWidget(rightX, rowY + 7*rowHeight + 4, labelWidth, 9, Text.literal("\u6807\u8bb0\u6d88\u6563(s):"), textRenderer));
+        addDrawableChild(new TextWidget(rightX, rowY + 7*rowHeight + 4, labelWidth, 9, Text.literal("标记持续时间(s):"), textRenderer));
         markExpireField = new TextFieldWidget(textRenderer, rightX + labelWidth, rowY + 7*rowHeight, inputWidth, 18, Text.empty());
         markExpireField.setMaxLength(4);
         addDrawableChild(markExpireField);
