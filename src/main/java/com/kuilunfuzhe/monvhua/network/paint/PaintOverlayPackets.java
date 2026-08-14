@@ -147,23 +147,31 @@ public final class PaintOverlayPackets {
         }
     }
 
-    public record FullSyncS2C(List<FaceData> faces) implements CustomPayload {
+    /** A bounded batch of world-paint faces. clearExisting is set only on the first snapshot batch. */
+    public record FullSyncS2C(int generation, boolean clearExisting, List<FaceData> faces, List<FaceKeyData> removals) implements CustomPayload {
         public static final Id<FullSyncS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "paint_overlay_full_sync"));
         public static final PacketCodec<RegistryByteBuf, FullSyncS2C> CODEC = PacketCodec.of(FullSyncS2C::write, FullSyncS2C::new);
         private static boolean registered = false;
 
         public FullSyncS2C {
             faces = List.copyOf(faces.size() > MAX_FACE_UPDATES ? faces.subList(0, MAX_FACE_UPDATES) : faces);
+            removals = List.copyOf(removals.size() > MAX_FACE_UPDATES ? removals.subList(0, MAX_FACE_UPDATES) : removals);
         }
 
         private FullSyncS2C(RegistryByteBuf buf) {
-            this(readFaces(buf));
+            this(buf.readVarInt(), buf.readBoolean(), readFaces(buf), readFaceKeys(buf));
         }
 
         private void write(RegistryByteBuf buf) {
+            buf.writeVarInt(generation);
+            buf.writeBoolean(clearExisting);
             buf.writeVarInt(Math.min(faces.size(), MAX_FACE_UPDATES));
             for (int i = 0; i < Math.min(faces.size(), MAX_FACE_UPDATES); i++) {
                 faces.get(i).write(buf);
+            }
+            buf.writeVarInt(Math.min(removals.size(), MAX_FACE_UPDATES));
+            for (int i = 0; i < Math.min(removals.size(), MAX_FACE_UPDATES); i++) {
+                removals.get(i).write(buf);
             }
         }
 
@@ -174,6 +182,15 @@ public final class PaintOverlayPackets {
                 faces.add(FaceData.read(buf));
             }
             return faces;
+        }
+
+        private static List<FaceKeyData> readFaceKeys(RegistryByteBuf buf) {
+            int count = Math.min(buf.readVarInt(), MAX_FACE_UPDATES);
+            List<FaceKeyData> keys = new ArrayList<>(count);
+            for (int i = 0; i < count; i++) {
+                keys.add(FaceKeyData.read(buf));
+            }
+            return keys;
         }
 
         public static void register() {
@@ -709,6 +726,22 @@ public final class PaintOverlayPackets {
         @Override
         public Id<? extends CustomPayload> getId() {
             return ID;
+        }
+    }
+
+    public record FaceKeyData(BlockPos pos, Direction face) {
+        public FaceKeyData {
+            pos = pos.toImmutable();
+            face = face == null ? Direction.UP : face;
+        }
+
+        private static FaceKeyData read(RegistryByteBuf buf) {
+            return new FaceKeyData(buf.readBlockPos(), Direction.byIndex(buf.readVarInt()));
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeBlockPos(pos);
+            buf.writeVarInt(face.getIndex());
         }
     }
 

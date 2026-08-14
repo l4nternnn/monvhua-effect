@@ -73,7 +73,8 @@ import java.util.UUID;
 
 public final class PaintOverlayClient {
     private static final double MAX_RENDER_DISTANCE_SQUARED = 96.0D * 96.0D;
-    private static final double CACHE_DISTANCE_SQUARED = 144.0D * 144.0D;
+    private static final double PAINT_CACHE_DISTANCE_SQUARED = 22.0D * 22.0D;
+    private static final double ACTIVE_MICRO_DETAIL_DISTANCE_SQUARED = 22.0D * 22.0D;
     private static final float STEP = 1.0F / PaintOverlayStore.SIZE;
     private static final float OFFSET = 0.003F;
     private static final int MAX_RECENT_COLORS = 3;
@@ -126,6 +127,8 @@ public final class PaintOverlayClient {
     private static ImportedPaperTexture importedPaperTexture;
     private static LocalImportedPaper localImportedPaper;
     private static LocalPaperUpload localPaperUpload;
+    private static BlockPos lastPaintCacheTrimPosition;
+    private static int paintSyncGeneration = -1;
     private static boolean importedPaperPreviewEscapeWasDown;
 
     private PaintOverlayClient() {
@@ -151,6 +154,7 @@ public final class PaintOverlayClient {
             tickContinuousPainting(client);
             tickImportedPaperPreview(client);
             tickLocalPaperUpload(client);
+            trimPaintCacheOnMovement(client);
             rebuildDirtyFaceMeshes();
             rebuildDirtyChunks();
             finishPendingEditorHistoryIfIdle(false);
@@ -192,7 +196,7 @@ public final class PaintOverlayClient {
         );
         HudRenderCallback.EVENT.register(PaintOverlayClient::renderHud);
         ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.FullSyncS2C.ID, (packet, context) ->
-                context.client().execute(() -> applyFullSync(packet.faces())));
+                context.client().execute(() -> applyFullSync(packet.generation(), packet.clearExisting(), packet.faces(), packet.removals())));
         ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.FaceUpdateS2C.ID, (packet, context) ->
                 context.client().execute(() -> applyFace(packet.faceData())));
         ClientPlayNetworking.registerGlobalReceiver(PaintOverlayPackets.FaceRegionPatchS2C.ID, (packet, context) ->
@@ -637,7 +641,22 @@ public final class PaintOverlayClient {
             visibleChunks.add(new VisibleChunk(mesh, distanceSquared));
         }
 
-        visibleChunks.sort(Comparator.comparingDouble(VisibleChunk::distanceSquared));
+        visibleChunks.sort(Comparator.comparingDouble(VisibleChunk::distanceSquared)
+                .thenComparingInt(visible -> visible.mesh().originX())
+                .thenComparingInt(visible -> visible.mesh().originZ()));
+        if (editorHidePreviews.isEmpty()) {
+            for (RenderMeshSelection selection : selectStableRenderMeshes(visibleChunks)) {
+                ChunkMesh mesh = selection.visible().mesh();
+                MeshData meshData = selection.mesh();
+                if (!meshData.isEmpty()) {
+                    drawMesh(vertices, matrix, mesh.originX() - camera.x, -camera.y, mesh.originZ() - camera.z,
+                            meshData.positions(), meshData.colors(), meshData.normals());
+                }
+            }
+            renderEditorPreview(vertices, matrix, camera);
+            renderImportedPaperPreview(context, matrix, camera);
+            return;
+        }
         int remainingVertices = MAX_FRAME_PAINT_VERTICES;
         for (VisibleChunk visible : visibleChunks) {
             ChunkMesh mesh = visible.mesh();
@@ -2352,16 +2371,28 @@ public final class PaintOverlayClient {
         };
     }
 
-    private static void applyFullSync(List<PaintOverlayPackets.FaceData> faces) {
+    private static void applyFullSync(int generation, boolean clearExisting, List<PaintOverlayPackets.FaceData> faces,
+                                      List<PaintOverlayPackets.FaceKeyData> removals) {
+        if (clearExisting) {
+            clearWorldPaintCache();
+            paintSyncGeneration = generation;
+        } else if (paintSyncGeneration != generation) {
+            return;
+        }
         for (PaintOverlayPackets.FaceData face : faces) {
             if (!hasPixels(face.pixels())) {
                 continue;
             }
             PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(face.pos(), face.face());
-            ChunkPos chunkPos = chunkPos(key.pos());
-            FACE_PIXELS.put(key, copyPixels(face.pixels()));
-            removeFaceMesh(key, chunkPos);
+            int[] nextPixels = copyPixels(face.pixels());
+            if (Arrays.equals(FACE_PIXELS.get(key), nextPixels)) {
+                continue;
+            }
+            FACE_PIXELS.put(key, nextPixels);
             queueFaceMeshRebuild(key);
+        }
+        for (PaintOverlayPackets.FaceKeyData removal : removals) {
+            removeCachedFace(new PaintOverlayStore.FaceKey(removal.pos(), removal.face()));
         }
         trimDistantPaintCache();
     }
@@ -2517,6 +2548,8 @@ public final class PaintOverlayClient {
         CHUNK_FACE_KEYS.clear();
         DIRTY_CHUNKS.clear();
         DIRTY_FACE_MESHES.clear();
+        lastPaintCacheTrimPosition = null;
+        paintSyncGeneration = -1;
     }
 
     private static void applyImportedPaperImage(PaintOverlayPackets.ImportedPaperImageS2C packet) {
@@ -2549,17 +2582,36 @@ public final class PaintOverlayClient {
         }
         List<PaintOverlayStore.FaceKey> expired = new ArrayList<>();
         for (PaintOverlayStore.FaceKey key : FACE_PIXELS.keySet()) {
-            if (Vec3d.ofCenter(key.pos()).squaredDistanceTo(client.player.getEyePos()) > CACHE_DISTANCE_SQUARED) {
+            if (Vec3d.ofCenter(key.pos()).squaredDistanceTo(client.player.getEyePos()) > PAINT_CACHE_DISTANCE_SQUARED) {
                 expired.add(key);
             }
         }
         for (PaintOverlayStore.FaceKey key : expired) {
-            FACE_PIXELS.remove(key);
-            DIRTY_FACE_MESHES.remove(key);
-            ChunkPos chunkPos = chunkPos(key.pos());
-            removeFaceMesh(key, chunkPos);
-            markChunkDirty(chunkPos);
+            removeCachedFace(key);
         }
+    }
+
+    private static void removeCachedFace(PaintOverlayStore.FaceKey key) {
+        if (FACE_PIXELS.remove(key) == null && !FACE_MESHES.containsKey(key)) {
+            return;
+        }
+        DIRTY_FACE_MESHES.remove(key);
+        ChunkPos chunkPos = chunkPos(key.pos());
+        removeFaceMesh(key, chunkPos);
+        markChunkDirty(chunkPos);
+    }
+
+    private static void trimPaintCacheOnMovement(MinecraftClient client) {
+        if (client == null || client.player == null) {
+            lastPaintCacheTrimPosition = null;
+            return;
+        }
+        BlockPos current = client.player.getBlockPos();
+        if (current.equals(lastPaintCacheTrimPosition)) {
+            return;
+        }
+        lastPaintCacheTrimPosition = current.toImmutable();
+        trimDistantPaintCache();
     }
 
 
@@ -2608,47 +2660,39 @@ public final class PaintOverlayClient {
 
     private static void applyFace(PaintOverlayPackets.FaceData face, boolean recordHistory) {
         PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(face.pos(), face.face());
-        ChunkPos chunkPos = chunkPos(key.pos());
-        int[] before = recordHistory ? copyFacePixels(key) : null;
+        int[] before = copyFacePixels(key);
         int[] after = copyPixels(face.pixels());
+        if (Arrays.equals(before, after)) {
+            return;
+        }
         if (!hasPixels(after)) {
-            FACE_PIXELS.remove(key);
-            removeFaceMesh(key, chunkPos);
-            DIRTY_FACE_MESHES.remove(key);
-            markChunkDirty(chunkPos);
-            if (recordHistory && !Arrays.equals(before, after)) {
+            removeCachedFace(key);
+            if (recordHistory) {
                 recordEditorFaceUpdate(key, before, after);
             }
             return;
         }
         FACE_PIXELS.put(key, after);
-        removeFaceMesh(key, chunkPos);
         queueFaceMeshRebuild(key);
-        markChunkDirty(chunkPos);
-        if (recordHistory && !Arrays.equals(before, after)) {
+        if (recordHistory) {
             recordEditorFaceUpdate(key, before, after);
         }
     }
 
     private static void applyRegionPatch(PaintOverlayPackets.FaceRegionPatch patch, boolean recordHistory) {
         PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(patch.pos(), patch.face());
-        int[] before = recordHistory ? copyFacePixels(key) : null;
+        int[] before = copyFacePixels(key);
         int[] after = mergePatch(copyFacePixels(key), patch);
-        if (recordHistory && Arrays.equals(before, after)) {
+        if (Arrays.equals(before, after)) {
             return;
         }
-        ChunkPos chunkPos = chunkPos(key.pos());
         if (!hasPixels(after)) {
-            FACE_PIXELS.remove(key);
-            removeFaceMesh(key, chunkPos);
-            DIRTY_FACE_MESHES.remove(key);
+            removeCachedFace(key);
         } else {
             FACE_PIXELS.put(key, after);
-            removeFaceMesh(key, chunkPos);
             queueFaceMeshRebuild(key);
         }
-        markChunkDirty(chunkPos);
-        if (recordHistory && !Arrays.equals(before, after)) {
+        if (recordHistory) {
             recordEditorFaceUpdate(key, before, after);
         }
     }
@@ -3005,6 +3049,65 @@ public final class PaintOverlayClient {
         return EMPTY_MESH;
     }
 
+    private static List<RenderMeshSelection> selectStableRenderMeshes(List<VisibleChunk> visibleChunks) {
+        List<RenderMeshSelection> selections = new ArrayList<>(visibleChunks.size());
+        int baseVertices = 0;
+        for (VisibleChunk visible : visibleChunks) {
+            MeshData base = baseRenderMesh(visible.mesh(), visible.distanceSquared());
+            selections.add(new RenderMeshSelection(visible, base));
+            baseVertices += base.vertexCount();
+        }
+        if (baseVertices > MAX_FRAME_PAINT_VERTICES) {
+            List<RenderMeshSelection> bounded = new ArrayList<>();
+            int remaining = MAX_FRAME_PAINT_VERTICES;
+            for (RenderMeshSelection selection : selections) {
+                if (selection.mesh().vertexCount() > remaining) {
+                    continue;
+                }
+                bounded.add(selection);
+                remaining -= selection.mesh().vertexCount();
+            }
+            return bounded;
+        }
+        int remaining = MAX_FRAME_PAINT_VERTICES - baseVertices;
+        for (int index = 0; index < selections.size(); index++) {
+            RenderMeshSelection current = selections.get(index);
+            MeshData preferred = preferredRenderMesh(current.visible().mesh(), current.visible().distanceSquared());
+            int upgradeCost = preferred.vertexCount() - current.mesh().vertexCount();
+            if (upgradeCost > 0 && upgradeCost <= remaining) {
+                selections.set(index, new RenderMeshSelection(current.visible(), preferred));
+                remaining -= upgradeCost;
+            }
+        }
+        return selections;
+    }
+
+    private static MeshData baseRenderMesh(ChunkMesh mesh, double distanceSquared) {
+        if (distanceSquared <= ACTIVE_MICRO_DETAIL_DISTANCE_SQUARED) {
+            return mesh.full();
+        }
+        if (!mesh.far().isEmpty()) {
+            return mesh.far();
+        }
+        if (!mesh.medium().isEmpty()) {
+            return mesh.medium();
+        }
+        return mesh.full();
+    }
+
+    private static MeshData preferredRenderMesh(ChunkMesh mesh, double distanceSquared) {
+        if (distanceSquared <= ACTIVE_MICRO_DETAIL_DISTANCE_SQUARED) {
+            return mesh.full();
+        }
+        if (distanceSquared <= FULL_DETAIL_DISTANCE_SQUARED && !mesh.full().isEmpty()) {
+            return mesh.full();
+        }
+        if (distanceSquared <= MEDIUM_DETAIL_DISTANCE_SQUARED && !mesh.medium().isEmpty()) {
+            return mesh.medium();
+        }
+        return baseRenderMesh(mesh, distanceSquared);
+    }
+
     private static MeshData selectRenderMeshWithEditorHide(ChunkMesh chunkMesh, int remainingVertices) {
         ChunkPos chunkPos = new ChunkPos(chunkMesh.originX() >> 4, chunkMesh.originZ() >> 4);
         Set<PaintOverlayStore.FaceKey> keys = CHUNK_FACE_KEYS.get(chunkPos);
@@ -3127,6 +3230,9 @@ public final class PaintOverlayClient {
     }
 
     private record VisibleChunk(ChunkMesh mesh, double distanceSquared) {
+    }
+
+    private record RenderMeshSelection(VisibleChunk visible, MeshData mesh) {
     }
 
     private record MeshData(float[] positions, int[] colors, float[] normals) {

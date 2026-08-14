@@ -57,11 +57,18 @@ public final class PaintOverlayFeature {
     public static final int DEFAULT_PAPER_SIZE = 3;
     public static final int MIN_PAPER_SIZE = 1;
     public static final int MAX_PAPER_SIZE = 25;
-    private static final double SYNC_DISTANCE_SQUARED = 128.0D * 128.0D;
+    private static final double PAINT_SYNC_RADIUS = 20.0D;
+    private static final double PAINT_SYNC_DISTANCE_SQUARED = PAINT_SYNC_RADIUS * PAINT_SYNC_RADIUS;
+    private static final double PAINT_RETAIN_RADIUS = 22.0D;
+    private static final double PAINT_RETAIN_DISTANCE_SQUARED = PAINT_RETAIN_RADIUS * PAINT_RETAIN_RADIUS;
+    private static final double PLAYER_PAINT_SYNC_DISTANCE_SQUARED = 128.0D * 128.0D;
     private static final double INTERACTION_DISTANCE_SQUARED = 64.0D * 64.0D;
+    private static final int MAX_SYNC_FACES_PER_PACKET = 32;
     private static final Map<UUID, BrushSettings> BRUSH_SETTINGS = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> PAPER_SIZES = new ConcurrentHashMap<>();
-    private static final Map<UUID, PlayerSyncKey> PLAYER_SYNC_KEYS = new ConcurrentHashMap<>();
+    private static final Map<UUID, PlayerSyncState> PLAYER_SYNC_STATES = new ConcurrentHashMap<>();
+    private static final Map<UUID, PlayerPaintWindow> PLAYER_PAINT_WINDOWS = new ConcurrentHashMap<>();
+    private static final Map<UUID, Integer> PAINT_SYNC_GENERATIONS = new ConcurrentHashMap<>();
     private static final Map<UUID, List<PaintOverlayPackets.PlayerPaintStrokeS2C>> PLAYER_PAINT_STROKES = new ConcurrentHashMap<>();
     private static final Map<UUID, ImportedPaperUpload> IMPORTED_PAPER_UPLOADS = new ConcurrentHashMap<>();
     private static volatile boolean allowNonFullBlockPainting = true;
@@ -76,18 +83,20 @@ public final class PaintOverlayFeature {
         });
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 server.execute(() -> {
-                    recordSyncKey(handler.getPlayer());
-                    sendNearbyFullSync(handler.getPlayer());
+                    recordSyncState(handler.getPlayer());
+                    queueNearbySnapshot(handler.getPlayer());
                     broadcastStoredPlayerPaint(handler.getPlayer());
                 }));
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             UUID playerId = handler.getPlayer().getUuid();
-            PLAYER_SYNC_KEYS.remove(playerId);
+            PLAYER_SYNC_STATES.remove(playerId);
+            PLAYER_PAINT_WINDOWS.remove(playerId);
+            PAINT_SYNC_GENERATIONS.remove(playerId);
             IMPORTED_PAPER_UPLOADS.remove(playerId);
         });
         ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register((player, origin, destination) -> {
-            recordSyncKey(player);
-            sendNearbyFullSync(player);
+            recordSyncState(player);
+            queueNearbySnapshot(player);
             broadcastStoredPlayerPaint(player);
         });
         PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
@@ -149,11 +158,12 @@ public final class PaintOverlayFeature {
         ServerTickEvents.END_WORLD_TICK.register(PaintBucketBlock::tickKicks);
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-                PlayerSyncKey key = syncKey(player);
-                PlayerSyncKey previous = PLAYER_SYNC_KEYS.put(player.getUuid(), key);
-                if (!key.equals(previous)) {
-                    sendNearbyFullSync(player);
+                PlayerSyncState current = syncState(player);
+                PlayerSyncState previous = PLAYER_SYNC_STATES.put(player.getUuid(), current);
+                if (previous != null && current.hasMovedFrom(previous)) {
+                    refreshPaintWindow(player);
                 }
+                sendPaintWindowDelta(player);
             }
         });
     }
@@ -1350,21 +1360,57 @@ public final class PaintOverlayFeature {
         return false;
     }
 
-    private static void sendNearbyFullSync(ServerPlayerEntity player) {
+    private static void queueNearbySnapshot(ServerPlayerEntity player) {
         if (!(player.getWorld() instanceof ServerWorld world)) {
             return;
         }
-        int syncChunkRadius = (int) Math.ceil(Math.sqrt(SYNC_DISTANCE_SQUARED) / 16.0D);
-        List<PaintOverlayPackets.FaceData> faces = PaintOverlayStore.get(world)
-                .getStoredFacesNear(new ChunkPos(player.getBlockPos()), syncChunkRadius).stream()
-                .filter(face -> isNear(player, face.pos()))
-                .map(face -> new PaintOverlayPackets.FaceData(face.pos(), face.face(), face.pixels()))
-                .toList();
-        ServerPlayNetworking.send(player, new PaintOverlayPackets.FullSyncS2C(faces));
+        int generation = PAINT_SYNC_GENERATIONS.merge(player.getUuid(), 1, Integer::sum);
+        PlayerPaintWindow window = new PlayerPaintWindow(generation, true);
+        window.refresh(collectFacesNear(world, player.getEyePos()), player.getEyePos(), true);
+        PLAYER_PAINT_WINDOWS.put(player.getUuid(), window);
         sendNearbyPlayerPaintSync(player, world);
     }
 
+    private static void refreshPaintWindow(ServerPlayerEntity player) {
+        if (!(player.getWorld() instanceof ServerWorld world)) {
+            queueNearbySnapshot(player);
+            return;
+        }
+        int generation = PAINT_SYNC_GENERATIONS.getOrDefault(player.getUuid(), 0);
+        List<PaintOverlayPackets.FaceData> visibleFaces = collectFacesNear(world, player.getEyePos());
+        PLAYER_PAINT_WINDOWS.compute(player.getUuid(), (id, window) -> {
+            if (window == null || window.generation() != generation) {
+                PlayerPaintWindow replacement = new PlayerPaintWindow(generation, false);
+                replacement.refresh(visibleFaces, player.getEyePos(), false);
+                return replacement;
+            }
+            window.refresh(visibleFaces, player.getEyePos(), false);
+            return window;
+        });
+    }
+
+    private static List<PaintOverlayPackets.FaceData> collectFacesNear(ServerWorld world, Vec3d center) {
+        int chunkRadius = (int) Math.ceil(PAINT_SYNC_RADIUS / 16.0D);
+        return PaintOverlayStore.get(world)
+                .getStoredFacesNear(new ChunkPos(BlockPos.ofFloored(center)), chunkRadius).stream()
+                .filter(face -> isWithinPaintSync(center, face.pos()))
+                .map(face -> new PaintOverlayPackets.FaceData(face.pos(), face.face(), face.pixels()))
+                .toList();
+    }
+
+    private static void sendPaintWindowDelta(ServerPlayerEntity player) {
+        PlayerPaintWindow window = PLAYER_PAINT_WINDOWS.get(player.getUuid());
+        if (window == null) {
+            return;
+        }
+        PaintOverlayPackets.FullSyncS2C packet = window.nextPacket(player.getEyePos());
+        if (packet != null) {
+            ServerPlayNetworking.send(player, packet);
+        }
+    }
+
     private static void broadcastFace(ServerWorld world, BlockPos pos, Direction face, int[] pixels) {
+        updateQueuedFace(pos, face, pixels);
         PaintOverlayPackets.FaceUpdateS2C packet = new PaintOverlayPackets.FaceUpdateS2C(
                 new PaintOverlayPackets.FaceData(pos, face, pixels));
         for (ServerPlayerEntity player : world.getPlayers()) {
@@ -1386,6 +1432,7 @@ public final class PaintOverlayFeature {
     }
 
     private static void broadcastRegionPatch(ServerWorld world, PaintOverlayPackets.FaceRegionPatch patch) {
+        updateQueuedFace(patch.pos(), patch.face(), PaintOverlayStore.get(world).getPixels(patch.pos(), patch.face()));
         PaintOverlayPackets.FaceRegionPatchS2C packet = new PaintOverlayPackets.FaceRegionPatchS2C(patch);
         for (ServerPlayerEntity player : world.getPlayers()) {
             if (isNear(player, patch.pos())) {
@@ -1432,7 +1479,7 @@ public final class PaintOverlayFeature {
 
     private static void broadcastPlayerPaint(ServerWorld world, ServerPlayerEntity target, PaintOverlayPackets.PlayerPaintStrokeS2C packet) {
         for (ServerPlayerEntity player : world.getPlayers()) {
-            if (player.getEyePos().squaredDistanceTo(target.getPos()) <= SYNC_DISTANCE_SQUARED) {
+            if (player.getEyePos().squaredDistanceTo(target.getPos()) <= PLAYER_PAINT_SYNC_DISTANCE_SQUARED) {
                 ServerPlayNetworking.send(player, packet);
             }
         }
@@ -1441,7 +1488,7 @@ public final class PaintOverlayFeature {
     private static void broadcastPlayerPaintClear(ServerWorld world, ServerPlayerEntity target) {
         PaintOverlayPackets.ClearPlayerPaintS2C packet = new PaintOverlayPackets.ClearPlayerPaintS2C(target.getId());
         for (ServerPlayerEntity player : world.getPlayers()) {
-            if (player.getEyePos().squaredDistanceTo(target.getPos()) <= SYNC_DISTANCE_SQUARED) {
+            if (player.getEyePos().squaredDistanceTo(target.getPos()) <= PLAYER_PAINT_SYNC_DISTANCE_SQUARED) {
                 ServerPlayNetworking.send(player, packet);
             }
         }
@@ -1463,7 +1510,7 @@ public final class PaintOverlayFeature {
             if (strokes == null || strokes.isEmpty()) {
                 continue;
             }
-            if (receiver.getEyePos().squaredDistanceTo(target.getPos()) <= SYNC_DISTANCE_SQUARED) {
+            if (receiver.getEyePos().squaredDistanceTo(target.getPos()) <= PLAYER_PAINT_SYNC_DISTANCE_SQUARED) {
                 ServerPlayNetworking.send(receiver, new PaintOverlayPackets.PlayerPaintDataS2C(target.getId(), strokes));
             }
         }
@@ -1479,23 +1526,40 @@ public final class PaintOverlayFeature {
         }
         PaintOverlayPackets.PlayerPaintDataS2C packet = new PaintOverlayPackets.PlayerPaintDataS2C(target.getId(), strokes);
         for (ServerPlayerEntity receiver : world.getPlayers()) {
-            if (receiver.getEyePos().squaredDistanceTo(target.getPos()) <= SYNC_DISTANCE_SQUARED) {
+            if (receiver.getEyePos().squaredDistanceTo(target.getPos()) <= PLAYER_PAINT_SYNC_DISTANCE_SQUARED) {
                 ServerPlayNetworking.send(receiver, packet);
             }
         }
     }
 
     private static boolean isNear(ServerPlayerEntity player, BlockPos pos) {
-        return Vec3d.ofCenter(pos).squaredDistanceTo(player.getEyePos()) <= SYNC_DISTANCE_SQUARED;
+        return isWithinPaintSync(player.getEyePos(), pos);
     }
 
-    private static void recordSyncKey(ServerPlayerEntity player) {
-        PLAYER_SYNC_KEYS.put(player.getUuid(), syncKey(player));
+    private static boolean isWithinPaintSync(Vec3d center, BlockPos pos) {
+        return Vec3d.ofCenter(pos).squaredDistanceTo(center) <= PAINT_SYNC_DISTANCE_SQUARED;
     }
 
-    private static PlayerSyncKey syncKey(ServerPlayerEntity player) {
-        ChunkPos chunkPos = player.getChunkPos();
-        return new PlayerSyncKey(player.getWorld().getRegistryKey().getValue().toString(), chunkPos.x, chunkPos.z);
+    private static boolean isWithinPaintRetain(Vec3d center, BlockPos pos) {
+        return Vec3d.ofCenter(pos).squaredDistanceTo(center) <= PAINT_RETAIN_DISTANCE_SQUARED;
+    }
+
+    private static void updateQueuedFace(BlockPos pos, Direction face, int[] pixels) {
+        PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(pos, face);
+        PaintOverlayPackets.FaceData data = hasPaintPixels(pixels)
+                ? new PaintOverlayPackets.FaceData(pos, face, pixels)
+                : null;
+        for (PlayerPaintWindow window : PLAYER_PAINT_WINDOWS.values()) {
+            window.applyLiveFace(key, data);
+        }
+    }
+
+    private static void recordSyncState(ServerPlayerEntity player) {
+        PLAYER_SYNC_STATES.put(player.getUuid(), syncState(player));
+    }
+
+    private static PlayerSyncState syncState(ServerPlayerEntity player) {
+        return new PlayerSyncState(player.getWorld().getRegistryKey().getValue().toString(), player.getBlockPos(), player.getEyePos());
     }
 
     public record BrushSettings(int color, int radius) {
@@ -1509,7 +1573,103 @@ public final class PaintOverlayFeature {
         }
     }
 
-    private record PlayerSyncKey(String world, int chunkX, int chunkZ) {
+    private record PlayerSyncState(String world, BlockPos blockPos, Vec3d eyePos) {
+        private PlayerSyncState {
+            blockPos = blockPos.toImmutable();
+        }
+
+        private boolean hasMovedFrom(PlayerSyncState previous) {
+            return !world.equals(previous.world) || !blockPos.equals(previous.blockPos);
+        }
+    }
+
+    private static final class PlayerPaintWindow {
+        private final int generation;
+        private final Map<PaintOverlayStore.FaceKey, PaintOverlayPackets.FaceData> pendingUpserts = new LinkedHashMap<>();
+        private final Set<PaintOverlayStore.FaceKey> pendingRemovals = new LinkedHashSet<>();
+        private final Set<PaintOverlayStore.FaceKey> knownFaces = new java.util.HashSet<>();
+        private boolean clearExistingPending;
+
+        private PlayerPaintWindow(int generation, boolean clearExisting) {
+            this.generation = generation;
+            this.clearExistingPending = clearExisting;
+        }
+
+        private int generation() {
+            return generation;
+        }
+
+        private void refresh(List<PaintOverlayPackets.FaceData> faces, Vec3d center, boolean reset) {
+            if (reset) {
+                pendingUpserts.clear();
+                pendingRemovals.clear();
+                knownFaces.clear();
+            }
+            pendingUpserts.entrySet().removeIf(entry -> !isWithinPaintRetain(center, entry.getKey().pos()));
+            pendingRemovals.removeIf(key -> !isWithinPaintRetain(center, key.pos()));
+            knownFaces.removeIf(key -> !isWithinPaintRetain(center, key.pos()));
+
+            Set<PaintOverlayStore.FaceKey> visible = new java.util.HashSet<>();
+            for (PaintOverlayPackets.FaceData face : faces) {
+                PaintOverlayStore.FaceKey key = new PaintOverlayStore.FaceKey(face.pos(), face.face());
+                visible.add(key);
+                pendingRemovals.remove(key);
+                if (!knownFaces.contains(key)) {
+                    pendingUpserts.put(key, face);
+                }
+            }
+
+            for (PaintOverlayStore.FaceKey key : new java.util.ArrayList<>(knownFaces)) {
+                if (isWithinPaintSync(center, key.pos()) && !visible.contains(key)) {
+                    knownFaces.remove(key);
+                    pendingUpserts.remove(key);
+                    pendingRemovals.add(key);
+                }
+            }
+        }
+
+        private void applyLiveFace(PaintOverlayStore.FaceKey key, PaintOverlayPackets.FaceData face) {
+            if (face == null) {
+                pendingUpserts.remove(key);
+                pendingRemovals.remove(key);
+                knownFaces.remove(key);
+            } else {
+                pendingRemovals.remove(key);
+                if (pendingUpserts.containsKey(key)) {
+                    pendingUpserts.put(key, face);
+                }
+            }
+        }
+
+        private PaintOverlayPackets.FullSyncS2C nextPacket(Vec3d center) {
+            if (pendingUpserts.isEmpty() && pendingRemovals.isEmpty()) {
+                if (!clearExistingPending) {
+                    return null;
+                }
+                clearExistingPending = false;
+                return new PaintOverlayPackets.FullSyncS2C(generation, true, List.of(), List.of());
+            }
+            List<Map.Entry<PaintOverlayStore.FaceKey, PaintOverlayPackets.FaceData>> candidates = new java.util.ArrayList<>(pendingUpserts.entrySet());
+            candidates.sort(java.util.Comparator.comparingDouble(entry -> Vec3d.ofCenter(entry.getKey().pos()).squaredDistanceTo(center)));
+            int count = Math.min(MAX_SYNC_FACES_PER_PACKET, candidates.size());
+            List<PaintOverlayPackets.FaceData> batch = new java.util.ArrayList<>(count);
+            for (int index = 0; index < count; index++) {
+                Map.Entry<PaintOverlayStore.FaceKey, PaintOverlayPackets.FaceData> entry = candidates.get(index);
+                pendingUpserts.remove(entry.getKey());
+                knownFaces.add(entry.getKey());
+                batch.add(entry.getValue());
+            }
+            List<PaintOverlayPackets.FaceKeyData> removals = new java.util.ArrayList<>(Math.min(MAX_SYNC_FACES_PER_PACKET, pendingRemovals.size()));
+            var removalIterator = pendingRemovals.iterator();
+            while (removalIterator.hasNext() && removals.size() < MAX_SYNC_FACES_PER_PACKET) {
+                PaintOverlayStore.FaceKey key = removalIterator.next();
+                removals.add(new PaintOverlayPackets.FaceKeyData(key.pos(), key.face()));
+                removalIterator.remove();
+            }
+            boolean clear = clearExistingPending;
+            clearExistingPending = false;
+            return new PaintOverlayPackets.FullSyncS2C(generation, clear, batch, removals);
+        }
     }
 
     private record BrushUse(ItemStack stack, BrushSettings settings) {
