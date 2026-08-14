@@ -139,6 +139,7 @@ public final class PaintOverlayClient {
     private static BlockPos lastPaintCacheTrimPosition;
     private static int paintSyncGeneration = -1;
     private static boolean importedPaperPreviewEscapeWasDown;
+    private static boolean importedPaperPreviewRotateWasDown;
 
     private PaintOverlayClient() {
     }
@@ -748,7 +749,7 @@ public final class PaintOverlayClient {
         if (!preview.imageId().equals(texture.imageId())) {
             return;
         }
-        PaperRectangle rectangle = preview.rectangle();
+        PaperRectangle rectangle = preview.rectangle(texture.width(), texture.height());
         boolean valid = rectangle != null && isImportedPaperPlacementValid(MinecraftClient.getInstance(), preview, rectangle);
         float pulse = (float) (0.46D + 0.22D * Math.sin(System.currentTimeMillis() / 260.0D));
         int alpha = MathHelper.clamp((int) ((valid ? pulse : 0.32F) * 255.0F), 28, 190);
@@ -773,7 +774,7 @@ public final class PaintOverlayClient {
                 int localY1 = rectangle.microY() + imageY1 - blockY * PaintOverlayStore.SIZE;
                 appendImportedPaperQuad(vertices, matrix, camera, target, preview.face(), localX0, localY0, localX1, localY1,
                         imageX0 / (float) rectangle.width(), imageY0 / (float) rectangle.height(),
-                        imageX1 / (float) rectangle.width(), imageY1 / (float) rectangle.height(), alpha, valid);
+                        imageX1 / (float) rectangle.width(), imageY1 / (float) rectangle.height(), alpha, valid, preview.rotation());
             }
         }
     }
@@ -804,7 +805,7 @@ public final class PaintOverlayClient {
 
     private static void appendImportedPaperQuad(VertexConsumer vertices, Matrix4f matrix, Vec3d camera, BlockPos pos, Direction face,
                                                 int x0, int y0, int x1, int y1, float u0, float v0, float u1, float v1,
-                                                int alpha, boolean valid) {
+                                                int alpha, boolean valid, int rotation) {
         Vec3d normal = PaintSurface.normal(face);
         Vec3d p00 = PaintSurface.point(pos, face, x0, y0, STEP, OFFSET);
         Vec3d p10 = PaintSurface.point(pos, face, x1, y0, STEP, OFFSET);
@@ -814,10 +815,32 @@ public final class PaintOverlayClient {
         int green = valid ? 255 : 86;
         int blue = valid ? 255 : 86;
         // Entity translucent is a QUADS layer: exactly four vertices form one image fragment.
-        appendImportedPaperVertex(vertices, matrix, camera, p00, normal, u0, v0, red, green, blue, alpha);
-        appendImportedPaperVertex(vertices, matrix, camera, p10, normal, u1, v0, red, green, blue, alpha);
-        appendImportedPaperVertex(vertices, matrix, camera, p11, normal, u1, v1, red, green, blue, alpha);
-        appendImportedPaperVertex(vertices, matrix, camera, p01, normal, u0, v1, red, green, blue, alpha);
+        switch (Math.floorMod(rotation, 4)) {
+            case 1 -> {
+                appendImportedPaperVertex(vertices, matrix, camera, p00, normal, v0, 1.0F - u0, red, green, blue, alpha);
+                appendImportedPaperVertex(vertices, matrix, camera, p10, normal, v0, 1.0F - u1, red, green, blue, alpha);
+                appendImportedPaperVertex(vertices, matrix, camera, p11, normal, v1, 1.0F - u1, red, green, blue, alpha);
+                appendImportedPaperVertex(vertices, matrix, camera, p01, normal, v1, 1.0F - u0, red, green, blue, alpha);
+            }
+            case 2 -> {
+                appendImportedPaperVertex(vertices, matrix, camera, p00, normal, 1.0F - u0, 1.0F - v0, red, green, blue, alpha);
+                appendImportedPaperVertex(vertices, matrix, camera, p10, normal, 1.0F - u1, 1.0F - v0, red, green, blue, alpha);
+                appendImportedPaperVertex(vertices, matrix, camera, p11, normal, 1.0F - u1, 1.0F - v1, red, green, blue, alpha);
+                appendImportedPaperVertex(vertices, matrix, camera, p01, normal, 1.0F - u0, 1.0F - v1, red, green, blue, alpha);
+            }
+            case 3 -> {
+                appendImportedPaperVertex(vertices, matrix, camera, p00, normal, 1.0F - v0, u0, red, green, blue, alpha);
+                appendImportedPaperVertex(vertices, matrix, camera, p10, normal, 1.0F - v0, u1, red, green, blue, alpha);
+                appendImportedPaperVertex(vertices, matrix, camera, p11, normal, 1.0F - v1, u1, red, green, blue, alpha);
+                appendImportedPaperVertex(vertices, matrix, camera, p01, normal, 1.0F - v1, u0, red, green, blue, alpha);
+            }
+            default -> {
+                appendImportedPaperVertex(vertices, matrix, camera, p00, normal, u0, v0, red, green, blue, alpha);
+                appendImportedPaperVertex(vertices, matrix, camera, p10, normal, u1, v0, red, green, blue, alpha);
+                appendImportedPaperVertex(vertices, matrix, camera, p11, normal, u1, v1, red, green, blue, alpha);
+                appendImportedPaperVertex(vertices, matrix, camera, p01, normal, u0, v1, red, green, blue, alpha);
+            }
+        }
     }
 
     private static void appendImportedPaperVertex(VertexConsumer vertices, Matrix4f matrix, Vec3d camera, Vec3d point, Vec3d normal,
@@ -2477,15 +2500,16 @@ public final class PaintOverlayClient {
         int[] pixel = PaintBrushItem.getPixel(hit.getPos(), hit.getBlockPos(), hit.getSide());
         UUID imageId = localImportedPaper.id();
         if (importedPaperPreview == null || !imageId.equals(importedPaperPreview.imageId())) {
-            importedPaperPreview = new ImportedPaperPreview(imageId, hit.getBlockPos(), hit.getSide(), pixel[0], pixel[1], pixel[0], pixel[1]);
+            importedPaperPreview = new ImportedPaperPreview(imageId, hit.getBlockPos(), hit.getSide(),
+                    pixel[0], pixel[1], pixel[0], pixel[1], 0, localImportedPaper.aspectRatioLocked());
             installLocalPaperTexture(localImportedPaper);
             return true;
         }
         if (localPaperUpload != null) {
             return true;
         }
-        PaperRectangle rectangle = importedPaperPreview.rectangle();
-        if (rectangle == null || rectangle.width() > localImportedPaper.width() || rectangle.height() > localImportedPaper.height()) {
+        PaperRectangle rectangle = importedPaperPreview.rectangle(localImportedPaper.width(), localImportedPaper.height());
+        if (rectangle == null) {
             client.player.sendMessage(Text.literal("目标矩形超过图片原始尺寸"), true);
             return true;
         }
@@ -2494,12 +2518,13 @@ public final class PaintOverlayClient {
         SafeClientNetworking.send(new PaintOverlayPackets.PlaceImportedPaperBeginC2S(
                 imageId, localImportedPaper.name(), localImportedPaper.width(), localImportedPaper.height(),
                 localImportedPaper.pngBytes().length, localImportedPaper.sha256(), importedPaperPreview.pos(), importedPaperPreview.face(),
-                rectangle.microX(), rectangle.microY(), rectangle.width(), rectangle.height()));
+                rectangle.microX(), rectangle.microY(), rectangle.width(), rectangle.height(), importedPaperPreview.rotation()));
         return true;
     }
 
-    public static void installLocalImportedPaper(UUID id, String name, int width, int height, byte[] pngBytes, byte[] sha256) {
-        localImportedPaper = new LocalImportedPaper(id, name, width, height, pngBytes, sha256);
+    public static void installLocalImportedPaper(UUID id, String name, int width, int height, byte[] pngBytes, byte[] sha256,
+                                                 boolean aspectRatioLocked) {
+        localImportedPaper = new LocalImportedPaper(id, name, width, height, pngBytes, sha256, aspectRatioLocked);
         installLocalPaperTexture(localImportedPaper);
     }
 
@@ -2567,6 +2592,7 @@ public final class PaintOverlayClient {
             }
             if (importedPaperPreview == null) {
                 importedPaperPreviewEscapeWasDown = false;
+                importedPaperPreviewRotateWasDown = false;
             }
             return;
         }
@@ -2576,12 +2602,17 @@ public final class PaintOverlayClient {
             return;
         }
         importedPaperPreviewEscapeWasDown = escapeDown;
-        if (localPaperUpload != null) {
-            return;
-        }
         if (localImportedPaper == null || !importedPaperPreview.imageId().equals(localImportedPaper.id())
                 || !isHoldingPaintPaper(client)) {
             clearImportedPaperPreview();
+            return;
+        }
+        boolean rotateDown = GLFW.glfwGetKey(client.getWindow().getHandle(), GLFW.GLFW_KEY_R) == GLFW.GLFW_PRESS;
+        if (rotateDown && !importedPaperPreviewRotateWasDown && localPaperUpload == null) {
+            importedPaperPreview = importedPaperPreview.rotateClockwise();
+        }
+        importedPaperPreviewRotateWasDown = rotateDown;
+        if (localPaperUpload != null) {
             return;
         }
         BlockHitResult hit = crosshairBlockHit(client);
@@ -2641,6 +2672,7 @@ public final class PaintOverlayClient {
     private static void clearImportedPaperPreview() {
         importedPaperPreview = null;
         importedPaperPreviewEscapeWasDown = false;
+        importedPaperPreviewRotateWasDown = false;
         clearImportedPaperTexture();
     }
     private static void clearImportedPaperTexture() {
@@ -3502,25 +3534,45 @@ public final class PaintOverlayClient {
         }
     }
 
-    private record ImportedPaperPreview(UUID imageId, BlockPos pos, Direction face, int startX, int startY, int endX, int endY) {
+    private record ImportedPaperPreview(UUID imageId, BlockPos pos, Direction face, int startX, int startY, int endX, int endY,
+                                        int rotation, boolean aspectRatioLocked) {
         private ImportedPaperPreview { pos = pos.toImmutable(); }
 
         private ImportedPaperPreview withEnd(int x, int y) {
-            return new ImportedPaperPreview(imageId, pos, face, startX, startY, x, y);
+            return new ImportedPaperPreview(imageId, pos, face, startX, startY, x, y, rotation, aspectRatioLocked);
         }
 
-        private PaperRectangle rectangle() {
+        private ImportedPaperPreview rotateClockwise() {
+            return new ImportedPaperPreview(imageId, pos, face, startX, startY, endX, endY,
+                    Math.floorMod(rotation + 1, 4), aspectRatioLocked);
+        }
+
+        private PaperRectangle rectangle(int imageWidth, int imageHeight) {
             if (endX < startX || endY < startY) {
                 return null;
             }
-            return new PaperRectangle(startX, startY, endX - startX + 1, endY - startY + 1);
+            int availableWidth = endX - startX + 1;
+            int availableHeight = endY - startY + 1;
+            int rotatedWidth = (rotation & 1) == 0 ? imageWidth : imageHeight;
+            int rotatedHeight = (rotation & 1) == 0 ? imageHeight : imageWidth;
+            if (rotatedWidth <= 0 || rotatedHeight <= 0) {
+                return null;
+            }
+            if (!aspectRatioLocked) {
+                return new PaperRectangle(startX, startY, Math.min(availableWidth, rotatedWidth), Math.min(availableHeight, rotatedHeight));
+            }
+            double scale = Math.min(1.0D, Math.min(availableWidth / (double) rotatedWidth, availableHeight / (double) rotatedHeight));
+            int width = Math.max(1, Math.min(rotatedWidth, (int) Math.floor(rotatedWidth * scale)));
+            int height = Math.max(1, Math.min(rotatedHeight, (int) Math.floor(rotatedHeight * scale)));
+            return new PaperRectangle(startX, startY, width, height);
         }
     }
 
     private record ImportedPaperTexture(UUID imageId, int width, int height, Identifier textureId) {
     }
 
-    private record LocalImportedPaper(UUID id, String name, int width, int height, byte[] pngBytes, byte[] sha256) {
+    private record LocalImportedPaper(UUID id, String name, int width, int height, byte[] pngBytes, byte[] sha256,
+                                      boolean aspectRatioLocked) {
         private LocalImportedPaper {
             pngBytes = pngBytes == null ? new byte[0] : pngBytes.clone();
             sha256 = sha256 == null ? new byte[0] : sha256.clone();

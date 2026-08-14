@@ -51,6 +51,7 @@ public class PaintPaperImportScreen extends Screen {
     private int panelY;
     private ImageEntry previewEntry;
     private boolean importing;
+    private boolean aspectRatioLocked;
     private String status = "";
 
     public PaintPaperImportScreen() {
@@ -84,6 +85,8 @@ public class PaintPaperImportScreen extends Screen {
         }
         if (clickList(mouseX, mouseY)
                 || clickButton(refreshX(), buttonY(), 58, 18, mouseX, mouseY, this::reloadImages)
+                || (!importing && clickButton(aspectLockX(), aspectLockY(), 88, 18, mouseX, mouseY,
+                () -> aspectRatioLocked = !aspectRatioLocked))
                 || (!importing && clickButton(importX(), buttonY(), 64, 18, mouseX, mouseY, this::importSelected))) {
             return true;
         }
@@ -211,6 +214,8 @@ public class PaintPaperImportScreen extends Screen {
 
         drawButton(context, refreshX(), buttonY(), 58, 18, "刷新", true);
         drawButton(context, importX(), buttonY(), 64, 18, importing ? "处理中" : "导入", entry != null && !importing);
+        drawButton(context, aspectLockX(), aspectLockY(), 88, 18,
+                aspectRatioLocked ? "Ratio locked" : "Lock ratio", !importing);
         if (!status.isEmpty()) {
             context.drawText(textRenderer, Text.literal(status), infoX, buttonY() - 18, 0xFFE6E6E6, false);
         }
@@ -269,7 +274,8 @@ public class PaintPaperImportScreen extends Screen {
                         status = "读取图片失败或文件过大";
                         return;
                     }
-                    PaintOverlayClient.installLocalImportedPaper(paper.id(), paper.name(), paper.width(), paper.height(), paper.pngBytes(), paper.sha256());
+                    PaintOverlayClient.installLocalImportedPaper(paper.id(), paper.name(), paper.width(), paper.height(),
+                            paper.pngBytes(), paper.sha256(), aspectRatioLocked);
                     status = "本地画纸已准备: " + paper.width() + "x" + paper.height();
                 }));
     }
@@ -339,6 +345,14 @@ public class PaintPaperImportScreen extends Screen {
 
     private int importX() {
         return previewX() + PREVIEW_SIZE + 16;
+    }
+
+    private int aspectLockX() {
+        return previewX() + PREVIEW_SIZE + 16;
+    }
+
+    private int aspectLockY() {
+        return previewY() + 84;
     }
 
     private boolean clickButton(int x, int y, int width, int height, double mouseX, double mouseY, Runnable action) {

@@ -197,18 +197,41 @@ public class PaintPaperItem extends Item {
     /** Applies an imported image with nearest-neighbor scaling to a target microcell rectangle. */
     public static boolean placeImportedImage(ServerWorld world, ServerPlayerEntity player, PaintPaperStore.ImportedImage image,
                                              BlockPos origin, Direction face, int anchorMicroX, int anchorMicroY,
-                                             int targetWidth, int targetHeight) {
+                                             int targetWidth, int targetHeight, int rotation) {
         if (image == null || !image.isUsable()) {
             return false;
         }
-        targetWidth = MathHelper.clamp(targetWidth, 1, image.width());
-        targetHeight = MathHelper.clamp(targetHeight, 1, image.height());
+        rotation = Math.floorMod(rotation, 4);
+        int rotatedWidth = (rotation & 1) == 0 ? image.width() : image.height();
+        int rotatedHeight = (rotation & 1) == 0 ? image.height() : image.width();
+        targetWidth = MathHelper.clamp(targetWidth, 1, rotatedWidth);
+        targetHeight = MathHelper.clamp(targetHeight, 1, rotatedHeight);
         java.util.Map<PaintOverlayStore.FaceKey, int[]> changedFaces = new java.util.LinkedHashMap<>();
         int[] source = image.pixels();
         for (int imageY = 0; imageY < targetHeight; imageY++) {
-            int sourceY = imageY * image.height() / targetHeight;
+            int rotatedY = imageY * rotatedHeight / targetHeight;
             for (int imageX = 0; imageX < targetWidth; imageX++) {
-                int sourceX = imageX * image.width() / targetWidth;
+                int rotatedX = imageX * rotatedWidth / targetWidth;
+                int sourceX;
+                int sourceY;
+                switch (rotation) {
+                    case 1 -> {
+                        sourceX = rotatedY;
+                        sourceY = image.height() - 1 - rotatedX;
+                    }
+                    case 2 -> {
+                        sourceX = image.width() - 1 - rotatedX;
+                        sourceY = image.height() - 1 - rotatedY;
+                    }
+                    case 3 -> {
+                        sourceX = image.width() - 1 - rotatedY;
+                        sourceY = rotatedX;
+                    }
+                    default -> {
+                        sourceX = rotatedX;
+                        sourceY = rotatedY;
+                    }
+                }
                 int color = source[sourceY * image.width() + sourceX];
                 if ((color >>> 24) == 0) {
                     continue;

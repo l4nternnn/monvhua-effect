@@ -747,7 +747,7 @@ public final class PaintOverlayPackets {
 
     public record PlaceImportedPaperBeginC2S(UUID imageId, String name, int width, int height, int totalBytes,
                                              byte[] sha256, BlockPos pos, Direction face, int microX, int microY,
-                                             int targetWidth, int targetHeight) implements CustomPayload {
+                                             int targetWidth, int targetHeight, int rotation) implements CustomPayload {
         private static final int HASH_LENGTH = 32;
         public static final Id<PlaceImportedPaperBeginC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "place_imported_paper_begin"));
         public static final PacketCodec<RegistryByteBuf, PlaceImportedPaperBeginC2S> CODEC = PacketCodec.of(PlaceImportedPaperBeginC2S::write, PlaceImportedPaperBeginC2S::new);
@@ -763,14 +763,17 @@ public final class PaintOverlayPackets {
             face = face == null ? Direction.UP : face;
             microX = MathHelper.clamp(microX, 0, PaintOverlayStore.SIZE - 1);
             microY = MathHelper.clamp(microY, 0, PaintOverlayStore.SIZE - 1);
-            targetWidth = MathHelper.clamp(targetWidth, 1, Math.max(1, width));
-            targetHeight = MathHelper.clamp(targetHeight, 1, Math.max(1, height));
+            rotation = Math.floorMod(rotation, 4);
+            int rotatedWidth = (rotation & 1) == 0 ? width : height;
+            int rotatedHeight = (rotation & 1) == 0 ? height : width;
+            targetWidth = MathHelper.clamp(targetWidth, 1, Math.max(1, rotatedWidth));
+            targetHeight = MathHelper.clamp(targetHeight, 1, Math.max(1, rotatedHeight));
         }
 
         private PlaceImportedPaperBeginC2S(RegistryByteBuf buf) {
             this(buf.readUuid(), buf.readString(128), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
                     buf.readByteArray(HASH_LENGTH), buf.readBlockPos(), Direction.byIndex(buf.readVarInt()),
-                    buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt());
+                    buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt());
         }
 
         private void write(RegistryByteBuf buf) {
@@ -786,6 +789,7 @@ public final class PaintOverlayPackets {
             buf.writeVarInt(microY);
             buf.writeVarInt(targetWidth);
             buf.writeVarInt(targetHeight);
+            buf.writeVarInt(rotation);
         }
 
         public static void register() {

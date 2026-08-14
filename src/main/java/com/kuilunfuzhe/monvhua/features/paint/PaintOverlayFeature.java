@@ -426,7 +426,7 @@ public final class PaintOverlayFeature {
             return;
         }
         PaintPaperItem.placeImportedImage(world, player, image, packet.pos(), packet.face(), packet.microX(), packet.microY(),
-                image.width(), image.height());
+                image.width(), image.height(), 0);
     }
 
     private static void beginImportedPaperUpload(ServerPlayerEntity player, PaintOverlayPackets.PlaceImportedPaperBeginC2S packet) {
@@ -445,7 +445,7 @@ public final class PaintOverlayFeature {
         IMPORTED_PAPER_UPLOADS.put(player.getUuid(), new ImportedPaperUpload(
                 packet.imageId(), packet.name(), packet.width(), packet.height(), packet.totalBytes(),
                 packet.sha256(), packet.pos(), packet.face(), packet.microX(), packet.microY(), packet.targetWidth(), packet.targetHeight(),
-                new ByteArrayOutputStream(packet.totalBytes()), 0, System.currentTimeMillis()));
+                packet.rotation(), new ByteArrayOutputStream(packet.totalBytes()), 0, System.currentTimeMillis()));
     }
 
     private static void receiveImportedPaperChunk(ServerPlayerEntity player, PaintOverlayPackets.PlaceImportedPaperChunkC2S packet) {
@@ -509,7 +509,7 @@ public final class PaintOverlayFeature {
         PaintPaperStore.ImportedImage image = new PaintPaperStore.ImportedImage(
                 upload.imageId(), upload.name(), upload.width(), upload.height(), result.pixels());
         if (!PaintPaperItem.placeImportedImage(world, player, image, upload.pos(), upload.face(), upload.microX(), upload.microY(),
-                upload.targetWidth(), upload.targetHeight())) {
+                upload.targetWidth(), upload.targetHeight(), upload.rotation())) {
             sendImportedPaperResult(player, upload.imageId(), false, "图片没有可放置的像素或目标无效");
             return;
         }
@@ -565,17 +565,19 @@ public final class PaintOverlayFeature {
         private final int microY;
         private final int targetWidth;
         private final int targetHeight;
+        private final int rotation;
         private final ByteArrayOutputStream bytes;
         private int nextSequence;
         private final long createdAt;
 
         private ImportedPaperUpload(UUID imageId, String name, int width, int height, int totalBytes, byte[] sha256,
                                     BlockPos pos, Direction face, int microX, int microY, int targetWidth, int targetHeight,
-                                    ByteArrayOutputStream bytes,
+                                    int rotation, ByteArrayOutputStream bytes,
                                     int nextSequence, long createdAt) {
             this.imageId = imageId; this.name = name; this.width = width; this.height = height;
             this.totalBytes = totalBytes; this.sha256 = sha256.clone(); this.pos = pos.toImmutable(); this.face = face;
             this.microX = microX; this.microY = microY; this.targetWidth = targetWidth; this.targetHeight = targetHeight;
+            this.rotation = Math.floorMod(rotation, 4);
             this.bytes = bytes; this.nextSequence = nextSequence; this.createdAt = createdAt;
         }
         private UUID imageId() { return imageId; }
@@ -590,6 +592,7 @@ public final class PaintOverlayFeature {
         private int microY() { return microY; }
         private int targetWidth() { return targetWidth; }
         private int targetHeight() { return targetHeight; }
+        private int rotation() { return rotation; }
         private ByteArrayOutputStream bytes() { return bytes; }
         private int nextSequence() { return nextSequence; }
         private void nextSequence(int value) { nextSequence = value; }
