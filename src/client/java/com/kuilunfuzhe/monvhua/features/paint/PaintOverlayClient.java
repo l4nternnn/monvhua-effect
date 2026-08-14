@@ -74,9 +74,14 @@ import java.util.UUID;
 public final class PaintOverlayClient {
     private static final double MAX_RENDER_DISTANCE_SQUARED = 96.0D * 96.0D;
     private static final double PAINT_CACHE_DISTANCE_SQUARED = 22.0D * 22.0D;
-    private static final double ACTIVE_MICRO_DETAIL_DISTANCE_SQUARED = 22.0D * 22.0D;
     private static final float STEP = 1.0F / PaintOverlayStore.SIZE;
     private static final float OFFSET = 0.003F;
+    private static final int TEXTURE_ATLAS_PAGE_SIZE = 512;
+    private static final int TEXTURE_ATLAS_SLOTS_PER_EDGE = TEXTURE_ATLAS_PAGE_SIZE / PaintOverlayStore.SIZE;
+    private static final int TEXTURE_ATLAS_SLOT_COUNT = TEXTURE_ATLAS_SLOTS_PER_EDGE * TEXTURE_ATLAS_SLOTS_PER_EDGE;
+    private static final int MAX_TEXTURE_ATLAS_PAGES = 32;
+    private static final int TEXTURE_FACE_MIN_OPAQUE_PIXELS = 512;
+    private static final int TEXTURE_FACE_MIN_COLOR_EDGES = 768;
     private static final int MAX_RECENT_COLORS = 3;
     private static final int MAX_FRAME_PAINT_VERTICES = 180_000;
     private static final int DENSE_CHUNK_VERTEX_THRESHOLD = 24_000;
@@ -89,6 +94,10 @@ public final class PaintOverlayClient {
     private static final MeshData EMPTY_MESH = new MeshData(new float[0], new int[0], new float[0]);
     private static final Map<PaintOverlayStore.FaceKey, int[]> FACE_PIXELS = new HashMap<>();
     private static final Map<PaintOverlayStore.FaceKey, FaceMesh> FACE_MESHES = new HashMap<>();
+    private static final Map<PaintOverlayStore.FaceKey, TextureFace> TEXTURE_FACES = new HashMap<>();
+    private static final Set<PaintOverlayStore.FaceKey> PENDING_TEXTURE_FACES = new HashSet<>();
+    private static final List<PaintTextureAtlasPage> TEXTURE_ATLAS_PAGES = new ArrayList<>();
+    private static int nextTextureAtlasPageId;
     private static final Map<ChunkPos, ChunkMesh> CHUNK_MESHES = new HashMap<>();
     private static final Map<ChunkPos, Set<PaintOverlayStore.FaceKey>> CHUNK_FACE_KEYS = new HashMap<>();
     private static final Set<ChunkPos> DIRTY_CHUNKS = new HashSet<>();
@@ -654,6 +663,7 @@ public final class PaintOverlayClient {
                 }
             }
             renderEditorPreview(vertices, matrix, camera);
+            renderTextureFaces(context, matrix, camera, frustum);
             renderImportedPaperPreview(context, matrix, camera);
             return;
         }
@@ -670,7 +680,63 @@ public final class PaintOverlayClient {
             remainingVertices -= meshData.vertexCount();
         }
         renderEditorPreview(vertices, matrix, camera);
+        renderTextureFaces(context, matrix, camera, frustum);
         renderImportedPaperPreview(context, matrix, camera);
+    }
+
+    /** Renders dense faces independently so they never consume the chunk mesh vertex budget. */
+    private static void renderTextureFaces(WorldRenderContext context, Matrix4f matrix, Vec3d camera, Frustum frustum) {
+        if (TEXTURE_FACES.isEmpty() || context.consumers() == null) {
+            return;
+        }
+        List<VisibleTextureFace> visibleFaces = new ArrayList<>();
+        for (Map.Entry<PaintOverlayStore.FaceKey, TextureFace> entry : TEXTURE_FACES.entrySet()) {
+            PaintOverlayStore.FaceKey key = entry.getKey();
+            if (PENDING_TEXTURE_FACES.contains(key) || hiddenEditorPixelsFor(key)) {
+                continue;
+            }
+            Box bounds = new Box(key.pos()).expand(0.01D);
+            double distanceSquared = squaredDistanceToBox(camera, bounds);
+            if (distanceSquared > MAX_RENDER_DISTANCE_SQUARED || (frustum != null && !frustum.isVisible(bounds))) {
+                continue;
+            }
+            visibleFaces.add(new VisibleTextureFace(key, entry.getValue(), distanceSquared));
+        }
+        visibleFaces.sort(Comparator.comparingDouble(VisibleTextureFace::distanceSquared)
+                .thenComparingInt(face -> face.key().pos().getX())
+                .thenComparingInt(face -> face.key().pos().getY())
+                .thenComparingInt(face -> face.key().pos().getZ()));
+        for (VisibleTextureFace visible : visibleFaces) {
+            TextureFace textureFace = visible.textureFace();
+            VertexConsumer vertices = context.consumers().getBuffer(
+                    net.minecraft.client.render.RenderLayer.getEntityTranslucent(textureFace.page().textureId()));
+            appendTextureFaceQuad(vertices, matrix, camera, visible.key(), textureFace);
+        }
+    }
+
+    private static void appendTextureFaceQuad(VertexConsumer vertices, Matrix4f matrix, Vec3d camera,
+                                              PaintOverlayStore.FaceKey key, TextureFace textureFace) {
+        int slotX = textureFace.slot() % TEXTURE_ATLAS_SLOTS_PER_EDGE;
+        int slotY = textureFace.slot() / TEXTURE_ATLAS_SLOTS_PER_EDGE;
+        float u0 = slotX / (float) TEXTURE_ATLAS_SLOTS_PER_EDGE;
+        float v0 = slotY / (float) TEXTURE_ATLAS_SLOTS_PER_EDGE;
+        float u1 = (slotX + 1) / (float) TEXTURE_ATLAS_SLOTS_PER_EDGE;
+        float v1 = (slotY + 1) / (float) TEXTURE_ATLAS_SLOTS_PER_EDGE;
+        Direction face = key.face();
+        Vec3d normal = PaintSurface.normal(face);
+        BlockPos pos = key.pos();
+        appendTextureFaceVertex(vertices, matrix, camera, PaintSurface.point(pos, face, 0, 0, STEP, OFFSET), normal, u0, v0);
+        appendTextureFaceVertex(vertices, matrix, camera, PaintSurface.point(pos, face, PaintOverlayStore.SIZE, 0, STEP, OFFSET), normal, u1, v0);
+        appendTextureFaceVertex(vertices, matrix, camera, PaintSurface.point(pos, face, PaintOverlayStore.SIZE, PaintOverlayStore.SIZE, STEP, OFFSET), normal, u1, v1);
+        appendTextureFaceVertex(vertices, matrix, camera, PaintSurface.point(pos, face, 0, PaintOverlayStore.SIZE, STEP, OFFSET), normal, u0, v1);
+    }
+
+    private static void appendTextureFaceVertex(VertexConsumer vertices, Matrix4f matrix, Vec3d camera, Vec3d point,
+                                                Vec3d normal, float u, float v) {
+        vertices.vertex(matrix, (float) (point.x - camera.x), (float) (point.y - camera.y), (float) (point.z - camera.z))
+                .color(255, 255, 255, 255).texture(u, v).overlay(OverlayTexture.DEFAULT_UV)
+                .light(LightmapTextureManager.MAX_LIGHT_COORDINATE)
+                .normal((float) normal.x, (float) normal.y, (float) normal.z);
     }
 
     private static void renderImportedPaperPreview(WorldRenderContext context, Matrix4f matrix, Vec3d camera) {
@@ -2544,6 +2610,13 @@ public final class PaintOverlayClient {
     private static void clearWorldPaintCache() {
         FACE_PIXELS.clear();
         FACE_MESHES.clear();
+        PENDING_TEXTURE_FACES.clear();
+        TEXTURE_FACES.clear();
+        for (PaintTextureAtlasPage page : TEXTURE_ATLAS_PAGES) {
+            MinecraftClient.getInstance().getTextureManager().destroyTexture(page.textureId());
+        }
+        TEXTURE_ATLAS_PAGES.clear();
+        nextTextureAtlasPageId = 0;
         CHUNK_MESHES.clear();
         CHUNK_FACE_KEYS.clear();
         DIRTY_CHUNKS.clear();
@@ -2592,10 +2665,11 @@ public final class PaintOverlayClient {
     }
 
     private static void removeCachedFace(PaintOverlayStore.FaceKey key) {
-        if (FACE_PIXELS.remove(key) == null && !FACE_MESHES.containsKey(key)) {
+        if (FACE_PIXELS.remove(key) == null && !FACE_MESHES.containsKey(key) && !TEXTURE_FACES.containsKey(key)) {
             return;
         }
         DIRTY_FACE_MESHES.remove(key);
+        releaseTextureFace(key);
         ChunkPos chunkPos = chunkPos(key.pos());
         removeFaceMesh(key, chunkPos);
         markChunkDirty(chunkPos);
@@ -2741,6 +2815,15 @@ public final class PaintOverlayClient {
     }
 
     private static FaceMesh buildMesh(PaintOverlayStore.FaceKey key, int[] pixels) {
+        boolean hadTexture = TEXTURE_FACES.containsKey(key);
+        if (shouldUseTextureFace(pixels) && uploadTextureFace(key, pixels)) {
+            if (!hadTexture) {
+                // Keep the old chunk mesh visible until the chunk has been rebuilt without this face.
+                PENDING_TEXTURE_FACES.add(key);
+            }
+            return new FaceMesh(key.pos(), new Box(key.pos()).expand(0.01D), EMPTY_MESH, EMPTY_MESH, EMPTY_MESH);
+        }
+        releaseTextureFace(key);
         return new FaceMesh(
                 key.pos(),
                 new Box(key.pos()).expand(0.01D),
@@ -2748,6 +2831,97 @@ public final class PaintOverlayClient {
                 buildFaceMesh(key.face(), pixels, 2),
                 buildFaceMesh(key.face(), pixels, 8)
         );
+    }
+
+    private static boolean shouldUseTextureFace(int[] pixels) {
+        int opaquePixels = 0;
+        int colorEdges = 0;
+        for (int y = 0; y < PaintOverlayStore.SIZE; y++) {
+            for (int x = 0; x < PaintOverlayStore.SIZE; x++) {
+                int index = y * PaintOverlayStore.SIZE + x;
+                int color = pixels[index];
+                if ((color >>> 24) != 0) {
+                    opaquePixels++;
+                }
+                if (x + 1 < PaintOverlayStore.SIZE && color != pixels[index + 1]) {
+                    colorEdges++;
+                }
+                if (y + 1 < PaintOverlayStore.SIZE && color != pixels[index + PaintOverlayStore.SIZE]) {
+                    colorEdges++;
+                }
+            }
+        }
+        return opaquePixels >= TEXTURE_FACE_MIN_OPAQUE_PIXELS && colorEdges >= TEXTURE_FACE_MIN_COLOR_EDGES;
+    }
+
+    private static boolean uploadTextureFace(PaintOverlayStore.FaceKey key, int[] pixels) {
+        TextureFace textureFace = TEXTURE_FACES.get(key);
+        if (textureFace == null) {
+            textureFace = allocateTextureFace();
+            if (textureFace == null) {
+                return false;
+            }
+            TEXTURE_FACES.put(key, textureFace);
+        }
+        int slotX = textureFace.slot() % TEXTURE_ATLAS_SLOTS_PER_EDGE;
+        int slotY = textureFace.slot() / TEXTURE_ATLAS_SLOTS_PER_EDGE;
+        NativeImage image = textureFace.page().image();
+        int startX = slotX * PaintOverlayStore.SIZE;
+        int startY = slotY * PaintOverlayStore.SIZE;
+        for (int y = 0; y < PaintOverlayStore.SIZE; y++) {
+            for (int x = 0; x < PaintOverlayStore.SIZE; x++) {
+                image.setColorArgb(startX + x, startY + y, pixels[y * PaintOverlayStore.SIZE + x]);
+            }
+        }
+        try {
+            textureFace.page().texture().upload();
+            return true;
+        } catch (RuntimeException exception) {
+            if (!PENDING_TEXTURE_FACES.contains(key)) {
+                releaseTextureFace(key);
+            }
+            return false;
+        }
+    }
+
+    private static TextureFace allocateTextureFace() {
+        for (PaintTextureAtlasPage page : TEXTURE_ATLAS_PAGES) {
+            int slot = page.allocateSlot();
+            if (slot >= 0) {
+                return new TextureFace(page, slot);
+            }
+        }
+        if (TEXTURE_ATLAS_PAGES.size() >= MAX_TEXTURE_ATLAS_PAGES) {
+            return null;
+        }
+        try {
+            int index = nextTextureAtlasPageId++;
+            NativeImage image = new NativeImage(TEXTURE_ATLAS_PAGE_SIZE, TEXTURE_ATLAS_PAGE_SIZE, false);
+            NativeImageBackedTexture texture = new NativeImageBackedTexture(() -> "monvhua paint atlas " + index, image);
+            texture.setFilter(false, false);
+            Identifier textureId = Identifier.of(com.kuilunfuzhe.monvhua.MonvhuaMod.MOD_ID, "dynamic/paint_atlas/" + index);
+            MinecraftClient.getInstance().getTextureManager().registerTexture(textureId, texture);
+            PaintTextureAtlasPage page = new PaintTextureAtlasPage(image, texture, textureId);
+            TEXTURE_ATLAS_PAGES.add(page);
+            return new TextureFace(page, page.allocateSlot());
+        } catch (RuntimeException exception) {
+            return null;
+        }
+    }
+
+    private static void releaseTextureFace(PaintOverlayStore.FaceKey key) {
+        PENDING_TEXTURE_FACES.remove(key);
+        TextureFace textureFace = TEXTURE_FACES.remove(key);
+        if (textureFace == null) {
+            return;
+        }
+        PaintTextureAtlasPage page = textureFace.page();
+        page.releaseSlot(textureFace.slot());
+        if (!page.isEmpty()) {
+            return;
+        }
+        MinecraftClient.getInstance().getTextureManager().destroyTexture(page.textureId());
+        TEXTURE_ATLAS_PAGES.remove(page);
     }
 
     private static MeshData buildFaceMesh(Direction face, int[] pixels, int cellSize) {
@@ -2973,6 +3147,7 @@ public final class PaintOverlayClient {
         }
         if (fullVertexCount == 0 || bounds == null) {
             CHUNK_MESHES.remove(chunkPos);
+            activateTextureFaces(keys);
             return;
         }
 
@@ -2986,6 +3161,15 @@ public final class PaintOverlayClient {
                 buildChunkMesh(keys, originX, originZ, mediumVertexCount, FaceMesh::medium),
                 buildChunkMesh(keys, originX, originZ, farVertexCount, FaceMesh::far)
         ));
+        activateTextureFaces(keys);
+    }
+
+    private static void activateTextureFaces(Set<PaintOverlayStore.FaceKey> keys) {
+        for (PaintOverlayStore.FaceKey key : keys) {
+            if (TEXTURE_FACES.containsKey(key)) {
+                PENDING_TEXTURE_FACES.remove(key);
+            }
+        }
     }
 
     private static MeshData buildChunkMesh(Set<PaintOverlayStore.FaceKey> keys, int originX, int originZ, int vertexCount,
@@ -3083,22 +3267,19 @@ public final class PaintOverlayClient {
     }
 
     private static MeshData baseRenderMesh(ChunkMesh mesh, double distanceSquared) {
-        if (distanceSquared <= ACTIVE_MICRO_DETAIL_DISTANCE_SQUARED) {
+        if (distanceSquared <= FULL_DETAIL_DISTANCE_SQUARED && !mesh.full().isEmpty()) {
             return mesh.full();
+        }
+        if (distanceSquared <= MEDIUM_DETAIL_DISTANCE_SQUARED && !mesh.medium().isEmpty()) {
+            return mesh.medium();
         }
         if (!mesh.far().isEmpty()) {
             return mesh.far();
         }
-        if (!mesh.medium().isEmpty()) {
-            return mesh.medium();
-        }
-        return mesh.full();
+        return !mesh.medium().isEmpty() ? mesh.medium() : mesh.full();
     }
 
     private static MeshData preferredRenderMesh(ChunkMesh mesh, double distanceSquared) {
-        if (distanceSquared <= ACTIVE_MICRO_DETAIL_DISTANCE_SQUARED) {
-            return mesh.full();
-        }
         if (distanceSquared <= FULL_DETAIL_DISTANCE_SQUARED && !mesh.full().isEmpty()) {
             return mesh.full();
         }
@@ -3235,6 +3416,9 @@ public final class PaintOverlayClient {
     private record RenderMeshSelection(VisibleChunk visible, MeshData mesh) {
     }
 
+    private record VisibleTextureFace(PaintOverlayStore.FaceKey key, TextureFace textureFace, double distanceSquared) {
+    }
+
     private record MeshData(float[] positions, int[] colors, float[] normals) {
         private int vertexCount() {
             return colors.length;
@@ -3248,10 +3432,62 @@ public final class PaintOverlayClient {
     private record FaceMesh(BlockPos pos, Box bounds, MeshData full, MeshData medium, MeshData far) {
     }
 
+    private record TextureFace(PaintTextureAtlasPage page, int slot) {
+    }
+
     private record FaceMeshPart(BlockPos pos, MeshData mesh) {
     }
 
     private record ChunkMesh(int originX, int originZ, Box bounds, MeshData full, MeshData medium, MeshData far) {
+    }
+
+    private static final class PaintTextureAtlasPage {
+        private final NativeImage image;
+        private final NativeImageBackedTexture texture;
+        private final Identifier textureId;
+        private final boolean[] slots = new boolean[TEXTURE_ATLAS_SLOT_COUNT];
+        private int usedSlots;
+
+        private PaintTextureAtlasPage(NativeImage image, NativeImageBackedTexture texture, Identifier textureId) {
+            this.image = image;
+            this.texture = texture;
+            this.textureId = textureId;
+        }
+
+        private int allocateSlot() {
+            for (int slot = 0; slot < slots.length; slot++) {
+                if (!slots[slot]) {
+                    slots[slot] = true;
+                    usedSlots++;
+                    return slot;
+                }
+            }
+            return -1;
+        }
+
+        private void releaseSlot(int slot) {
+            if (slot < 0 || slot >= slots.length || !slots[slot]) {
+                return;
+            }
+            slots[slot] = false;
+            usedSlots--;
+        }
+
+        private boolean isEmpty() {
+            return usedSlots == 0;
+        }
+
+        private NativeImage image() {
+            return image;
+        }
+
+        private NativeImageBackedTexture texture() {
+            return texture;
+        }
+
+        private Identifier textureId() {
+            return textureId;
+        }
     }
 
     private record QuadVertex(Vector3d position, float u, float v) {
