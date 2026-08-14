@@ -20,6 +20,7 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -41,7 +42,20 @@ public class PaintPaperImportScreen extends Screen {
     private static final int ROW_HEIGHT = 18;
     private static final int PREVIEW_SIZE = 210;
     private static final int MAX_UPLOAD_BYTES = PaintOverlayPackets.MAX_IMPORTED_IMAGE_BYTES;
+    private static final String SYSTEM_IMAGE_PICKER_SCRIPT = """
+            $ErrorActionPreference = 'Stop'
+            Add-Type -AssemblyName System.Windows.Forms
+            $dialog = New-Object System.Windows.Forms.OpenFileDialog
+            $dialog.InitialDirectory = $env:MONVHUA_IMAGE_DIRECTORY
+            $dialog.Filter = 'Image files (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp'
+            $dialog.Multiselect = $false
+            if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+                [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+                [Console]::Out.Write($dialog.FileName)
+            }
+            """;
     private static final Map<Path, CachedImage> IMAGE_CACHE = new HashMap<>();
+    private static final Set<Path> ADDITIONAL_IMAGE_PATHS = new HashSet<>();
 
     private final List<ImageEntry> images = new ArrayList<>();
     private Path folder;
@@ -51,6 +65,7 @@ public class PaintPaperImportScreen extends Screen {
     private int panelY;
     private ImageEntry previewEntry;
     private boolean importing;
+    private boolean selectingImage;
     private boolean aspectRatioLocked;
     private String status = "";
 
@@ -84,7 +99,9 @@ public class PaintPaperImportScreen extends Screen {
             return super.mouseClicked(mouseX, mouseY, button);
         }
         if (clickList(mouseX, mouseY)
-                || clickButton(refreshX(), buttonY(), 58, 18, mouseX, mouseY, this::reloadImages)
+                || (!selectingImage && clickButton(refreshX(), buttonY(), 58, 18, mouseX, mouseY, this::reloadImages))
+                || (!importing && !selectingImage && clickButton(selectImageX(), buttonY(), 72, 18, mouseX, mouseY,
+                this::openSystemImagePicker))
                 || (!importing && clickButton(aspectLockX(), aspectLockY(), 88, 18, mouseX, mouseY,
                 () -> aspectRatioLocked = !aspectRatioLocked))
                 || (!importing && clickButton(importX(), buttonY(), 64, 18, mouseX, mouseY, this::importSelected))) {
@@ -123,6 +140,15 @@ public class PaintPaperImportScreen extends Screen {
             }
         } catch (IOException ignored) {
         }
+        List<Path> staleAdditionalPaths = new ArrayList<>();
+        for (Path path : ADDITIONAL_IMAGE_PATHS) {
+            if (Files.isRegularFile(path) && isImageFile(path)) {
+                addImage(path, scannedPaths);
+            } else {
+                staleAdditionalPaths.add(path);
+            }
+        }
+        ADDITIONAL_IMAGE_PATHS.removeAll(staleAdditionalPaths);
         pruneCache(scannedPaths);
         if (!images.isEmpty()) {
             selectedIndex = 0;
@@ -131,8 +157,10 @@ public class PaintPaperImportScreen extends Screen {
     }
 
     private void addImage(Path path, Set<Path> scannedPaths) {
-        Path normalized = path.normalize();
-        scannedPaths.add(normalized);
+        Path normalized = path.toAbsolutePath().normalize();
+        if (!scannedPaths.add(normalized)) {
+            return;
+        }
         try {
             CachedImage cached = cachedImage(normalized);
             if (cached != null) {
@@ -182,7 +210,7 @@ public class PaintPaperImportScreen extends Screen {
         context.fill(x, y, x + PREVIEW_SIZE, y + PREVIEW_SIZE, 0x66000000);
         drawBorder(context, x, y, PREVIEW_SIZE, PREVIEW_SIZE);
 
-        ImageEntry entry = selectedEntry();
+        ImageEntry entry = previewEntry != null ? previewEntry : selectedEntry();
         if (entry == null) {
             context.drawText(textRenderer, Text.literal("请选择图片"), x + 58, y + 100, 0xFFE6E6E6, false);
             return;
@@ -198,7 +226,7 @@ public class PaintPaperImportScreen extends Screen {
     private void drawControls(DrawContext context) {
         int infoX = previewX() + PREVIEW_SIZE + 16;
         int y = previewY();
-        ImageEntry entry = selectedEntry();
+        ImageEntry entry = previewEntry != null ? previewEntry : selectedEntry();
         context.drawText(textRenderer, Text.literal("缩放"), infoX, y, 0xFFFFFFFF, false);
         context.drawText(textRenderer, Text.literal("原图尺寸"), infoX, y + 14, 0xFFE6E6E6, false);
 
@@ -212,8 +240,9 @@ public class PaintPaperImportScreen extends Screen {
             context.drawText(textRenderer, Text.literal("纸张 " + paperColumns + "x" + paperRows), infoX, y + 66, 0xFFB8B8C2, false);
         }
 
-        drawButton(context, refreshX(), buttonY(), 58, 18, "刷新", true);
+        drawButton(context, refreshX(), buttonY(), 58, 18, "刷新", !selectingImage);
         drawButton(context, importX(), buttonY(), 64, 18, importing ? "处理中" : "导入", entry != null && !importing);
+        drawButton(context, selectImageX(), buttonY(), 72, 18, "选择图片", !importing && !selectingImage);
         drawButton(context, aspectLockX(), aspectLockY(), 88, 18,
                 aspectRatioLocked ? "Ratio locked" : "Lock ratio", !importing);
         if (!status.isEmpty()) {
@@ -242,7 +271,7 @@ public class PaintPaperImportScreen extends Screen {
     }
 
     private void importSelected() {
-        ImageEntry entry = selectedEntry();
+        ImageEntry entry = previewEntry != null ? previewEntry : selectedEntry();
         MinecraftClient client = MinecraftClient.getInstance();
         if (entry == null || client.player == null) {
             return;
@@ -278,6 +307,123 @@ public class PaintPaperImportScreen extends Screen {
                             paper.pngBytes(), paper.sha256(), aspectRatioLocked);
                     status = "本地画纸已准备: " + paper.width() + "x" + paper.height();
                 }));
+    }
+
+    private void openSystemImagePicker() {
+        if (selectingImage || importing) {
+            return;
+        }
+        MinecraftClient client = MinecraftClient.getInstance();
+        Path defaultFolder = folder == null
+                ? FabricLoader.getInstance().getGameDir().resolve("graffiti").normalize()
+                : folder.toAbsolutePath().normalize();
+        try {
+            Files.createDirectories(defaultFolder);
+        } catch (IOException ignored) {
+        }
+        selectingImage = true;
+        status = "正在打开文件选择器...";
+        CompletableFuture.supplyAsync(() -> chooseAndInspectImage(defaultFolder))
+                .whenComplete((selected, error) -> client.execute(() -> finishSystemImageSelection(selected, error)));
+    }
+
+    private static SelectedImage chooseAndInspectImage(Path defaultFolder) {
+        try {
+            Path selectedPath = showSystemImagePicker(defaultFolder);
+            return selectedPath == null ? null : inspectSelectedImage(selectedPath);
+        } catch (Exception exception) {
+            MonvhuaMod.LOGGER.warn("[Monvhua] Failed to select or validate a paint-paper image", exception);
+            return SelectedImage.error("打开或读取图片失败");
+        }
+    }
+
+    private static Path showSystemImagePicker(Path defaultFolder) throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "powershell.exe", "-NoProfile", "-STA", "-WindowStyle", "Hidden", "-Command", SYSTEM_IMAGE_PICKER_SCRIPT);
+        builder.environment().put("MONVHUA_IMAGE_DIRECTORY", defaultFolder.toString());
+        builder.redirectErrorStream(true);
+        Process process = builder.start();
+        String output;
+        try (InputStream stream = process.getInputStream()) {
+            output = new String(stream.readAllBytes(), StandardCharsets.UTF_8).trim();
+        }
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            throw new IOException("Windows image picker failed: " + output);
+        }
+        return output.isEmpty() ? null : Path.of(output).toAbsolutePath().normalize();
+    }
+
+    private static SelectedImage inspectSelectedImage(Path selectedPath) throws IOException {
+        if (!Files.isRegularFile(selectedPath) || !isImageFile(selectedPath)) {
+            return SelectedImage.error("请选择有效的图片文件");
+        }
+        long size = Files.size(selectedPath);
+        if (size <= 0 || size > MAX_UPLOAD_BYTES) {
+            return SelectedImage.error("图片文件过大，最大 " + MAX_UPLOAD_BYTES + " 字节");
+        }
+        int imageWidth;
+        int imageHeight;
+        try (InputStream stream = Files.newInputStream(selectedPath)) {
+            BufferedImage image = ImageIO.read(stream);
+            if (image == null) {
+                return SelectedImage.error("图片无法解码");
+            }
+            long pixelCount = (long) image.getWidth() * image.getHeight();
+            if (pixelCount <= 0 || pixelCount > PaintPaperStore.MAX_IMPORTED_IMAGE_PIXELS) {
+                return SelectedImage.error("图片尺寸过大: " + image.getWidth() + "x" + image.getHeight());
+            }
+            imageWidth = image.getWidth();
+            imageHeight = image.getHeight();
+        }
+        return new SelectedImage(selectedPath.toAbsolutePath().normalize(), imageWidth, imageHeight, null);
+    }
+
+    private void finishSystemImageSelection(SelectedImage selected, Throwable error) {
+        selectingImage = false;
+        if (MinecraftClient.getInstance().currentScreen != this) {
+            return;
+        }
+        if (error != null) {
+            MonvhuaMod.LOGGER.warn("[Monvhua] System paint-paper image selection task failed", error);
+            status = "打开或读取图片失败";
+            return;
+        }
+        if (selected == null) {
+            status = "已取消选择";
+            return;
+        }
+        if (selected.error() != null) {
+            status = selected.error();
+            return;
+        }
+        Path path = selected.path();
+        try {
+            CachedImage cached = cachedImage(path);
+            ImageEntry entry = new ImageEntry(path, path.getFileName().toString(),
+                    cached.width(), cached.height(), cached.textureId());
+            ADDITIONAL_IMAGE_PATHS.add(path);
+            int existingIndex = -1;
+            for (int index = 0; index < images.size(); index++) {
+                if (images.get(index).path().equals(path)) {
+                    existingIndex = index;
+                    break;
+                }
+            }
+            if (existingIndex >= 0) {
+                images.set(existingIndex, entry);
+                selectedIndex = existingIndex;
+            } else {
+                images.add(entry);
+                selectedIndex = images.size() - 1;
+            }
+            scroll = Math.max(0, selectedIndex - visibleRows() + 1);
+            loadPreview(entry);
+            status = "已选择 " + entry.name();
+        } catch (Exception exception) {
+            MonvhuaMod.LOGGER.warn("[Monvhua] Failed to add a selected paint-paper image", exception);
+            status = "读取图片失败";
+        }
     }
 
     private static LocalPaper createLocalPaper(ImageEntry entry) {
@@ -341,6 +487,10 @@ public class PaintPaperImportScreen extends Screen {
 
     private int refreshX() {
         return panelX + 12;
+    }
+
+    private int selectImageX() {
+        return refreshX() + 64;
     }
 
     private int importX() {
@@ -421,31 +571,15 @@ public class PaintPaperImportScreen extends Screen {
             MinecraftClient.getInstance().getTextureManager().destroyTexture(cached.textureId());
         }
 
-        NativeImage image = readNativeImage(path);
+        NativeImage image = PaintImageDecoder.read(path);
         Identifier textureId = Identifier.of(MonvhuaMod.MOD_ID, "dynamic/paint_paper_import/" + Integer.toUnsignedString(path.toString().hashCode(), 16));
         NativeImageBackedTexture texture = new NativeImageBackedTexture(() -> "monvhua paint paper import " + path.getFileName(), image);
+        texture.setFilter(false, false);
         MinecraftClient.getInstance().getTextureManager().registerTexture(textureId, texture);
+        texture.upload();
         cached = new CachedImage(path, lastModified, size, image.getWidth(), image.getHeight(), textureId, texture);
         IMAGE_CACHE.put(path, cached);
         return cached;
-    }
-
-    private static NativeImage readNativeImage(Path path) throws IOException {
-        try (InputStream stream = Files.newInputStream(path)) {
-            return NativeImage.read(stream);
-        } catch (IOException nativeError) {
-            BufferedImage buffered = ImageIO.read(path.toFile());
-            if (buffered == null) {
-                throw nativeError;
-            }
-            NativeImage image = new NativeImage(buffered.getWidth(), buffered.getHeight(), false);
-            for (int y = 0; y < buffered.getHeight(); y++) {
-                for (int x = 0; x < buffered.getWidth(); x++) {
-                    image.setColorArgb(x, y, buffered.getRGB(x, y));
-                }
-            }
-            return image;
-        }
     }
 
     private static void pruneCache(Set<Path> activePaths) {
@@ -465,6 +599,12 @@ public class PaintPaperImportScreen extends Screen {
     }
 
     private record ImageEntry(Path path, String name, int width, int height, Identifier textureId) {
+    }
+
+    private record SelectedImage(Path path, int width, int height, String error) {
+        private static SelectedImage error(String message) {
+            return new SelectedImage(null, 0, 0, message);
+        }
     }
 
     private record LocalPaper(UUID id, String name, int width, int height, byte[] pngBytes, byte[] sha256) {

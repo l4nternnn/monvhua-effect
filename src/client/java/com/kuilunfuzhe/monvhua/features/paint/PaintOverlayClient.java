@@ -2530,7 +2530,7 @@ public final class PaintOverlayClient {
 
     private static void installLocalPaperTexture(LocalImportedPaper paper) {
         try {
-            NativeImage image = NativeImage.read(new ByteArrayInputStream(paper.pngBytes()));
+            NativeImage image = PaintImageDecoder.read(new ByteArrayInputStream(paper.pngBytes()));
             if (image.getWidth() != paper.width() || image.getHeight() != paper.height()) {
                 image.close();
                 return;
@@ -2658,7 +2658,7 @@ public final class PaintOverlayClient {
 
     private static void applyImportedPaperImage(PaintOverlayPackets.ImportedPaperImageS2C packet) {
         try {
-            NativeImage image = NativeImage.read(new ByteArrayInputStream(packet.pngBytes()));
+            NativeImage image = PaintImageDecoder.read(new ByteArrayInputStream(packet.pngBytes()));
             if (image.getWidth() != packet.width() || image.getHeight() != packet.height()) { image.close(); return; }
             clearImportedPaperTexture();
             Identifier id = Identifier.of(com.kuilunfuzhe.monvhua.MonvhuaMod.MOD_ID, "dynamic/imported_paper/" + packet.imageId());
