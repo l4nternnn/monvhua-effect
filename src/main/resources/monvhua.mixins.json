@@ -34,6 +34,9 @@
 		"ThroughPhaseCollisionMixin",
 		"possession.PossessionMovementMixin",
 		"possession.PossessionNetworkInputMixin",
+		"possession.PossessionBlockStateSyncMixin",
+		"possession.PossessionBlockEntitySyncMixin",
+		"possession.PossessionEntitySyncMixin",
 		"possession.PossessionS2CBridgeMixin"
 	],
 	"injectors": {

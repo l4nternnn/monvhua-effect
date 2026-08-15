@@ -5,6 +5,8 @@ import com.kuilunfuzhe.monvhua.features.portal.PortalViewConfig;
 import com.kuilunfuzhe.monvhua.features.portal.client.PortalChunkSource;
 import com.kuilunfuzhe.monvhua.features.portal.client.PortalPassContext;
 import com.kuilunfuzhe.monvhua.features.portal.client.PortalRemoteRenderContext;
+import com.kuilunfuzhe.monvhua.features.possession.PossessionClient;
+import com.kuilunfuzhe.monvhua.features.possession.PossessionRemoteChunkCache;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientChunkManager;
@@ -40,6 +42,12 @@ public abstract class ClientChunkManagerRemoteMixin {
                                               CallbackInfoReturnable<WorldChunk> cir) {
         PortalPassContext context = PortalRemoteRenderContext.current();
         if (context == null) {
+            if (PossessionClient.isActive()) {
+                WorldChunk remote = PossessionRemoteChunkCache.get(world, chunkX, chunkZ);
+                if (remote != null) {
+                    cir.setReturnValue(remote);
+                }
+            }
             return;
         }
         PortalChunkSource chunkSource = context.chunkSource();
@@ -58,7 +66,15 @@ public abstract class ClientChunkManagerRemoteMixin {
     @Inject(method = "getActiveSections", at = @At("RETURN"), cancellable = true)
     private void monvhua$appendRemotePortalSections(CallbackInfoReturnable<LongOpenHashSet> cir) {
         PortalPassContext context = PortalRemoteRenderContext.current();
-        if (context == null || context.chunkSource() == null) {
+        if (context == null) {
+            if (PossessionClient.isActive()) {
+                LongOpenHashSet sections = cir.getReturnValue();
+                PossessionRemoteChunkCache.appendActiveSections(world, sections);
+                cir.setReturnValue(sections);
+            }
+            return;
+        }
+        if (context.chunkSource() == null) {
             return;
         }
         LongOpenHashSet remoteSections = new LongOpenHashSet();
@@ -69,7 +85,13 @@ public abstract class ClientChunkManagerRemoteMixin {
     @Inject(method = "getLoadedChunkCount", at = @At("RETURN"), cancellable = true)
     private void monvhua$countRemotePortalChunks(CallbackInfoReturnable<Integer> cir) {
         PortalPassContext context = PortalRemoteRenderContext.current();
-        if (context == null || context.chunkSource() == null) {
+        if (context == null) {
+            if (PossessionClient.isActive()) {
+                cir.setReturnValue(cir.getReturnValue() + PossessionRemoteChunkCache.loadedChunkCount(world));
+            }
+            return;
+        }
+        if (context.chunkSource() == null) {
             return;
         }
         cir.setReturnValue(context.chunkSource().loadedChunkCount(world));

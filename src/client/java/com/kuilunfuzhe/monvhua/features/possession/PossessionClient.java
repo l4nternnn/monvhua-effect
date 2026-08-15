@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.features.possession;
 
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.features.possession.PossessionFeature;
+import com.kuilunfuzhe.monvhua.network.portal.PortalPackets;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
@@ -45,6 +46,8 @@ public final class PossessionClient {
                 context.client().execute(() -> applyHotbar(packet)));
         ClientPlayNetworking.registerGlobalReceiver(PossessionPackets.InventoryS2C.ID, (packet, context) ->
                 context.client().execute(() -> applyInventory(packet)));
+        ClientPlayNetworking.registerGlobalReceiver(PortalPackets.RemoteChunkS2C.ID, (packet, context) ->
+                context.client().execute(() -> PossessionRemoteChunkCache.load(context.client(), packet)));
 
         ClientTickEvents.END_CLIENT_TICK.register(PossessionClient::tick);
     }
@@ -158,6 +161,9 @@ public final class PossessionClient {
         lockedWandSlot = packet.lockedWandSlot();
         cancellingUse = false;
         lookInitialized = false;
+        if (active) {
+            PossessionRemoteChunkCache.clear();
+        }
         if (!active && client.player != null) {
             client.cameraEntity = client.player;
             if (client.currentScreen instanceof PossessionInventoryScreen) {
@@ -166,6 +172,7 @@ public final class PossessionClient {
             clearHotbar();
             clearInventory();
             lockedWandSlot = -1;
+            PossessionRemoteChunkCache.clear();
         }
     }
 

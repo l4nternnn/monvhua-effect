@@ -1,14 +1,19 @@
 package com.kuilunfuzhe.monvhua.features.possession;
 
 import com.kuilunfuzhe.monvhua.util.RaycastHelper;
+import com.kuilunfuzhe.monvhua.network.portal.PortalPackets;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
+import net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayNetworkHandler;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.world.chunk.WorldChunk;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
@@ -17,23 +22,25 @@ import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 
 public final class PossessionManager {
     private static final long INPUT_TIMEOUT_TICKS = 100L;
     private static final Map<UUID, Session> BY_CONTROLLER = new ConcurrentHashMap<>();
     private static final Map<UUID, UUID> CONTROLLER_BY_TARGET = new ConcurrentHashMap<>();
     private static final Map<UUID, BreakingState> BREAKING_BY_CONTROLLER = new ConcurrentHashMap<>();
-    private static final ThreadLocal<Boolean> REPLAYING_NETWORK_PACKET = ThreadLocal.withInitial(() -> false);
+    private static final Map<UUID, ChunkPos> REMOTE_CHUNK_CENTERS = new ConcurrentHashMap<>();
+    private static final int REMOTE_CHUNK_RADIUS = 2;
 
     private PossessionManager() {
     }
@@ -72,40 +79,40 @@ public final class PossessionManager {
         }
     }
 
-    public static boolean isReplayingNetworkPacket() {
-        return Boolean.TRUE.equals(REPLAYING_NETWORK_PACKET.get());
+    public static void syncObservedBlock(ServerWorld world, BlockPos pos) {
+        if (world == null || pos == null) {
+            return;
+        }
+        for (Session session : BY_CONTROLLER.values()) {
+            ServerPlayerEntity controller = world.getServer().getPlayerManager().getPlayer(session.controllerUuid());
+            ServerPlayerEntity target = world.getServer().getPlayerManager().getPlayer(session.targetUuid());
+            if (controller == null || target == null || target.getWorld() != world || !isObservedChunk(target, pos)) {
+                continue;
+            }
+            sendBlockFeedback(controller, world, pos);
+        }
     }
 
-    public static boolean replayControllerPacket(ServerPlayerEntity controller, Consumer<ServerPlayNetworkHandler> replay) {
-        if (controller == null || replay == null || controller.getServer() == null) {
-            return false;
+    public static void syncObservedEntityPacket(ServerWorld world, Entity entity, Packet<?> packet) {
+        if (world == null || entity == null || packet == null) {
+            return;
         }
-        Session session = BY_CONTROLLER.get(controller.getUuid());
-        if (session == null) {
-            return false;
+        for (Session session : BY_CONTROLLER.values()) {
+            ServerPlayerEntity controller = world.getServer().getPlayerManager().getPlayer(session.controllerUuid());
+            ServerPlayerEntity target = world.getServer().getPlayerManager().getPlayer(session.targetUuid());
+            if (controller == null || target == null || target.getWorld() != world
+                    || target.squaredDistanceTo(entity) > (REMOTE_CHUNK_RADIUS * 16.0D + 16.0D) * (REMOTE_CHUNK_RADIUS * 16.0D + 16.0D)) {
+                continue;
+            }
+            controller.networkHandler.sendPacket(packet);
         }
-        ServerPlayerEntity target = controller.getServer().getPlayerManager().getPlayer(session.targetUuid());
-        if (!canContinue(controller, target)) {
-            stopByController(controller, controller.getServer());
-            return true;
-        }
-
-        boolean previous = isReplayingNetworkPacket();
-        REPLAYING_NETWORK_PACKET.set(true);
-        try {
-            replay.accept(target.networkHandler);
-        } finally {
-            REPLAYING_NETWORK_PACKET.set(previous);
-        }
-        BY_CONTROLLER.put(controller.getUuid(),
-                new Session(session.controllerUuid(), session.targetUuid(), session.wandSlot(), session.targetWasFlying(), session.targetWasNoGravity(), target.getWorld().getTime()));
-        return true;
     }
 
     public static void prepareTargetMovement(ServerPlayerEntity target) {
-        if (isTarget(target)) {
-            enforceGroundMovement(target);
-            applyMovementInput(target, target.getPlayerInput());
+        UUID controllerUuid = target == null ? null : CONTROLLER_BY_TARGET.get(target.getUuid());
+        Session session = controllerUuid == null ? null : BY_CONTROLLER.get(controllerUuid);
+        if (session != null) {
+            applySessionInput(target, session);
         }
     }
 
@@ -141,12 +148,14 @@ public final class PossessionManager {
         boolean targetWasFlying = target.getAbilities().flying;
         boolean targetWasNoGravity = target.hasNoGravity();
         BY_CONTROLLER.put(controller.getUuid(), new Session(
-                controller.getUuid(), target.getUuid(), wandSlot, targetWasFlying, targetWasNoGravity, target.getWorld().getTime()));
+                controller.getUuid(), target.getUuid(), wandSlot, targetWasFlying, targetWasNoGravity,
+                PlayerInput.DEFAULT, target.getYaw(), target.getPitch(), target.getWorld().getTime()));
         CONTROLLER_BY_TARGET.put(target.getUuid(), controller.getUuid());
         enforceGroundMovement(target);
         ServerPlayNetworking.send(controller, new PossessionPackets.StateS2C(true, target.getId(), target.getUuid(), wandSlot));
         sendHotbar(controller, target);
         sendInventory(controller, target);
+        syncRemoteChunks(controller, target, true);
         controller.sendMessage(Text.literal("Possessing " + target.getName().getString()), true);
         target.sendMessage(Text.literal("You are being possessed by " + controller.getName().getString()), true);
     }
@@ -165,16 +174,12 @@ public final class PossessionManager {
             return;
         }
 
-        target.setPlayerInput(input);
-        applyMovementInput(target, input);
-        target.setYaw(yaw);
-        target.setPitch(Math.clamp(pitch, -90.0F, 90.0F));
-        target.setHeadYaw(yaw);
-        target.setBodyYaw(yaw);
-        target.setSprinting(input.sprint());
-        target.setSneaking(input.sneak());
-        BY_CONTROLLER.put(controller.getUuid(),
-                new Session(session.controllerUuid(), session.targetUuid(), session.wandSlot(), session.targetWasFlying(), session.targetWasNoGravity(), target.getWorld().getTime()));
+        BY_CONTROLLER.put(controller.getUuid(), session.withInput(
+                input,
+                yaw,
+                Math.clamp(pitch, -90.0F, 90.0F),
+                target.getWorld().getTime()
+        ));
     }
 
     public static void selectTargetSlot(ServerPlayerEntity controller, int slot) {
@@ -188,10 +193,7 @@ public final class PossessionManager {
             }
             return;
         }
-        Session session = BY_CONTROLLER.get(controller.getUuid());
         target.getInventory().setSelectedSlot(slot);
-        BY_CONTROLLER.put(controller.getUuid(),
-                new Session(session.controllerUuid(), session.targetUuid(), session.wandSlot(), session.targetWasFlying(), session.targetWasNoGravity(), target.getWorld().getTime()));
         sendHotbar(controller, target);
         sendInventory(controller, target);
     }
@@ -228,6 +230,7 @@ public final class PossessionManager {
             sendHotbar(controller, target);
             sendInventory(controller, target);
         }
+        refreshControllerView(target);
     }
 
     public static void stopByController(ServerPlayerEntity controller, MinecraftServer server) {
@@ -269,8 +272,8 @@ public final class PossessionManager {
                 stopByController(session.controllerUuid(), server, true);
                 continue;
             }
-            enforceGroundMovement(target);
-            applyMovementInput(target, target.getPlayerInput());
+            applySessionInput(target, session);
+            syncRemoteChunks(controller, target, false);
             if (target.getWorld().getTime() % 5L == 0L) {
                 sendHotbar(controller, target);
             }
@@ -286,6 +289,7 @@ public final class PossessionManager {
             return;
         }
         CONTROLLER_BY_TARGET.remove(session.targetUuid(), controllerUuid);
+        REMOTE_CHUNK_CENTERS.remove(controllerUuid);
         if (server == null) {
             BREAKING_BY_CONTROLLER.remove(controllerUuid);
             return;
@@ -319,6 +323,16 @@ public final class PossessionManager {
         target.setJumping(input.jump());
         target.setSprinting(input.sprint());
         target.setSneaking(input.sneak());
+    }
+
+    private static void applySessionInput(ServerPlayerEntity target, Session session) {
+        enforceGroundMovement(target);
+        target.setPlayerInput(session.input());
+        applyMovementInput(target, session.input());
+        target.setYaw(session.yaw());
+        target.setPitch(session.pitch());
+        target.setHeadYaw(session.yaw());
+        target.setBodyYaw(session.yaw());
     }
 
     public static void enforceGroundMovement(ServerPlayerEntity target) {
@@ -373,6 +387,7 @@ public final class PossessionManager {
         float progress = state.calcBlockBreakingDelta(target, target.getWorld(), current.pos()) * (float) (elapsedTicks + 1L);
         if (progress >= 1.0F) {
             processBreakingAction(target, current.pos(), current.direction(), PlayerActionC2SPacket.Action.STOP_DESTROY_BLOCK);
+            syncBlockFeedback(target, current.pos(), current.direction());
             BREAKING_BY_CONTROLLER.remove(controllerUuid);
         }
     }
@@ -418,6 +433,32 @@ public final class PossessionManager {
                 target.getInventory().getSelectedSlot(),
                 stacks
         ));
+    }
+
+    private static void syncRemoteChunks(ServerPlayerEntity controller, ServerPlayerEntity target, boolean force) {
+        if (!(target.getWorld() instanceof ServerWorld world)) {
+            return;
+        }
+        ChunkPos center = new ChunkPos(target.getBlockPos());
+        ChunkPos previous = REMOTE_CHUNK_CENTERS.get(controller.getUuid());
+        if (!force && center.equals(previous)) {
+            return;
+        }
+        REMOTE_CHUNK_CENTERS.put(controller.getUuid(), center);
+
+        for (int dx = -REMOTE_CHUNK_RADIUS; dx <= REMOTE_CHUNK_RADIUS; dx++) {
+            for (int dz = -REMOTE_CHUNK_RADIUS; dz <= REMOTE_CHUNK_RADIUS; dz++) {
+                WorldChunk chunk = world.getChunkManager().getWorldChunk(center.x + dx, center.z + dz);
+                if (chunk == null) {
+                    continue;
+                }
+                ServerPlayNetworking.send(controller, new PortalPackets.RemoteChunkS2C(
+                        target.getBlockPos(),
+                        world.getTime(),
+                        chunk
+                ));
+            }
+        }
     }
 
     private static boolean canContinue(ServerPlayerEntity controller, ServerPlayerEntity target) {
@@ -474,10 +515,46 @@ public final class PossessionManager {
             ActionResult result = target.interactionManager.interactBlock(target, target.getWorld(), stack, hand, hit);
             if (result.isAccepted()) {
                 target.swingHand(hand);
+                syncBlockFeedback(target, hit);
                 return true;
             }
         }
         return false;
+    }
+
+    private static void syncBlockFeedback(ServerPlayerEntity target, BlockHitResult hit) {
+        syncBlockFeedback(target, hit.getBlockPos(), hit.getSide());
+    }
+
+    private static void syncBlockFeedback(ServerPlayerEntity target, BlockPos clicked, Direction side) {
+        ServerPlayerEntity controller = getController(target);
+        if (controller == null || !(target.getWorld() instanceof ServerWorld world)) {
+            return;
+        }
+
+        sendBlockFeedback(controller, world, clicked);
+        sendBlockFeedback(controller, world, clicked.offset(side));
+        sendBlockFeedback(controller, world, clicked.up());
+        sendBlockFeedback(controller, world, clicked.down());
+    }
+
+    private static void sendBlockFeedback(ServerPlayerEntity controller, ServerWorld world, BlockPos pos) {
+        controller.networkHandler.sendPacket(new BlockUpdateS2CPacket(pos, world.getBlockState(pos)));
+        BlockEntity blockEntity = world.getBlockEntity(pos);
+        if (blockEntity == null) {
+            return;
+        }
+        var packet = blockEntity.toUpdatePacket();
+        if (packet != null) {
+            controller.networkHandler.sendPacket(packet);
+        }
+    }
+
+    private static boolean isObservedChunk(ServerPlayerEntity target, BlockPos pos) {
+        ChunkPos center = new ChunkPos(target.getBlockPos());
+        ChunkPos changed = new ChunkPos(pos);
+        return Math.abs(center.x - changed.x) <= REMOTE_CHUNK_RADIUS
+                && Math.abs(center.z - changed.z) <= REMOTE_CHUNK_RADIUS;
     }
 
     private static boolean tryUseItem(ServerPlayerEntity target) {
@@ -533,7 +610,20 @@ public final class PossessionManager {
     }
 
     private record Session(UUID controllerUuid, UUID targetUuid, int wandSlot, boolean targetWasFlying,
-                           boolean targetWasNoGravity, long lastInputTick) {
+                           boolean targetWasNoGravity, PlayerInput input, float yaw, float pitch, long lastInputTick) {
+        private Session withInput(PlayerInput input, float yaw, float pitch, long tick) {
+            return new Session(
+                    controllerUuid,
+                    targetUuid,
+                    wandSlot,
+                    targetWasFlying,
+                    targetWasNoGravity,
+                    input,
+                    yaw,
+                    pitch,
+                    tick
+            );
+        }
     }
 
     private record BreakingState(BlockPos pos, Direction direction, long startTick) {
