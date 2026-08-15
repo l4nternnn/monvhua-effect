@@ -36,7 +36,10 @@ public abstract class PossessionNetworkInputMixin {
 
     @Inject(method = "onUpdateSelectedSlot", at = @At("HEAD"), cancellable = true)
     private void monvhua$blockPossessedSelectedSlot(UpdateSelectedSlotC2SPacket packet, CallbackInfo ci) {
-        redirectOrCancel(ci, handler -> handler.onUpdateSelectedSlot(packet));
+        if (!PossessionManager.isReplayingNetworkPacket()
+                && (PossessionManager.isController(player) || PossessionManager.isTarget(player))) {
+            ci.cancel();
+        }
     }
 
     @Inject(method = "onPlayerAction", at = @At("HEAD"), cancellable = true)
@@ -87,6 +90,7 @@ public abstract class PossessionNetworkInputMixin {
         CustomPayload.Id<? extends CustomPayload> id = payload.getId();
         return id.equals(PossessionPackets.StopC2S.ID)
                 || id.equals(PossessionPackets.InputC2S.ID)
+                || id.equals(PossessionPackets.SelectSlotC2S.ID)
                 || id.equals(PossessionPackets.ActionC2S.ID);
     }
 }

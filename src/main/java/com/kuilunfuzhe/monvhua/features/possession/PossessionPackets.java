@@ -23,6 +23,7 @@ public final class PossessionPackets {
     public static void registerC2S() {
         StopC2S.register();
         InputC2S.register();
+        SelectSlotC2S.register();
         ActionC2S.register();
     }
 
@@ -50,14 +51,34 @@ public final class PossessionPackets {
         }
     }
 
-    public record InputC2S(PlayerInput input, float yaw, float pitch, int selectedSlot) implements CustomPayload {
+    public record InputC2S(PlayerInput input, float yaw, float pitch) implements CustomPayload {
         public static final Id<InputC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "possession_input"));
         public static final PacketCodec<PacketByteBuf, InputC2S> CODEC = PacketCodec.tuple(
                 PlayerInput.PACKET_CODEC, InputC2S::input,
                 PacketCodecs.FLOAT, InputC2S::yaw,
                 PacketCodecs.FLOAT, InputC2S::pitch,
-                PacketCodecs.INTEGER, InputC2S::selectedSlot,
                 InputC2S::new
+        );
+        private static boolean registered = false;
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playC2S().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record SelectSlotC2S(int slot) implements CustomPayload {
+        public static final Id<SelectSlotC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "possession_select_slot"));
+        public static final PacketCodec<PacketByteBuf, SelectSlotC2S> CODEC = PacketCodec.tuple(
+                PacketCodecs.INTEGER, SelectSlotC2S::slot,
+                SelectSlotC2S::new
         );
         private static boolean registered = false;
 
@@ -104,18 +125,19 @@ public final class PossessionPackets {
         }
     }
 
-    public record StateS2C(boolean active, int targetEntityId, UUID targetUuid) implements CustomPayload {
+    public record StateS2C(boolean active, int targetEntityId, UUID targetUuid, int lockedWandSlot) implements CustomPayload {
         public static final Id<StateS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "possession_state"));
         public static final PacketCodec<PacketByteBuf, StateS2C> CODEC = PacketCodec.tuple(
                 PacketCodecs.BOOLEAN, StateS2C::active,
                 PacketCodecs.INTEGER, StateS2C::targetEntityId,
                 Uuids.PACKET_CODEC, StateS2C::targetUuid,
+                PacketCodecs.INTEGER, StateS2C::lockedWandSlot,
                 StateS2C::new
         );
         private static boolean registered = false;
 
         public static StateS2C inactive() {
-            return new StateS2C(false, -1, new UUID(0L, 0L));
+            return new StateS2C(false, -1, new UUID(0L, 0L), -1);
         }
 
         public static void register() {

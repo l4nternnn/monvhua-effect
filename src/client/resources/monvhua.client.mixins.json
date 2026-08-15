@@ -68,7 +68,10 @@
 		"DissolveLivingEntityRendererMixin",
 		"PlayerListHudMixin",
 		"possession.PossessionInputRedirectMixin",
+		"possession.PossessionSelectedSlotMixin",
 		"possession.PossessionHandStackMixin",
+		"possession.PossessionHotbarMixin",
+		"possession.PossessionInventoryScreenMixin",
 		"possession.PossessionCrosshairTargetMixin"
 	],
 	"injectors": {

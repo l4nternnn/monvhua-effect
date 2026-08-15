@@ -54,6 +54,24 @@ public final class PossessionManager {
         return session == null ? null : controller.getServer().getPlayerManager().getPlayer(session.targetUuid());
     }
 
+    public static ServerPlayerEntity getController(ServerPlayerEntity target) {
+        if (target == null || target.getServer() == null) {
+            return null;
+        }
+        UUID controllerUuid = CONTROLLER_BY_TARGET.get(target.getUuid());
+        return controllerUuid == null
+                ? null
+                : target.getServer().getPlayerManager().getPlayer(controllerUuid);
+    }
+
+    public static void refreshControllerView(ServerPlayerEntity target) {
+        ServerPlayerEntity controller = getController(target);
+        if (controller != null) {
+            sendHotbar(controller, target);
+            sendInventory(controller, target);
+        }
+    }
+
     public static boolean isReplayingNetworkPacket() {
         return Boolean.TRUE.equals(REPLAYING_NETWORK_PACKET.get());
     }
@@ -80,17 +98,18 @@ public final class PossessionManager {
             REPLAYING_NETWORK_PACKET.set(previous);
         }
         BY_CONTROLLER.put(controller.getUuid(),
-                new Session(session.controllerUuid(), session.targetUuid(), target.getWorld().getTime()));
+                new Session(session.controllerUuid(), session.targetUuid(), session.wandSlot(), session.targetWasFlying(), session.targetWasNoGravity(), target.getWorld().getTime()));
         return true;
     }
 
     public static void prepareTargetMovement(ServerPlayerEntity target) {
         if (isTarget(target)) {
+            enforceGroundMovement(target);
             applyMovementInput(target, target.getPlayerInput());
         }
     }
 
-    public static void start(ServerPlayerEntity controller, ServerPlayerEntity target) {
+    public static void start(ServerPlayerEntity controller, ServerPlayerEntity target, Hand hand) {
         if (controller == null || target == null || controller == target) {
             return;
         }
@@ -113,17 +132,26 @@ public final class PossessionManager {
             return;
         }
 
+        int wandSlot = hand == Hand.MAIN_HAND ? controller.getInventory().getSelectedSlot() : -1;
+        if (wandSlot >= 0 && !controller.getInventory().getStack(wandSlot).isOf(PossessionFeature.POSSESSION_ITEM)) {
+            return;
+        }
+
         stopByController(controller, server);
-        BY_CONTROLLER.put(controller.getUuid(), new Session(controller.getUuid(), target.getUuid(), target.getWorld().getTime()));
+        boolean targetWasFlying = target.getAbilities().flying;
+        boolean targetWasNoGravity = target.hasNoGravity();
+        BY_CONTROLLER.put(controller.getUuid(), new Session(
+                controller.getUuid(), target.getUuid(), wandSlot, targetWasFlying, targetWasNoGravity, target.getWorld().getTime()));
         CONTROLLER_BY_TARGET.put(target.getUuid(), controller.getUuid());
-        ServerPlayNetworking.send(controller, new PossessionPackets.StateS2C(true, target.getId(), target.getUuid()));
+        enforceGroundMovement(target);
+        ServerPlayNetworking.send(controller, new PossessionPackets.StateS2C(true, target.getId(), target.getUuid(), wandSlot));
         sendHotbar(controller, target);
         sendInventory(controller, target);
         controller.sendMessage(Text.literal("Possessing " + target.getName().getString()), true);
         target.sendMessage(Text.literal("You are being possessed by " + controller.getName().getString()), true);
     }
 
-    public static void applyInput(ServerPlayerEntity controller, PlayerInput input, float yaw, float pitch, int selectedSlot) {
+    public static void applyInput(ServerPlayerEntity controller, PlayerInput input, float yaw, float pitch) {
         if (controller == null || input == null || controller.getServer() == null) {
             return;
         }
@@ -145,12 +173,27 @@ public final class PossessionManager {
         target.setBodyYaw(yaw);
         target.setSprinting(input.sprint());
         target.setSneaking(input.sneak());
-        if (selectedSlot >= 0 && selectedSlot < 9) {
-            target.getInventory().setSelectedSlot(selectedSlot);
-        }
-
         BY_CONTROLLER.put(controller.getUuid(),
-                new Session(session.controllerUuid(), session.targetUuid(), target.getWorld().getTime()));
+                new Session(session.controllerUuid(), session.targetUuid(), session.wandSlot(), session.targetWasFlying(), session.targetWasNoGravity(), target.getWorld().getTime()));
+    }
+
+    public static void selectTargetSlot(ServerPlayerEntity controller, int slot) {
+        if (slot < 0 || slot >= 9) {
+            return;
+        }
+        ServerPlayerEntity target = getTarget(controller);
+        if (!canContinue(controller, target)) {
+            if (controller != null && controller.getServer() != null) {
+                stopByController(controller, controller.getServer());
+            }
+            return;
+        }
+        Session session = BY_CONTROLLER.get(controller.getUuid());
+        target.getInventory().setSelectedSlot(slot);
+        BY_CONTROLLER.put(controller.getUuid(),
+                new Session(session.controllerUuid(), session.targetUuid(), session.wandSlot(), session.targetWasFlying(), session.targetWasNoGravity(), target.getWorld().getTime()));
+        sendHotbar(controller, target);
+        sendInventory(controller, target);
     }
 
     public static void handleAction(ServerPlayerEntity controller, int action) {
@@ -222,6 +265,11 @@ public final class PossessionManager {
             controller.setSneaking(false);
             controller.setVelocity(Vec3d.ZERO);
             controller.velocityModified = true;
+            if (!keepControllerWandLocked(controller, session)) {
+                stopByController(session.controllerUuid(), server, true);
+                continue;
+            }
+            enforceGroundMovement(target);
             applyMovementInput(target, target.getPlayerInput());
             if (target.getWorld().getTime() % 5L == 0L) {
                 sendHotbar(controller, target);
@@ -254,6 +302,9 @@ public final class PossessionManager {
         if (target != null) {
             target.setPlayerInput(PlayerInput.DEFAULT);
             applyMovementInput(target, PlayerInput.DEFAULT);
+            target.getAbilities().flying = session.targetWasFlying();
+            target.setNoGravity(session.targetWasNoGravity());
+            target.sendAbilitiesUpdate();
             target.sendMessage(Text.literal("Possession ended."), true);
         }
     }
@@ -264,15 +315,19 @@ public final class PossessionManager {
         Vec2f movement = new Vec2f(sideways, forward).normalize();
         target.sidewaysSpeed = movement.x;
         target.forwardSpeed = movement.y;
-        if (target.getAbilities().flying) {
-            target.upwardSpeed = input.jump() == input.sneak() ? 0.0F : input.jump() ? 1.0F : -1.0F;
-            target.setJumping(false);
-        } else {
-            target.upwardSpeed = 0.0F;
-            target.setJumping(input.jump());
-        }
+        target.upwardSpeed = 0.0F;
+        target.setJumping(input.jump());
         target.setSprinting(input.sprint());
         target.setSneaking(input.sneak());
+    }
+
+    public static void enforceGroundMovement(ServerPlayerEntity target) {
+        boolean changed = target.getAbilities().flying || target.hasNoGravity();
+        target.getAbilities().flying = false;
+        target.setNoGravity(false);
+        if (changed) {
+            target.sendAbilitiesUpdate();
+        }
     }
 
     private static void breakFromTarget(ServerPlayerEntity controller, ServerPlayerEntity target) {
@@ -466,7 +521,19 @@ public final class PossessionManager {
         return entityDistanceSq <= blockDistanceSq ? entityHit : null;
     }
 
-    private record Session(UUID controllerUuid, UUID targetUuid, long lastInputTick) {
+    private static boolean keepControllerWandLocked(ServerPlayerEntity controller, Session session) {
+        if (session.wandSlot() < 0) {
+            return true;
+        }
+        if (!controller.getInventory().getStack(session.wandSlot()).isOf(PossessionFeature.POSSESSION_ITEM)) {
+            return false;
+        }
+        controller.getInventory().setSelectedSlot(session.wandSlot());
+        return true;
+    }
+
+    private record Session(UUID controllerUuid, UUID targetUuid, int wandSlot, boolean targetWasFlying,
+                           boolean targetWasNoGravity, long lastInputTick) {
     }
 
     private record BreakingState(BlockPos pos, Direction direction, long startTick) {

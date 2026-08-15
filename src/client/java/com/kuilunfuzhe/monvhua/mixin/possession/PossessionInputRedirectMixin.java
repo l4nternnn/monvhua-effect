@@ -13,8 +13,8 @@ public abstract class PossessionInputRedirectMixin {
     private void monvhua$redirectPossessionUse(CallbackInfo ci) {
         MinecraftClient client = (MinecraftClient) (Object) this;
         if (PossessionClient.isActive()
-                && PossessionClient.isHoldingActualPossessionItem(client)
-                && client.options.useKey.isPressed()) {
+                && client.options.useKey.isPressed()
+                && PossessionClient.beginCancelGesture(client)) {
             ci.cancel();
         }
     }

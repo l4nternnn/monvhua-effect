@@ -1,32 +1,16 @@
 package com.kuilunfuzhe.monvhua.features.possession;
 
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.item.ItemStack;
 
 public final class PossessionHotbarHud {
     private static final int SLOT_SIZE = 20;
     private static final int ITEM_OFFSET = 2;
-    private static boolean registered = false;
-
     private PossessionHotbarHud() {
     }
 
-    public static void register() {
-        if (registered) {
-            return;
-        }
-        registered = true;
-        HudRenderCallback.EVENT.register(PossessionHotbarHud::render);
-    }
-
-    private static void render(DrawContext context, RenderTickCounter tickCounter) {
-        if (!PossessionClient.isActive()) {
-            return;
-        }
-
+    public static void render(DrawContext context) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.options.hudHidden) {
             return;

@@ -18,7 +18,8 @@ public final class PossessionClient {
     private static boolean active = false;
     private static int targetEntityId = -1;
     private static UUID targetUuid = new UUID(0L, 0L);
-    private static boolean lastUse = false;
+    private static int lockedWandSlot = -1;
+    private static boolean cancellingUse = false;
     private static final ItemStack[] targetHotbar = new ItemStack[9];
     private static final ItemStack[] targetInventory = new ItemStack[PossessionPackets.InventoryS2C.MAX_SLOTS];
     private static int targetSelectedSlot = 0;
@@ -46,7 +47,6 @@ public final class PossessionClient {
                 context.client().execute(() -> applyInventory(packet)));
 
         ClientTickEvents.END_CLIENT_TICK.register(PossessionClient::tick);
-        PossessionHotbarHud.register();
     }
 
     public static boolean isActive() {
@@ -108,6 +108,18 @@ public final class PossessionClient {
         return targetSelectedSlot;
     }
 
+    public static int getLockedWandSlot() {
+        return lockedWandSlot;
+    }
+
+    public static void requestTargetSlot(int slot) {
+        if (!active || slot < 0 || slot >= 9 || slot == targetSelectedSlot) {
+            return;
+        }
+        targetSelectedSlot = slot;
+        SafeClientNetworking.send(new PossessionPackets.SelectSlotC2S(slot));
+    }
+
     public static ItemStack getTargetInventoryStack(int slot) {
         if (slot < 0 || slot >= targetInventory.length) {
             return ItemStack.EMPTY;
@@ -117,7 +129,18 @@ public final class PossessionClient {
 
     public static boolean shouldMirrorHandsFor(Object entity) {
         MinecraftClient client = MinecraftClient.getInstance();
-        return active && client.player != null && entity == client.player;
+        return active && !cancellingUse && client.player != null && entity == client.player;
+    }
+
+    public static boolean beginCancelGesture(MinecraftClient client) {
+        if (!active || !isHoldingActualPossessionItem(client) || !client.options.sneakKey.isPressed()) {
+            return false;
+        }
+        if (!cancellingUse) {
+            cancellingUse = true;
+            SafeClientNetworking.send(new PossessionPackets.StopC2S());
+        }
+        return true;
     }
 
     public static ItemStack getMirroredMainHandStack() {
@@ -132,7 +155,8 @@ public final class PossessionClient {
         active = packet.active();
         targetEntityId = packet.targetEntityId();
         targetUuid = packet.targetUuid();
-        lastUse = active && client.options.useKey.isPressed();
+        lockedWandSlot = packet.lockedWandSlot();
+        cancellingUse = false;
         lookInitialized = false;
         if (!active && client.player != null) {
             client.cameraEntity = client.player;
@@ -141,6 +165,7 @@ public final class PossessionClient {
             }
             clearHotbar();
             clearInventory();
+            lockedWandSlot = -1;
         }
     }
 
@@ -187,12 +212,6 @@ public final class PossessionClient {
             target.setHeadYaw(client.player.getYaw());
         }
 
-        while (client.options.inventoryKey.wasPressed()) {
-            if (client.currentScreen == null) {
-                client.setScreen(new PossessionInventoryScreen());
-            }
-        }
-
         PlayerInput input = new PlayerInput(
                 client.options.forwardKey.isPressed(),
                 client.options.backKey.isPressed(),
@@ -205,17 +224,12 @@ public final class PossessionClient {
         SafeClientNetworking.send(new PossessionPackets.InputC2S(
                 input,
                 client.player.getYaw(),
-                client.player.getPitch(),
-                client.player.getInventory().getSelectedSlot()
+                client.player.getPitch()
         ));
 
-        boolean use = client.options.useKey.isPressed();
-        if (use && !lastUse && isHoldingActualPossessionItem(client)) {
-            SafeClientNetworking.send(new PossessionPackets.StopC2S());
-        } else if (!use && lastUse) {
-            SafeClientNetworking.send(new PossessionPackets.ActionC2S(PossessionPackets.ActionC2S.RELEASE_USE));
+        if (cancellingUse && !client.options.useKey.isPressed()) {
+            cancellingUse = false;
         }
-        lastUse = use;
     }
 
     public static boolean isHoldingActualPossessionItem(MinecraftClient client) {

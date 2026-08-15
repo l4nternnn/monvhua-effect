@@ -29,7 +29,7 @@ public class PossessionItem extends Item {
             controller.sendMessage(Text.literal("Cannot focus while silenced."), true);
             return ActionResult.FAIL;
         }
-        PossessionManager.start(controller, target);
+        PossessionManager.start(controller, target, hand);
         return ActionResult.SUCCESS;
     }
 

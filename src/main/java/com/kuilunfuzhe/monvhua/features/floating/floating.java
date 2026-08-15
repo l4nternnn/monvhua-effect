@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.floating;
 
 import com.kuilunfuzhe.monvhua.config.GlobalConfigManager;
+import com.kuilunfuzhe.monvhua.features.possession.PossessionManager;
 import com.kuilunfuzhe.monvhua.item.config.FloatingConfig;
 import com.kuilunfuzhe.monvhua.network.general_stage.GeneralStagePackets.GlobalConfigS2C;
 import net.minecraft.entity.player.PlayerEntity;
@@ -245,7 +246,11 @@ public class floating {
         java.util.UUID uuid = player.getUuid();
         int score = getMonvhuaScore(player);
         boolean hasTag = hasFullWitchTag(player);
-        updateFullWitchFlight(player);
+        if (PossessionManager.isTarget(player)) {
+            PossessionManager.enforceGroundMovement(player);
+        } else {
+            updateFullWitchFlight(player);
+        }
 
         // 分数 >= 90 的缓降处理
         if (score >= FULL_WITCH_SCORE) {
@@ -300,6 +305,13 @@ public class floating {
 
     public static void applyServerFloating(ServerPlayerEntity player, boolean active) {
         java.util.UUID uuid = player.getUuid();
+        if (active && PossessionManager.isTarget(player)) {
+            setServerFloating(uuid, true);
+            player.getAbilities().flying = false;
+            player.setNoGravity(false);
+            player.sendAbilitiesUpdate();
+            return;
+        }
         if (active && !canStartFloating(player)) {
             active = false;
         }

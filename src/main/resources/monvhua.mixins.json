@@ -33,7 +33,8 @@
 		"ServerCommonNetworkHandlerMixin",
 		"ThroughPhaseCollisionMixin",
 		"possession.PossessionMovementMixin",
-		"possession.PossessionNetworkInputMixin"
+		"possession.PossessionNetworkInputMixin",
+		"possession.PossessionS2CBridgeMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

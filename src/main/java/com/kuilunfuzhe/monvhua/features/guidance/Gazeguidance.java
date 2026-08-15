@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.guidance;
 
 import com.kuilunfuzhe.monvhua.event.tag_pitch;
+import com.kuilunfuzhe.monvhua.features.possession.PossessionManager;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.config.GazeConfig;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
@@ -219,6 +220,9 @@ public class Gazeguidance {
 					setTemporaryFocus(player, player.getWorld(), player.isSneaking());
 				} else {
 					endFocus(player);
+				}
+				if (player instanceof ServerPlayerEntity serverPlayer) {
+					PossessionManager.refreshControllerView(serverPlayer);
 				}
 			});
 		});

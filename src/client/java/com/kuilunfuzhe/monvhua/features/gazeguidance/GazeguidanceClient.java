@@ -4,6 +4,7 @@ import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.MarkedListPacket;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.RightClickActionPacket;
+import com.kuilunfuzhe.monvhua.features.possession.PossessionClient;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -31,6 +32,7 @@ public class GazeguidanceClient {
 	private static KeyBinding stageConfigKey;
 	/** 上一tick右键状态，用于上升沿检测 */
 	private static boolean lastRightClickState = false;
+	private static boolean lastPossessionState = false;
 	/** 当前诱导法杖阶段 */
 	private static int currentStrength = 0;
 	/** 当前能量值 */
@@ -122,6 +124,11 @@ public class GazeguidanceClient {
 			if (client.player == null) return;
 			// 右键长按检测
 			boolean rightPressed = client.options.useKey.isPressed();
+			boolean possessing = PossessionClient.isActive();
+			if (possessing != lastPossessionState) {
+				lastPossessionState = possessing;
+				lastRightClickState = rightPressed;
+			}
 			if (rightPressed != lastRightClickState) {
 				lastRightClickState = rightPressed;
 				ItemStack stack = client.player.getMainHandStack();
