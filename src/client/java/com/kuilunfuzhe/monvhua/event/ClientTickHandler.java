@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.event;
 
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityDebugClient;
+import com.kuilunfuzhe.monvhua.features.activity.UiActivityClient;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorClientManager;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
@@ -42,6 +43,7 @@ public class ClientTickHandler {
     public static void register() {
         // Main key handling tick
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            UiActivityClient.tick(client);
             ThroughClientManager.tick();
             AreaSelectClientManager.tick(client);
             ActionEditorFragment.tickActive();

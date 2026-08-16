@@ -19,6 +19,7 @@ import com.kuilunfuzhe.monvhua.features.action.ActionEngine;
 import com.kuilunfuzhe.monvhua.features.action.ActionExecutor;
 import com.kuilunfuzhe.monvhua.features.action.TimelineScheduler;
 import com.kuilunfuzhe.monvhua.features.area_tip.AreaTipFeature;
+import com.kuilunfuzhe.monvhua.features.activity.UiActivityServer;
 import com.kuilunfuzhe.monvhua.features.binding.PlayerBindingFeature;
 import com.kuilunfuzhe.monvhua.features.block.body.BodyPartManager;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryEvents;
@@ -683,6 +684,7 @@ public class MonvhuaMod implements ModInitializer {
         InjuredBleedingFeature.initialize();
         HotBackpackSaveFeature.initialize();
         PlayerBindingFeature.initialize();
+        UiActivityServer.initialize();
         ThroughItem.initialize(configManager);
         PossessionFeature.initialize();
         ModBlocks.initialize();

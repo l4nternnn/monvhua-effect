@@ -9,6 +9,7 @@ import com.kuilunfuzhe.monvhua.compat.DhCompat;
 import com.kuilunfuzhe.monvhua.compat.EmfCompat;
 import com.kuilunfuzhe.monvhua.features.carryentity.CarryTransformDebugCommand;
 import com.kuilunfuzhe.monvhua.features.area_tip.AreaTipClient;
+import com.kuilunfuzhe.monvhua.features.activity.UiActivityClient;
 import com.kuilunfuzhe.monvhua.features.binding.PlayerBindingClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceEnergyClient;
 import com.kuilunfuzhe.monvhua.features.dissolve.client.DissolveClientFeature;
@@ -119,6 +120,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         HotBackpackSaveClient.initialize();
         InjuredBleedingClient.initialize();
         PlayerBindingClient.initialize();
+        UiActivityClient.initialize();
         PossessionClient.initialize();
         initializeOptionalAxiomAreaTip();
         PaintOverlayClient.initialize();

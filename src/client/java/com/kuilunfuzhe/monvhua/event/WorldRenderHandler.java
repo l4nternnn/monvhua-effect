@@ -13,6 +13,7 @@ import com.kuilunfuzhe.monvhua.features.paint.PaintToolTargetPreviewRenderer;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.through.ThroughItem;
 import com.kuilunfuzhe.monvhua.renderer.bodypose.BodyPoseWorldPreviewRenderer;
+import com.kuilunfuzhe.monvhua.renderer.activity.UiActivityBubbleRenderer;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.AnchorButtonRenderer;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.BackTextureRenderer;
 import com.kuilunfuzhe.monvhua.renderer.picturerender.OrbitRenderer;
@@ -41,6 +42,7 @@ public class WorldRenderHandler {
             AnchorButtonRenderer.render(context.matrixStack(), context.consumers());
             // 身体姿势编辑器世界3D预览
             BodyPoseWorldPreviewRenderer.render(context.matrixStack(), context.consumers());
+            UiActivityBubbleRenderer.render(context);
             GravityAreaBoundaryRenderer.render(context);
             AreaTipAreaRenderer.render(context);
             PaintOverlayClient.render(context);

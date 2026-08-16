@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.network;
 
 import com.kuilunfuzhe.monvhua.network.camerawatch.*;
 import com.kuilunfuzhe.monvhua.network.action.ActionPackets;
+import com.kuilunfuzhe.monvhua.network.activity.UiActivityPackets;
 import com.kuilunfuzhe.monvhua.network.area_tip.AreaTipPackets;
 import com.kuilunfuzhe.monvhua.network.bodypose.ApplySkeletalPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
@@ -91,6 +92,7 @@ public class ModNetworking {
         FantasyS2CPacket.register();
         PlayerListRestrictS2CPacket.register();
         DissolvePackets.registerS2C();
+        UiActivityPackets.registerS2C();
 
     }
 
@@ -134,5 +136,6 @@ public class ModNetworking {
         RequestSilenceTargetsC2SPacket.register();
         SecretPackets.registerC2S();
         DissolvePackets.registerC2S();
+        UiActivityPackets.registerC2S();
     }
 }
