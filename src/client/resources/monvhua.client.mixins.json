@@ -68,6 +68,8 @@
 		"DissolveLivingEntityRendererMixin",
 		"PlayerListHudMixin",
 		"possession.PossessionInputRedirectMixin",
+		"possession.PossessionFirstPersonHandMixin",
+		"possession.PossessionUseVisualStateMixin",
 		"possession.PossessionUseReleaseMixin",
 		"possession.PossessionSelectedSlotMixin",
 		"possession.PossessionHandStackMixin",

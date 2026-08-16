@@ -45,7 +45,7 @@ public final class PossessionFeature {
                 context.server().execute(() -> PossessionManager.stopByController(context.player(), context.server())));
         ServerPlayNetworking.registerGlobalReceiver(PossessionPackets.InputC2S.ID, (packet, context) ->
                 context.server().execute(() -> PossessionManager.applyInput(
-                        context.player(), packet.input(), packet.yaw(), packet.pitch())));
+                        context.player(), packet.sequence(), packet.input(), packet.yaw(), packet.pitch())));
         ServerPlayNetworking.registerGlobalReceiver(PossessionPackets.SelectSlotC2S.ID, (packet, context) ->
                 context.server().execute(() -> PossessionManager.selectTargetSlot(context.player(), packet.slot())));
         ServerPlayNetworking.registerGlobalReceiver(PossessionPackets.ActionC2S.ID, (packet, context) ->

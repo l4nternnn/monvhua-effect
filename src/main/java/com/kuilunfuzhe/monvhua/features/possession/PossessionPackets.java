@@ -9,6 +9,7 @@ import net.minecraft.network.codec.PacketCodecs;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.Hand;
 import net.minecraft.util.Uuids;
 import net.minecraft.util.PlayerInput;
 
@@ -29,6 +30,8 @@ public final class PossessionPackets {
 
     public static void registerS2C() {
         StateS2C.register();
+        VisualStateS2C.register();
+        SwingS2C.register();
         HotbarS2C.register();
         InventoryS2C.register();
     }
@@ -51,9 +54,10 @@ public final class PossessionPackets {
         }
     }
 
-    public record InputC2S(PlayerInput input, float yaw, float pitch) implements CustomPayload {
+    public record InputC2S(int sequence, PlayerInput input, float yaw, float pitch) implements CustomPayload {
         public static final Id<InputC2S> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "possession_input"));
         public static final PacketCodec<PacketByteBuf, InputC2S> CODEC = PacketCodec.tuple(
+                PacketCodecs.INTEGER, InputC2S::sequence,
                 PlayerInput.PACKET_CODEC, InputC2S::input,
                 PacketCodecs.FLOAT, InputC2S::yaw,
                 PacketCodecs.FLOAT, InputC2S::pitch,
@@ -138,6 +142,72 @@ public final class PossessionPackets {
 
         public static StateS2C inactive() {
             return new StateS2C(false, -1, new UUID(0L, 0L), -1);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record VisualStateS2C(boolean sprinting, boolean sneaking, boolean using, Hand activeHand) implements CustomPayload {
+        public static final Id<VisualStateS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "possession_visual_state"));
+        public static final PacketCodec<PacketByteBuf, VisualStateS2C> CODEC = PacketCodec.ofStatic(
+                VisualStateS2C::write,
+                VisualStateS2C::read
+        );
+        private static boolean registered = false;
+
+        private static void write(PacketByteBuf buf, VisualStateS2C packet) {
+            buf.writeBoolean(packet.sprinting());
+            buf.writeBoolean(packet.sneaking());
+            buf.writeBoolean(packet.using());
+            buf.writeVarInt(packet.activeHand().ordinal());
+        }
+
+        private static VisualStateS2C read(PacketByteBuf buf) {
+            boolean sprinting = buf.readBoolean();
+            boolean sneaking = buf.readBoolean();
+            boolean using = buf.readBoolean();
+            Hand hand = buf.readVarInt() == Hand.OFF_HAND.ordinal() ? Hand.OFF_HAND : Hand.MAIN_HAND;
+            return new VisualStateS2C(sprinting, sneaking, using, hand);
+        }
+
+        public static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+    }
+
+    public record SwingS2C(Hand hand) implements CustomPayload {
+        public static final Id<SwingS2C> ID = new Id<>(Identifier.of(MonvhuaMod.MOD_ID, "possession_swing"));
+        public static final PacketCodec<PacketByteBuf, SwingS2C> CODEC = PacketCodec.ofStatic(
+                SwingS2C::write,
+                SwingS2C::read
+        );
+        private static boolean registered = false;
+
+        private static void write(PacketByteBuf buf, SwingS2C packet) {
+            buf.writeVarInt(packet.hand().ordinal());
+        }
+
+        private static SwingS2C read(PacketByteBuf buf) {
+            Hand hand = buf.readVarInt() == Hand.OFF_HAND.ordinal() ? Hand.OFF_HAND : Hand.MAIN_HAND;
+            return new SwingS2C(hand);
         }
 
         public static void register() {

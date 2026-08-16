@@ -7,7 +7,9 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.LivingEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.Hand;
 import net.minecraft.util.PlayerInput;
 import net.minecraft.util.math.MathHelper;
 
@@ -33,6 +35,13 @@ public final class PossessionClient {
     private static float lookTargetYaw;
     private static float lookTargetPitch;
     private static int lookInterpolationFrame;
+    private static int nextInputSequence;
+    private static PlayerInput lastSentInput = PlayerInput.DEFAULT;
+    private static float lastSentYaw = Float.NaN;
+    private static float lastSentPitch = Float.NaN;
+    private static int inputHeartbeatTicks;
+    private static boolean visualUsing;
+    private static Hand visualActiveHand = Hand.MAIN_HAND;
 
     private PossessionClient() {
     }
@@ -42,6 +51,10 @@ public final class PossessionClient {
         Arrays.fill(targetInventory, ItemStack.EMPTY);
         ClientPlayNetworking.registerGlobalReceiver(PossessionPackets.StateS2C.ID, (packet, context) ->
                 context.client().execute(() -> applyState(context.client(), packet)));
+        ClientPlayNetworking.registerGlobalReceiver(PossessionPackets.VisualStateS2C.ID, (packet, context) ->
+                context.client().execute(() -> applyVisualState(context.client(), packet)));
+        ClientPlayNetworking.registerGlobalReceiver(PossessionPackets.SwingS2C.ID, (packet, context) ->
+                context.client().execute(() -> applySwing(context.client(), packet)));
         ClientPlayNetworking.registerGlobalReceiver(PossessionPackets.HotbarS2C.ID, (packet, context) ->
                 context.client().execute(() -> applyHotbar(packet)));
         ClientPlayNetworking.registerGlobalReceiver(PossessionPackets.InventoryS2C.ID, (packet, context) ->
@@ -49,11 +62,15 @@ public final class PossessionClient {
         ClientPlayNetworking.registerGlobalReceiver(PortalPackets.RemoteChunkS2C.ID, (packet, context) ->
                 context.client().execute(() -> PossessionRemoteChunkCache.load(context.client(), packet)));
 
-        ClientTickEvents.END_CLIENT_TICK.register(PossessionClient::tick);
+        ClientTickEvents.START_CLIENT_TICK.register(PossessionClient::tick);
     }
 
     public static boolean isActive() {
         return active;
+    }
+
+    public static boolean isVisualUsing() {
+        return active && visualUsing;
     }
 
     public static Entity getTargetEntity(MinecraftClient client) {
@@ -163,8 +180,18 @@ public final class PossessionClient {
         lookInitialized = false;
         if (active) {
             PossessionRemoteChunkCache.clear();
+            nextInputSequence = 0;
+            lastSentInput = PlayerInput.DEFAULT;
+            lastSentYaw = Float.NaN;
+            lastSentPitch = Float.NaN;
+            inputHeartbeatTicks = 0;
         }
         if (!active && client.player != null) {
+            if (visualUsing) {
+                client.player.clearActiveItem();
+            }
+            visualUsing = false;
+            visualActiveHand = Hand.MAIN_HAND;
             client.cameraEntity = client.player;
             if (client.currentScreen instanceof PossessionInventoryScreen) {
                 client.setScreen(null);
@@ -173,6 +200,39 @@ public final class PossessionClient {
             clearInventory();
             lockedWandSlot = -1;
             PossessionRemoteChunkCache.clear();
+        }
+    }
+
+    private static void applyVisualState(MinecraftClient client, PossessionPackets.VisualStateS2C packet) {
+        if (!active) {
+            return;
+        }
+        Entity target = getTargetEntity(client);
+        if (target instanceof LivingEntity livingTarget) {
+            livingTarget.setSprinting(packet.sprinting());
+            livingTarget.setSneaking(packet.sneaking());
+        }
+        if (client.player == null) {
+            return;
+        }
+        boolean wasVisualUsing = visualUsing;
+        visualUsing = packet.using();
+        visualActiveHand = packet.activeHand();
+        if (visualUsing) {
+            if (!client.player.isUsingItem() || client.player.getActiveHand() != visualActiveHand) {
+                if (client.player.isUsingItem()) {
+                    client.player.clearActiveItem();
+                }
+                client.player.setCurrentHand(visualActiveHand);
+            }
+        } else if (wasVisualUsing) {
+            client.player.clearActiveItem();
+        }
+    }
+
+    private static void applySwing(MinecraftClient client, PossessionPackets.SwingS2C packet) {
+        if (active && client.player != null) {
+            client.player.swingHand(packet.hand(), true);
         }
     }
 
@@ -228,11 +288,21 @@ public final class PossessionClient {
                 client.options.sneakKey.isPressed(),
                 client.options.sprintKey.isPressed()
         );
-        SafeClientNetworking.send(new PossessionPackets.InputC2S(
-                input,
-                client.player.getYaw(),
-                client.player.getPitch()
-        ));
+        float yaw = client.player.getYaw();
+        float pitch = client.player.getPitch();
+        boolean changed = !input.equals(lastSentInput) || yaw != lastSentYaw || pitch != lastSentPitch;
+        if (changed || ++inputHeartbeatTicks >= 2) {
+            SafeClientNetworking.send(new PossessionPackets.InputC2S(
+                    nextInputSequence++,
+                    input,
+                    yaw,
+                    pitch
+            ));
+            lastSentInput = input;
+            lastSentYaw = yaw;
+            lastSentPitch = pitch;
+            inputHeartbeatTicks = 0;
+        }
 
         if (cancellingUse && !client.options.useKey.isPressed()) {
             cancellingUse = false;

@@ -37,6 +37,7 @@
 		"possession.PossessionBlockStateSyncMixin",
 		"possession.PossessionBlockEntitySyncMixin",
 		"possession.PossessionEntitySyncMixin",
+		"possession.PossessionSwingMirrorMixin",
 		"possession.PossessionS2CBridgeMixin"
 	],
 	"injectors": {
