@@ -14,6 +14,7 @@ public final class UiActivityBubblePipelines {
                     .withLocation(Identifier.of(MonvhuaMod.MOD_ID, "pipeline/ui_activity_bubble"))
                     .withVertexShader(Identifier.of(MonvhuaMod.MOD_ID, "core/ui_activity_bubble"))
                     .withFragmentShader(Identifier.of(MonvhuaMod.MOD_ID, "core/ui_activity_bubble"))
+                    .withSampler("Sampler0")
                     .withVertexFormat(VertexFormats.POSITION_TEXTURE_COLOR, VertexFormat.DrawMode.QUADS)
                     .withBlend(BlendFunction.TRANSLUCENT)
                     .withDepthWrite(false)

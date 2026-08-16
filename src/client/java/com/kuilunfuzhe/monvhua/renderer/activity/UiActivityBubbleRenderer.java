@@ -1,27 +1,42 @@
 package com.kuilunfuzhe.monvhua.renderer.activity;
 
 import com.kuilunfuzhe.monvhua.features.activity.UiActivityClient;
+import com.kuilunfuzhe.monvhua.features.activity.UiActivityBubbleSize;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import com.kuilunfuzhe.monvhua.features.gravity.SurfaceGravityBasis;
 import com.kuilunfuzhe.monvhua.features.gravity.SurfaceGravityClientEngine;
+import com.kuilunfuzhe.monvhua.features.activity.emotion.EmotionTextureManager;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.EntityDimensions;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
+import net.minecraft.util.Identifier;
 
 public final class UiActivityBubbleRenderer {
     private static final double MAX_DISTANCE_SQUARED = 48.0D * 48.0D;
-    private static final double HEAD_OFFSET = 0.48D;
-    private static final float WIDTH = 0.92F;
-    private static final float HEIGHT = 0.62F;
+    private static final double NAME_LABEL_EXTRA_HEIGHT = 0.50D;
+    private static final double NAME_LABEL_CLEARANCE = 0.12D;
+    private static final double TAIL_TO_CENTER = 0.38D;
+    private static final float WIDTH = 0.92F * 4.0F / 3.0F;
+    private static final float HEIGHT = 0.62F * 4.0F / 3.0F;
     private static final int DOT_CYCLE_TICKS = 24;
+    private static volatile float sizeMultiplier = UiActivityBubbleSize.DEFAULT_MULTIPLIER;
 
     private UiActivityBubbleRenderer() {
+    }
+
+    public static void setSizeMultiplier(float multiplier) {
+        sizeMultiplier = UiActivityBubbleSize.sanitize(multiplier);
+    }
+
+    public static float sizeMultiplier() {
+        return sizeMultiplier;
     }
 
     public static void render(WorldRenderContext context) {
@@ -35,8 +50,6 @@ public final class UiActivityBubbleRenderer {
         double animationTime = client.world.getTime() + tickProgress;
         Vec3d cameraPos = context.camera().getPos();
         MatrixStack matrices = context.matrixStack();
-        VertexConsumer vertices = context.consumers().getBuffer(UiActivityBubbleRenderLayers.bubble());
-
         for (PlayerEntity player : client.world.getPlayers()) {
             UiActivityClient.VisualState state = UiActivityClient.stateFor(player.getUuid());
             if (state == null || !shouldRender(client, player, cameraPos)) {
@@ -56,7 +69,19 @@ public final class UiActivityBubbleRenderer {
             float dotPhase = reveal >= 0.999F
                     ? (float) (animationTime % DOT_CYCLE_TICKS) / DOT_CYCLE_TICKS
                     : 0.0F;
-            drawBubble(vertices, matrices, context, bubblePos, reveal, dotPhase, state.contentId());
+            long animationMillis = (long) (animationTime * 50.0D);
+            Identifier emotionTexture = EmotionTextureManager.textureFor(
+                    state.contentId(),
+                    true,
+                    animationMillis
+            );
+            int effectiveContentId = emotionTexture == null ? 0 : state.contentId();
+            VertexConsumer vertices = context.consumers().getBuffer(
+                    emotionTexture == null
+                            ? UiActivityBubbleRenderLayers.bubble()
+                            : UiActivityBubbleRenderLayers.bubble(emotionTexture)
+            );
+            drawBubble(vertices, matrices, context, bubblePos, reveal, dotPhase, effectiveContentId);
         }
     }
 
@@ -71,15 +96,28 @@ public final class UiActivityBubbleRenderer {
     }
 
     private static Vec3d bubblePosition(PlayerEntity player, float tickProgress) {
+        EntityDimensions dimensions = player.getDimensions(player.getPose());
+        double centerCorrection = (HEIGHT * (sizeMultiplier - 1.0F)) * 0.5D;
         if (SurfaceGravityClientEngine.isRenderActive(player)) {
             Direction down = GravityMagic.getSurfaceGravityDirection(player);
             Vec3d up = SurfaceGravityBasis.of(down).up();
-            return SurfaceGravityClientEngine.eyePos(player, tickProgress).add(up.multiply(HEAD_OFFSET));
+            Vec3d eye = SurfaceGravityClientEngine.eyePos(player, tickProgress);
+            Vec3d bodyTop = eye.add(up.multiply(dimensions.height() - dimensions.eyeHeight()));
+            return bodyTop.add(up.multiply(NAME_LABEL_EXTRA_HEIGHT + NAME_LABEL_CLEARANCE + TAIL_TO_CENTER
+                    + centerCorrection));
         }
-        return player.getLerpedPos(tickProgress).add(0.0D, player.getStandingEyeHeight() + HEAD_OFFSET, 0.0D);
+        return player.getLerpedPos(tickProgress).add(
+                0.0D,
+                dimensions.height() + NAME_LABEL_EXTRA_HEIGHT + NAME_LABEL_CLEARANCE + TAIL_TO_CENTER
+                        + centerCorrection,
+                0.0D
+        );
     }
 
     private static float revealProgress(UiActivityClient.VisualState state, double animationTime) {
+        if (state.isPendingHide()) {
+            return 1.0F;
+        }
         if (state.isHiding()) {
             float hidden = MathHelper.clamp(
                     (float) ((animationTime - state.hidingAtGameTime()) / UiActivityClient.HIDE_DURATION_TICKS),
@@ -101,8 +139,8 @@ public final class UiActivityBubbleRenderer {
         int revealByte = Math.round(reveal * 255.0F);
         int dotPhaseByte = Math.round(dotPhase * 255.0F);
         int contentByte = Math.clamp(contentId, 0, 255);
-        float halfWidth = WIDTH * 0.5F;
-        float halfHeight = HEIGHT * 0.5F;
+        float halfWidth = WIDTH * sizeMultiplier * 0.5F;
+        float halfHeight = HEIGHT * sizeMultiplier * 0.5F;
 
         matrices.push();
         matrices.translate(

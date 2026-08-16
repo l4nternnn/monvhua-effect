@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "entries": [
+    { "id": 1, "file": "1.gif", "type": "gif" },
+    { "id": 2, "file": "2.gif", "type": "gif" },
+    { "id": 3, "file": "3.gif", "type": "gif" },
+    { "id": 4, "file": "4.gif", "type": "gif" },
+    { "id": 5, "file": "5.gif", "type": "gif" },
+    { "id": 6, "file": "6.gif", "type": "gif" },
+    { "id": 7, "file": "7.gif", "type": "gif" },
+    { "id": 8, "file": "8.gif", "type": "gif" },
+    { "id": 9, "file": "9.gif", "type": "gif" },
+    { "id": 10, "file": "10.gif", "type": "gif" },
+
+
+
+
+
+
+    { "id": 1001, "file": "1.jpg", "type": "image" },
+    { "id": 1002, "file": "2.jpg", "type": "image" }
+  ]
+}

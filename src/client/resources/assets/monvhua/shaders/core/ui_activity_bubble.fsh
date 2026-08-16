@@ -5,6 +5,8 @@ in vec4 bubbleParameters;
 
 out vec4 fragColor;
 
+uniform sampler2D Sampler0;
+
 const float PI = 3.14159265359;
 const vec3 OUTLINE_COLOR = vec3(0.035, 0.035, 0.04);
 const vec3 FILL_COLOR = vec3(0.98, 0.985, 0.97);
@@ -81,11 +83,22 @@ void main() {
     float thirdJump = step(0.0, thirdSlot) * step(thirdSlot, 1.0)
         * sin(PI * clamp(thirdSlot, 0.0, 1.0)) * 0.055;
 
+    float hasContent = step(0.5 / 255.0, bubbleParameters.b);
     float dots = 0.0;
     dots = max(dots, circleMask(p, vec2(-0.14, 0.055 + firstJump), 0.034));
     dots = max(dots, circleMask(p, vec2(0.0, 0.055 + secondJump), 0.034));
     dots = max(dots, circleMask(p, vec2(0.14, 0.055 + thirdJump), 0.034));
-    color = mix(color, OUTLINE_COLOR, dots * fillMask);
+    color = mix(color, OUTLINE_COLOR, dots * fillMask * (1.0 - hasContent));
+
+    vec2 imageUv = vec2(
+        (p.x + 0.345) / 0.69,
+        1.0 - ((p.y + 0.085) / 0.29)
+    );
+    float imageRegion = step(0.0, imageUv.x) * step(imageUv.x, 1.0)
+        * step(0.0, imageUv.y) * step(imageUv.y, 1.0);
+    vec4 imageColor = texture(Sampler0, clamp(imageUv, 0.0, 1.0));
+    float imageAmount = hasContent * imageRegion * fillMask * imageColor.a;
+    color = mix(color, imageColor.rgb, imageAmount);
 
     vec2 tailUv = vec2(0.147, 0.056);
     vec2 oppositeUv = vec2(0.94, 0.94);

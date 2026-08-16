@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.network.activity;
 
+import com.kuilunfuzhe.monvhua.features.activity.UiActivityBubbleSize;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
@@ -18,6 +19,7 @@ public final class UiActivityPackets {
 
     public static void registerS2C() {
         StateS2C.register();
+        BubbleSizeS2C.register();
     }
 
     public enum Activity {
@@ -44,7 +46,7 @@ public final class UiActivityPackets {
         }
     }
 
-    public record StateC2S(Activity activity) implements CustomPayload {
+    public record StateC2S(Activity activity, int contentId) implements CustomPayload {
         public static final Id<StateC2S> ID = new Id<>(Identifier.of("monvhua", "ui_activity_state_c2s"));
         public static final PacketCodec<RegistryByteBuf, StateC2S> CODEC =
                 PacketCodec.of(StateC2S::write, StateC2S::new);
@@ -52,14 +54,16 @@ public final class UiActivityPackets {
 
         public StateC2S {
             activity = activity == null ? Activity.NONE : activity;
+            contentId = Math.max(0, contentId);
         }
 
         private StateC2S(RegistryByteBuf buf) {
-            this(Activity.fromId(buf.readUnsignedByte()));
+            this(Activity.fromId(buf.readUnsignedByte()), buf.readVarInt());
         }
 
         private void write(RegistryByteBuf buf) {
             buf.writeByte(activity.id());
+            buf.writeVarInt(contentId);
         }
 
         @Override
@@ -96,6 +100,37 @@ public final class UiActivityPackets {
             buf.writeByte(activity.id());
             buf.writeLong(changedAtGameTime);
             buf.writeVarInt(contentId);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        private static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record BubbleSizeS2C(float multiplier) implements CustomPayload {
+        public static final Id<BubbleSizeS2C> ID = new Id<>(Identifier.of("monvhua", "ui_activity_bubble_size_s2c"));
+        public static final PacketCodec<RegistryByteBuf, BubbleSizeS2C> CODEC =
+                PacketCodec.of(BubbleSizeS2C::write, BubbleSizeS2C::new);
+        private static boolean registered;
+
+        public BubbleSizeS2C {
+            multiplier = UiActivityBubbleSize.sanitize(multiplier);
+        }
+
+        private BubbleSizeS2C(RegistryByteBuf buf) {
+            this(buf.readFloat());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeFloat(multiplier);
         }
 
         @Override

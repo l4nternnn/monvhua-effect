@@ -3,6 +3,9 @@ package com.kuilunfuzhe.monvhua.features.activity;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.network.activity.UiActivityPackets;
 import com.kuilunfuzhe.monvhua.renderer.activity.UiActivityBubblePipelines;
+import com.kuilunfuzhe.monvhua.renderer.activity.UiActivityBubbleRenderer;
+import com.kuilunfuzhe.monvhua.features.activity.emotion.EmotionTextureManager;
+import com.kuilunfuzhe.monvhua.features.activity.emotion.EmotionPickerClient;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
@@ -22,6 +25,8 @@ public final class UiActivityClient {
     private static final long NOT_HIDING = Long.MIN_VALUE;
     private static final Map<UUID, VisualState> REMOTE_STATES = new HashMap<>();
     private static UiActivityPackets.Activity lastSentActivity = UiActivityPackets.Activity.NONE;
+    private static int lastSentContentId;
+    private static int selectedContentId;
     private static boolean initialized;
 
     private UiActivityClient() {
@@ -33,9 +38,13 @@ public final class UiActivityClient {
         }
         initialized = true;
         UiActivityBubblePipelines.initialize();
+        EmotionTextureManager.initialize();
+        EmotionPickerClient.initialize();
 
         ClientPlayNetworking.registerGlobalReceiver(UiActivityPackets.StateS2C.ID, (packet, context) ->
                 context.client().execute(() -> receive(packet)));
+        ClientPlayNetworking.registerGlobalReceiver(UiActivityPackets.BubbleSizeS2C.ID, (packet, context) ->
+                context.client().execute(() -> UiActivityBubbleRenderer.setSizeMultiplier(packet.multiplier())));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> clear());
     }
 
@@ -46,20 +55,41 @@ public final class UiActivityClient {
         }
 
         UiActivityPackets.Activity current = activityFor(client.currentScreen);
-        if (current != lastSentActivity
-                && SafeClientNetworking.send(new UiActivityPackets.StateC2S(current))) {
+        int currentContentId = current == UiActivityPackets.Activity.CHAT ? selectedContentId : 0;
+        boolean leavingChat = lastSentActivity == UiActivityPackets.Activity.CHAT
+                && current != UiActivityPackets.Activity.CHAT;
+        if ((current != lastSentActivity || currentContentId != lastSentContentId)
+                && SafeClientNetworking.send(new UiActivityPackets.StateC2S(current, currentContentId))) {
             lastSentActivity = current;
+            lastSentContentId = currentContentId;
+            if (leavingChat) {
+                selectedContentId = 0;
+            }
         }
 
         long worldTime = client.world.getTime();
-        REMOTE_STATES.entrySet().removeIf(entry -> {
+        var iterator = REMOTE_STATES.entrySet().iterator();
+        while (iterator.hasNext()) {
+            var entry = iterator.next();
             VisualState state = entry.getValue();
-            return state.isHiding() && worldTime - state.hidingAtGameTime() > HIDE_DURATION_TICKS + 2L;
-        });
+            if (state.isPendingHide() && shouldBeginFade(state, worldTime)) {
+                entry.setValue(state.beginFade(worldTime));
+            } else if (state.isHiding() && worldTime - state.hidingAtGameTime() > HIDE_DURATION_TICKS + 2L) {
+                iterator.remove();
+            }
+        }
     }
 
     public static VisualState stateFor(UUID playerUuid) {
         return REMOTE_STATES.get(playerUuid);
+    }
+
+    public static int selectedContentId() {
+        return selectedContentId;
+    }
+
+    public static void selectContent(int contentId) {
+        selectedContentId = EmotionCatalog.isValidId(contentId) ? contentId : 0;
     }
 
     private static UiActivityPackets.Activity activityFor(Screen screen) {
@@ -78,7 +108,7 @@ public final class UiActivityClient {
             if (previous == null) {
                 return;
             }
-            REMOTE_STATES.put(packet.playerUuid(), previous.startHiding(packet.changedAtGameTime()));
+            REMOTE_STATES.put(packet.playerUuid(), previous.requestHide(packet.changedAtGameTime()));
             return;
         }
 
@@ -86,18 +116,35 @@ public final class UiActivityClient {
                 packet.activity(),
                 packet.changedAtGameTime(),
                 NOT_HIDING,
+                NOT_HIDING,
                 packet.contentId()
         ));
+    }
+
+    private static boolean shouldBeginFade(VisualState state, long worldTime) {
+        long elapsedTicks = Math.max(0L, worldTime - state.hideRequestedAtGameTime());
+        if (state.contentId() <= 0) {
+            return true;
+        }
+        EmotionCatalog.Entry entry = EmotionCatalog.byId(state.contentId());
+        if (entry == null || entry.type() == EmotionCatalog.Type.IMAGE) {
+            return elapsedTicks >= EmotionTextureManager.IMAGE_EXIT_HOLD_TICKS;
+        }
+        return EmotionTextureManager.hasPlayedLoops(state.contentId(), elapsedTicks * 50L, 2);
     }
 
     private static void clear() {
         REMOTE_STATES.clear();
         lastSentActivity = UiActivityPackets.Activity.NONE;
+        lastSentContentId = 0;
+        selectedContentId = 0;
+        UiActivityBubbleRenderer.setSizeMultiplier(UiActivityBubbleSize.DEFAULT_MULTIPLIER);
     }
 
     public record VisualState(
             UiActivityPackets.Activity activity,
             long shownAtGameTime,
+            long hideRequestedAtGameTime,
             long hidingAtGameTime,
             int contentId
     ) {
@@ -105,8 +152,18 @@ public final class UiActivityClient {
             return hidingAtGameTime != NOT_HIDING;
         }
 
-        private VisualState startHiding(long gameTime) {
-            return isHiding() ? this : new VisualState(activity, shownAtGameTime, gameTime, contentId);
+        public boolean isPendingHide() {
+            return hideRequestedAtGameTime != NOT_HIDING && !isHiding();
+        }
+
+        private VisualState requestHide(long gameTime) {
+            return isHiding() || isPendingHide()
+                    ? this
+                    : new VisualState(activity, shownAtGameTime, gameTime, NOT_HIDING, contentId);
+        }
+
+        private VisualState beginFade(long gameTime) {
+            return new VisualState(activity, shownAtGameTime, hideRequestedAtGameTime, gameTime, contentId);
         }
     }
 }
