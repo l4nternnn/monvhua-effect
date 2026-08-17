@@ -25,7 +25,8 @@ public final class UiActivityPackets {
     public enum Activity {
         NONE(0),
         CHAT(1),
-        INVENTORY(2);
+        INVENTORY(2),
+        WRITING(3);
 
         private final int id;
 
@@ -41,6 +42,7 @@ public final class UiActivityPackets {
             return switch (id) {
                 case 1 -> CHAT;
                 case 2 -> INVENTORY;
+                case 3 -> WRITING;
                 default -> NONE;
             };
         }

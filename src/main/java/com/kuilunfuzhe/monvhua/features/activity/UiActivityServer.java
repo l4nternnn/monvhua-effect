@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 
 public final class UiActivityServer {
+    private static final int MAGIC_DIARY_CONTENT_ID = 14;
     private static final Map<UUID, ActivityState> ACTIVE_PLAYERS = new HashMap<>();
     private static boolean initialized;
 
@@ -67,10 +68,11 @@ public final class UiActivityServer {
         UiActivityPackets.Activity previousActivity = previous == null
                 ? UiActivityPackets.Activity.NONE
                 : previous.activity();
-        int nextContentId = nextActivity == UiActivityPackets.Activity.CHAT
-                && EmotionCatalog.isValidId(requestedContentId)
-                ? requestedContentId
-                : 0;
+        int nextContentId = switch (nextActivity) {
+            case CHAT -> EmotionCatalog.isValidId(requestedContentId) ? requestedContentId : 0;
+            case WRITING -> MAGIC_DIARY_CONTENT_ID;
+            default -> 0;
+        };
         int previousContentId = previous == null ? 0 : previous.contentId();
         if (previousActivity == nextActivity && previousContentId == nextContentId) {
             return;

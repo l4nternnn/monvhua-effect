@@ -11,7 +11,7 @@ final class EmotionProceduralPreviewRenderer {
 
     static void render(DrawContext context, int contentId, int x, int y, int width, int height,
                        long millis, boolean animate) {
-        long cycle = contentId == 11 ? 1600L : contentId == 12 ? 1200L : 1800L;
+        long cycle = contentId == 11 ? 1600L : contentId == 12 ? 1200L : contentId == 14 ? 3200L : 1800L;
         double phase = animate ? (millis % cycle) / (double) cycle : 0.72;
         if (contentId == 11) {
             renderSleep(context, x, y, width, height, phase);
@@ -19,6 +19,8 @@ final class EmotionProceduralPreviewRenderer {
             renderScribble(context, x, y, width, height, phase);
         } else if (contentId == 13) {
             renderQuestions(context, x, y, width, height, phase);
+        } else if (contentId == 14) {
+            renderMagicDiary(context, x, y, width, height, phase);
         }
     }
 
@@ -54,11 +56,56 @@ final class EmotionProceduralPreviewRenderer {
                     + (strand == 1 ? .4 : strand == 2 ? -.3 : 0.0);
             double[] previous = scribblePoint(cx, cy, 0.0, seed, strandPhase, w, h);
             for (int i = 1; i <= 12; i++) {
-                double t = Math.PI * 2.0 * i / 12.0;
+                double t = i / 12.0;
                 double[] next = scribblePoint(cx, cy, t, seed, strandPhase, w, h);
                 line(c, previous[0], previous[1], next[0], next[1], 2, COLOR);
                 previous = next;
             }
+        }
+        line(c, x + w * .22, y + h * .40, x + w * .78, y + h * .62, 1, COLOR);
+        line(c, x + w * .28, y + h * .66, x + w * .80, y + h * .35, 1, COLOR);
+        renderMagicWriting(c, x, y, w, h, phase);
+    }
+
+    private static void renderMagicWriting(DrawContext c, int x, int y, int w, int h, double phase) {
+        for (int row = 0; row < 2; row++) {
+            for (int column = 0; column < 8; column++) {
+                double left = x + w * (.17 + column * .085);
+                double top = y + h * (.40 + row * .19);
+                double glyph = (column + row * 11) * 7 + Math.floor(phase * 13.0);
+                double skew = ((glyph % 5.0) - 2.0) * .006 * w;
+                line(c, left, top + h * .035, left + w * .025 + skew, top, 1, COLOR);
+                line(c, left + w * .025 + skew, top, left + w * .042, top + h * .060, 1, COLOR);
+                if (((int) glyph & 1) == 0) {
+                    line(c, left + w * .010, top + h * .030, left + w * .045, top + h * .030, 1, COLOR);
+                }
+            }
+        }
+    }
+
+    private static void renderMagicDiary(DrawContext c, int x, int y, int w, int h, double phase) {
+        for (int row = 0; row < 5; row++) {
+            for (int page = 0; page < 2; page++) {
+                double pageCenter = x + w * (page == 0 ? .30 : .70);
+                for (int column = 0; column < 5; column++) {
+                    int sequence = row * 10 + page * 5 + column;
+                    if (phase * 55.0 < sequence - 1.0) {
+                        continue;
+                    }
+                    drawRune(c, pageCenter + (column - 2) * w * .070,
+                            y + h * (.36 + row * .090), w * .030, h * .040,
+                            sequence * 3.0 + 17.0, COLOR);
+                }
+            }
+        }
+    }
+
+    private static void drawRune(DrawContext c, double x, double y, double w, double h, double glyph, int color) {
+        double skew = ((glyph % 5.0) - 2.0) * w * .25;
+        line(c, x - w * .45, y + h * .35, x + skew, y - h * .38, 1, color);
+        line(c, x + skew, y - h * .38, x + w * .45, y + h * .38, 1, color);
+        if (((int) glyph & 1) == 0) {
+            line(c, x - w * .22, y, x + w * .35, y, 1, color);
         }
     }
 
@@ -103,14 +150,14 @@ final class EmotionProceduralPreviewRenderer {
 
     private static double[] scribblePoint(double cx, double cy, double t, double seed,
                                           double phase, int width, int height) {
-        double radiusX = width * (.25 + .048 * Math.sin(t * 3.0 + seed)
-                + .035 * Math.cos(t * 7.0 - seed));
-        double radiusY = height * (.19 + .042 * Math.cos(t * 4.0 - seed)
-                + .025 * Math.sin(t * 9.0 + seed));
-        double angle = t + .30 * Math.sin(t * 2.0 + seed) + phase * .45;
+        double centerBias = t * 2.0 - 1.0;
+        double px = centerBias * width * .30 + width * .15 * Math.sin(t * 5.0 + seed + phase * 1.7)
+                + width * .065 * Math.sin(t * 11.0 - seed);
+        double py = height * .03 + height * .25 * Math.sin(t * 3.0 + seed + phase * 1.2)
+                + height * .11 * Math.cos(t * 8.0 - seed + phase * .7);
         return new double[]{
-                cx + Math.cos(angle) * radiusX + width * .043 * Math.sin(t * 5.0 + seed),
-                cy + Math.sin(angle) * radiusY + height * .043 * Math.cos(t * 6.0 - seed)
+                cx + px,
+                cy + py
         };
     }
 

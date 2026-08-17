@@ -10,6 +10,7 @@ import java.util.Map;
 
 public final class UiActivityBubbleRenderLayers {
     private static final Identifier DEFAULT_TEXTURE = Identifier.ofVanilla("textures/block/white_concrete.png");
+    private static final Identifier MAGIC_FONT_TEXTURE = Identifier.ofVanilla("textures/font/ascii_sga.png");
     private static final RenderPhase.Texturing IRIS_BUBBLE_BYPASS = new RenderPhase.Texturing(
             "monvhua_iris_activity_bubble_bypass",
             ActivityIrisCompat::beginBubbleRender,
@@ -37,7 +38,10 @@ public final class UiActivityBubbleRenderLayers {
                 true,
                 UiActivityBubblePipelines.BUBBLE,
                 RenderLayer.MultiPhaseParameters.builder()
-                        .texture(RenderPhase.Textures.create().add(texture, false).build())
+                        .texture(RenderPhase.Textures.create()
+                                .add(texture, false)
+                                .add(MAGIC_FONT_TEXTURE, false)
+                                .build())
                         .texturing(IRIS_BUBBLE_BYPASS)
                         .build(false)
         );

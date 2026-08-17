@@ -73,10 +73,11 @@ public final class EmotionCatalog {
                     case "PROCEDURAL" -> Type.PROCEDURAL;
                     default -> Type.IMAGE;
                 };
-                String file = type == Type.PROCEDURAL ? "" : getString(object, "file");
+                String file = getString(object, "file");
                 String effect = type == Type.PROCEDURAL ? getString(object, "effect") : "";
+                boolean validResource = file.isBlank() || isSafeFile(file);
                 if (id <= 0 || id > 255 || usedIds.putIfAbsent(id, Boolean.TRUE) != null
-                        || (type == Type.PROCEDURAL ? !isSafeEffect(effect) : !isSafeFile(file))) {
+                        || (type == Type.PROCEDURAL ? !isSafeEffect(effect) || !validResource : !isSafeFile(file))) {
                     continue;
                 }
                 entries.add(new Entry(
@@ -84,7 +85,7 @@ public final class EmotionCatalog {
                         file,
                         type,
                         effect,
-                        type == Type.PROCEDURAL ? null : Identifier.of(MonvhuaMod.MOD_ID, "textures/emotion/" + file)
+                        file.isBlank() ? null : Identifier.of(MonvhuaMod.MOD_ID, "textures/emotion/" + file)
                 ));
             }
             return entries;
@@ -110,7 +111,8 @@ public final class EmotionCatalog {
     private static boolean isSafeEffect(String effect) {
         return "sleep_z".equals(effect)
                 || "confused_scribble".equals(effect)
-                || "questions".equals(effect);
+                || "questions".equals(effect)
+                || "magic_diary".equals(effect);
     }
 
     public static boolean isProcedural(Entry entry) {
@@ -125,6 +127,7 @@ public final class EmotionCatalog {
             case "sleep_z" -> 1_600L;
             case "confused_scribble" -> 1_200L;
             case "questions" -> 1_800L;
+            case "magic_diary" -> 3_200L;
             default -> 1_000L;
         };
     }

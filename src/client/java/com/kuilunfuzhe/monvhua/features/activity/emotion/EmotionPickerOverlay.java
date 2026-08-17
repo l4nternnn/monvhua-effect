@@ -224,8 +224,37 @@ final class EmotionPickerOverlay {
         }
         EmotionCatalog.Entry entry = EmotionCatalog.byId(contentId);
         if (entry != null && entry.type() == EmotionCatalog.Type.PROCEDURAL) {
-            EmotionProceduralPreviewRenderer.render(context, contentId, cell.x() + inset, cell.y() + inset,
-                    cell.width() - inset * 2, cell.height() - inset * 2, Util.getMeasuringTimeMs(), animate);
+            int previewX = cell.x() + inset;
+            int previewY = cell.y() + inset;
+            int previewWidth = cell.width() - inset * 2;
+            int previewHeight = cell.height() - inset * 2;
+            if (entry.resourceId() != null) {
+                int sourceWidth = 1792;
+                int sourceHeight = 1450;
+                double scale = Math.min((double) previewWidth / sourceWidth, (double) previewHeight / sourceHeight);
+                int drawWidth = Math.max(1, (int) Math.round(sourceWidth * scale));
+                int drawHeight = Math.max(1, (int) Math.round(sourceHeight * scale));
+                previewX += (previewWidth - drawWidth) / 2;
+                previewY += (previewHeight - drawHeight) / 2;
+                previewWidth = drawWidth;
+                previewHeight = drawHeight;
+                context.drawTexture(
+                        RenderPipelines.GUI_TEXTURED,
+                        entry.resourceId(),
+                        previewX,
+                        previewY,
+                        128,
+                        280,
+                        previewWidth,
+                        previewHeight,
+                        sourceWidth,
+                        sourceHeight,
+                        2048,
+                        2048
+                );
+            }
+            EmotionProceduralPreviewRenderer.render(context, contentId, previewX, previewY,
+                    previewWidth, previewHeight, Util.getMeasuringTimeMs(), animate);
             return;
         }
         Identifier texture = EmotionTextureManager.textureForPreview(contentId, animate, Util.getMeasuringTimeMs());

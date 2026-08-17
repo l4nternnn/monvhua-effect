@@ -6,6 +6,7 @@ in vec4 bubbleParameters;
 out vec4 fragColor;
 
 uniform sampler2D Sampler0;
+uniform sampler2D Sampler1;
 
 const float PI = 3.14159265359;
 const vec3 OUTLINE_COLOR = vec3(0.035, 0.035, 0.04);
@@ -115,21 +116,21 @@ float sleepZMask(vec2 p, float phase) {
 }
 
 vec2 scribblePoint(float t, float seed, float phase) {
-    float radiusX = 0.13 + 0.025 * sin(t * 3.0 + seed) + 0.018 * cos(t * 7.0 - seed);
-    float radiusY = 0.090 + 0.020 * cos(t * 4.0 - seed) + 0.012 * sin(t * 9.0 + seed);
-    float angle = t + 0.30 * sin(t * 2.0 + seed) + phase * 0.45;
-    vec2 point = vec2(cos(angle) * radiusX, sin(angle) * radiusY);
-    point += vec2(0.022 * sin(t * 5.0 + seed), 0.018 * cos(t * 6.0 - seed));
-    return point + vec2(0.0, 0.055);
+    float centerBias = t * 2.0 - 1.0;
+    float x = centerBias * 0.16 + 0.080 * sin(t * 5.0 + seed + phase * 1.7)
+        + 0.035 * sin(t * 11.0 - seed);
+    float y = 0.055 + 0.090 * sin(t * 3.0 + seed + phase * 1.2)
+        + 0.040 * cos(t * 8.0 - seed + phase * 0.7);
+    return vec2(x, y);
 }
 
 float scribbleStrand(vec2 p, float seed, float phase) {
     float mask = 0.0;
     vec2 previous = scribblePoint(0.0, seed, phase);
     for (int index = 1; index <= 12; index++) {
-        float t = 6.2831853 * float(index) / 12.0;
+        float t = float(index) / 12.0;
         vec2 next = scribblePoint(t, seed, phase);
-        mask = max(mask, roundLineMask(p, previous, next, 0.011));
+        mask = max(mask, roundLineMask(p, previous, next, 0.012));
         previous = next;
     }
     return mask;
@@ -139,11 +140,44 @@ float scribbleMask(vec2 p, float phase) {
     float mask = scribbleStrand(p, 0.7, phase);
     mask = max(mask, scribbleStrand(p, 2.4, phase * 1.13 + 0.4));
     mask = max(mask, scribbleStrand(p, 4.9, phase * 0.87 - 0.3));
+    mask = max(mask, scribbleStrand(p, 7.1, phase * 1.31 + 1.1));
+    mask = max(mask, roundLineMask(p, vec2(-0.13, 0.02), vec2(0.12, 0.10), 0.009));
+    mask = max(mask, roundLineMask(p, vec2(-0.10, 0.11), vec2(0.13, -0.01), 0.009));
+    return mask;
+}
+
+float magicRuneMask(vec2 p, vec2 center, vec2 size, float glyph) {
+    vec2 cell = (p - center) / size;
+    float inside = step(abs(cell.x), 0.5) * step(abs(cell.y), 0.5);
+    float glyphIndex = mod(glyph, 26.0);
+    float atlasColumn = glyphIndex < 15.0 ? glyphIndex + 1.0 : glyphIndex - 15.0;
+    float atlasRow = glyphIndex < 15.0 ? 4.0 : 5.0;
+    vec2 atlasUv = vec2((atlasColumn + cell.x + 0.5) / 16.0,
+        (atlasRow + cell.y + 0.5) / 16.0);
+    return inside * texture(Sampler1, atlasUv).a;
+}
+
+float diaryWritingMask(vec2 p, float phase) {
+    float mask = 0.0;
+    for (int row = 0; row < 5; row++) {
+        for (int page = 0; page < 2; page++) {
+            for (int column = 0; column < 5; column++) {
+                float sequence = float(row * 10 + page * 5 + column);
+                float pageOffset = page == 0 ? -0.16 : 0.16;
+                float glyph = sequence * 3.0 + 17.0;
+                // World UV Y is opposite to DrawContext Y: row zero must be at the visual top.
+                vec2 center = vec2(pageOffset + (float(column) - 2.0) * 0.041,
+                    0.130 - float(row) * 0.045);
+                float reveal = smoothstep(sequence - 1.0, sequence + 0.25, phase * 55.0);
+                mask = max(mask, magicRuneMask(p, center, vec2(0.043, 0.057), glyph) * reveal);
+            }
+        }
+    }
     return mask;
 }
 
 float questionGlyph(vec2 p, vec2 center, float angle) {
-    vec2 q = rotatePoint(p - center, -angle);
+    vec2 q = rotatePoint(vec2(p.x - center.x, -(p.y - center.y)), -angle);
     float mask = cubicStroke(q, vec2(0.0, -0.085), vec2(0.035, -0.090),
         vec2(0.070, -0.070), vec2(0.065, -0.025), 0.013);
     mask = max(mask, cubicStroke(q, vec2(0.065, -0.025), vec2(0.060, 0.010),
@@ -207,7 +241,7 @@ void main() {
 
     int contentId = int(floor(bubbleParameters.b * 255.0 + 0.5));
     float hasContent = step(0.5 / 255.0, bubbleParameters.b);
-    float procedural = step(10.5, float(contentId)) * step(float(contentId), 13.5);
+    float procedural = step(10.5, float(contentId)) * step(float(contentId), 14.5);
     float dots = 0.0;
     dots = max(dots, circleMask(p, vec2(-0.14, 0.055 + firstJump), 0.034));
     dots = max(dots, circleMask(p, vec2(0.0, 0.055 + secondJump), 0.034));
@@ -224,6 +258,20 @@ void main() {
     float imageAmount = hasContent * (1.0 - procedural) * imageRegion * fillMask * imageColor.a;
     color = mix(color, imageColor.rgb, imageAmount);
 
+    if (contentId == 14) {
+        // 11.png contains generous margins; crop them while keeping the page artwork in the body.
+        // Map the visible body (roughly v=.30.. .90) to the complete page crop.
+        vec2 diaryUv = vec2(localUv.x, 0.10 + (0.90 - localUv.y) * 1.3333333);
+        vec4 diaryImage = texture(Sampler0, clamp(diaryUv, 0.0, 1.0));
+        float bodyFill = 1.0 - smoothstep(
+            -strokeWidth - edgeAA,
+            -strokeWidth + edgeAA,
+            body
+        );
+        float diaryRegion = step(-0.36, p.x) * step(p.x, 0.36) * bodyFill;
+        color = mix(color, diaryImage.rgb, diaryRegion * diaryImage.a);
+    }
+
     float proceduralMask = 0.0;
     if (contentId == 11) {
         proceduralMask = sleepZMask(p, bubbleParameters.g);
@@ -231,6 +279,8 @@ void main() {
         proceduralMask = scribbleMask(p, bubbleParameters.g);
     } else if (contentId == 13) {
         proceduralMask = questionsMask(p, bubbleParameters.g);
+    } else if (contentId == 14) {
+        proceduralMask = diaryWritingMask(p, bubbleParameters.g);
     }
     color = mix(color, OUTLINE_COLOR, proceduralMask * fillMask);
 

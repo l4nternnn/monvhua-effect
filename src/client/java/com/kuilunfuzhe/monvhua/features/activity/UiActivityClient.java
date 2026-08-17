@@ -11,6 +11,9 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.screen.ingame.AbstractSignEditScreen;
+import net.minecraft.client.gui.screen.ingame.BookEditScreen;
+import net.minecraft.client.gui.screen.ingame.BookSigningScreen;
 import net.minecraft.client.gui.screen.ingame.CreativeInventoryScreen;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 
@@ -21,6 +24,7 @@ import java.util.UUID;
 public final class UiActivityClient {
     public static final int REVEAL_DURATION_TICKS = 12;
     public static final int HIDE_DURATION_TICKS = 6;
+    private static final int MAGIC_DIARY_CONTENT_ID = 14;
 
     private static final long NOT_HIDING = Long.MIN_VALUE;
     private static final Map<UUID, VisualState> REMOTE_STATES = new HashMap<>();
@@ -55,14 +59,18 @@ public final class UiActivityClient {
         }
 
         UiActivityPackets.Activity current = activityFor(client.currentScreen);
-        int currentContentId = current == UiActivityPackets.Activity.CHAT ? selectedContentId : 0;
-        boolean leavingChat = lastSentActivity == UiActivityPackets.Activity.CHAT
+        int currentContentId = switch (current) {
+            case CHAT -> selectedContentId;
+            case WRITING -> MAGIC_DIARY_CONTENT_ID;
+            default -> 0;
+        };
+        boolean leavingManualChat = lastSentActivity == UiActivityPackets.Activity.CHAT
                 && current != UiActivityPackets.Activity.CHAT;
         if ((current != lastSentActivity || currentContentId != lastSentContentId)
                 && SafeClientNetworking.send(new UiActivityPackets.StateC2S(current, currentContentId))) {
             lastSentActivity = current;
             lastSentContentId = currentContentId;
-            if (leavingChat) {
+            if (leavingManualChat) {
                 selectedContentId = 0;
             }
         }
@@ -93,6 +101,11 @@ public final class UiActivityClient {
     }
 
     private static UiActivityPackets.Activity activityFor(Screen screen) {
+        if (screen instanceof AbstractSignEditScreen
+                || screen instanceof BookEditScreen
+                || screen instanceof BookSigningScreen) {
+            return UiActivityPackets.Activity.WRITING;
+        }
         if (screen instanceof ChatScreen) {
             return UiActivityPackets.Activity.CHAT;
         }

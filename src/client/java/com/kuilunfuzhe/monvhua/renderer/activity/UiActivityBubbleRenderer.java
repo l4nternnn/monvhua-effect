@@ -75,8 +75,8 @@ public final class UiActivityBubbleRenderer {
                     : 0.0F;
             EmotionCatalog.Entry emotion = EmotionCatalog.byId(state.contentId());
             boolean procedural = EmotionCatalog.isProcedural(emotion);
-            Identifier emotionTexture = procedural ? null : EmotionTextureManager.textureFor(
-                    state.contentId(), true, animationMillis);
+            Identifier emotionTexture = procedural && emotion != null ? emotion.resourceId()
+                    : EmotionTextureManager.textureFor(state.contentId(), true, animationMillis);
             int effectiveContentId = procedural || emotionTexture != null ? state.contentId() : 0;
             float effectPhase = procedural
                     ? (animationMillis % EmotionCatalog.animationCycleMillis(emotion))

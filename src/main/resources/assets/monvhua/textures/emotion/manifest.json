@@ -14,13 +14,14 @@
     { "id": 11, "type": "procedural", "effect": "sleep_z" },
     { "id": 12, "type": "procedural", "effect": "confused_scribble" },
     { "id": 13, "type": "procedural", "effect": "questions" },
+    { "id": 14, "file": "11.png", "type": "procedural", "effect": "magic_diary" },
 
 
 
 
 
 
-    { "id": 14, "file": "1.jpg", "type": "image" },
-    { "id": 15, "file": "2.jpg", "type": "image" }
+    { "id": 15, "file": "1.jpg", "type": "image" },
+    { "id": 16, "file": "2.jpg", "type": "image" }
   ]
 }
