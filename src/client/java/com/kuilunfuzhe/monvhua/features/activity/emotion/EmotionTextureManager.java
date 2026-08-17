@@ -31,13 +31,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class EmotionTextureManager {
     private static final int TEXTURE_WIDTH = 512;
     private static final int TEXTURE_HEIGHT = 256;
     public static final long IMAGE_EXIT_HOLD_TICKS = 40L;
     private static final long GIF_EXIT_FALLBACK_TICKS = 60L;
+    private static final long IDLE_ANIMATION_RELEASE_MILLIS = 5_000L;
     private static final Map<Integer, TextureSlot> SLOTS = new HashMap<>();
+    private static final ExecutorService DECODE_EXECUTOR = Executors.newFixedThreadPool(2, runnable -> {
+        Thread thread = new Thread(runnable, "monvhua-emotion-decode");
+        thread.setDaemon(true);
+        return thread;
+    });
     private static int generation;
     private static boolean initialized;
 
@@ -71,7 +79,11 @@ public final class EmotionTextureManager {
         if (entry == null) {
             return null;
         }
+        if (entry.type() == EmotionCatalog.Type.PROCEDURAL) {
+            return null;
+        }
         TextureSlot slot = SLOTS.computeIfAbsent(contentId, ignored -> new TextureSlot(entry));
+        slot.touch(timeMillis);
         slot.requestThumbnail();
         if (animate && entry.type() == EmotionCatalog.Type.GIF) {
             slot.requestAnimation();
@@ -87,12 +99,35 @@ public final class EmotionTextureManager {
         if (entry == null) {
             return null;
         }
+        if (entry.type() == EmotionCatalog.Type.PROCEDURAL) {
+            return null;
+        }
         if (animate && entry.type() == EmotionCatalog.Type.GIF) {
             return textureFor(contentId, true, timeMillis);
         }
         TextureSlot slot = SLOTS.computeIfAbsent(contentId, ignored -> new TextureSlot(entry));
+        slot.touch(timeMillis);
         slot.requestThumbnail();
         return slot.previewTexture == null ? null : slot.previewTextureId;
+    }
+
+    public static PreviewRegion previewRegion(int contentId) {
+        TextureSlot slot = SLOTS.get(contentId);
+        if (slot == null || slot.sourceWidth <= 0 || slot.sourceHeight <= 0) {
+            return null;
+        }
+        double scale = Math.min(
+                (double) TEXTURE_WIDTH / slot.sourceWidth,
+                (double) TEXTURE_HEIGHT / slot.sourceHeight
+        );
+        int width = Math.max(1, (int) Math.round(slot.sourceWidth * scale));
+        int height = Math.max(1, (int) Math.round(slot.sourceHeight * scale));
+        return new PreviewRegion(
+                (TEXTURE_WIDTH - width) / 2,
+                (TEXTURE_HEIGHT - height) / 2,
+                width,
+                height
+        );
     }
 
     public static boolean hasPlayedLoops(int contentId, long elapsedMillis, int loops) {
@@ -109,8 +144,18 @@ public final class EmotionTextureManager {
 
     public static void requestThumbnail(int contentId) {
         EmotionCatalog.Entry entry = EmotionCatalog.byId(contentId);
-        if (entry != null) {
+        if (entry != null && entry.type() != EmotionCatalog.Type.PROCEDURAL) {
             SLOTS.computeIfAbsent(contentId, ignored -> new TextureSlot(entry)).requestThumbnail();
+        }
+    }
+
+    public static void trimInactive(long nowMillis) {
+        for (TextureSlot slot : SLOTS.values()) {
+            if (slot.animation != null
+                    && !slot.animationLoading
+                    && nowMillis - slot.lastUseMillis > IDLE_ANIMATION_RELEASE_MILLIS) {
+                slot.releaseAnimation();
+            }
         }
     }
 
@@ -148,7 +193,7 @@ public final class EmotionTextureManager {
         return path;
     }
 
-    private static NativeImage decodeThumbnail(EmotionCatalog.Entry entry) throws IOException {
+    private static DecodedThumbnail decodeThumbnail(EmotionCatalog.Entry entry) throws IOException {
         Path path = assetPath(entry);
         if (entry.type() == EmotionCatalog.Type.GIF) {
             try (InputStream stream = Files.newInputStream(path);
@@ -163,7 +208,11 @@ public final class EmotionTextureManager {
                     Graphics2D graphics = canvas.createGraphics();
                     graphics.drawImage(frame, meta.left(), meta.top(), null);
                     graphics.dispose();
-                    return nativeImageFromBuffered(fitToCanvas(canvas));
+                    return new DecodedThumbnail(
+                            nativeImageFromBuffered(fitToCanvas(canvas)),
+                            size[0],
+                            size[1]
+                    );
                 } finally {
                     reader.dispose();
                 }
@@ -174,7 +223,11 @@ public final class EmotionTextureManager {
             if (image == null) {
                 throw new IOException("Unsupported emotion image: " + entry.file());
             }
-            return nativeImageFromBuffered(fitToCanvas(image));
+            return new DecodedThumbnail(
+                    nativeImageFromBuffered(fitToCanvas(image)),
+                    image.getWidth(),
+                    image.getHeight()
+            );
         }
     }
 
@@ -218,7 +271,12 @@ public final class EmotionTextureManager {
                         canvas = previous;
                     }
                 }
-                return new AnimatedData(List.copyOf(frames), Math.max(20, totalDuration));
+                return new AnimatedData(
+                        List.copyOf(frames),
+                        Math.max(20, totalDuration),
+                        size[0],
+                        size[1]
+                );
             } finally {
                 reader.dispose();
             }
@@ -338,6 +396,10 @@ public final class EmotionTextureManager {
         private boolean thumbnailLoading;
         private boolean animationLoading;
         private int lastFrame = -1;
+        private long lastUpdatedMillis = Long.MIN_VALUE;
+        private long lastUseMillis;
+        private int sourceWidth = TEXTURE_WIDTH;
+        private int sourceHeight = TEXTURE_HEIGHT;
 
         private TextureSlot(EmotionCatalog.Entry entry) {
             this.entry = entry;
@@ -357,18 +419,20 @@ public final class EmotionTextureManager {
                 } catch (IOException exception) {
                     throw new RuntimeException(exception);
                 }
-            }).whenComplete((image, error) -> MinecraftClient.getInstance().execute(() -> {
+            }, DECODE_EXECUTOR).whenComplete((decoded, error) -> MinecraftClient.getInstance().execute(() -> {
                 thumbnailLoading = false;
                 if (error != null) {
                     MonvhuaMod.LOGGER.warn("Failed to load emotion thumbnail {}", entry.file(), error);
                     return;
                 }
                 if (requestedGeneration != generation || SLOTS.get(entry.id()) != this || texture != null) {
-                    image.close();
+                    decoded.image().close();
                     return;
                 }
-                NativeImage previewImage = copyNativeImage(image);
-                texture = new NativeImageBackedTexture(() -> "monvhua emotion " + entry.id(), image);
+                sourceWidth = decoded.sourceWidth();
+                sourceHeight = decoded.sourceHeight();
+                NativeImage previewImage = copyNativeImage(decoded.image());
+                texture = new NativeImageBackedTexture(() -> "monvhua emotion " + entry.id(), decoded.image());
                 previewTexture = new NativeImageBackedTexture(
                         () -> "monvhua emotion preview " + entry.id(),
                         previewImage
@@ -376,6 +440,10 @@ public final class EmotionTextureManager {
                 MinecraftClient.getInstance().getTextureManager().registerTexture(textureId, texture);
                 MinecraftClient.getInstance().getTextureManager().registerTexture(previewTextureId, previewTexture);
             }));
+        }
+
+        private void touch(long timeMillis) {
+            lastUseMillis = timeMillis;
         }
 
         private void requestAnimation() {
@@ -390,7 +458,7 @@ public final class EmotionTextureManager {
                 } catch (IOException exception) {
                     throw new RuntimeException(exception);
                 }
-            }).whenComplete((data, error) -> MinecraftClient.getInstance().execute(() -> {
+            }, DECODE_EXECUTOR).whenComplete((data, error) -> MinecraftClient.getInstance().execute(() -> {
                 animationLoading = false;
                 if (error != null) {
                     MonvhuaMod.LOGGER.warn("Failed to decode emotion GIF {}", entry.file(), error);
@@ -402,6 +470,8 @@ public final class EmotionTextureManager {
                 }
                 closeFrames();
                 animation = data;
+                sourceWidth = data.sourceWidth();
+                sourceHeight = data.sourceHeight();
                 lastFrame = -1;
                 if (texture == null) {
                     texture = new NativeImageBackedTexture(
@@ -424,6 +494,10 @@ public final class EmotionTextureManager {
             if (texture == null || animation == null) {
                 return;
             }
+            if (lastUpdatedMillis == timeMillis) {
+                return;
+            }
+            lastUpdatedMillis = timeMillis;
             int position = Math.floorMod(timeMillis, animation.totalDuration());
             int accumulated = 0;
             int frameIndex = 0;
@@ -442,6 +516,12 @@ public final class EmotionTextureManager {
             lastFrame = frameIndex;
         }
 
+        private void releaseAnimation() {
+            closeFrames();
+            lastFrame = -1;
+            lastUpdatedMillis = Long.MIN_VALUE;
+        }
+
         private void closeFrames() {
             if (animation != null) {
                 animation.close();
@@ -450,7 +530,13 @@ public final class EmotionTextureManager {
         }
     }
 
-    private record AnimatedData(List<Frame> frames, int totalDuration) {
+    private record DecodedThumbnail(NativeImage image, int sourceWidth, int sourceHeight) {
+    }
+
+    public record PreviewRegion(int x, int y, int width, int height) {
+    }
+
+    private record AnimatedData(List<Frame> frames, int totalDuration, int sourceWidth, int sourceHeight) {
         private void close() {
             for (Frame frame : frames) {
                 frame.image().close();

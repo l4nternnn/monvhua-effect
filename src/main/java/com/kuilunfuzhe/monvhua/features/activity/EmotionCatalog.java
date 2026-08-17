@@ -67,14 +67,25 @@ public final class EmotionCatalog {
                 }
                 JsonObject object = element.getAsJsonObject();
                 int id = object.get("id").getAsInt();
-                String file = object.get("file").getAsString();
                 String typeName = object.get("type").getAsString().toUpperCase(Locale.ROOT);
-                if (id <= 0 || id > 255 || usedIds.putIfAbsent(id, Boolean.TRUE) != null || !isSafeFile(file)) {
+                Type type = switch (typeName) {
+                    case "GIF" -> Type.GIF;
+                    case "PROCEDURAL" -> Type.PROCEDURAL;
+                    default -> Type.IMAGE;
+                };
+                String file = type == Type.PROCEDURAL ? "" : getString(object, "file");
+                String effect = type == Type.PROCEDURAL ? getString(object, "effect") : "";
+                if (id <= 0 || id > 255 || usedIds.putIfAbsent(id, Boolean.TRUE) != null
+                        || (type == Type.PROCEDURAL ? !isSafeEffect(effect) : !isSafeFile(file))) {
                     continue;
                 }
-                Type type = "GIF".equals(typeName) ? Type.GIF : Type.IMAGE;
-                entries.add(new Entry(id, file, type,
-                        Identifier.of(MonvhuaMod.MOD_ID, "textures/emotion/" + file)));
+                entries.add(new Entry(
+                        id,
+                        file,
+                        type,
+                        effect,
+                        type == Type.PROCEDURAL ? null : Identifier.of(MonvhuaMod.MOD_ID, "textures/emotion/" + file)
+                ));
             }
             return entries;
         } catch (Exception exception) {
@@ -92,11 +103,38 @@ public final class EmotionCatalog {
                 && file.equals(file.toLowerCase(Locale.ROOT));
     }
 
-    public enum Type {
-        IMAGE,
-        GIF
+    private static String getString(JsonObject object, String key) {
+        return object.has(key) && !object.get(key).isJsonNull() ? object.get(key).getAsString() : "";
     }
 
-    public record Entry(int id, String file, Type type, Identifier resourceId) {
+    private static boolean isSafeEffect(String effect) {
+        return "sleep_z".equals(effect)
+                || "confused_scribble".equals(effect)
+                || "questions".equals(effect);
+    }
+
+    public static boolean isProcedural(Entry entry) {
+        return entry != null && entry.type() == Type.PROCEDURAL;
+    }
+
+    public static long animationCycleMillis(Entry entry) {
+        if (!isProcedural(entry)) {
+            return 1_000L;
+        }
+        return switch (entry.effect()) {
+            case "sleep_z" -> 1_600L;
+            case "confused_scribble" -> 1_200L;
+            case "questions" -> 1_800L;
+            default -> 1_000L;
+        };
+    }
+
+    public enum Type {
+        IMAGE,
+        GIF,
+        PROCEDURAL
+    }
+
+    public record Entry(int id, String file, Type type, String effect, Identifier resourceId) {
     }
 }

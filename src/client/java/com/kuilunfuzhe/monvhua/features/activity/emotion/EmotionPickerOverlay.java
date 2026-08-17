@@ -143,7 +143,8 @@ final class EmotionPickerOverlay {
             return true;
         }
         candidateId = contentId;
-        if (contentId > 0) {
+        EmotionCatalog.Entry entry = EmotionCatalog.byId(contentId);
+        if (contentId > 0 && entry != null && entry.type() != EmotionCatalog.Type.PROCEDURAL) {
             EmotionTextureManager.textureFor(contentId, true, Util.getMeasuringTimeMs());
         }
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
@@ -221,22 +222,45 @@ final class EmotionPickerOverlay {
             }
             return;
         }
+        EmotionCatalog.Entry entry = EmotionCatalog.byId(contentId);
+        if (entry != null && entry.type() == EmotionCatalog.Type.PROCEDURAL) {
+            EmotionProceduralPreviewRenderer.render(context, contentId, cell.x() + inset, cell.y() + inset,
+                    cell.width() - inset * 2, cell.height() - inset * 2, Util.getMeasuringTimeMs(), animate);
+            return;
+        }
         Identifier texture = EmotionTextureManager.textureForPreview(contentId, animate, Util.getMeasuringTimeMs());
         if (texture == null) {
             context.drawTextWithShadow(screen.getTextRenderer(), "...", cell.x() + 18, cell.y() + 22, 0xFFB8BEC7);
             return;
         }
+        EmotionTextureManager.PreviewRegion region = EmotionTextureManager.previewRegion(contentId);
+        int availableWidth = cell.width() - inset * 2;
+        int availableHeight = cell.height() - inset * 2;
+        int drawWidth = availableWidth;
+        int drawHeight = availableHeight;
+        int drawX = cell.x() + inset;
+        int drawY = cell.y() + inset;
+        if (region != null) {
+            double scale = Math.min(
+                    (double) availableWidth / region.width(),
+                    (double) availableHeight / region.height()
+            );
+            drawWidth = Math.max(1, (int) Math.round(region.width() * scale));
+            drawHeight = Math.max(1, (int) Math.round(region.height() * scale));
+            drawX = cell.x() + (cell.width() - drawWidth) / 2;
+            drawY = cell.y() + (cell.height() - drawHeight) / 2;
+        }
         context.drawTexture(
                 RenderPipelines.GUI_TEXTURED,
                 texture,
-                cell.x() + inset,
-                cell.y() + inset,
-                0.0F,
-                0.0F,
-                cell.width() - inset * 2,
-                cell.height() - inset * 2,
-                512,
-                256,
+                drawX,
+                drawY,
+                region == null ? 0 : region.x(),
+                region == null ? 0 : region.y(),
+                drawWidth,
+                drawHeight,
+                region == null ? 512 : region.width(),
+                region == null ? 256 : region.height(),
                 512,
                 256
         );

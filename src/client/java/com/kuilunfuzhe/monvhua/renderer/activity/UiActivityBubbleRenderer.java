@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.renderer.activity;
 
 import com.kuilunfuzhe.monvhua.features.activity.UiActivityClient;
 import com.kuilunfuzhe.monvhua.features.activity.UiActivityBubbleSize;
+import com.kuilunfuzhe.monvhua.features.activity.EmotionCatalog;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import com.kuilunfuzhe.monvhua.features.gravity.SurfaceGravityBasis;
 import com.kuilunfuzhe.monvhua.features.gravity.SurfaceGravityClientEngine;
@@ -15,6 +16,7 @@ import net.minecraft.entity.EntityDimensions;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.Util;
 import org.joml.Matrix4f;
 import net.minecraft.util.Identifier;
 
@@ -48,6 +50,8 @@ public final class UiActivityBubbleRenderer {
 
         float tickProgress = client.getRenderTickCounter().getTickProgress(false);
         double animationTime = client.world.getTime() + tickProgress;
+        long animationMillis = Util.getMeasuringTimeMs();
+        EmotionTextureManager.trimInactive(animationMillis);
         Vec3d cameraPos = context.camera().getPos();
         MatrixStack matrices = context.matrixStack();
         for (PlayerEntity player : client.world.getPlayers()) {
@@ -69,19 +73,21 @@ public final class UiActivityBubbleRenderer {
             float dotPhase = reveal >= 0.999F
                     ? (float) (animationTime % DOT_CYCLE_TICKS) / DOT_CYCLE_TICKS
                     : 0.0F;
-            long animationMillis = (long) (animationTime * 50.0D);
-            Identifier emotionTexture = EmotionTextureManager.textureFor(
-                    state.contentId(),
-                    true,
-                    animationMillis
-            );
-            int effectiveContentId = emotionTexture == null ? 0 : state.contentId();
+            EmotionCatalog.Entry emotion = EmotionCatalog.byId(state.contentId());
+            boolean procedural = EmotionCatalog.isProcedural(emotion);
+            Identifier emotionTexture = procedural ? null : EmotionTextureManager.textureFor(
+                    state.contentId(), true, animationMillis);
+            int effectiveContentId = procedural || emotionTexture != null ? state.contentId() : 0;
+            float effectPhase = procedural
+                    ? (animationMillis % EmotionCatalog.animationCycleMillis(emotion))
+                        / (float) EmotionCatalog.animationCycleMillis(emotion)
+                    : dotPhase;
             VertexConsumer vertices = context.consumers().getBuffer(
                     emotionTexture == null
                             ? UiActivityBubbleRenderLayers.bubble()
                             : UiActivityBubbleRenderLayers.bubble(emotionTexture)
             );
-            drawBubble(vertices, matrices, context, bubblePos, reveal, dotPhase, effectiveContentId);
+            drawBubble(vertices, matrices, context, bubblePos, reveal, effectPhase, effectiveContentId);
         }
     }
 
