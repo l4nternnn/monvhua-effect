@@ -116,7 +116,8 @@ public final class EmotionCatalog {
         return "sleep_z".equals(effect)
                 || "confused_scribble".equals(effect)
                 || "questions".equals(effect)
-                || "magic_diary".equals(effect);
+                || "magic_diary".equals(effect)
+                || "eat_food".equals(effect);
     }
 
     private static boolean isSafeBlockDisplayEffect(String effect) {
@@ -136,6 +137,7 @@ public final class EmotionCatalog {
             case "confused_scribble" -> 1_200L;
             case "questions" -> 1_800L;
             case "magic_diary" -> 3_200L;
+            case "eat_food" -> 2_400L;
             default -> 1_000L;
         };
     }

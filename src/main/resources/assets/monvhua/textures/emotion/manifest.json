@@ -16,6 +16,7 @@
     { "id": 13, "type": "procedural", "effect": "questions" },
     { "id": 14, "file": "11.png", "type": "procedural", "effect": "magic_diary" },
     { "id": 17, "type": "block_display", "effect": "chest_open" },
+    { "id": 18, "type": "procedural", "effect": "eat_food" },
 
 
 

@@ -7,6 +7,7 @@ import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import com.kuilunfuzhe.monvhua.features.gravity.SurfaceGravityBasis;
 import com.kuilunfuzhe.monvhua.features.gravity.SurfaceGravityClientEngine;
 import com.kuilunfuzhe.monvhua.features.activity.emotion.EmotionTextureManager;
+import com.kuilunfuzhe.monvhua.features.activity.emotion.FoodAnimation;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.VertexConsumer;
@@ -74,6 +75,7 @@ public final class UiActivityBubbleRenderer {
             EmotionCatalog.Entry emotion = EmotionCatalog.byId(state.contentId());
             boolean procedural = EmotionCatalog.isProcedural(emotion);
             boolean blockDisplay = emotion != null && emotion.type() == EmotionCatalog.Type.BLOCK_DISPLAY;
+            boolean foodAnimation = FoodAnimation.isEatFood(state.contentId());
             Vec3d bubblePos = bubblePosition(player, tickProgress);
             if (bubblePos.squaredDistanceTo(cameraPos) > MAX_DISTANCE_SQUARED) {
                 continue;
@@ -89,11 +91,18 @@ public final class UiActivityBubbleRenderer {
                 blockTexturePrepared = true;
             }
 
-            Identifier emotionTexture = procedural && emotion != null ? emotion.resourceId()
+            Identifier emotionTexture = foodAnimation
+                    ? FoodAnimation.textureFor(player.getUuid(), state.effectStartedAtGameTime())
+                    : procedural && emotion != null ? emotion.resourceId()
                     : blockDisplay ? WorldDisplayTextureRenderer.textureId()
                     : EmotionTextureManager.textureFor(state.contentId(), true, animationMillis);
             int effectiveContentId = procedural || blockDisplay || emotionTexture != null
                     ? state.contentId() : 0;
+            if (foodAnimation) {
+                effectiveContentId = FoodAnimation.renderContentId(
+                        player.getUuid(), state.effectStartedAtGameTime()
+                );
+            }
             float effectPhase = procedural
                     ? (animationMillis % EmotionCatalog.animationCycleMillis(emotion))
                         / (float) EmotionCatalog.animationCycleMillis(emotion)

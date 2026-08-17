@@ -66,6 +66,81 @@ float easeOutCubic(float value) {
     return 1.0 - inverse * inverse * inverse;
 }
 
+// Each bite is a large circular cut with tangent small circles on its upper edge.
+// For a small radius r inside a large radius R, d=sqrt(R^2-r^2) puts both
+// endpoints of the small circle's tangent diameter on the large circle.
+float foodBiteShape(vec2 p, vec2 center, float fullRadius, float progress) {
+    float bigRadius = mix(0.001, fullRadius, progress);
+    float smallRadius = bigRadius * 0.34;
+    float diameterOffset = sqrt(max(bigRadius * bigRadius
+        - smallRadius * smallRadius, 0.0));
+    float mask = circleMask(p, center, bigRadius);
+    for (int index = 0; index < 4; index++) {
+        float angle = mix(0.35, 2.79, float(index) / 3.0);
+        vec2 radial = vec2(cos(angle), sin(angle));
+        mask = max(mask, circleMask(
+            p, center + radial * diameterOffset, smallRadius));
+    }
+    return mask;
+}
+
+vec2 foodBiteCenter(int index, float breadFood) {
+    if (index == 0) {
+        return mix(vec2(0.110, 0.137), vec2(0.115, 0.132), breadFood);
+    }
+    if (index == 1) {
+        return mix(vec2(0.110, 0.047), vec2(0.115, 0.032), breadFood);
+    }
+    if (index == 2) {
+        return mix(vec2(0.014, 0.101), vec2(0.010, 0.090), breadFood);
+    }
+    return mix(vec2(-0.093, -0.030), vec2(-0.103, -0.043), breadFood);
+}
+
+float foodBiteRadius(int index, float breadFood) {
+    if (index == 0) {
+        return mix(0.077, 0.087, breadFood);
+    }
+    if (index == 1) {
+        return mix(0.086, 0.100, breadFood);
+    }
+    if (index == 2) {
+        return mix(0.086, 0.094, breadFood);
+    }
+    return mix(0.099, 0.107, breadFood);
+}
+
+float foodBiteMask(vec2 p, float phase, float breadFood) {
+    // A bite reaches its cleanup radius before the next bite may begin.
+    float mask = 0.0;
+    for (int index = 0; index < 4; index++) {
+        float start = 0.12 + float(index) * 0.22;
+        float progress = smoothstep(start, start + 0.16, phase);
+        mask = max(mask, foodBiteShape(
+            p,
+            foodBiteCenter(index, breadFood),
+            foodBiteRadius(index, breadFood),
+            progress
+        ));
+    }
+    return mask;
+}
+
+float foodCrumbMask(vec2 p, float phase, float breadFood) {
+    float mask = 0.0;
+    for (int index = 0; index < 4; index++) {
+        float start = 0.12 + float(index) * 0.22;
+        float local = clamp((phase - start) / 0.16, 0.0, 1.0);
+        float appear = smoothstep(0.05, 0.32, local);
+        float fade = 1.0 - smoothstep(0.66, 1.0, local);
+        vec2 direction = mix(vec2(0.025, 0.050), vec2(0.031, 0.044), breadFood);
+        vec2 center = foodBiteCenter(index, breadFood) + direction * easeOutCubic(local);
+        mask = max(mask, circleMask(p, center, mix(0.009, 0.004, local))
+            * appear * fade);
+    }
+    return mask;
+}
+
 float roundLineMask(vec2 p, vec2 a, vec2 b, float width) {
     return max(lineMask(p, a, b, width),
         max(circleMask(p, a, width), circleMask(p, b, width)));
@@ -243,6 +318,9 @@ void main() {
     float hasContent = step(0.5 / 255.0, bubbleParameters.b);
     float procedural = step(10.5, float(contentId)) * step(float(contentId), 14.5);
     float blockDisplay = step(16.5, float(contentId)) * step(float(contentId), 17.5);
+    float appleFood = step(17.5, float(contentId)) * step(float(contentId), 18.5);
+    float breadFood = step(18.5, float(contentId)) * step(float(contentId), 19.5);
+    float eatFood = max(appleFood, breadFood);
     float dots = 0.0;
     dots = max(dots, circleMask(p, vec2(-0.14, 0.055 + firstJump), 0.034));
     dots = max(dots, circleMask(p, vec2(0.0, 0.055 + secondJump), 0.034));
@@ -255,13 +333,30 @@ void main() {
     );
     float imageRegion = step(0.0, imageUv.x) * step(imageUv.x, 1.0)
         * step(0.0, imageUv.y) * step(imageUv.y, 1.0);
-    vec2 sampledImageUv = blockDisplay > 0.5
-        ? vec2(imageUv.x, 1.0 - imageUv.y)
-        : imageUv;
+    const float foodWidth = 0.29 / 0.69;
+    float foodMinX = (1.0 - foodWidth) * 0.5;
+    float foodMaxX = foodMinX + foodWidth;
+    float foodRegion = step(foodMinX, imageUv.x) * step(imageUv.x, foodMaxX)
+        * step(0.0, imageUv.y) * step(imageUv.y, 1.0);
+    vec2 sampledImageUv = imageUv;
+    if (blockDisplay > 0.5) {
+        sampledImageUv = vec2(imageUv.x, 1.0 - imageUv.y);
+    } else if (eatFood > 0.5) {
+        // Map the complete square vanilla item texture into a square slot.
+        sampledImageUv = vec2((imageUv.x - foodMinX) / foodWidth, imageUv.y);
+    }
     vec4 imageColor = texture(Sampler0, clamp(sampledImageUv, 0.0, 1.0));
+    float biteMask = eatFood > 0.5
+        ? foodBiteMask(p, bubbleParameters.g, breadFood) : 0.0;
+    float contentRegion = eatFood > 0.5 ? foodRegion : imageRegion;
     float imageAmount = hasContent * (1.0 - procedural)
-        * imageRegion * fillMask * imageColor.a;
+        * contentRegion * fillMask * imageColor.a * (1.0 - biteMask);
     color = mix(color, imageColor.rgb, imageAmount);
+
+    if (eatFood > 0.5) {
+        float crumbs = foodCrumbMask(p, bubbleParameters.g, breadFood) * fillMask;
+        color = mix(color, vec3(0.70, 0.38, 0.12), crumbs);
+    }
 
     if (contentId == 14) {
         // 11.png contains generous margins; crop them while keeping the page artwork in the body.

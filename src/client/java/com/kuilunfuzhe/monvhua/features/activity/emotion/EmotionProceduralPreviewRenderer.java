@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.activity.emotion;
 
+import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.DrawContext;
 
 /** Small CPU preview of the shader effects used by the world bubble. */
@@ -12,7 +13,8 @@ final class EmotionProceduralPreviewRenderer {
     static void render(DrawContext context, int contentId, int x, int y, int width, int height,
                        long millis, boolean animate) {
         long cycle = contentId == 11 ? 1600L : contentId == 12 ? 1200L
-                : contentId == 14 ? 3200L : contentId == 17 ? 1800L : 1800L;
+                : contentId == 14 ? 3200L : contentId == 17 ? 1800L
+                : contentId == 18 ? FoodAnimation.CYCLE_MILLIS : 1800L;
         double phase = animate ? (millis % cycle) / (double) cycle : 0.72;
         if (contentId == 11) {
             renderSleep(context, x, y, width, height, phase);
@@ -24,6 +26,62 @@ final class EmotionProceduralPreviewRenderer {
             renderMagicDiary(context, x, y, width, height, phase);
         } else if (contentId == 17) {
             renderChest(context, x, y, width, height, phase);
+        } else if (contentId == 18) {
+            renderEatFood(context, x, y, width, height, phase, animate, millis);
+        }
+    }
+
+    private static void renderEatFood(DrawContext context, int x, int y, int width, int height,
+                                      double phase, boolean animate, long millis) {
+        FoodAnimation.Variant variant = FoodAnimation.variantForPreview(millis, animate);
+        FoodAnimation.BiteProfile profile = variant.biteProfile();
+        int size = Math.max(8, (int) Math.round(Math.min(width, height) * 0.64));
+        int left = x + (width - size) / 2;
+        int top = y + (height - size) / 2;
+        context.drawTexture(
+                RenderPipelines.GUI_TEXTURED,
+                variant.texture(),
+                left, top, 0.0F, 0.0F, size, size, 16, 16
+        );
+
+        int background = 0xFF242930;
+        for (int index = 0; index < 4; index++) {
+            double start = FoodAnimation.BITE_START_PHASE
+                    + index * FoodAnimation.BITE_INTERVAL;
+            double progress = smoothstep(
+                    start, start + FoodAnimation.BITE_DURATION, phase
+            );
+            double bigRadius = Math.max(1.0,
+                    size * (profile.radius()[index] / 0.29) * progress);
+            double smallRadius = bigRadius * 0.34;
+            double bigCenterX = left + size * (0.5 + profile.centerX()[index] / 0.29);
+            double bigCenterY = top + size * ((0.205 - profile.centerY()[index]) / 0.29);
+            circle(context, bigCenterX, bigCenterY, bigRadius, background);
+            double diameterOffset = Math.sqrt(Math.max(
+                    bigRadius * bigRadius - smallRadius * smallRadius, 0.0
+            ));
+            for (int circleIndex = 0; circleIndex < 4; circleIndex++) {
+                double angle = 0.35 + (2.79 - 0.35) * circleIndex / 3.0;
+                circle(context,
+                        bigCenterX + Math.cos(angle) * diameterOffset,
+                        bigCenterY - Math.sin(angle) * diameterOffset,
+                        smallRadius,
+                        background);
+            }
+
+            double local = clamp((phase - start) / FoodAnimation.BITE_DURATION);
+            double appear = smoothstep(0.05, 0.32, local);
+            double fade = 1.0 - smoothstep(0.66, 1.0, local);
+            double crumbOffsetX = variant == FoodAnimation.Variant.APPLE ? 0.025 : 0.031;
+            double crumbOffsetY = variant == FoodAnimation.Variant.APPLE ? 0.050 : 0.044;
+            double crumbStartX = bigCenterX + size * crumbOffsetX;
+            double crumbStartY = bigCenterY - size * crumbOffsetY;
+            double finishX = crumbStartX + size * crumbOffsetX;
+            double finishY = crumbStartY - size * (variant == FoodAnimation.Variant.APPLE ? 0.095 : 0.086);
+            double crumbX = crumbStartX + (finishX - crumbStartX) * easeOutCubic(local);
+            double crumbY = crumbStartY + (finishY - crumbStartY) * easeOutCubic(local);
+            circle(context, crumbX, crumbY, Math.max(1.0, width * 0.012),
+                    (((int) Math.round(255.0 * appear * fade)) << 24) | 0xB3631F);
         }
     }
 
@@ -176,6 +234,15 @@ final class EmotionProceduralPreviewRenderer {
     private static double easeOutCubic(double value) {
         double inverse = 1.0 - Math.max(0.0, Math.min(1.0, value));
         return 1.0 - inverse * inverse * inverse;
+    }
+
+    private static double clamp(double value) {
+        return Math.max(0.0, Math.min(1.0, value));
+    }
+
+    private static double smoothstep(double edge0, double edge1, double value) {
+        double t = clamp((value - edge0) / Math.max(0.0001, edge1 - edge0));
+        return t * t * (3.0 - 2.0 * t);
     }
 
     private static double[] scribblePoint(double cx, double cy, double t, double seed,
