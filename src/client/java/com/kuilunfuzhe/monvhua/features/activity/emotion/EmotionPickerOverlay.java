@@ -144,7 +144,8 @@ final class EmotionPickerOverlay {
         }
         candidateId = contentId;
         EmotionCatalog.Entry entry = EmotionCatalog.byId(contentId);
-        if (contentId > 0 && entry != null && entry.type() != EmotionCatalog.Type.PROCEDURAL) {
+        if (contentId > 0 && entry != null && entry.type() != EmotionCatalog.Type.PROCEDURAL
+                && entry.type() != EmotionCatalog.Type.BLOCK_DISPLAY) {
             EmotionTextureManager.textureFor(contentId, true, Util.getMeasuringTimeMs());
         }
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
@@ -223,12 +224,13 @@ final class EmotionPickerOverlay {
             return;
         }
         EmotionCatalog.Entry entry = EmotionCatalog.byId(contentId);
-        if (entry != null && entry.type() == EmotionCatalog.Type.PROCEDURAL) {
+        if (entry != null && (entry.type() == EmotionCatalog.Type.PROCEDURAL
+                || entry.type() == EmotionCatalog.Type.BLOCK_DISPLAY)) {
             int previewX = cell.x() + inset;
             int previewY = cell.y() + inset;
             int previewWidth = cell.width() - inset * 2;
             int previewHeight = cell.height() - inset * 2;
-            if (entry.resourceId() != null) {
+            if (entry.type() == EmotionCatalog.Type.PROCEDURAL && entry.resourceId() != null) {
                 int sourceWidth = 1792;
                 int sourceHeight = 1450;
                 double scale = Math.min((double) previewWidth / sourceWidth, (double) previewHeight / sourceHeight);

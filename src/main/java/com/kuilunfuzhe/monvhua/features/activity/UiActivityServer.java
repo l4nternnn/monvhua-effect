@@ -45,6 +45,7 @@ public final class UiActivityServer {
                         trackedPlayer.getUuid(),
                         UiActivityPackets.Activity.NONE,
                         trackedPlayer.getWorld().getTime(),
+                        trackedPlayer.getWorld().getTime(),
                         0
                 ));
             }
@@ -83,16 +84,20 @@ public final class UiActivityServer {
                 && nextActivity != UiActivityPackets.Activity.NONE
                 ? previous.shownAtGameTime()
                 : changedAt;
+        long effectStartedAt = previous != null && previousContentId == nextContentId
+                ? previous.effectStartedAtGameTime()
+                : changedAt;
         if (nextActivity == UiActivityPackets.Activity.NONE) {
             ACTIVE_PLAYERS.remove(uuid);
         } else {
-            ACTIVE_PLAYERS.put(uuid, new ActivityState(nextActivity, shownAt, nextContentId));
+            ACTIVE_PLAYERS.put(uuid, new ActivityState(nextActivity, shownAt, effectStartedAt, nextContentId));
         }
 
         UiActivityPackets.StateS2C update = new UiActivityPackets.StateS2C(
                 uuid,
                 nextActivity,
                 nextActivity == UiActivityPackets.Activity.NONE ? changedAt : shownAt,
+                nextActivity == UiActivityPackets.Activity.NONE ? changedAt : effectStartedAt,
                 nextContentId
         );
         for (ServerPlayerEntity watcher : PlayerLookup.tracking(source)) {
@@ -110,6 +115,7 @@ public final class UiActivityServer {
                 trackedPlayer.getUuid(),
                 state.activity(),
                 state.shownAtGameTime(),
+                state.effectStartedAtGameTime(),
                 state.contentId()
         ));
     }
@@ -126,6 +132,7 @@ public final class UiActivityServer {
         }
     }
 
-    private record ActivityState(UiActivityPackets.Activity activity, long shownAtGameTime, int contentId) {
+    private record ActivityState(UiActivityPackets.Activity activity, long shownAtGameTime,
+                                 long effectStartedAtGameTime, int contentId) {
     }
 }

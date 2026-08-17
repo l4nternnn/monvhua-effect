@@ -121,13 +121,14 @@ public final class UiActivityClient {
             if (previous == null) {
                 return;
             }
-            REMOTE_STATES.put(packet.playerUuid(), previous.requestHide(packet.changedAtGameTime()));
+            REMOTE_STATES.put(packet.playerUuid(), previous.requestHide(packet.shownAtGameTime()));
             return;
         }
 
         REMOTE_STATES.put(packet.playerUuid(), new VisualState(
                 packet.activity(),
-                packet.changedAtGameTime(),
+                packet.shownAtGameTime(),
+                packet.effectStartedAtGameTime(),
                 NOT_HIDING,
                 NOT_HIDING,
                 packet.contentId()
@@ -143,6 +144,9 @@ public final class UiActivityClient {
         if (entry == null || entry.type() == EmotionCatalog.Type.IMAGE) {
             return elapsedTicks >= EmotionTextureManager.IMAGE_EXIT_HOLD_TICKS;
         }
+        if (entry.type() == EmotionCatalog.Type.BLOCK_DISPLAY) {
+            return elapsedTicks >= 10L;
+        }
         return EmotionTextureManager.hasPlayedLoops(state.contentId(), elapsedTicks * 50L, 2);
     }
 
@@ -157,6 +161,7 @@ public final class UiActivityClient {
     public record VisualState(
             UiActivityPackets.Activity activity,
             long shownAtGameTime,
+            long effectStartedAtGameTime,
             long hideRequestedAtGameTime,
             long hidingAtGameTime,
             int contentId
@@ -172,11 +177,12 @@ public final class UiActivityClient {
         private VisualState requestHide(long gameTime) {
             return isHiding() || isPendingHide()
                     ? this
-                    : new VisualState(activity, shownAtGameTime, gameTime, NOT_HIDING, contentId);
+                    : new VisualState(activity, shownAtGameTime, effectStartedAtGameTime, gameTime, NOT_HIDING, contentId);
         }
 
         private VisualState beginFade(long gameTime) {
-            return new VisualState(activity, shownAtGameTime, hideRequestedAtGameTime, gameTime, contentId);
+            return new VisualState(activity, shownAtGameTime, effectStartedAtGameTime,
+                    hideRequestedAtGameTime, gameTime, contentId);
         }
     }
 }

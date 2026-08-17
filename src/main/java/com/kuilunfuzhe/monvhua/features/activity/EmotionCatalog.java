@@ -71,13 +71,17 @@ public final class EmotionCatalog {
                 Type type = switch (typeName) {
                     case "GIF" -> Type.GIF;
                     case "PROCEDURAL" -> Type.PROCEDURAL;
+                    case "BLOCK_DISPLAY" -> Type.BLOCK_DISPLAY;
                     default -> Type.IMAGE;
                 };
                 String file = getString(object, "file");
-                String effect = type == Type.PROCEDURAL ? getString(object, "effect") : "";
+                String effect = type == Type.PROCEDURAL || type == Type.BLOCK_DISPLAY
+                        ? getString(object, "effect") : "";
                 boolean validResource = file.isBlank() || isSafeFile(file);
                 if (id <= 0 || id > 255 || usedIds.putIfAbsent(id, Boolean.TRUE) != null
-                        || (type == Type.PROCEDURAL ? !isSafeEffect(effect) || !validResource : !isSafeFile(file))) {
+                        || (type == Type.PROCEDURAL ? !isSafeEffect(effect) || !validResource
+                        : type == Type.BLOCK_DISPLAY ? !isSafeBlockDisplayEffect(effect) || !file.isBlank()
+                        : !isSafeFile(file))) {
                     continue;
                 }
                 entries.add(new Entry(
@@ -115,6 +119,10 @@ public final class EmotionCatalog {
                 || "magic_diary".equals(effect);
     }
 
+    private static boolean isSafeBlockDisplayEffect(String effect) {
+        return "chest_open".equals(effect);
+    }
+
     public static boolean isProcedural(Entry entry) {
         return entry != null && entry.type() == Type.PROCEDURAL;
     }
@@ -135,7 +143,8 @@ public final class EmotionCatalog {
     public enum Type {
         IMAGE,
         GIF,
-        PROCEDURAL
+        PROCEDURAL,
+        BLOCK_DISPLAY
     }
 
     public record Entry(int id, String file, Type type, String effect, Identifier resourceId) {

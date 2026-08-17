@@ -81,7 +81,8 @@ public final class UiActivityPackets {
         }
     }
 
-    public record StateS2C(UUID playerUuid, Activity activity, long changedAtGameTime, int contentId)
+    public record StateS2C(UUID playerUuid, Activity activity, long shownAtGameTime,
+                           long effectStartedAtGameTime, int contentId)
             implements CustomPayload {
         public static final Id<StateS2C> ID = new Id<>(Identifier.of("monvhua", "ui_activity_state_s2c"));
         public static final PacketCodec<RegistryByteBuf, StateS2C> CODEC =
@@ -94,13 +95,14 @@ public final class UiActivityPackets {
         }
 
         private StateS2C(RegistryByteBuf buf) {
-            this(buf.readUuid(), Activity.fromId(buf.readUnsignedByte()), buf.readLong(), buf.readVarInt());
+            this(buf.readUuid(), Activity.fromId(buf.readUnsignedByte()), buf.readLong(), buf.readLong(), buf.readVarInt());
         }
 
         private void write(RegistryByteBuf buf) {
             buf.writeUuid(playerUuid);
             buf.writeByte(activity.id());
-            buf.writeLong(changedAtGameTime);
+            buf.writeLong(shownAtGameTime);
+            buf.writeLong(effectStartedAtGameTime);
             buf.writeVarInt(contentId);
         }
 

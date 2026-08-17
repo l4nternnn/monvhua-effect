@@ -79,7 +79,7 @@ public final class EmotionTextureManager {
         if (entry == null) {
             return null;
         }
-        if (entry.type() == EmotionCatalog.Type.PROCEDURAL) {
+        if (entry.type() == EmotionCatalog.Type.PROCEDURAL || entry.type() == EmotionCatalog.Type.BLOCK_DISPLAY) {
             return null;
         }
         TextureSlot slot = SLOTS.computeIfAbsent(contentId, ignored -> new TextureSlot(entry));
@@ -99,7 +99,7 @@ public final class EmotionTextureManager {
         if (entry == null) {
             return null;
         }
-        if (entry.type() == EmotionCatalog.Type.PROCEDURAL) {
+        if (entry.type() == EmotionCatalog.Type.PROCEDURAL || entry.type() == EmotionCatalog.Type.BLOCK_DISPLAY) {
             return null;
         }
         if (animate && entry.type() == EmotionCatalog.Type.GIF) {
@@ -144,7 +144,8 @@ public final class EmotionTextureManager {
 
     public static void requestThumbnail(int contentId) {
         EmotionCatalog.Entry entry = EmotionCatalog.byId(contentId);
-        if (entry != null && entry.type() != EmotionCatalog.Type.PROCEDURAL) {
+        if (entry != null && entry.type() != EmotionCatalog.Type.PROCEDURAL
+                && entry.type() != EmotionCatalog.Type.BLOCK_DISPLAY) {
             SLOTS.computeIfAbsent(contentId, ignored -> new TextureSlot(entry)).requestThumbnail();
         }
     }

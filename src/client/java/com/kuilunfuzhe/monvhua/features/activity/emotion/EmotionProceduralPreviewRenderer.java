@@ -11,7 +11,8 @@ final class EmotionProceduralPreviewRenderer {
 
     static void render(DrawContext context, int contentId, int x, int y, int width, int height,
                        long millis, boolean animate) {
-        long cycle = contentId == 11 ? 1600L : contentId == 12 ? 1200L : contentId == 14 ? 3200L : 1800L;
+        long cycle = contentId == 11 ? 1600L : contentId == 12 ? 1200L
+                : contentId == 14 ? 3200L : contentId == 17 ? 1800L : 1800L;
         double phase = animate ? (millis % cycle) / (double) cycle : 0.72;
         if (contentId == 11) {
             renderSleep(context, x, y, width, height, phase);
@@ -21,6 +22,35 @@ final class EmotionProceduralPreviewRenderer {
             renderQuestions(context, x, y, width, height, phase);
         } else if (contentId == 14) {
             renderMagicDiary(context, x, y, width, height, phase);
+        } else if (contentId == 17) {
+            renderChest(context, x, y, width, height, phase);
+        }
+    }
+
+    private static void renderChest(DrawContext c, int x, int y, int w, int h, double phase) {
+        double rawOpen = Math.min(1.0, phase / 0.42);
+        double open = 1.0 - Math.pow(1.0 - rawOpen, 3.0);
+        int left = (int) Math.round(x + w * .18);
+        int right = (int) Math.round(x + w * .82);
+        int baseTop = (int) Math.round(y + h * .52);
+        int baseBottom = (int) Math.round(y + h * .78);
+        int lidHeight = Math.max(4, (int) Math.round(h * .17));
+        int lidBottom = baseTop + 1;
+        int lidTop = (int) Math.round(lidBottom - lidHeight - open * h * .22);
+
+        c.fill(left, baseTop, right, baseBottom, 0xFF9A5F2B);
+        c.fill(left + 2, baseTop + 2, right - 2, baseBottom - 2, 0xFFC98844);
+        c.fill(left, baseTop, right, baseTop + 2, 0xFF5D351B);
+        c.fill(left + w / 2 - 2, baseTop + 5, left + w / 2 + 3, baseTop + 12, 0xFFEDD28B);
+        c.fill(left + w / 2 - 1, baseTop + 6, left + w / 2 + 2, baseTop + 11, 0xFF6C4A20);
+
+        c.fill(left, lidTop, right, lidBottom, 0xFF75431E);
+        c.fill(left + 2, lidTop + 2, right - 2, lidBottom - 2, 0xFFD4944A);
+        c.fill(left, lidTop, right, lidTop + 2, 0xFF4C2B17);
+        if (open > .05) {
+            int insideTop = lidBottom - 1;
+            int insideBottom = Math.min(baseTop + 5, insideTop + Math.max(2, (int) Math.round(open * h * .12)));
+            c.fill(left + 2, insideTop, right - 2, insideBottom, 0xFF2D1A10);
         }
     }
 

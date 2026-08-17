@@ -242,6 +242,7 @@ void main() {
     int contentId = int(floor(bubbleParameters.b * 255.0 + 0.5));
     float hasContent = step(0.5 / 255.0, bubbleParameters.b);
     float procedural = step(10.5, float(contentId)) * step(float(contentId), 14.5);
+    float blockDisplay = step(16.5, float(contentId)) * step(float(contentId), 17.5);
     float dots = 0.0;
     dots = max(dots, circleMask(p, vec2(-0.14, 0.055 + firstJump), 0.034));
     dots = max(dots, circleMask(p, vec2(0.0, 0.055 + secondJump), 0.034));
@@ -254,8 +255,12 @@ void main() {
     );
     float imageRegion = step(0.0, imageUv.x) * step(imageUv.x, 1.0)
         * step(0.0, imageUv.y) * step(imageUv.y, 1.0);
-    vec4 imageColor = texture(Sampler0, clamp(imageUv, 0.0, 1.0));
-    float imageAmount = hasContent * (1.0 - procedural) * imageRegion * fillMask * imageColor.a;
+    vec2 sampledImageUv = blockDisplay > 0.5
+        ? vec2(imageUv.x, 1.0 - imageUv.y)
+        : imageUv;
+    vec4 imageColor = texture(Sampler0, clamp(sampledImageUv, 0.0, 1.0));
+    float imageAmount = hasContent * (1.0 - procedural)
+        * imageRegion * fillMask * imageColor.a;
     color = mix(color, imageColor.rgb, imageAmount);
 
     if (contentId == 14) {

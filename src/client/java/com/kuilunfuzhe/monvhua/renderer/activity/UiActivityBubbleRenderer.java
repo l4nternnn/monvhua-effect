@@ -19,6 +19,7 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.Util;
 import org.joml.Matrix4f;
 import net.minecraft.util.Identifier;
+import com.kuilunfuzhe.monvhua.renderer.worlddisplay.WorldDisplayTextureRenderer;
 
 public final class UiActivityBubbleRenderer {
     private static final double MAX_DISTANCE_SQUARED = 48.0D * 48.0D;
@@ -42,6 +43,10 @@ public final class UiActivityBubbleRenderer {
     }
 
     public static void render(WorldRenderContext context) {
+        renderInternal(context);
+    }
+
+    private static void renderInternal(WorldRenderContext context) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null || client.player == null
                 || context.matrixStack() == null || context.consumers() == null) {
@@ -54,6 +59,7 @@ public final class UiActivityBubbleRenderer {
         EmotionTextureManager.trimInactive(animationMillis);
         Vec3d cameraPos = context.camera().getPos();
         MatrixStack matrices = context.matrixStack();
+        boolean blockTexturePrepared = false;
         for (PlayerEntity player : client.world.getPlayers()) {
             UiActivityClient.VisualState state = UiActivityClient.stateFor(player.getUuid());
             if (state == null || !shouldRender(client, player, cameraPos)) {
@@ -65,6 +71,9 @@ public final class UiActivityBubbleRenderer {
                 continue;
             }
 
+            EmotionCatalog.Entry emotion = EmotionCatalog.byId(state.contentId());
+            boolean procedural = EmotionCatalog.isProcedural(emotion);
+            boolean blockDisplay = emotion != null && emotion.type() == EmotionCatalog.Type.BLOCK_DISPLAY;
             Vec3d bubblePos = bubblePosition(player, tickProgress);
             if (bubblePos.squaredDistanceTo(cameraPos) > MAX_DISTANCE_SQUARED) {
                 continue;
@@ -73,11 +82,18 @@ public final class UiActivityBubbleRenderer {
             float dotPhase = reveal >= 0.999F
                     ? (float) (animationTime % DOT_CYCLE_TICKS) / DOT_CYCLE_TICKS
                     : 0.0F;
-            EmotionCatalog.Entry emotion = EmotionCatalog.byId(state.contentId());
-            boolean procedural = EmotionCatalog.isProcedural(emotion);
+            if (blockDisplay && !blockTexturePrepared) {
+                WorldDisplayTextureRenderer.render(
+                        state.contentId(), client, blockOpenProgress(state, animationTime)
+                );
+                blockTexturePrepared = true;
+            }
+
             Identifier emotionTexture = procedural && emotion != null ? emotion.resourceId()
+                    : blockDisplay ? WorldDisplayTextureRenderer.textureId()
                     : EmotionTextureManager.textureFor(state.contentId(), true, animationMillis);
-            int effectiveContentId = procedural || emotionTexture != null ? state.contentId() : 0;
+            int effectiveContentId = procedural || blockDisplay || emotionTexture != null
+                    ? state.contentId() : 0;
             float effectPhase = procedural
                     ? (animationMillis % EmotionCatalog.animationCycleMillis(emotion))
                         / (float) EmotionCatalog.animationCycleMillis(emotion)
@@ -89,6 +105,20 @@ public final class UiActivityBubbleRenderer {
             );
             drawBubble(vertices, matrices, context, bubblePos, reveal, effectPhase, effectiveContentId);
         }
+    }
+
+    private static float blockOpenProgress(UiActivityClient.VisualState state, double animationTime) {
+        float rawProgress;
+        if (state.isPendingHide() || state.isHiding()) {
+            double closingElapsed = Math.max(0.0D, animationTime - state.hideRequestedAtGameTime());
+            rawProgress = 1.0F - (float) closingElapsed / 10.0F;
+        } else {
+            double openingElapsed = Math.max(0.0D, animationTime - state.effectStartedAtGameTime());
+            rawProgress = (float) openingElapsed / 10.0F;
+        }
+        rawProgress = MathHelper.clamp(rawProgress, 0.0F, 1.0F);
+        float inverse = 1.0F - rawProgress;
+        return 1.0F - inverse * inverse * inverse;
     }
 
     private static boolean shouldRender(MinecraftClient client, PlayerEntity player, Vec3d cameraPos) {
