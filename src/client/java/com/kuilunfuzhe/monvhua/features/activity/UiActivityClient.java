@@ -6,6 +6,7 @@ import com.kuilunfuzhe.monvhua.renderer.activity.UiActivityBubblePipelines;
 import com.kuilunfuzhe.monvhua.renderer.activity.UiActivityBubbleRenderer;
 import com.kuilunfuzhe.monvhua.features.activity.emotion.EmotionTextureManager;
 import com.kuilunfuzhe.monvhua.features.activity.emotion.EmotionPickerClient;
+import com.kuilunfuzhe.monvhua.features.activity.emotion.FoodAnimation;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
@@ -125,9 +126,18 @@ public final class UiActivityClient {
             return;
         }
 
+        VisualState previous = REMOTE_STATES.get(packet.playerUuid());
+        long shownAt = packet.shownAtGameTime();
+        if (packet.activity() == UiActivityPackets.Activity.TRANSIENT
+                && FoodAnimation.isEatFood(packet.contentId())
+                && previous != null
+                && FoodAnimation.isEatFood(previous.contentId())
+                && previous.activity() == UiActivityPackets.Activity.TRANSIENT) {
+            shownAt = previous.shownAtGameTime();
+        }
         REMOTE_STATES.put(packet.playerUuid(), new VisualState(
                 packet.activity(),
-                packet.shownAtGameTime(),
+                shownAt,
                 packet.effectStartedAtGameTime(),
                 NOT_HIDING,
                 NOT_HIDING,
@@ -137,6 +147,9 @@ public final class UiActivityClient {
 
     private static boolean shouldBeginFade(VisualState state, long worldTime) {
         long elapsedTicks = Math.max(0L, worldTime - state.hideRequestedAtGameTime());
+        if (state.activity() == UiActivityPackets.Activity.TRANSIENT) {
+            return true;
+        }
         if (state.contentId() <= 0) {
             return true;
         }

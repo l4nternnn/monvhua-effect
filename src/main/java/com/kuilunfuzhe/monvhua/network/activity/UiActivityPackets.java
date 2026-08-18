@@ -26,7 +26,9 @@ public final class UiActivityPackets {
         NONE(0),
         CHAT(1),
         INVENTORY(2),
-        WRITING(3);
+        WRITING(3),
+        TRANSIENT(4),
+        CONTAINER_SCENE(5);
 
         private final int id;
 
@@ -43,6 +45,8 @@ public final class UiActivityPackets {
                 case 1 -> CHAT;
                 case 2 -> INVENTORY;
                 case 3 -> WRITING;
+                case 4 -> TRANSIENT;
+                case 5 -> CONTAINER_SCENE;
                 default -> NONE;
             };
         }
