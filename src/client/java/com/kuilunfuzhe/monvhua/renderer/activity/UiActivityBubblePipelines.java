@@ -1,11 +1,8 @@
 package com.kuilunfuzhe.monvhua.renderer.activity;
 
 import com.kuilunfuzhe.monvhua.MonvhuaMod;
-import com.kuilunfuzhe.monvhua.compat.ActivityIrisPipelineCompat;
-import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.vertex.VertexFormat;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.util.Identifier;
@@ -19,18 +16,13 @@ public final class UiActivityBubblePipelines {
                     .withSampler("Sampler0")
                     .withSampler("Sampler1")
                     .withVertexFormat(VertexFormats.POSITION_TEXTURE_COLOR, VertexFormat.DrawMode.QUADS)
-                    .withBlend(BlendFunction.TRANSLUCENT)
+                    // The FBO stores straight-alpha pixels. Blending here would premultiply RGB,
+                    // then the outer entity layer would apply alpha a second time.
+                    .withoutBlend()
                     .withDepthWrite(false)
                     .withCull(false)
                     .build()
     );
-
     private UiActivityBubblePipelines() {
-    }
-
-    public static void initialize() {
-        if (FabricLoader.getInstance().isModLoaded("iris")) {
-            ActivityIrisPipelineCompat.assignBubblePipeline(BUBBLE);
-        }
     }
 }

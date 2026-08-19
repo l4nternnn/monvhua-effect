@@ -2,8 +2,8 @@ package com.kuilunfuzhe.monvhua.features.activity;
 
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.network.activity.UiActivityPackets;
-import com.kuilunfuzhe.monvhua.renderer.activity.UiActivityBubblePipelines;
 import com.kuilunfuzhe.monvhua.renderer.activity.UiActivityBubbleRenderer;
+import com.kuilunfuzhe.monvhua.renderer.activity.UiActivityBubbleTextureRenderer;
 import com.kuilunfuzhe.monvhua.features.activity.emotion.EmotionTextureManager;
 import com.kuilunfuzhe.monvhua.features.activity.emotion.EmotionPickerClient;
 import com.kuilunfuzhe.monvhua.features.activity.emotion.FoodAnimation;
@@ -42,7 +42,6 @@ public final class UiActivityClient {
             return;
         }
         initialized = true;
-        UiActivityBubblePipelines.initialize();
         EmotionTextureManager.initialize();
         EmotionPickerClient.initialize();
 
@@ -165,6 +164,7 @@ public final class UiActivityClient {
 
     private static void clear() {
         REMOTE_STATES.clear();
+        UiActivityBubbleTextureRenderer.clear();
         lastSentActivity = UiActivityPackets.Activity.NONE;
         lastSentContentId = 0;
         selectedContentId = 0;

@@ -8,11 +8,21 @@ import net.minecraft.client.texture.AbstractTexture;
 
 public final class PortalFramebufferTexture extends AbstractTexture {
     private SimpleFramebuffer framebuffer;
+    private boolean linearFiltering;
 
     public void setFramebuffer(SimpleFramebuffer framebuffer) {
         this.framebuffer = framebuffer;
         if (framebuffer != null && framebuffer.getColorAttachment() != null) {
-            framebuffer.getColorAttachment().setTextureFilter(FilterMode.NEAREST, false);
+            framebuffer.getColorAttachment().setTextureFilter(
+                    linearFiltering ? FilterMode.LINEAR : FilterMode.NEAREST, false
+            );
+        }
+    }
+
+    public void setLinearFiltering() {
+        linearFiltering = true;
+        if (framebuffer != null && framebuffer.getColorAttachment() != null) {
+            framebuffer.getColorAttachment().setTextureFilter(FilterMode.LINEAR, false);
         }
     }
 
@@ -37,11 +47,14 @@ public final class PortalFramebufferTexture extends AbstractTexture {
         if (framebuffer == null || framebuffer.getColorAttachment() == null) {
             return;
         }
-        framebuffer.getColorAttachment().setTextureFilter(FilterMode.NEAREST, false);
+        framebuffer.getColorAttachment().setTextureFilter(
+                linearFiltering ? FilterMode.LINEAR : FilterMode.NEAREST, false
+        );
     }
 
     @Override
     public void close() {
         framebuffer = null;
+        linearFiltering = false;
     }
 }

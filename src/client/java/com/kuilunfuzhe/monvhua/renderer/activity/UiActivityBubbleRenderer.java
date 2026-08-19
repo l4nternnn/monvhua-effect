@@ -10,6 +10,8 @@ import com.kuilunfuzhe.monvhua.features.activity.emotion.EmotionTextureManager;
 import com.kuilunfuzhe.monvhua.features.activity.emotion.FoodAnimation;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.render.OverlayTexture;
+import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.player.PlayerEntity;
@@ -107,13 +109,22 @@ public final class UiActivityBubbleRenderer {
                     ? (animationMillis % EmotionCatalog.animationCycleMillis(emotion))
                         / (float) EmotionCatalog.animationCycleMillis(emotion)
                     : dotPhase;
-            VertexConsumer vertices = context.consumers().getBuffer(
-                    emotionTexture == null
-                            ? UiActivityBubbleRenderLayers.bubble()
-                            : UiActivityBubbleRenderLayers.bubble(emotionTexture)
+            Identifier bubbleTexture = UiActivityBubbleTextureRenderer.render(
+                    player.getUuid(),
+                    client,
+                    emotionTexture,
+                    reveal,
+                    effectPhase,
+                    effectiveContentId
             );
-            drawBubble(vertices, matrices, context, bubblePos, reveal, effectPhase, effectiveContentId);
+            if (bubbleTexture != null) {
+                VertexConsumer vertices = context.consumers().getBuffer(
+                        RenderLayer.getEntityTranslucentEmissive(bubbleTexture)
+                );
+                drawWorldBubble(vertices, matrices, context, bubblePos);
+            }
         }
+        UiActivityBubbleTextureRenderer.trimInactive(client, animationMillis);
     }
 
     private static float blockOpenProgress(UiActivityClient.VisualState state, double animationTime) {
@@ -178,12 +189,9 @@ public final class UiActivityBubbleRenderer {
         );
     }
 
-    private static void drawBubble(VertexConsumer vertices, MatrixStack matrices, WorldRenderContext context,
-                                   Vec3d bubblePos, float reveal, float dotPhase, int contentId) {
+    private static void drawWorldBubble(VertexConsumer vertices, MatrixStack matrices, WorldRenderContext context,
+                                        Vec3d bubblePos) {
         Vec3d cameraPos = context.camera().getPos();
-        int revealByte = Math.round(reveal * 255.0F);
-        int dotPhaseByte = Math.round(dotPhase * 255.0F);
-        int contentByte = Math.clamp(contentId, 0, 255);
         float halfWidth = WIDTH * sizeMultiplier * 0.5F;
         float halfHeight = HEIGHT * sizeMultiplier * 0.5F;
 
@@ -196,21 +204,20 @@ public final class UiActivityBubbleRenderer {
         matrices.multiply(context.camera().getRotation());
         Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
 
-        emitVertex(vertices, positionMatrix, -halfWidth, -halfHeight, 0.0F, 0.0F,
-                revealByte, dotPhaseByte, contentByte);
-        emitVertex(vertices, positionMatrix, halfWidth, -halfHeight, 1.0F, 0.0F,
-                revealByte, dotPhaseByte, contentByte);
-        emitVertex(vertices, positionMatrix, halfWidth, halfHeight, 1.0F, 1.0F,
-                revealByte, dotPhaseByte, contentByte);
-        emitVertex(vertices, positionMatrix, -halfWidth, halfHeight, 0.0F, 1.0F,
-                revealByte, dotPhaseByte, contentByte);
+        // FBO textures use the same bottom-to-top V convention as the original world quad.
+        emitWorldVertex(vertices, positionMatrix, -halfWidth, -halfHeight, 0.0F, 0.0F);
+        emitWorldVertex(vertices, positionMatrix, halfWidth, -halfHeight, 1.0F, 0.0F);
+        emitWorldVertex(vertices, positionMatrix, halfWidth, halfHeight, 1.0F, 1.0F);
+        emitWorldVertex(vertices, positionMatrix, -halfWidth, halfHeight, 0.0F, 1.0F);
         matrices.pop();
     }
 
-    private static void emitVertex(VertexConsumer vertices, Matrix4f matrix, float x, float y, float u, float v,
-                                   int reveal, int dotPhase, int contentId) {
+    private static void emitWorldVertex(VertexConsumer vertices, Matrix4f matrix, float x, float y, float u, float v) {
         vertices.vertex(matrix, x, y, 0.0F)
                 .texture(u, v)
-                .color(reveal, dotPhase, contentId, 255);
+                .color(255, 255, 255, 255)
+                .overlay(OverlayTexture.DEFAULT_UV)
+                .light(0x00F000F0)
+                .normal(0.0F, 0.0F, 1.0F);
     }
 }
