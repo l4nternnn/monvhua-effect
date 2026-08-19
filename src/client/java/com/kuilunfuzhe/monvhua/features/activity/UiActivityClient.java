@@ -49,11 +49,17 @@ public final class UiActivityClient {
                 context.client().execute(() -> receive(packet)));
         ClientPlayNetworking.registerGlobalReceiver(UiActivityPackets.BubbleSizeS2C.ID, (packet, context) ->
                 context.client().execute(() -> UiActivityBubbleRenderer.setSizeMultiplier(packet.multiplier())));
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> clear());
+        // DISCONNECT may be fired from the connection thread. Keep state changes on the
+        // client executor; GPU resources are released after world teardown in tick().
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(UiActivityClient::clear));
     }
 
     public static void tick(MinecraftClient client) {
         if (client.player == null || client.world == null) {
+            if (client.world == null) {
+                // Defer GPU destruction until the world render batches are gone.
+                UiActivityBubbleTextureRenderer.clear();
+            }
             lastSentActivity = UiActivityPackets.Activity.NONE;
             return;
         }
@@ -164,7 +170,6 @@ public final class UiActivityClient {
 
     private static void clear() {
         REMOTE_STATES.clear();
-        UiActivityBubbleTextureRenderer.clear();
         lastSentActivity = UiActivityPackets.Activity.NONE;
         lastSentContentId = 0;
         selectedContentId = 0;
