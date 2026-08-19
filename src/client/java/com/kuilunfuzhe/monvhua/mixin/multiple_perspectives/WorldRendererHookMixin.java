@@ -5,6 +5,7 @@ import com.kuilunfuzhe.monvhua.features.mirror.FramebufferOverride;
 import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
 import com.kuilunfuzhe.monvhua.features.portal.client.PortalFramebufferOverride;
 import com.kuilunfuzhe.monvhua.features.portal.client.PortalFramebufferRenderer;
+import com.kuilunfuzhe.monvhua.renderer.activity.UiActivityBubbleRenderer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.RenderTickCounter;
@@ -53,6 +54,7 @@ public class WorldRendererHookMixin {
 		if (FramebufferOverride.getOverride() != null || PortalFramebufferOverride.get() != null) {
 			return;
 		}
+		UiActivityBubbleRenderer.renderPostProcess();
 		PortalFramebufferRenderer.renderNearestPortal(
 			tickCounter,
 			camera,

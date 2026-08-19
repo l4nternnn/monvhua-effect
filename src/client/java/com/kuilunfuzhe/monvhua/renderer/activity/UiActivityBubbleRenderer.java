@@ -10,10 +10,6 @@ import com.kuilunfuzhe.monvhua.features.activity.emotion.EmotionTextureManager;
 import com.kuilunfuzhe.monvhua.features.activity.emotion.FoodAnimation;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.OverlayTexture;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.EntityDimensions;
 import net.minecraft.util.math.Direction;
@@ -23,6 +19,18 @@ import net.minecraft.util.Util;
 import org.joml.Matrix4f;
 import net.minecraft.util.Identifier;
 import com.kuilunfuzhe.monvhua.renderer.worlddisplay.WorldDisplayTextureRenderer;
+import com.mojang.blaze3d.buffers.GpuBuffer;
+import com.mojang.blaze3d.systems.RenderPass;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.textures.GpuTextureView;
+import net.minecraft.client.gl.Framebuffer;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.OptionalDouble;
+import java.util.OptionalInt;
 
 public final class UiActivityBubbleRenderer {
     private static final double MIN_RENDER_DISTANCE_BLOCKS = 64.0D;
@@ -34,6 +42,7 @@ public final class UiActivityBubbleRenderer {
     private static final float HEIGHT = 0.62F * 4.0F / 3.0F;
     private static final int DOT_CYCLE_TICKS = 24;
     private static volatile float sizeMultiplier = UiActivityBubbleSize.DEFAULT_MULTIPLIER;
+    private static final List<PendingBubble> PENDING = new ArrayList<>();
 
     private UiActivityBubbleRenderer() {
     }
@@ -53,16 +62,17 @@ public final class UiActivityBubbleRenderer {
     private static void renderInternal(WorldRenderContext context) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null || client.player == null
-                || context.matrixStack() == null || context.consumers() == null) {
+                || context.positionMatrix() == null || context.projectionMatrix() == null) {
             return;
         }
+
+        PENDING.clear();
 
         float tickProgress = client.getRenderTickCounter().getTickProgress(false);
         double animationTime = client.world.getTime() + tickProgress;
         long animationMillis = Util.getMeasuringTimeMs();
         EmotionTextureManager.trimInactive(animationMillis);
         Vec3d cameraPos = context.camera().getPos();
-        MatrixStack matrices = context.matrixStack();
         boolean blockTexturePrepared = false;
         for (PlayerEntity player : client.world.getPlayers()) {
             UiActivityClient.VisualState state = UiActivityClient.stateFor(player.getUuid());
@@ -115,13 +125,61 @@ public final class UiActivityBubbleRenderer {
                     effectiveContentId
             );
             if (bubbleTexture != null) {
-                VertexConsumer vertices = context.consumers().getBuffer(
-                        RenderLayer.getEntityTranslucent(bubbleTexture)
-                );
-                drawWorldBubble(vertices, matrices, context, bubblePos);
+                PendingBubble pending = projectBubble(context, bubbleTexture, bubblePos);
+                if (pending != null) {
+                    PENDING.add(pending);
+                }
             }
         }
         UiActivityBubbleTextureRenderer.trimInactive(client, animationMillis);
+    }
+
+    /**
+     * Draws cached bubbles after Iris' final pass. The main depth attachment is
+     * shared with Iris' gbuffer, so this pass keeps real block occlusion without
+     * sending the bubble through a shader-pack entity pass.
+     */
+    public static void renderPostProcess() {
+        if (PENDING.isEmpty()) {
+            return;
+        }
+        MinecraftClient client = MinecraftClient.getInstance();
+        Framebuffer main = client.getFramebuffer();
+        if (main == null || main.getColorAttachmentView() == null
+                || main.getDepthAttachmentView() == null) {
+            PENDING.clear();
+            return;
+        }
+
+        try {
+            for (PendingBubble bubble : PENDING) {
+                GpuBuffer vertices = createCompositeBuffer(bubble);
+                try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
+                        () -> "Monvhua activity bubble composite",
+                        main.getColorAttachmentView(),
+                        OptionalInt.empty(),
+                        main.getDepthAttachmentView(),
+                        OptionalDouble.empty())) {
+                    pass.setPipeline(UiActivityBubblePipelines.COMPOSITE);
+                    pass.setVertexBuffer(0, vertices);
+                    GpuTextureView texture = client.getTextureManager()
+                            .getTexture(bubble.textureId()).getGlTextureView();
+                    if (texture == null) {
+                        continue;
+                    }
+                    pass.bindSampler("InSampler", texture);
+                    pass.draw(0, 6);
+                } finally {
+                    vertices.close();
+                }
+            }
+        } finally {
+            PENDING.clear();
+        }
+    }
+
+    public static void clearPending() {
+        PENDING.clear();
     }
 
     private static float blockOpenProgress(UiActivityClient.VisualState state, double animationTime) {
@@ -193,35 +251,67 @@ public final class UiActivityBubbleRenderer {
         );
     }
 
-    private static void drawWorldBubble(VertexConsumer vertices, MatrixStack matrices, WorldRenderContext context,
-                                        Vec3d bubblePos) {
+    private static PendingBubble projectBubble(WorldRenderContext context, Identifier textureId,
+                                               Vec3d bubblePos) {
         Vec3d cameraPos = context.camera().getPos();
         float halfWidth = WIDTH * sizeMultiplier * 0.5F;
         float halfHeight = HEIGHT * sizeMultiplier * 0.5F;
 
-        matrices.push();
-        matrices.translate(
-                bubblePos.x - cameraPos.x,
-                bubblePos.y - cameraPos.y,
-                bubblePos.z - cameraPos.z
-        );
-        matrices.multiply(context.camera().getRotation());
-        Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
-
-        // FBO textures use the same bottom-to-top V convention as the original world quad.
-        emitWorldVertex(vertices, positionMatrix, -halfWidth, -halfHeight, 0.0F, 0.0F);
-        emitWorldVertex(vertices, positionMatrix, halfWidth, -halfHeight, 1.0F, 0.0F);
-        emitWorldVertex(vertices, positionMatrix, halfWidth, halfHeight, 1.0F, 1.0F);
-        emitWorldVertex(vertices, positionMatrix, -halfWidth, halfHeight, 0.0F, 1.0F);
-        matrices.pop();
+        Matrix4f model = new Matrix4f(context.positionMatrix())
+                .translate((float) (bubblePos.x - cameraPos.x),
+                        (float) (bubblePos.y - cameraPos.y),
+                        (float) (bubblePos.z - cameraPos.z))
+                .rotate(context.camera().getRotation());
+        Matrix4f clip = new Matrix4f(context.projectionMatrix()).mul(model);
+        float[][] corners = {
+                {-halfWidth, -halfHeight, 0.0F, 0.0F, 0.0F},
+                {halfWidth, -halfHeight, 0.0F, 1.0F, 0.0F},
+                {halfWidth, halfHeight, 0.0F, 1.0F, 1.0F},
+                {-halfWidth, halfHeight, 0.0F, 0.0F, 1.0F}
+        };
+        float[] projected = new float[20];
+        for (int i = 0; i < corners.length; i++) {
+            float[] corner = corners[i];
+            org.joml.Vector4f position = clip.transform(new org.joml.Vector4f(
+                    corner[0], corner[1], corner[2], 1.0F));
+            if (position.w <= 0.0001F) {
+                return null;
+            }
+            float inverseW = 1.0F / position.w;
+            int offset = i * 5;
+            projected[offset] = position.x * inverseW;
+            projected[offset + 1] = position.y * inverseW;
+            projected[offset + 2] = position.z * inverseW;
+            projected[offset + 3] = corner[3];
+            projected[offset + 4] = corner[4];
+        }
+        return new PendingBubble(textureId, projected);
     }
 
-    private static void emitWorldVertex(VertexConsumer vertices, Matrix4f matrix, float x, float y, float u, float v) {
-        vertices.vertex(matrix, x, y, 0.0F)
-                .texture(u, v)
-                .color(255, 255, 255, 255)
-                .overlay(OverlayTexture.DEFAULT_UV)
-                .light(0x00F000F0)
-                .normal(0.0F, 0.0F, 1.0F);
+    private static GpuBuffer createCompositeBuffer(PendingBubble bubble) {
+        ByteBuffer buffer = ByteBuffer.allocateDirect(6 * 24).order(ByteOrder.nativeOrder());
+        putCompositeVertex(buffer, bubble, 0);
+        putCompositeVertex(buffer, bubble, 1);
+        putCompositeVertex(buffer, bubble, 2);
+        putCompositeVertex(buffer, bubble, 0);
+        putCompositeVertex(buffer, bubble, 2);
+        putCompositeVertex(buffer, bubble, 3);
+        buffer.flip();
+        return RenderSystem.getDevice().createBuffer(
+                () -> "Monvhua activity bubble composite vertices", 40, buffer);
+    }
+
+    private static void putCompositeVertex(ByteBuffer buffer, PendingBubble bubble, int index) {
+        int offset = index * 5;
+        float[] vertices = bubble.projected();
+        buffer.putFloat(vertices[offset]);
+        buffer.putFloat(vertices[offset + 1]);
+        buffer.putFloat(vertices[offset + 2]);
+        buffer.putFloat(vertices[offset + 3]);
+        buffer.putFloat(vertices[offset + 4]);
+        buffer.putInt(0xFFFFFFFF);
+    }
+
+    private record PendingBubble(Identifier textureId, float[] projected) {
     }
 }

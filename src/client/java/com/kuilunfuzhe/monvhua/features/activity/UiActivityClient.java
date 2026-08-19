@@ -170,6 +170,7 @@ public final class UiActivityClient {
 
     private static void clear() {
         REMOTE_STATES.clear();
+        UiActivityBubbleRenderer.clearPending();
         lastSentActivity = UiActivityPackets.Activity.NONE;
         lastSentContentId = 0;
         selectedContentId = 0;
