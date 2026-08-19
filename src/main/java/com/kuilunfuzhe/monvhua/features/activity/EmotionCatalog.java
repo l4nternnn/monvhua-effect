@@ -133,7 +133,7 @@ public final class EmotionCatalog {
             return 1_000L;
         }
         return switch (entry.effect()) {
-            case "sleep_z" -> 1_600L;
+            case "sleep_z" -> 5_200L;
             case "confused_scribble" -> 1_200L;
             case "questions" -> 1_800L;
             case "magic_diary" -> 3_200L;

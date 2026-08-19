@@ -87,9 +87,10 @@ public final class UiActivityBubbleRenderer {
 
             EmotionCatalog.Entry emotion = EmotionCatalog.byId(state.contentId());
             boolean procedural = EmotionCatalog.isProcedural(emotion);
+            boolean sleepClouds = emotion != null && emotion.id() == 11;
             boolean blockDisplay = emotion != null && emotion.type() == EmotionCatalog.Type.BLOCK_DISPLAY;
             boolean foodAnimation = FoodAnimation.isEatFood(state.contentId());
-            Vec3d bubblePos = bubblePosition(player, tickProgress);
+            Vec3d bubblePos = bubblePosition(player, tickProgress, sleepClouds);
             float dotPhase = reveal >= 0.999F
                     ? (float) (animationTime % DOT_CYCLE_TICKS) / DOT_CYCLE_TICKS
                     : 0.0F;
@@ -113,8 +114,7 @@ public final class UiActivityBubbleRenderer {
                 );
             }
             float effectPhase = procedural
-                    ? (animationMillis % EmotionCatalog.animationCycleMillis(emotion))
-                        / (float) EmotionCatalog.animationCycleMillis(emotion)
+                    ? effectPhase(state, emotion, animationTime, animationMillis)
                     : dotPhase;
             Identifier bubbleTexture = UiActivityBubbleTextureRenderer.render(
                     player.getUuid(),
@@ -196,6 +196,17 @@ public final class UiActivityBubbleRenderer {
         return 1.0F - inverse * inverse * inverse;
     }
 
+    private static float effectPhase(UiActivityClient.VisualState state, EmotionCatalog.Entry emotion,
+                                     double animationTime, long animationMillis) {
+        long cycleMillis = EmotionCatalog.animationCycleMillis(emotion);
+        if (state.contentId() == 11) {
+            long cycleTicks = Math.max(1L, cycleMillis / 50L);
+            double elapsed = Math.max(0.0D, animationTime - state.effectStartedAtGameTime());
+            return (float) ((elapsed % cycleTicks) / cycleTicks);
+        }
+        return (animationMillis % cycleMillis) / (float) cycleMillis;
+    }
+
     private static boolean shouldRender(MinecraftClient client, PlayerEntity player, Vec3d cameraPos) {
         if (!player.isAlive() || player.isSpectator() || player.isInvisible()) {
             return false;
@@ -213,20 +224,21 @@ public final class UiActivityBubbleRenderer {
         return player.squaredDistanceTo(cameraPos) <= renderDistance * renderDistance;
     }
 
-    private static Vec3d bubblePosition(PlayerEntity player, float tickProgress) {
+    private static Vec3d bubblePosition(PlayerEntity player, float tickProgress, boolean sleepClouds) {
         EntityDimensions dimensions = player.getDimensions(player.getPose());
         double centerCorrection = (HEIGHT * (sizeMultiplier - 1.0F)) * 0.5D;
+        double tailClearance = sleepClouds ? 0.0D : TAIL_TO_CENTER;
         if (SurfaceGravityClientEngine.isRenderActive(player)) {
             Direction down = GravityMagic.getSurfaceGravityDirection(player);
             Vec3d up = SurfaceGravityBasis.of(down).up();
             Vec3d eye = SurfaceGravityClientEngine.eyePos(player, tickProgress);
             Vec3d bodyTop = eye.add(up.multiply(dimensions.height() - dimensions.eyeHeight()));
-            return bodyTop.add(up.multiply(NAME_LABEL_EXTRA_HEIGHT + NAME_LABEL_CLEARANCE + TAIL_TO_CENTER
+            return bodyTop.add(up.multiply(NAME_LABEL_EXTRA_HEIGHT + NAME_LABEL_CLEARANCE + tailClearance
                     + centerCorrection));
         }
         return player.getLerpedPos(tickProgress).add(
                 0.0D,
-                dimensions.height() + NAME_LABEL_EXTRA_HEIGHT + NAME_LABEL_CLEARANCE + TAIL_TO_CENTER
+                dimensions.height() + NAME_LABEL_EXTRA_HEIGHT + NAME_LABEL_CLEARANCE + tailClearance
                         + centerCorrection,
                 0.0D
         );

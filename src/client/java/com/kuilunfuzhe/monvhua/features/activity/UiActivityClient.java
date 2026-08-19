@@ -17,6 +17,7 @@ import net.minecraft.client.gui.screen.ingame.BookEditScreen;
 import net.minecraft.client.gui.screen.ingame.BookSigningScreen;
 import net.minecraft.client.gui.screen.ingame.CreativeInventoryScreen;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
+import net.minecraft.entity.player.PlayerEntity;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -29,6 +30,8 @@ public final class UiActivityClient {
 
     private static final long NOT_HIDING = Long.MIN_VALUE;
     private static final Map<UUID, VisualState> REMOTE_STATES = new HashMap<>();
+    private static final Map<UUID, SleepState> SLEEP_STATES = new HashMap<>();
+    private static final long SLEEP_CYCLE_TICKS = 104L;
     private static UiActivityPackets.Activity lastSentActivity = UiActivityPackets.Activity.NONE;
     private static int lastSentContentId;
     private static int selectedContentId;
@@ -82,6 +85,7 @@ public final class UiActivityClient {
         }
 
         long worldTime = client.world.getTime();
+        updateSleepStates(client, worldTime);
         var iterator = REMOTE_STATES.entrySet().iterator();
         while (iterator.hasNext()) {
             var entry = iterator.next();
@@ -95,7 +99,12 @@ public final class UiActivityClient {
     }
 
     public static VisualState stateFor(UUID playerUuid) {
-        return REMOTE_STATES.get(playerUuid);
+        VisualState remote = REMOTE_STATES.get(playerUuid);
+        if (remote != null) {
+            return remote;
+        }
+        SleepState sleep = SLEEP_STATES.get(playerUuid);
+        return sleep == null ? null : sleep.visualState();
     }
 
     public static int selectedContentId() {
@@ -150,6 +159,45 @@ public final class UiActivityClient {
         ));
     }
 
+    /** Tracks sleeping poses locally because they are entity state, not UI activity packets. */
+    private static void updateSleepStates(MinecraftClient client, long worldTime) {
+        for (PlayerEntity player : client.world.getPlayers()) {
+            UUID uuid = player.getUuid();
+            SleepState current = SLEEP_STATES.get(uuid);
+            if (player.isSleeping()) {
+                if (current == null) {
+                    VisualState visual = new VisualState(
+                            UiActivityPackets.Activity.TRANSIENT,
+                            worldTime,
+                            worldTime,
+                            NOT_HIDING,
+                            NOT_HIDING,
+                            11
+                    );
+                    SLEEP_STATES.put(uuid, new SleepState(visual, NOT_HIDING));
+                } else if (current.finishAtGameTime() != NOT_HIDING) {
+                    // Waking and sleeping again before the current round ends resumes looping.
+                    SLEEP_STATES.put(uuid, new SleepState(current.visualState(), NOT_HIDING));
+                }
+                continue;
+            }
+
+            if (current == null) {
+                continue;
+            }
+            long finishAt = current.finishAtGameTime();
+            if (finishAt == NOT_HIDING) {
+                long elapsed = Math.max(0L, worldTime - current.visualState().effectStartedAtGameTime());
+                long completedRounds = elapsed / SLEEP_CYCLE_TICKS + 1L;
+                finishAt = current.visualState().effectStartedAtGameTime()
+                        + completedRounds * SLEEP_CYCLE_TICKS;
+                SLEEP_STATES.put(uuid, new SleepState(current.visualState(), finishAt));
+            } else if (worldTime >= finishAt) {
+                SLEEP_STATES.remove(uuid);
+            }
+        }
+    }
+
     private static boolean shouldBeginFade(VisualState state, long worldTime) {
         long elapsedTicks = Math.max(0L, worldTime - state.hideRequestedAtGameTime());
         if (state.activity() == UiActivityPackets.Activity.TRANSIENT) {
@@ -170,6 +218,7 @@ public final class UiActivityClient {
 
     private static void clear() {
         REMOTE_STATES.clear();
+        SLEEP_STATES.clear();
         UiActivityBubbleRenderer.clearPending();
         lastSentActivity = UiActivityPackets.Activity.NONE;
         lastSentContentId = 0;
@@ -203,5 +252,8 @@ public final class UiActivityClient {
             return new VisualState(activity, shownAtGameTime, effectStartedAtGameTime,
                     hideRequestedAtGameTime, gameTime, contentId);
         }
+    }
+
+    private record SleepState(VisualState visualState, long finishAtGameTime) {
     }
 }

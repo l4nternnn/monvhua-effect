@@ -190,6 +190,99 @@ float sleepZMask(vec2 p, float phase) {
     return mask * fadeIn * fadeOut;
 }
 
+// Sleep is deliberately rendered as three independent cloud sprites.  This
+// branch is entered before the normal speech-bubble SDF is evaluated, so the
+// clouds cannot inherit the bubble body or its tail.
+float cloudSdf(vec2 p) {
+    // A conventional cloud silhouette: a short rounded base with three lobes.
+    float shape = sdRoundedBox(p - vec2(0.0, 0.18), vec2(0.52, 0.19), 0.19);
+    shape = smoothUnion(shape, length(p - vec2(-0.33, 0.04)) - 0.27, 0.075);
+    shape = smoothUnion(shape, length(p - vec2(0.00, -0.06)) - 0.37, 0.075);
+    shape = smoothUnion(shape, length(p - vec2(0.33, 0.05)) - 0.26, 0.075);
+    return shape;
+}
+
+float sleepCloudFace(vec2 p, float variant) {
+    float mask = 0.0;
+    float eyeY = -0.045 + variant * 0.010;
+    // q.y grows toward the lower part of the cloud. U-shaped eyes therefore
+    // use control points slightly below their endpoints.
+    mask = max(mask, cubicStroke(p, vec2(-0.175, eyeY), vec2(-0.147, eyeY + 0.027),
+        vec2(-0.112, eyeY + 0.027), vec2(-0.084, eyeY), 0.014));
+    mask = max(mask, cubicStroke(p, vec2(0.084, eyeY), vec2(0.112, eyeY + 0.027),
+        vec2(0.147, eyeY + 0.027), vec2(0.175, eyeY), 0.014));
+    // A compact W: two low points separated by a raised center.
+    mask = max(mask, cubicStroke(p, vec2(-0.098, 0.105), vec2(-0.074, 0.133),
+        vec2(-0.049, 0.133), vec2(-0.025, 0.105), 0.013));
+    mask = max(mask, cubicStroke(p, vec2(-0.025, 0.105), vec2(-0.008, 0.077),
+        vec2(0.008, 0.077), vec2(0.025, 0.105), 0.013));
+    mask = max(mask, cubicStroke(p, vec2(0.025, 0.105), vec2(0.049, 0.133),
+        vec2(0.074, 0.133), vec2(0.098, 0.105), 0.013));
+    return mask;
+}
+
+vec4 sleepCloudPixel(vec2 p, vec2 center, float size, float appear, float variant) {
+    vec2 q = (p - center) / max(size, 0.001);
+    float distanceToCloud = cloudSdf(q);
+    float edgeAA = max(fwidth(distanceToCloud) * 1.25, 0.002);
+    float shapeAlpha = 1.0 - smoothstep(-edgeAA, edgeAA, distanceToCloud);
+    if (shapeAlpha <= 0.001 || appear <= 0.001) {
+        return vec4(0.0);
+    }
+
+    float strokeWidth = 0.075;
+    float fillMask = 1.0 - smoothstep(-strokeWidth - edgeAA,
+        -strokeWidth + edgeAA, distanceToCloud);
+    vec3 color = mix(OUTLINE_COLOR, FILL_COLOR, fillMask);
+    // q is the single sleep-cloud coordinate space. The cloud silhouette and
+    // all facial marks must use it directly; a second Y flip puts the face
+    // below the cheeks after the off-screen texture correction in main().
+    float face = sleepCloudFace(q, variant);
+    color = mix(color, OUTLINE_COLOR, face * fillMask);
+    // Cheeks sit between the eyes and the mouth, with no overlap into either.
+    float cheekLeft = circleMask(q, vec2(-0.23, 0.085), 0.042);
+    float cheekRight = circleMask(q, vec2(0.23, 0.085), 0.042);
+    color = mix(color, vec3(0.88, 0.63, 0.67),
+        max(cheekLeft, cheekRight) * fillMask * 0.52);
+    return vec4(color, shapeAlpha * appear);
+}
+
+vec4 sleepOverlay(vec4 base, vec4 layer) {
+    float alpha = layer.a + base.a * (1.0 - layer.a);
+    if (alpha <= 0.001) {
+        return vec4(0.0);
+    }
+    vec3 color = (layer.rgb * layer.a + base.rgb * base.a * (1.0 - layer.a)) / alpha;
+    return vec4(color, alpha);
+}
+
+vec4 renderSleepClouds(vec2 p, float phase, float reveal) {
+    float time = phase * 5.20;
+    float cycleFade = 1.0 - smoothstep(4.36, 5.20, time);
+    vec4 result = vec4(0.0);
+
+    // The small cloud starts at the head, then the two higher clouds follow it.
+    float first = smoothstep(0.00, 0.56, time);
+    float second = smoothstep(0.64, 1.24, time);
+    float third = smoothstep(1.32, 1.96, time);
+    float firstScale = 0.78 + first * (1.0 + 0.14 * sin(PI * first));
+    float secondScale = 0.78 + second * (1.0 + 0.14 * sin(PI * second));
+    float thirdScale = 0.78 + third * (1.0 + 0.14 * sin(PI * third));
+    result = sleepOverlay(result, sleepCloudPixel(
+        // The first/small cloud belongs closest to the head (visual bottom).
+        p, vec2(-0.205, 0.225 + first * 0.018), 0.063 * firstScale,
+        first * cycleFade * reveal, 0.0));
+    result = sleepOverlay(result, sleepCloudPixel(
+        p, vec2(0.015, 0.105 + second * 0.020), 0.0966667 * secondScale,
+        second * cycleFade * reveal, 0.35));
+    result = sleepOverlay(result, sleepCloudPixel(
+        // The last/large cloud floats toward the visual top.
+        p, vec2(0.283333, -0.063333 + third * 0.022), 0.185 * thirdScale,
+        third * cycleFade * reveal, 0.70));
+
+    return result;
+}
+
 vec2 scribblePoint(float t, float seed, float phase) {
     float centerBias = t * 2.0 - 1.0;
     float x = centerBias * 0.16 + 0.080 * sin(t * 5.0 + seed + phase * 1.7)
@@ -280,6 +373,20 @@ float questionsMask(vec2 p, float phase) {
 void main() {
     vec2 p = vec2((localUv.x - 0.5) * 0.92, (localUv.y - 0.5) * 0.62);
 
+    int contentId = int(floor(bubbleParameters.b * 255.0 + 0.5));
+    if (contentId == 11) {
+        // The off-screen framebuffer and the final composite quad use opposite
+        // vertical origins. Keep this correction local to sleep clouds.
+        vec2 sleepP = vec2((localUv.x - 0.5) * 0.92,
+            ((1.0 - localUv.y) - 0.5) * 0.62);
+        vec4 sleep = renderSleepClouds(sleepP, bubbleParameters.g, bubbleParameters.r);
+        if (sleep.a <= 0.001) {
+            discard;
+        }
+        fragColor = vec4(sleep.rgb, sleep.a * bubbleParameters.a);
+        return;
+    }
+
     float body = sdRoundedBox(p - vec2(0.0, 0.065), vec2(0.39, 0.19), 0.095);
     float tail = sdTriangle(
         p,
@@ -314,7 +421,6 @@ void main() {
     float thirdJump = step(0.0, thirdSlot) * step(thirdSlot, 1.0)
         * sin(PI * clamp(thirdSlot, 0.0, 1.0)) * 0.055;
 
-    int contentId = int(floor(bubbleParameters.b * 255.0 + 0.5));
     float hasContent = step(0.5 / 255.0, bubbleParameters.b);
     float procedural = step(10.5, float(contentId)) * step(float(contentId), 14.5);
     float blockDisplay = step(16.5, float(contentId)) * step(float(contentId), 17.5);

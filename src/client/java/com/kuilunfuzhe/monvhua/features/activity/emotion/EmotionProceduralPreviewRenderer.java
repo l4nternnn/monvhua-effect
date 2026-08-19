@@ -12,7 +12,7 @@ final class EmotionProceduralPreviewRenderer {
 
     static void render(DrawContext context, int contentId, int x, int y, int width, int height,
                        long millis, boolean animate) {
-        long cycle = contentId == 11 ? 1600L : contentId == 12 ? 1200L
+        long cycle = contentId == 11 ? 5200L : contentId == 12 ? 1200L
                 : contentId == 14 ? 3200L : contentId == 17 ? 1800L
                 : contentId == 18 ? FoodAnimation.CYCLE_MILLIS : 1800L;
         double phase = animate ? (millis % cycle) / (double) cycle : 0.72;
@@ -113,26 +113,63 @@ final class EmotionProceduralPreviewRenderer {
     }
 
     private static void renderSleep(DrawContext c, int x, int y, int w, int h, double phase) {
-        double travel = easeOutCubic(phase);
-        double cx = x + w * (0.30 + 0.38 * travel);
-        double cy = y + h * (0.63 - 0.30 * travel);
-        int alpha = (int) Math.round(255 * Math.min(1.0, Math.min(phase / 0.10, (1.0 - phase) / 0.22)));
-        int color = (alpha << 24) | 0x111111;
-        double s = Math.min(w, h) * (0.11 + 0.13 * travel);
-        double angle = -0.14 + 0.22 * travel;
-        double stroke = Math.max(1.5, Math.min(w, h) * 0.018);
-        curve(c, rotateAround(cx, cy, -s, -s * .62, angle),
-                rotateAround(cx, cy, -s * .35, -s * .69, angle),
-                rotateAround(cx, cy, s * .42, -s * .57, angle),
-                rotateAround(cx, cy, s, -s * .62, angle), stroke, color);
-        curve(c, rotateAround(cx, cy, s, -s * .62, angle),
-                rotateAround(cx, cy, s * .62, -s * .42, angle),
-                rotateAround(cx, cy, -s * .58, s * .42, angle),
-                rotateAround(cx, cy, -s, s * .62, angle), stroke, color);
-        curve(c, rotateAround(cx, cy, -s, s * .62, angle),
-                rotateAround(cx, cy, -s * .40, s * .70, angle),
-                rotateAround(cx, cy, s * .36, s * .55, angle),
-                rotateAround(cx, cy, s, s * .62, angle), stroke, color);
+        double time = phase * 5.20;
+        double cycleFade = 1.0 - smoothstep(4.36, 5.20, time);
+        renderSleepCloud(c, x + w * .30, y + h * .55, Math.min(w, h) * .102,
+                cloudAppear(time, 0.00, 0.56) * cycleFade, 0.0);
+        renderSleepCloud(c, x + w * .53, y + h * .39, Math.min(w, h) * .1533333,
+                cloudAppear(time, 0.64, 1.24) * cycleFade, 0.35);
+        renderSleepCloud(c, x + w * .76 + w * .0766667, y + h * .24 - h * .0766667,
+                Math.min(w, h) * .29, cloudAppear(time, 1.32, 1.96) * cycleFade, 0.70);
+    }
+
+    private static double cloudAppear(double time, double start, double end) {
+        double value = smoothstep(start, end, time);
+        return value * (0.78 + 0.22 * Math.sin(Math.PI * value));
+    }
+
+    private static void renderSleepCloud(DrawContext c, double cx, double cy, double size,
+                                         double appear, double variant) {
+        if (appear <= 0.001) {
+            return;
+        }
+        double scale = .78 + appear;
+        double s = size * scale;
+        int alpha = (int) Math.round(255.0 * Math.min(1.0, appear));
+        int outline = (alpha << 24) | 0x111111;
+        int fill = (alpha << 24) | 0xFAF8EE;
+        int cheek = ((int) Math.round(alpha * .52) << 24) | 0xDFA6AE;
+        double[] offsets = {-0.34, 0.0, 0.34};
+        double[] radii = {0.30, 0.40, 0.30};
+        for (int i = 0; i < offsets.length; i++) {
+            circle(c, cx + offsets[i] * s, cy - .03 * s,
+                    radii[i] * s, outline);
+        }
+        circle(c, cx, cy + .18 * s, .52 * s, outline);
+        for (int i = 0; i < offsets.length; i++) {
+            circle(c, cx + offsets[i] * s, cy - .03 * s,
+                    Math.max(1.0, (radii[i] * s) - s * .065), fill);
+        }
+        circle(c, cx, cy + .18 * s, Math.max(1.0, .52 * s - s * .065), fill);
+
+        double eyeY = cy - .045 * s + variant * .010 * s;
+        curve(c, new double[]{cx - .175 * s, eyeY}, new double[]{cx - .147 * s, eyeY + .027 * s},
+                new double[]{cx - .112 * s, eyeY + .027 * s}, new double[]{cx - .084 * s, eyeY},
+                Math.max(1.0, .014 * s), outline);
+        curve(c, new double[]{cx + .084 * s, eyeY}, new double[]{cx + .112 * s, eyeY + .027 * s},
+                new double[]{cx + .147 * s, eyeY + .027 * s}, new double[]{cx + .175 * s, eyeY},
+                Math.max(1.0, .014 * s), outline);
+        curve(c, new double[]{cx - .098 * s, cy + .11 * s}, new double[]{cx - .074 * s, cy + .065 * s},
+                new double[]{cx - .049 * s, cy + .065 * s}, new double[]{cx - .025 * s, cy + .11 * s},
+                Math.max(1.0, .013 * s), outline);
+        curve(c, new double[]{cx - .025 * s, cy + .11 * s}, new double[]{cx - .008 * s, cy + .138 * s},
+                new double[]{cx + .008 * s, cy + .138 * s}, new double[]{cx + .025 * s, cy + .11 * s},
+                Math.max(1.0, .013 * s), outline);
+        curve(c, new double[]{cx + .025 * s, cy + .11 * s}, new double[]{cx + .049 * s, cy + .065 * s},
+                new double[]{cx + .074 * s, cy + .065 * s}, new double[]{cx + .098 * s, cy + .11 * s},
+                Math.max(1.0, .013 * s), outline);
+        circle(c, cx - .23 * s, cy + .125 * s, .052 * s, cheek);
+        circle(c, cx + .23 * s, cy + .125 * s, .052 * s, cheek);
     }
 
     private static void renderScribble(DrawContext c, int x, int y, int w, int h, double phase) {
