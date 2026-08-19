@@ -25,7 +25,8 @@ import net.minecraft.util.Identifier;
 import com.kuilunfuzhe.monvhua.renderer.worlddisplay.WorldDisplayTextureRenderer;
 
 public final class UiActivityBubbleRenderer {
-    private static final double MAX_DISTANCE_SQUARED = 48.0D * 48.0D;
+    private static final double MIN_RENDER_DISTANCE_BLOCKS = 64.0D;
+    private static final double MAX_RENDER_DISTANCE_BLOCKS = 128.0D;
     private static final double NAME_LABEL_EXTRA_HEIGHT = 0.50D;
     private static final double NAME_LABEL_CLEARANCE = 0.12D;
     private static final double TAIL_TO_CENTER = 0.38D;
@@ -79,10 +80,6 @@ public final class UiActivityBubbleRenderer {
             boolean blockDisplay = emotion != null && emotion.type() == EmotionCatalog.Type.BLOCK_DISPLAY;
             boolean foodAnimation = FoodAnimation.isEatFood(state.contentId());
             Vec3d bubblePos = bubblePosition(player, tickProgress);
-            if (bubblePos.squaredDistanceTo(cameraPos) > MAX_DISTANCE_SQUARED) {
-                continue;
-            }
-
             float dotPhase = reveal >= 0.999F
                     ? (float) (animationTime % DOT_CYCLE_TICKS) / DOT_CYCLE_TICKS
                     : 0.0F;
@@ -119,7 +116,7 @@ public final class UiActivityBubbleRenderer {
             );
             if (bubbleTexture != null) {
                 VertexConsumer vertices = context.consumers().getBuffer(
-                        RenderLayer.getEntityTranslucentEmissive(bubbleTexture)
+                        RenderLayer.getEntityTranslucent(bubbleTexture)
                 );
                 drawWorldBubble(vertices, matrices, context, bubblePos);
             }
@@ -148,7 +145,14 @@ public final class UiActivityBubbleRenderer {
         if (player == client.player && client.options.getPerspective().isFirstPerson()) {
             return false;
         }
-        return player.squaredDistanceTo(cameraPos) <= MAX_DISTANCE_SQUARED;
+        double renderDistance = Math.min(
+                MAX_RENDER_DISTANCE_BLOCKS,
+                Math.max(
+                        MIN_RENDER_DISTANCE_BLOCKS,
+                        client.options.getViewDistance().getValue() * 16.0D
+                )
+        );
+        return player.squaredDistanceTo(cameraPos) <= renderDistance * renderDistance;
     }
 
     private static Vec3d bubblePosition(PlayerEntity player, float tickProgress) {
