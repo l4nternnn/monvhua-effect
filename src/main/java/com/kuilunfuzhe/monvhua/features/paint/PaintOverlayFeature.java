@@ -391,18 +391,19 @@ public final class PaintOverlayFeature {
     }
 
     private static void handleEditorPaperUse(ServerPlayerEntity player, PaintOverlayPackets.EditorPaperUseC2S packet) {
-        if (!(player.getWorld() instanceof ServerWorld world)) {
-            return;
-        }
-        if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
-            return;
-        }
-        ItemStack paper = findPaintEditorItem(player, PaintItems.PAINT_PAPER);
-        if (paper == ItemStack.EMPTY) {
-            player.sendMessage(net.minecraft.text.Text.literal("缺少画纸"), true);
-            return;
-        }
-        PaintPaperItem.useFromEditor(world, player, paper, packet.pos(), packet.face(), packet.save());
+        // Temporarily disable paint paper rubbing from the editor.
+        // if (!(player.getWorld() instanceof ServerWorld world)) {
+        //     return;
+        // }
+        // if (Vec3d.ofCenter(packet.pos()).squaredDistanceTo(player.getEyePos()) > INTERACTION_DISTANCE_SQUARED) {
+        //     return;
+        // }
+        // ItemStack paper = findPaintEditorItem(player, PaintItems.PAINT_PAPER);
+        // if (paper == ItemStack.EMPTY) {
+        //     player.sendMessage(net.minecraft.text.Text.literal("缺少画纸"), true);
+        //     return;
+        // }
+        // PaintPaperItem.useFromEditor(world, player, paper, packet.pos(), packet.face(), packet.save());
     }
 
     private static void handleImportedPaperPlacement(ServerPlayerEntity player, PaintOverlayPackets.PlaceImportedPaperC2S packet) {

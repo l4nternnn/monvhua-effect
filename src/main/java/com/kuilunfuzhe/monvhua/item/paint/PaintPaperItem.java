@@ -45,12 +45,12 @@ public class PaintPaperItem extends Item {
         if (existingId != null && isImportedImage(stack)) {
             return ActionResult.SUCCESS;
         }
-        if (existingId != null && !player.isSneaking()) {
-            paste(world, player, stack, existingId, context.getBlockPos(), context.getSide());
-            return ActionResult.SUCCESS;
-        }
-
-        save(world, player, stack, context.getBlockPos(), context.getSide());
+        // Temporarily disable paint paper rubbing save/paste on block use.
+        // if (existingId != null && !player.isSneaking()) {
+        //     paste(world, player, stack, existingId, context.getBlockPos(), context.getSide());
+        //     return ActionResult.SUCCESS;
+        // }
+        // save(world, player, stack, context.getBlockPos(), context.getSide());
         return ActionResult.SUCCESS;
     }
 

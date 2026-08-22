@@ -736,10 +736,11 @@ public class PaintEditorScreen extends Screen {
             toggleTool(PaintOverlayClient.EditorTool.ERASER);
             return true;
         }
-        if (keyCode == GLFW.GLFW_KEY_3) {
-            toggleTool(PaintOverlayClient.EditorTool.PAPER);
-            return true;
-        }
+        // Temporarily disable paint paper rubbing access from the editor.
+        // if (keyCode == GLFW.GLFW_KEY_3) {
+        //     toggleTool(PaintOverlayClient.EditorTool.PAPER);
+        //     return true;
+        // }
         if (keyCode == GLFW.GLFW_KEY_4) {
             toggleTool(PaintOverlayClient.EditorTool.PRESET);
             return true;
@@ -815,7 +816,8 @@ public class PaintEditorScreen extends Screen {
         context.drawText(textRenderer, Text.literal("工具"), 10, 14, TEXT_SECONDARY, false);
         drawToolButton(context, TOOL_X, TOOL_BRUSH_Y, PaintOverlayClient.EditorTool.BRUSH, new ItemStack(PaintItems.PAINT_BRUSH), mouseX, mouseY);
         drawToolButton(context, TOOL_X, TOOL_ERASER_Y, PaintOverlayClient.EditorTool.ERASER, new ItemStack(PaintItems.ERASER), mouseX, mouseY);
-        drawToolButton(context, TOOL_X, TOOL_PAPER_Y, PaintOverlayClient.EditorTool.PAPER, new ItemStack(PaintItems.PAINT_PAPER), mouseX, mouseY);
+        // Temporarily hide paint paper rubbing from the editor toolbar.
+        // drawToolButton(context, TOOL_X, TOOL_PAPER_Y, PaintOverlayClient.EditorTool.PAPER, new ItemStack(PaintItems.PAINT_PAPER), mouseX, mouseY);
         drawToolButton(context, TOOL_X, TOOL_PRESET_Y, PaintOverlayClient.EditorTool.PRESET, ItemStack.EMPTY, mouseX, mouseY);
         drawToolButton(context, TOOL_X, TOOL_SELECT_Y, PaintOverlayClient.EditorTool.SELECT, ItemStack.EMPTY, mouseX, mouseY);
         drawToolButton(context, TOOL_X, TOOL_SHAPE_Y, PaintOverlayClient.EditorTool.SHAPE, ItemStack.EMPTY, mouseX, mouseY);
@@ -1341,7 +1343,8 @@ public class PaintEditorScreen extends Screen {
     private PaintOverlayClient.EditorTool toolAt(double mouseX, double mouseY) {
         if (isInside(TOOL_X, TOOL_BRUSH_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.BRUSH;
         if (isInside(TOOL_X, TOOL_ERASER_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.ERASER;
-        if (isInside(TOOL_X, TOOL_PAPER_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.PAPER;
+        // Temporarily disable selecting paint paper rubbing from the editor toolbar.
+        // if (isInside(TOOL_X, TOOL_PAPER_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.PAPER;
         if (isInside(TOOL_X, TOOL_PRESET_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.PRESET;
         if (isInside(TOOL_X, TOOL_SELECT_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.SELECT;
         if (isInside(TOOL_X, TOOL_SHAPE_Y, 34, 34, mouseX, mouseY)) return PaintOverlayClient.EditorTool.SHAPE;

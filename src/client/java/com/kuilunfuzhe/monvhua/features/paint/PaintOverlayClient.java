@@ -251,7 +251,7 @@ public final class PaintOverlayClient {
             }
             return true;
         }
-        if ((client.player.isCreative() || client.player.isSpectator()) && isHoldingPaintPaper(client)) {
+        if (isHoldingPaintPaper(client)) {
             client.setScreen(new PaintPaperImportScreen());
             return true;
         }
@@ -1384,7 +1384,8 @@ public final class PaintOverlayClient {
         }
         Direction face = hit.getSide();
         if (tool == EditorTool.PAPER) {
-            SafeClientNetworking.send(new PaintOverlayPackets.EditorPaperUseC2S(pos, face, client.player.isSneaking()));
+            // Temporarily disable paint paper rubbing from the editor.
+            // SafeClientNetworking.send(new PaintOverlayPackets.EditorPaperUseC2S(pos, face, client.player.isSneaking()));
             lastStrokeKey = null;
             repeatedStrokeTicks = 0;
             return;
@@ -3548,23 +3549,32 @@ public final class PaintOverlayClient {
         }
 
         private PaperRectangle rectangle(int imageWidth, int imageHeight) {
-            if (endX < startX || endY < startY) {
-                return null;
-            }
-            int availableWidth = endX - startX + 1;
-            int availableHeight = endY - startY + 1;
+            int deltaX = endX - startX;
+            int deltaY = endY - startY;
+            int directionX = deltaX < 0 ? -1 : 1;
+            int directionY = deltaY < 0 ? -1 : 1;
+            int availableWidth = Math.abs(deltaX) + 1;
+            int availableHeight = Math.abs(deltaY) + 1;
             int rotatedWidth = (rotation & 1) == 0 ? imageWidth : imageHeight;
             int rotatedHeight = (rotation & 1) == 0 ? imageHeight : imageWidth;
             if (rotatedWidth <= 0 || rotatedHeight <= 0) {
                 return null;
             }
+            int width;
+            int height;
             if (!aspectRatioLocked) {
-                return new PaperRectangle(startX, startY, Math.min(availableWidth, rotatedWidth), Math.min(availableHeight, rotatedHeight));
+                width = Math.min(availableWidth, rotatedWidth);
+                height = Math.min(availableHeight, rotatedHeight);
+            } else {
+                double scale = Math.min(1.0D,
+                        Math.min(availableWidth / (double) rotatedWidth,
+                                availableHeight / (double) rotatedHeight));
+                width = Math.max(1, Math.min(rotatedWidth, (int) Math.floor(rotatedWidth * scale)));
+                height = Math.max(1, Math.min(rotatedHeight, (int) Math.floor(rotatedHeight * scale)));
             }
-            double scale = Math.min(1.0D, Math.min(availableWidth / (double) rotatedWidth, availableHeight / (double) rotatedHeight));
-            int width = Math.max(1, Math.min(rotatedWidth, (int) Math.floor(rotatedWidth * scale)));
-            int height = Math.max(1, Math.min(rotatedHeight, (int) Math.floor(rotatedHeight * scale)));
-            return new PaperRectangle(startX, startY, width, height);
+            int microX = directionX > 0 ? startX : startX - width + 1;
+            int microY = directionY > 0 ? startY : startY - height + 1;
+            return new PaperRectangle(microX, microY, width, height);
         }
     }
 
