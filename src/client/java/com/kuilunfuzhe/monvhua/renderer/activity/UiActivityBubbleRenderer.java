@@ -114,7 +114,7 @@ public final class UiActivityBubbleRenderer {
                 );
             }
             float effectPhase = procedural
-                    ? effectPhase(state, emotion, animationTime, animationMillis)
+                    ? effectPhase(state, emotion, animationMillis)
                     : dotPhase;
             Identifier bubbleTexture = UiActivityBubbleTextureRenderer.render(
                     player.getUuid(),
@@ -196,15 +196,15 @@ public final class UiActivityBubbleRenderer {
         return 1.0F - inverse * inverse * inverse;
     }
 
+    /**
+     * Procedural artwork is cosmetic and must run against the local monotonic
+     * clock. Server world time is only used to synchronize the triggering state.
+     */
     private static float effectPhase(UiActivityClient.VisualState state, EmotionCatalog.Entry emotion,
-                                     double animationTime, long animationMillis) {
+                                     long animationMillis) {
         long cycleMillis = EmotionCatalog.animationCycleMillis(emotion);
-        if (state.contentId() == 11) {
-            long cycleTicks = Math.max(1L, cycleMillis / 50L);
-            double elapsed = Math.max(0.0D, animationTime - state.effectStartedAtGameTime());
-            return (float) ((elapsed % cycleTicks) / cycleTicks);
-        }
-        return (animationMillis % cycleMillis) / (float) cycleMillis;
+        long elapsed = Math.max(0L, animationMillis - state.effectStartedAtMillis());
+        return (elapsed % cycleMillis) / (float) cycleMillis;
     }
 
     private static boolean shouldRender(MinecraftClient client, PlayerEntity player, Vec3d cameraPos) {

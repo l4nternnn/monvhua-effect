@@ -18,6 +18,7 @@ import net.minecraft.client.gui.screen.ingame.BookSigningScreen;
 import net.minecraft.client.gui.screen.ingame.CreativeInventoryScreen;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.util.Util;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -153,6 +154,7 @@ public final class UiActivityClient {
                 packet.activity(),
                 shownAt,
                 packet.effectStartedAtGameTime(),
+                Util.getMeasuringTimeMs(),
                 NOT_HIDING,
                 NOT_HIDING,
                 packet.contentId()
@@ -170,6 +172,7 @@ public final class UiActivityClient {
                             UiActivityPackets.Activity.TRANSIENT,
                             worldTime,
                             worldTime,
+                            Util.getMeasuringTimeMs(),
                             NOT_HIDING,
                             NOT_HIDING,
                             11
@@ -230,6 +233,7 @@ public final class UiActivityClient {
             UiActivityPackets.Activity activity,
             long shownAtGameTime,
             long effectStartedAtGameTime,
+            long effectStartedAtMillis,
             long hideRequestedAtGameTime,
             long hidingAtGameTime,
             int contentId
@@ -245,11 +249,12 @@ public final class UiActivityClient {
         private VisualState requestHide(long gameTime) {
             return isHiding() || isPendingHide()
                     ? this
-                    : new VisualState(activity, shownAtGameTime, effectStartedAtGameTime, gameTime, NOT_HIDING, contentId);
+                    : new VisualState(activity, shownAtGameTime, effectStartedAtGameTime, effectStartedAtMillis,
+                    gameTime, NOT_HIDING, contentId);
         }
 
         private VisualState beginFade(long gameTime) {
-            return new VisualState(activity, shownAtGameTime, effectStartedAtGameTime,
+            return new VisualState(activity, shownAtGameTime, effectStartedAtGameTime, effectStartedAtMillis,
                     hideRequestedAtGameTime, gameTime, contentId);
         }
     }
