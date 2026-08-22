@@ -47,6 +47,110 @@ float circleMask(vec2 p, vec2 center, float radius) {
     return 1.0 - smoothstep(-aa, aa, distanceToCircle);
 }
 
+int pixelPointKind(vec2 p, vec2 center) {
+    const float cellSize = 0.017;
+    vec2 local = p - center;
+    float column = floor((local.x + cellSize * 2.0) / cellSize);
+    float row = floor((-local.y + cellSize * 2.0) / cellSize);
+    if (column < 0.0 || column > 3.0 || row < 0.0 || row > 3.0) {
+        return 0;
+    }
+
+    // 4x4 pixel glyph matching point.png. 1 is the black theme pixel,
+    // 2 is the gray shadow pixel.
+    if (row < 2.0) {
+        return column <= 2.0 ? 1 : 0;
+    }
+    if (row < 3.0) {
+        return column <= 2.0 ? 1 : 2;
+    }
+    return column >= 2.0 ? 2 : 0;
+}
+
+int pixelFrameKind() {
+    int x = int(clamp(floor(localUv.x * 28.0), 0.0, 27.0));
+    int y = int(clamp(floor((1.0 - localUv.y) * 18.0), 0.0, 17.0));
+
+    if (y == 0) {
+        return x >= 8 && x <= 22 ? 2 : 0;
+    } else if (y == 1) {
+        if (x == 6 || x == 24) return 2;
+        if (x == 7 || x == 23) return 3;
+        if (x == 8 || x == 22) return 4;
+        return x >= 9 && x <= 21 ? 1 : 0;
+    } else if (y == 2) {
+        if (x == 5 || x == 25) return 2;
+        if (x == 6 || x == 24) return 4;
+        return x >= 7 && x <= 23 ? 1 : 0;
+    } else if (y == 3) {
+        if (x == 4 || x == 26) return 2;
+        if (x == 5 || x == 25) return 4;
+        return x >= 6 && x <= 24 ? 1 : 0;
+    } else if (y == 4) {
+        if (x == 4 || x == 26) return 3;
+        return x >= 5 && x <= 25 ? 1 : 0;
+    } else if (y == 5) {
+        if (x == 3 || x == 27) return 2;
+        if (x == 4 || x == 26) return 4;
+        return x >= 5 && x <= 25 ? 1 : 0;
+    } else if (y == 6 || y == 7) {
+        if (x == 3) return 3;
+        if (x == 27) return 2;
+        return x >= 4 && x <= 26 ? 1 : 0;
+    } else if (y == 8) {
+        if (x == 3) return 3;
+        if (x == 26) return 4;
+        if (x == 27) return 2;
+        return x >= 4 && x <= 25 ? 1 : 0;
+    } else if (y == 9) {
+        if (x == 3) return 2;
+        if (x == 26) return 3;
+        return x >= 4 && x <= 25 ? 1 : 0;
+    } else if (y == 10) {
+        if (x == 3 || x == 26) return 2;
+        if (x == 4 || x == 25) return 4;
+        return x >= 5 && x <= 24 ? 1 : 0;
+    } else if (y == 11) {
+        if (x == 3 || x == 25) return 2;
+        if (x == 24) return 4;
+        return x >= 4 && x <= 23 ? 1 : 0;
+    } else if (y == 12) {
+        if (x == 2 || x == 6 || x == 24) return 2;
+        if (x == 7 || x == 8 || x == 23) return 3;
+        if (x == 9 || x == 22) return 4;
+        return (x >= 3 && x <= 5) || (x >= 10 && x <= 21) ? 1 : 0;
+    } else if (y == 13) {
+        if (x == 2) return 3;
+        if (x == 5 || x == 6 || (x >= 8 && x <= 22)) return 2;
+        return x == 3 || x == 4 ? 1 : 0;
+    } else if (y == 14) {
+        if (x == 1 || x == 4) return 2;
+        if (x == 2) return 4;
+        return x == 3 ? 1 : 0;
+    } else if (y == 15) {
+        if (x == 1) return 3;
+        if (x == 3) return 2;
+        return x == 2 ? 1 : 0;
+    } else if (y == 16) {
+        if (x == 0 || x == 2) return 2;
+        if (x == 1) return 4;
+    } else if (y == 17) {
+        return x <= 1 ? 2 : 0;
+    }
+    return 0;
+}
+
+vec3 pixelFrameColor(int kind) {
+    if (kind == 2) {
+        return OUTLINE_COLOR;
+    } else if (kind == 3) {
+        return vec3(0.412, 0.392, 0.392);
+    } else if (kind == 4) {
+        return vec3(0.667, 0.659, 0.659);
+    }
+    return FILL_COLOR;
+}
+
 float lineMask(vec2 p, vec2 a, vec2 b, float width) {
     vec2 delta = b - a;
     float along = clamp(dot(p - a, delta) / max(dot(delta, delta), 0.00001), 0.0, 1.0);
@@ -388,28 +492,38 @@ void main() {
     }
 
     bool pixelStyle = bubbleParameters.a < 0.998;
-    // Quantize only the bubble silhouette. Its content remains high-resolution.
-    vec2 shapeP = pixelStyle ? floor(p * 96.0 + 0.5) / 96.0 : p;
-    float body = sdRoundedBox(shapeP - vec2(0.0, 0.065), vec2(0.39, 0.19), 0.095);
-    float tail = sdTriangle(
-        shapeP,
-        vec2(-0.235, -0.105),
-        vec2(-0.325, -0.275),
-        vec2(-0.055, -0.115)
-    ) - 0.008;
-    float bubble = pixelStyle ? min(body, tail) : smoothUnion(body, tail, 0.022);
-
-    float edgeAA = max(fwidth(bubble) * 1.2, 0.0009);
-    float shapeAlpha = pixelStyle ? step(bubble, 0.0)
-        : 1.0 - smoothstep(-edgeAA, edgeAA, bubble);
+    float body;
+    float edgeAA;
+    float shapeAlpha;
+    float fillMask;
+    vec3 color;
+    if (pixelStyle) {
+        int frameKind = pixelFrameKind();
+        body = 0.0;
+        edgeAA = 0.0;
+        shapeAlpha = frameKind == 0 ? 0.0 : 1.0;
+        fillMask = frameKind == 1 ? 1.0 : 0.0;
+        color = pixelFrameColor(frameKind);
+    } else {
+        vec2 shapeP = p;
+        body = sdRoundedBox(shapeP - vec2(0.0, 0.065), vec2(0.39, 0.19), 0.095);
+        float tail = sdTriangle(
+            shapeP,
+            vec2(-0.235, -0.105),
+            vec2(-0.325, -0.275),
+            vec2(-0.055, -0.115)
+        ) - 0.008;
+        float bubble = smoothUnion(body, tail, 0.022);
+        edgeAA = max(fwidth(bubble) * 1.2, 0.0009);
+        shapeAlpha = 1.0 - smoothstep(-edgeAA, edgeAA, bubble);
+        fillMask = 1.0 - smoothstep(-0.018 - edgeAA, -0.018 + edgeAA, bubble);
+        color = mix(OUTLINE_COLOR, FILL_COLOR, fillMask);
+    }
     if (shapeAlpha <= 0.001) {
         discard;
     }
 
-    float strokeWidth = pixelStyle ? 0.024 : 0.018;
-    float fillMask = pixelStyle ? step(bubble, -strokeWidth)
-        : 1.0 - smoothstep(-strokeWidth - edgeAA, -strokeWidth + edgeAA, bubble);
-    vec3 color = mix(OUTLINE_COLOR, FILL_COLOR, fillMask);
+    float strokeWidth = pixelStyle ? 0.0 : 0.018;
 
     float phase = bubbleParameters.g * 3.0;
     float firstSlot = phase;
@@ -428,11 +542,31 @@ void main() {
     float appleFood = step(17.5, float(contentId)) * step(float(contentId), 18.5);
     float breadFood = step(18.5, float(contentId)) * step(float(contentId), 19.5);
     float eatFood = max(appleFood, breadFood);
-    float dots = 0.0;
-    dots = max(dots, circleMask(p, vec2(-0.14, 0.055 + firstJump), 0.034));
-    dots = max(dots, circleMask(p, vec2(0.0, 0.055 + secondJump), 0.034));
-    dots = max(dots, circleMask(p, vec2(0.14, 0.055 + thirdJump), 0.034));
-    color = mix(color, OUTLINE_COLOR, dots * fillMask * (1.0 - hasContent));
+    float themeDots = 0.0;
+    float shadowDots = 0.0;
+    if (pixelStyle) {
+        int firstPoint = pixelPointKind(p, vec2(-0.14, 0.055 + firstJump));
+        int secondPoint = pixelPointKind(p, vec2(0.0, 0.055 + secondJump));
+        int thirdPoint = pixelPointKind(p, vec2(0.14, 0.055 + thirdJump));
+        themeDots = max(themeDots, firstPoint == 1 ? 1.0 : 0.0);
+        themeDots = max(themeDots, secondPoint == 1 ? 1.0 : 0.0);
+        themeDots = max(themeDots, thirdPoint == 1 ? 1.0 : 0.0);
+        shadowDots = (firstPoint == 2 ? 1.0 : 0.0)
+            * (1.0 - smoothstep(0.0, 0.055, firstJump));
+        shadowDots = max(shadowDots,
+            (secondPoint == 2 ? 1.0 : 0.0)
+                * (1.0 - smoothstep(0.0, 0.055, secondJump)));
+        shadowDots = max(shadowDots,
+            (thirdPoint == 2 ? 1.0 : 0.0)
+                * (1.0 - smoothstep(0.0, 0.055, thirdJump)));
+        color = mix(color, vec3(0.667, 0.659, 0.659),
+            shadowDots * (1.0 - hasContent));
+    } else {
+        themeDots = max(themeDots, circleMask(p, vec2(-0.14, 0.055 + firstJump), 0.034));
+        themeDots = max(themeDots, circleMask(p, vec2(0.0, 0.055 + secondJump), 0.034));
+        themeDots = max(themeDots, circleMask(p, vec2(0.14, 0.055 + thirdJump), 0.034));
+    }
+    color = mix(color, OUTLINE_COLOR, themeDots * fillMask * (1.0 - hasContent));
 
     vec2 imageUv = vec2(
         (p.x + 0.345) / 0.69,
@@ -470,7 +604,7 @@ void main() {
         // Map the visible body (roughly v=.30.. .90) to the complete page crop.
         vec2 diaryUv = vec2(localUv.x, 0.10 + (0.90 - localUv.y) * 1.3333333);
         vec4 diaryImage = texture(Sampler0, clamp(diaryUv, 0.0, 1.0));
-        float bodyFill = 1.0 - smoothstep(
+        float bodyFill = pixelStyle ? fillMask : 1.0 - smoothstep(
             -strokeWidth - edgeAA,
             -strokeWidth + edgeAA,
             body

@@ -2580,8 +2580,10 @@ public final class PaintOverlayClient {
             client.player.sendMessage(Text.literal(packet.message()), true);
         }
         if (packet.success()) {
-            localImportedPaper = null;
             clearImportedPaperPreview();
+            if (!isHoldingPaintPaper(client)) {
+                localImportedPaper = null;
+            }
         }
         localPaperUpload = null;
     }

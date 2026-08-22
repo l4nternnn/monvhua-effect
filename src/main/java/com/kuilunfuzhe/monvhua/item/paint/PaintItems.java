@@ -48,7 +48,7 @@ public final class PaintItems {
         RegistryKey<Item> paperKey = RegistryKey.of(RegistryKeys.ITEM, paperId);
         PAINT_PAPER = new PaintPaperItem(new Item.Settings()
                 .registryKey(paperKey)
-                .maxCount(1)
+                .maxCount(64)
                 .component(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, true));
 
         Identifier bucketId = Identifier.of(MonvhuaMod.MOD_ID, "paint_bucket");

@@ -426,8 +426,10 @@ public final class PaintOverlayFeature {
         if (image == null || !image.isUsable()) {
             return;
         }
-        PaintPaperItem.placeImportedImage(world, player, image, packet.pos(), packet.face(), packet.microX(), packet.microY(),
-                image.width(), image.height(), 0);
+        if (PaintPaperItem.placeImportedImage(world, player, image, packet.pos(), packet.face(), packet.microX(), packet.microY(),
+                image.width(), image.height(), 0)) {
+            paper.decrement(1);
+        }
     }
 
     private static void beginImportedPaperUpload(ServerPlayerEntity player, PaintOverlayPackets.PlaceImportedPaperBeginC2S packet) {

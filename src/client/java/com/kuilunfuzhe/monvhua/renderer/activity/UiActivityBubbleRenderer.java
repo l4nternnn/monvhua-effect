@@ -39,6 +39,7 @@ public final class UiActivityBubbleRenderer {
     private static final double NAME_LABEL_EXTRA_HEIGHT = 0.50D;
     private static final double NAME_LABEL_CLEARANCE = 0.12D;
     private static final double TAIL_TO_CENTER = 0.38D;
+    private static final float PIXEL_ASPECT = 28.0F / 18.0F;
     private static final float WIDTH = 0.92F * 4.0F / 3.0F;
     private static final float HEIGHT = 0.62F * 4.0F / 3.0F;
     private static final int DOT_CYCLE_TICKS = 24;
@@ -132,7 +133,9 @@ public final class UiActivityBubbleRenderer {
                     style.vertexAlpha()
             );
             if (bubbleTexture != null) {
-                PendingBubble pending = projectBubble(context, bubbleTexture, bubblePos);
+                PendingBubble pending = projectBubble(
+                        context, bubbleTexture, bubblePos, style == UiActivityBubbleStyle.PIXEL
+                );
                 if (pending != null) {
                     PENDING.add(pending);
                 }
@@ -271,9 +274,10 @@ public final class UiActivityBubbleRenderer {
     }
 
     private static PendingBubble projectBubble(WorldRenderContext context, Identifier textureId,
-                                               Vec3d bubblePos) {
+                                               Vec3d bubblePos, boolean pixelStyle) {
         Vec3d cameraPos = context.camera().getPos();
-        float halfWidth = WIDTH * sizeMultiplier * 0.5F;
+        float bubbleWidth = pixelStyle ? HEIGHT * PIXEL_ASPECT : WIDTH;
+        float halfWidth = bubbleWidth * sizeMultiplier * 0.5F;
         float halfHeight = HEIGHT * sizeMultiplier * 0.5F;
 
         Matrix4f model = new Matrix4f(context.positionMatrix())
@@ -304,7 +308,7 @@ public final class UiActivityBubbleRenderer {
             projected[offset + 3] = corner[3];
             projected[offset + 4] = corner[4];
         }
-        return new PendingBubble(textureId, projected);
+        return new PendingBubble(textureId, projected, pixelStyle);
     }
 
     private static GpuBuffer createCompositeBuffer(PendingBubble bubble) {
@@ -328,9 +332,11 @@ public final class UiActivityBubbleRenderer {
         buffer.putFloat(vertices[offset + 2]);
         buffer.putFloat(vertices[offset + 3]);
         buffer.putFloat(vertices[offset + 4]);
-        buffer.putInt(0xFFFFFFFF);
+        // Alpha is a style flag for the composite shader; the shader intentionally
+        // keeps the bubble texture's own color and alpha unchanged.
+        buffer.putInt(bubble.pixelStyle() ? 0xFEFFFFFF : 0xFFFFFFFF);
     }
 
-    private record PendingBubble(Identifier textureId, float[] projected) {
+    private record PendingBubble(Identifier textureId, float[] projected, boolean pixelStyle) {
     }
 }
