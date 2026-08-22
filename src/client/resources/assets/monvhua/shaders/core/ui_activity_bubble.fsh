@@ -387,27 +387,28 @@ void main() {
         return;
     }
 
-    float body = sdRoundedBox(p - vec2(0.0, 0.065), vec2(0.39, 0.19), 0.095);
+    bool pixelStyle = bubbleParameters.a < 0.998;
+    // Quantize only the bubble silhouette. Its content remains high-resolution.
+    vec2 shapeP = pixelStyle ? floor(p * 96.0 + 0.5) / 96.0 : p;
+    float body = sdRoundedBox(shapeP - vec2(0.0, 0.065), vec2(0.39, 0.19), 0.095);
     float tail = sdTriangle(
-        p,
+        shapeP,
         vec2(-0.235, -0.105),
         vec2(-0.325, -0.275),
         vec2(-0.055, -0.115)
     ) - 0.008;
-    float bubble = smoothUnion(body, tail, 0.022);
+    float bubble = pixelStyle ? min(body, tail) : smoothUnion(body, tail, 0.022);
 
     float edgeAA = max(fwidth(bubble) * 1.2, 0.0009);
-    float shapeAlpha = 1.0 - smoothstep(-edgeAA, edgeAA, bubble);
+    float shapeAlpha = pixelStyle ? step(bubble, 0.0)
+        : 1.0 - smoothstep(-edgeAA, edgeAA, bubble);
     if (shapeAlpha <= 0.001) {
         discard;
     }
 
-    float strokeWidth = 0.018;
-    float fillMask = 1.0 - smoothstep(
-        -strokeWidth - edgeAA,
-        -strokeWidth + edgeAA,
-        bubble
-    );
+    float strokeWidth = pixelStyle ? 0.024 : 0.018;
+    float fillMask = pixelStyle ? step(bubble, -strokeWidth)
+        : 1.0 - smoothstep(-strokeWidth - edgeAA, -strokeWidth + edgeAA, bubble);
     vec3 color = mix(OUTLINE_COLOR, FILL_COLOR, fillMask);
 
     float phase = bubbleParameters.g * 3.0;

@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.renderer.activity;
 
 import com.kuilunfuzhe.monvhua.features.activity.UiActivityClient;
 import com.kuilunfuzhe.monvhua.features.activity.UiActivityBubbleSize;
+import com.kuilunfuzhe.monvhua.features.activity.UiActivityBubbleStyle;
 import com.kuilunfuzhe.monvhua.features.activity.EmotionCatalog;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityMagic;
 import com.kuilunfuzhe.monvhua.features.gravity.SurfaceGravityBasis;
@@ -42,6 +43,7 @@ public final class UiActivityBubbleRenderer {
     private static final float HEIGHT = 0.62F * 4.0F / 3.0F;
     private static final int DOT_CYCLE_TICKS = 24;
     private static volatile float sizeMultiplier = UiActivityBubbleSize.DEFAULT_MULTIPLIER;
+    private static volatile UiActivityBubbleStyle style = UiActivityBubbleStyle.DEFAULT;
     private static final List<PendingBubble> PENDING = new ArrayList<>();
 
     private UiActivityBubbleRenderer() {
@@ -53,6 +55,10 @@ public final class UiActivityBubbleRenderer {
 
     public static float sizeMultiplier() {
         return sizeMultiplier;
+    }
+
+    public static void setStyle(UiActivityBubbleStyle nextStyle) {
+        style = nextStyle == null ? UiActivityBubbleStyle.DEFAULT : nextStyle;
     }
 
     public static void render(WorldRenderContext context) {
@@ -122,7 +128,8 @@ public final class UiActivityBubbleRenderer {
                     emotionTexture,
                     reveal,
                     effectPhase,
-                    effectiveContentId
+                    effectiveContentId,
+                    style.vertexAlpha()
             );
             if (bubbleTexture != null) {
                 PendingBubble pending = projectBubble(context, bubbleTexture, bubblePos);

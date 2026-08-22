@@ -110,7 +110,7 @@ public final class UiActivityServer {
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
                 clearPlayer(handler.getPlayer().getUuid()));
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
-                sendBubbleSize(handler.getPlayer(), UiActivityBubbleSizeStore.get(server).multiplier()));
+                sendPlayerSettings(handler.getPlayer(), server));
     }
 
     public static void playTransient(ServerPlayerEntity player, int contentId, int durationTicks) {
@@ -159,6 +159,12 @@ public final class UiActivityServer {
     public static void broadcastBubbleSize(MinecraftServer server, float multiplier) {
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             sendBubbleSize(player, multiplier);
+        }
+    }
+
+    public static void broadcastBubbleStyle(MinecraftServer server, UiActivityBubbleStyle style) {
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            sendBubbleStyle(player, style);
         }
     }
 
@@ -308,6 +314,17 @@ public final class UiActivityServer {
     private static void sendBubbleSize(ServerPlayerEntity player, float multiplier) {
         if (ServerPlayNetworking.canSend(player, UiActivityPackets.BubbleSizeS2C.ID)) {
             ServerPlayNetworking.send(player, new UiActivityPackets.BubbleSizeS2C(multiplier));
+        }
+    }
+
+    private static void sendPlayerSettings(ServerPlayerEntity player, MinecraftServer server) {
+        sendBubbleSize(player, UiActivityBubbleSizeStore.get(server).multiplier());
+        sendBubbleStyle(player, UiActivityBubbleStyleStore.get(server).style());
+    }
+
+    private static void sendBubbleStyle(ServerPlayerEntity player, UiActivityBubbleStyle style) {
+        if (ServerPlayNetworking.canSend(player, UiActivityPackets.BubbleStyleS2C.ID)) {
+            ServerPlayNetworking.send(player, new UiActivityPackets.BubbleStyleS2C(style.ordinal()));
         }
     }
 

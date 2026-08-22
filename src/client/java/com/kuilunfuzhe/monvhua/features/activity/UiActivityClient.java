@@ -53,6 +53,9 @@ public final class UiActivityClient {
                 context.client().execute(() -> receive(packet)));
         ClientPlayNetworking.registerGlobalReceiver(UiActivityPackets.BubbleSizeS2C.ID, (packet, context) ->
                 context.client().execute(() -> UiActivityBubbleRenderer.setSizeMultiplier(packet.multiplier())));
+        ClientPlayNetworking.registerGlobalReceiver(UiActivityPackets.BubbleStyleS2C.ID, (packet, context) ->
+                context.client().execute(() -> UiActivityBubbleRenderer.setStyle(
+                        UiActivityBubbleStyle.fromId(packet.styleId()))));
         // DISCONNECT may be fired from the connection thread. Keep state changes on the
         // client executor; GPU resources are released after world teardown in tick().
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(UiActivityClient::clear));
@@ -227,6 +230,7 @@ public final class UiActivityClient {
         lastSentContentId = 0;
         selectedContentId = 0;
         UiActivityBubbleRenderer.setSizeMultiplier(UiActivityBubbleSize.DEFAULT_MULTIPLIER);
+        UiActivityBubbleRenderer.setStyle(UiActivityBubbleStyle.DEFAULT);
     }
 
     public record VisualState(

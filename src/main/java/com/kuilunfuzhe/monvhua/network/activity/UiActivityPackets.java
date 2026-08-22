@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.network.activity;
 
 import com.kuilunfuzhe.monvhua.features.activity.UiActivityBubbleSize;
+import com.kuilunfuzhe.monvhua.features.activity.UiActivityBubbleStyle;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.network.RegistryByteBuf;
 import net.minecraft.network.codec.PacketCodec;
@@ -20,6 +21,7 @@ public final class UiActivityPackets {
     public static void registerS2C() {
         StateS2C.register();
         BubbleSizeS2C.register();
+        BubbleStyleS2C.register();
     }
 
     public enum Activity {
@@ -139,6 +141,38 @@ public final class UiActivityPackets {
 
         private void write(RegistryByteBuf buf) {
             buf.writeFloat(multiplier);
+        }
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
+        }
+
+        private static void register() {
+            if (!registered) {
+                PayloadTypeRegistry.playS2C().register(ID, CODEC);
+                registered = true;
+            }
+        }
+    }
+
+    public record BubbleStyleS2C(int styleId) implements CustomPayload {
+        public static final Id<BubbleStyleS2C> ID = new Id<>(
+                Identifier.of("monvhua", "ui_activity_bubble_style_s2c"));
+        public static final PacketCodec<RegistryByteBuf, BubbleStyleS2C> CODEC =
+                PacketCodec.of(BubbleStyleS2C::write, BubbleStyleS2C::new);
+        private static boolean registered;
+
+        public BubbleStyleS2C {
+            styleId = UiActivityBubbleStyle.fromId(styleId).ordinal();
+        }
+
+        private BubbleStyleS2C(RegistryByteBuf buf) {
+            this(buf.readUnsignedByte());
+        }
+
+        private void write(RegistryByteBuf buf) {
+            buf.writeByte(styleId);
         }
 
         @Override

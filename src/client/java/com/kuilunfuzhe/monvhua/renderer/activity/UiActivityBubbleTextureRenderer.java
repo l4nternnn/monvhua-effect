@@ -41,7 +41,7 @@ public final class UiActivityBubbleTextureRenderer {
     }
 
     public static Identifier render(UUID owner, MinecraftClient client, Identifier contentTexture,
-                                    float reveal, float phase, int contentId) {
+                                    float reveal, float phase, int contentId, int styleAlpha) {
         if (owner == null || client == null) {
             return null;
         }
@@ -87,15 +87,16 @@ public final class UiActivityBubbleTextureRenderer {
             int revealByte = Math.round(reveal * 255.0F);
             int phaseByte = Math.round(phase * 255.0F);
             int contentByte = Math.clamp(contentId, 0, 255);
+            int styleByte = Math.clamp(styleAlpha, 0, 255);
             Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
             emitBubbleVertex(vertices, positionMatrix, -1.0F, -1.0F, 0.0F, 0.0F,
-                    revealByte, phaseByte, contentByte);
+                    revealByte, phaseByte, contentByte, styleByte);
             emitBubbleVertex(vertices, positionMatrix, 1.0F, -1.0F, 1.0F, 0.0F,
-                    revealByte, phaseByte, contentByte);
+                    revealByte, phaseByte, contentByte, styleByte);
             emitBubbleVertex(vertices, positionMatrix, 1.0F, 1.0F, 1.0F, 1.0F,
-                    revealByte, phaseByte, contentByte);
+                    revealByte, phaseByte, contentByte, styleByte);
             emitBubbleVertex(vertices, positionMatrix, -1.0F, 1.0F, 0.0F, 1.0F,
-                    revealByte, phaseByte, contentByte);
+                    revealByte, phaseByte, contentByte, styleByte);
             slot.consumers.draw();
             slot.lastUsedMillis = Util.getMeasuringTimeMs();
             return slot.textureId;
@@ -137,10 +138,10 @@ public final class UiActivityBubbleTextureRenderer {
     }
 
     private static void emitBubbleVertex(VertexConsumer vertices, Matrix4f matrix, float x, float y, float u, float v,
-                                         int reveal, int phase, int contentId) {
+                                         int reveal, int phase, int contentId, int style) {
         vertices.vertex(matrix, x, y, 0.0F)
                 .texture(u, v)
-                .color(reveal, phase, contentId, 255);
+                .color(reveal, phase, contentId, style);
     }
 
     private static final class Slot {
