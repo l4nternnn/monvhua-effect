@@ -61,6 +61,7 @@ final class HoldHandsRigidArmSegmentRenderer {
         Vec3d startLocal = HoldHandsLinkGeometry.shoulderSocket(side);
         Vec3d endLocal = HoldHandsLinkGeometry.worldVectorToBodyLocal(targetWorld.subtract(self.getPos()), renderBodyYaw);
         endLocal = adjustVisualEndLocal(startLocal, endLocal, side);
+        endLocal = clampVisualReach(startLocal, endLocal, HoldHandsClientState.getTension(state.id));
         Vec3d segment = endLocal.subtract(startLocal);
         if (segment.lengthSquared() <= MIN_SEGMENT_LENGTH * MIN_SEGMENT_LENGTH) {
             return false;
@@ -84,6 +85,17 @@ final class HoldHandsRigidArmSegmentRenderer {
 
         Vec3d segment = endLocal.subtract(startLocal);
         return startLocal.add(segment.x, segment.y, segment.z * PASSIVE_ARM_Z_ANGLE_GAIN);
+    }
+
+    private static Vec3d clampVisualReach(Vec3d start, Vec3d end, float tension) {
+        Vec3d delta = end.subtract(start);
+        double length = delta.length();
+        double maxLength = HoldHandsLinkGeometry.ARM_REACH + 0.32D
+                * Math.max(0.0D, Math.min(1.0D, Float.isFinite(tension) ? tension : 0.0D));
+        if (!Double.isFinite(length) || length <= maxLength || length <= 0.000001D) {
+            return end;
+        }
+        return start.add(delta.multiply(maxLength / length));
     }
 
     private static void renderArmModel(MatrixStack matrices, VertexConsumer vertices, Vec3d start, Vec3d end,

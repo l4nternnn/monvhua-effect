@@ -30,6 +30,7 @@
 		"InvertedWallMountedBlockItemMixin",
 		"InvertedWallMountedPlacementMixin",
 		"PlayerManagerMixin",
+		"ServerPlayNetworkHandlerAccessor",
 		"ServerCommonNetworkHandlerMixin",
 		"ThroughPhaseCollisionMixin",
 		"possession.PossessionMovementMixin",

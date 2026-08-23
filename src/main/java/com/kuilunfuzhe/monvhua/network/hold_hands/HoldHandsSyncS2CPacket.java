@@ -6,9 +6,11 @@ import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
-public record HoldHandsSyncS2CPacket(int entityId, boolean active, int handSide, int partnerId,
+public record HoldHandsSyncS2CPacket(int entityId, boolean active, long sequence, int handSide, int partnerId,
                                      float defaultDistance, float holdBodyYaw,
-                                     float sharedHandX, float sharedHandY, float sharedHandZ) implements CustomPayload {
+                                     float sharedHandX, float sharedHandY, float sharedHandZ,
+                                     long serverTick, float velocityX, float velocityY, float velocityZ,
+                                     float tension, float relativeDistance, float relativeSpeed) implements CustomPayload {
     public static final int HAND_LEFT = 0;
     public static final int HAND_RIGHT = 1;
     public static final int NO_PARTNER = -1;
@@ -22,13 +24,16 @@ public record HoldHandsSyncS2CPacket(int entityId, boolean active, int handSide,
     private static boolean registered;
 
     private HoldHandsSyncS2CPacket(RegistryByteBuf buf) {
-        this(buf.readInt(), buf.readBoolean(), buf.readInt(), buf.readInt(),
-                buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat());
+        this(buf.readInt(), buf.readBoolean(), buf.readLong(), buf.readInt(), buf.readInt(),
+                buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(),
+                buf.readLong(), buf.readFloat(), buf.readFloat(), buf.readFloat(),
+                buf.readFloat(), buf.readFloat(), buf.readFloat());
     }
 
     private void write(RegistryByteBuf buf) {
         buf.writeInt(entityId);
         buf.writeBoolean(active);
+        buf.writeLong(sequence);
         buf.writeInt(handSide);
         buf.writeInt(partnerId);
         buf.writeFloat(defaultDistance);
@@ -36,6 +41,13 @@ public record HoldHandsSyncS2CPacket(int entityId, boolean active, int handSide,
         buf.writeFloat(sharedHandX);
         buf.writeFloat(sharedHandY);
         buf.writeFloat(sharedHandZ);
+        buf.writeLong(serverTick);
+        buf.writeFloat(velocityX);
+        buf.writeFloat(velocityY);
+        buf.writeFloat(velocityZ);
+        buf.writeFloat(tension);
+        buf.writeFloat(relativeDistance);
+        buf.writeFloat(relativeSpeed);
     }
 
     public static void register() {

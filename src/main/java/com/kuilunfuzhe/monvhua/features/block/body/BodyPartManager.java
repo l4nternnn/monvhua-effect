@@ -9,6 +9,7 @@ import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlaceTrueSkeletalBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.hold_hands.HoldHandsInteractC2SPacket;
+import com.kuilunfuzhe.monvhua.network.hold_hands.HoldHandsInputC2SPacket;
 import com.kuilunfuzhe.monvhua.screen.BodyPartScreenHandler;
 import com.kuilunfuzhe.monvhua.util.ImplementedInventory;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -363,6 +364,11 @@ public class BodyPartManager {
 			context.server().execute(() -> handleHoldHandsMiddleClick(player, payload.entityId()));
 		});
 
+		ServerPlayNetworking.registerGlobalReceiver(HoldHandsInputC2SPacket.ID, (payload, context) -> {
+			ServerPlayerEntity player = context.player();
+			context.server().execute(() -> HoldHandsManager.onInputPacketReceived(player, payload));
+		});
+
 		ServerTickEvents.END_SERVER_TICK.register(HoldHandsManager::tick);
 	}
 
@@ -385,7 +391,8 @@ public class BodyPartManager {
 	}
 
 	private static void handleHoldHandsMiddleClick(ServerPlayerEntity player, int entityId) {
-		if (player == null || !player.isSneaking()) {
+		if (player == null || (!player.isSneaking() && !player.getPlayerInput().sneak()
+				&& !HoldHandsManager.hasRecentSneakInput(player))) {
 			return;
 		}
 		if (!(player.getWorld() instanceof ServerWorld world)) {
@@ -393,6 +400,9 @@ public class BodyPartManager {
 		}
 		Entity entity = world.getEntityById(entityId);
 		if (!(entity instanceof ServerPlayerEntity target) || target == player) {
+			return;
+		}
+		if (!target.isAlive() || player.squaredDistanceTo(target) > 36.0D) {
 			return;
 		}
 		HoldHandsManager.togglePair(player, target);

@@ -30,6 +30,7 @@
   "key.gazeguidance.magic": "标记实体",
   "key.monvhua.body_pose_editor":"模型编辑器",
   "key.monvhua.action_editor": "动作编辑器（已废弃）",
+  "key.monvhua.hold_hands": "牵手（潜行+鼠标中键）",
   "category.gazeguidance": "视线诱导",
 
   "item.monvhua.torso": "玩家躯干",

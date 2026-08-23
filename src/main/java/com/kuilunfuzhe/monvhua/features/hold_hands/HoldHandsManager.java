@@ -1,14 +1,18 @@
 package com.kuilunfuzhe.monvhua.features.hold_hands;
 
+import com.kuilunfuzhe.monvhua.mixin.ServerPlayNetworkHandlerAccessor;
+import com.kuilunfuzhe.monvhua.network.hold_hands.HoldHandsInputC2SPacket;
 import com.kuilunfuzhe.monvhua.network.hold_hands.HoldHandsSyncS2CPacket;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.PlayerInput;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
+import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -64,6 +68,37 @@ public final class HoldHandsManager {
     private static final double PAIR_MAX_VERTICAL_CORRECTION_SPEED = 0.18D;
     private static final double PAIR_TELEPORT_DISTANCE = 7.0D;
     private static final int PAIR_TELEPORT_CONFIRM_TICKS = 4;
+    private static final int BOOTSTRAP_TICKS = 6;
+    private static final double BOOTSTRAP_INTENT_ALPHA = 0.72D;
+    private static final double NORMAL_INTENT_ALPHA = 0.42D;
+    private static final double BOOTSTRAP_MAX_IMPULSE = 0.65D;
+    private static final double NORMAL_MAX_IMPULSE = 0.45D;
+    private static final double BOOTSTRAP_MAX_ACCELERATION = 0.18D;
+    private static final double NORMAL_MAX_ACCELERATION = 0.12D;
+    private static final double BOOTSTRAP_MAX_CENTER_SPEED = 0.40D;
+    private static final double NORMAL_MAX_CENTER_SPEED = 0.30D;
+    // These are per-tick gains. Values intended for a seconds-based solver
+    // (for example k=7, c=4.2) are unstable when applied directly to velocity
+    // every Minecraft tick.
+    private static final double SPRING_STIFFNESS = 0.32D;
+    private static final double SPRING_DAMPING = 0.95D;
+    private static final double RELATIVE_INPUT_GAIN = 0.32D;
+    private static final double MAX_RELATIVE_CORRECTION = 0.80D;
+    private static final double MAX_RELATIVE_SPEED = 2.0D;
+    private static final double MAX_STRETCH = 1.20D;
+    private static final double RELATIVE_POSITION_DEADBAND = 0.012D;
+    private static final double RELATIVE_SPEED_DEADBAND = 0.018D;
+    private static final double CENTER_VELOCITY_DEADBAND = 0.006D;
+    private static final double SETTLE_POSITION_EPSILON = 0.03D;
+    private static final double SETTLE_SPEED_EPSILON = 0.03D;
+    private static final double MAX_PATH_CHECK_DISTANCE = 8.0D;
+    private static final double TENSION_SPEED_WEIGHT = 0.18D;
+    private static final int STRAIN_CONFIRM_TICKS = 10;
+    private static final int TELEPORT_WAIT_TIMEOUT_TICKS = 40;
+    private static final int RECOVERY_TICKS = 3;
+    private static final int SYNC_INTERVAL_TICKS = 2;
+    private static final int MAX_INPUT_SEQUENCE_JUMP = 240;
+    private static final int PAIR_HISTORY_TICKS = 40;
     private static final int PAIR_VERTICAL_CONFIRM_TICKS = 3;
     private static final double FOLLOW_POSITION_STEP_DEADBAND = 0.20D;
     private static final double TAUT_POSITION_STEP_DEADBAND = 0.08D;
@@ -86,6 +121,18 @@ public final class HoldHandsManager {
 
     private static final Map<UUID, HoldHandData> ACTIVE = new ConcurrentHashMap<>();
     private static final Map<String, HoldAnchorState> ANCHORS = new ConcurrentHashMap<>();
+    private static final Map<String, TeleportGuard> TELEPORT_GUARDS = new ConcurrentHashMap<>();
+    private static final Map<String, Integer> RECOVERY = new ConcurrentHashMap<>();
+    private static final Map<UUID, Long> INPUT_ARRIVAL_TICKS = new ConcurrentHashMap<>();
+    private static final Map<UUID, Long> SNEAK_INPUT_TICKS = new ConcurrentHashMap<>();
+    private static final Map<UUID, Integer> INPUTS_THIS_TICK = new ConcurrentHashMap<>();
+    private static final Map<UUID, InputSample> LATEST_INPUTS = new ConcurrentHashMap<>();
+    private static final Map<String, ArrayDeque<HoldPairHistoryEntry>> PAIR_HISTORY = new ConcurrentHashMap<>();
+    private static final Map<UUID, Long> SYNC_SEQUENCES = new ConcurrentHashMap<>();
+    private static final Map<UUID, ReachabilityCache> REACHABILITY_CACHE = new ConcurrentHashMap<>();
+    private static long lastServerTickNanos;
+    private static double tickIntervalEmaMs = 50.0D;
+    private static double currentConstraintScale = 1.0D;
 
     private HoldHandsManager() {
     }
@@ -118,8 +165,23 @@ public final class HoldHandsManager {
         float holdBodyYaw = initiator.getBodyYaw();
         double defaultDistance = Math.max(0.001D, HoldHandsLinkGeometry.horizontalDistance(initiator.getPos(), target.getPos()));
         Vec3d sharedHandPoint = solveSharedHandPoint(initiator, target, defaultDistance);
-        ANCHORS.put(pairKey(initiator.getUuid(), target.getUuid()),
-                new HoldAnchorState(sharedHandPoint, Vec3d.ZERO));
+        String key = pairKey(initiator.getUuid(), target.getUuid());
+        TELEPORT_GUARDS.remove(key);
+        RECOVERY.remove(key);
+        PAIR_HISTORY.remove(key);
+        LATEST_INPUTS.remove(initiator.getUuid());
+        LATEST_INPUTS.remove(target.getUuid());
+        INPUT_ARRIVAL_TICKS.remove(initiator.getUuid());
+        INPUT_ARRIVAL_TICKS.remove(target.getUuid());
+        INPUTS_THIS_TICK.remove(initiator.getUuid());
+        INPUTS_THIS_TICK.remove(target.getUuid());
+        REACHABILITY_CACHE.remove(initiator.getUuid());
+        REACHABILITY_CACHE.remove(target.getUuid());
+        Vec3d measuredCenter = initiator.getPos().add(target.getPos()).multiply(0.5D);
+        ANCHORS.put(key,
+                new HoldAnchorState(sharedHandPoint, Vec3d.ZERO, measuredCenter, Vec3d.ZERO,
+                        Vec3d.ZERO, Vec3d.ZERO, 0, 0, 0, 0.0D,
+                        defaultDistance, 0.0D, 0));
         ACTIVE.put(initiator.getUuid(), new HoldHandData(
                 HoldHandsSkeletalPose.handForRole(HoldHandsSkeletalPose.HoldRole.ACTIVE), target.getUuid(),
                 defaultDistance, holdBodyYaw, sharedHandPoint, initiator.getPos()));
@@ -131,11 +193,19 @@ public final class HoldHandsManager {
     }
 
     private static void stopPair(ServerPlayerEntity player) {
+        stopPair(player, "manual_or_lifecycle");
+    }
+
+    private static void stopPair(ServerPlayerEntity player, String reason) {
         if (player == null) {
             return;
         }
 
         HoldHandData data = ACTIVE.remove(player.getUuid());
+        if (data != null) {
+            LOGGER.info("[HoldHands] stop pair player={} partner={} reason={}",
+                    player.getName().getString(), data.partnerUuid(), reason);
+        }
         sync(player, false);
         if (data == null) {
             return;
@@ -143,19 +213,39 @@ public final class HoldHandsManager {
 
         ServerPlayerEntity partner = getPlayer(player.getServer(), data.partnerUuid());
         if (partner != null) {
-            ANCHORS.remove(pairKey(player.getUuid(), partner.getUuid()));
+            String key = pairKey(player.getUuid(), partner.getUuid());
+            ANCHORS.remove(key);
+            TELEPORT_GUARDS.remove(key);
+            RECOVERY.remove(key);
+            PAIR_HISTORY.remove(key);
+            REACHABILITY_CACHE.remove(player.getUuid());
+            REACHABILITY_CACHE.remove(partner.getUuid());
             ACTIVE.remove(partner.getUuid());
             sync(partner, false);
         } else {
-            ANCHORS.remove(pairKey(player.getUuid(), data.partnerUuid()));
+            String key = pairKey(player.getUuid(), data.partnerUuid());
+            ANCHORS.remove(key);
+            TELEPORT_GUARDS.remove(key);
+            RECOVERY.remove(key);
+            PAIR_HISTORY.remove(key);
+            REACHABILITY_CACHE.remove(player.getUuid());
+            REACHABILITY_CACHE.remove(data.partnerUuid());
         }
     }
 
     public static void cleanupForDisconnect(ServerPlayerEntity player) {
         stopPair(player);
+        if (player != null) {
+            INPUT_ARRIVAL_TICKS.remove(player.getUuid());
+            SNEAK_INPUT_TICKS.remove(player.getUuid());
+            INPUTS_THIS_TICK.remove(player.getUuid());
+            LATEST_INPUTS.remove(player.getUuid());
+            REACHABILITY_CACHE.remove(player.getUuid());
+        }
     }
 
     public static void tick(MinecraftServer server) {
+        updateServerLoad(server);
         if (server == null || ACTIVE.isEmpty()) {
             return;
         }
@@ -173,13 +263,13 @@ public final class HoldHandsManager {
 
             ServerPlayerEntity partner = getPlayer(server, data.partnerUuid());
             if (!canKeepHolding(player, partner)) {
-                stopPair(player);
+                stopPair(player, "partner_missing_dead_or_world_changed");
                 continue;
             }
 
             HoldHandData partnerData = ACTIVE.get(partner.getUuid());
             if (partnerData == null) {
-                stopPair(player);
+                stopPair(player, "partner_state_missing");
                 continue;
             }
 
@@ -188,12 +278,54 @@ public final class HoldHandsManager {
             HoldHandData activeData = ACTIVE.get(active.getUuid());
             HoldHandData passiveData = ACTIVE.get(passive.getUuid());
             if (activeData == null || passiveData == null) {
-                stopPair(player);
+                stopPair(player, "active_or_passive_state_missing");
                 continue;
             }
 
             processed.add(active.getUuid());
             processed.add(passive.getUuid());
+
+            String pairKey = pairKey(active.getUuid(), passive.getUuid());
+            long worldTick = active.getWorld().getTime();
+            if (hasPendingTeleport(active) || hasPendingTeleport(passive)) {
+                TeleportGuard guard = TELEPORT_GUARDS.get(pairKey);
+                if (guard == null) {
+                    // Another feature may own the vanilla pending teleport. Do not
+                    // attach a hold-hands timeout to a teleport we did not create.
+                    if (shouldSync(active)) {
+                        sync(active, true);
+                        sync(passive, true);
+                    }
+                    continue;
+                } else if (worldTick - guard.sentTick() > TELEPORT_WAIT_TIMEOUT_TICKS
+                        && worldTick - guard.lastWarningTick() > TELEPORT_WAIT_TIMEOUT_TICKS) {
+                    LOGGER.warn("[HoldHands] pending teleport still unconfirmed for pair {}", pairKey);
+                    TELEPORT_GUARDS.put(pairKey, guard.withLastWarningTick(worldTick));
+                }
+                if (shouldSync(active)) {
+                    sync(active, true);
+                    sync(passive, true);
+                }
+                continue;
+            }
+
+            if (TELEPORT_GUARDS.remove(pairKey) != null) {
+                RECOVERY.put(pairKey, RECOVERY_TICKS);
+            }
+
+            Integer recoveryTicks = RECOVERY.get(pairKey);
+            if (recoveryTicks != null && recoveryTicks > 0) {
+                Vec3d recoveryPoint = solveSharedHandPoint(active, passive,
+                        activeData.defaultDistance());
+                setPairSharedHandPoint(active, passive, recoveryPoint);
+                recordPairHistory(pairKey, active, passive, recoveryPoint);
+                RECOVERY.put(pairKey, recoveryTicks - 1);
+                if (shouldSync(active)) {
+                    sync(active, true);
+                    sync(passive, true);
+                }
+                continue;
+            }
 
             float holdBodyYaw = passiveData.holdBodyYaw();
             applyFollowerBodyYaw(passive, holdBodyYaw);
@@ -203,9 +335,61 @@ public final class HoldHandsManager {
             Vec3d sharedHandPoint = enforceAnchorRigidLink(active, passive, holdBodyYaw,
                     activeData.defaultDistance(), previousSharedHandPoint);
             setPairSharedHandPoint(active, passive, sharedHandPoint);
-            sync(active, true);
-            sync(passive, true);
+            if (shouldSync(active)) {
+                sync(active, true);
+                sync(passive, true);
+            }
         }
+    }
+
+    /** Called from the vanilla input handler after the packet has reached the server thread. */
+    public static void onInputReceived(ServerPlayerEntity player, PlayerInput input) {
+        if (player != null && input != null && player.getWorld() != null) {
+            INPUT_ARRIVAL_TICKS.put(player.getUuid(), player.getWorld().getTime());
+            if (input.sneak()) {
+                SNEAK_INPUT_TICKS.put(player.getUuid(), player.getWorld().getTime());
+            } else {
+                SNEAK_INPUT_TICKS.remove(player.getUuid());
+            }
+        }
+    }
+
+    public static boolean hasRecentSneakInput(ServerPlayerEntity player) {
+        if (player == null || player.getWorld() == null) {
+            return false;
+        }
+        Long tick = SNEAK_INPUT_TICKS.get(player.getUuid());
+        return tick != null && player.getWorld().getTime() - tick <= 5L;
+    }
+
+    public static void onInputPacketReceived(ServerPlayerEntity player, HoldHandsInputC2SPacket packet) {
+        if (player == null || packet == null || !isHoldingHands(player)
+                || packet.sequence() < 0 || !Float.isFinite(packet.yaw())) {
+            return;
+        }
+        InputSample previous = LATEST_INPUTS.get(player.getUuid());
+        if (previous != null && packet.sequence() <= previous.sequence()) {
+            return;
+        }
+        if (previous != null && packet.sequence() - previous.sequence() > MAX_INPUT_SEQUENCE_JUMP) {
+            return;
+        }
+        long serverTick = player.getWorld().getTime();
+        if (packet.clientTick() < 0L || Math.abs(packet.clientTick() - serverTick) > 1200L) {
+            return;
+        }
+        Long lastArrival = INPUT_ARRIVAL_TICKS.get(player.getUuid());
+        int count = lastArrival != null && lastArrival == serverTick
+                ? INPUTS_THIS_TICK.getOrDefault(player.getUuid(), 0) : 0;
+        if (count >= 3) {
+            return;
+        }
+        PlayerInput input = new PlayerInput(packet.forward(), packet.backward(), packet.left(), packet.right(),
+                packet.jump(), packet.sneak(), packet.sprint());
+        LATEST_INPUTS.put(player.getUuid(), new InputSample(packet.sequence(), serverTick,
+                MathHelper.wrapDegrees(packet.yaw()), input));
+        INPUT_ARRIVAL_TICKS.put(player.getUuid(), serverTick);
+        INPUTS_THIS_TICK.put(player.getUuid(), count + 1);
     }
 
     public static void syncAllTo(ServerPlayerEntity receiver) {
@@ -242,11 +426,57 @@ public final class HoldHandsManager {
                 : HoldHandsSyncS2CPacket.HAND_RIGHT;
         ServerPlayerEntity partner = data != null ? getPlayer(server, data.partnerUuid()) : null;
         int partnerId = partner != null ? partner.getId() : HoldHandsSyncS2CPacket.NO_PARTNER;
-        float defaultDistance = data != null ? (float) data.defaultDistance() : 0.0F;
-        float holdBodyYaw = data != null ? data.holdBodyYaw() : 0.0F;
-        Vec3d sharedHandPoint = data != null ? data.sharedHandPoint() : Vec3d.ZERO;
-        return new HoldHandsSyncS2CPacket(player.getId(), active, side, partnerId, defaultDistance, holdBodyYaw,
-                (float) sharedHandPoint.x, (float) sharedHandPoint.y, (float) sharedHandPoint.z);
+        float defaultDistance = data != null && Double.isFinite(data.defaultDistance())
+                ? (float) MathHelper.clamp(data.defaultDistance(), HoldHandsLinkGeometry.MIN_BODY_DISTANCE,
+                HoldHandsLinkGeometry.NATURAL_MAX_SHOULDER_DISTANCE) : 0.0F;
+        float holdBodyYaw = data != null && Float.isFinite(data.holdBodyYaw())
+                ? MathHelper.wrapDegrees(data.holdBodyYaw()) : 0.0F;
+        Vec3d sharedHandPoint = data != null && finiteVec(data.sharedHandPoint()) ? data.sharedHandPoint() : Vec3d.ZERO;
+        long sequence = SYNC_SEQUENCES.merge(player.getUuid(), 1L, Long::sum);
+        Vec3d velocity = finiteVec(player.getVelocity())
+                ? HoldHandsLinkGeometry.clampSpeed(player.getVelocity(), 4.0D) : Vec3d.ZERO;
+        HoldAnchorState anchor = data != null && partner != null
+                ? ANCHORS.get(pairKey(player.getUuid(), partner.getUuid())) : null;
+        float tension = anchor == null ? 0.0F : (float) MathHelper.clamp(anchor.tension(), 0.0D, 1.0D);
+        float relativeDistance = anchor == null ? defaultDistance : (float) MathHelper.clamp(anchor.relativeDistance(), 0.0D, 8.0D);
+        float relativeSpeed = anchor == null ? 0.0F : (float) MathHelper.clamp(anchor.relativeSpeed(), 0.0D, 8.0D);
+        return new HoldHandsSyncS2CPacket(player.getId(), active, sequence, side, partnerId, defaultDistance, holdBodyYaw,
+                (float) sharedHandPoint.x, (float) sharedHandPoint.y, (float) sharedHandPoint.z,
+                player.getWorld().getTime(), (float) velocity.x, (float) velocity.y, (float) velocity.z,
+                tension, relativeDistance, relativeSpeed);
+    }
+
+    private static boolean shouldSync(ServerPlayerEntity player) {
+        return player != null && player.getWorld().getTime() % SYNC_INTERVAL_TICKS == 0L;
+    }
+
+    private static boolean hasPendingTeleport(ServerPlayerEntity player) {
+        return player != null && player.networkHandler instanceof ServerPlayNetworkHandlerAccessor accessor
+                && accessor.monvhua$getRequestedTeleportPos() != null;
+    }
+
+    private static void updateServerLoad(MinecraftServer server) {
+        long now = System.nanoTime();
+        if (lastServerTickNanos == 0L) {
+            lastServerTickNanos = now;
+            tickIntervalEmaMs = 50.0D;
+            currentConstraintScale = 1.0D;
+            return;
+        }
+        double intervalMs = (now - lastServerTickNanos) / 1_000_000.0D;
+        lastServerTickNanos = now;
+        if (!Double.isFinite(intervalMs)) {
+            intervalMs = 50.0D;
+        }
+        intervalMs = MathHelper.clamp(intervalMs, 1.0D, 1000.0D);
+        tickIntervalEmaMs = tickIntervalEmaMs * 0.9D + intervalMs * 0.1D;
+        currentConstraintScale = tickIntervalEmaMs <= 60.0D ? 1.0D
+                : tickIntervalEmaMs >= 200.0D ? 0.25D
+                : MathHelper.clamp(1.0D - (tickIntervalEmaMs - 60.0D) / 140.0D * 0.75D, 0.25D, 1.0D);
+    }
+
+    private static double constraintScale() {
+        return currentConstraintScale;
     }
 
     private static ServerPlayerEntity getPlayer(MinecraftServer server, UUID uuid) {
@@ -304,15 +534,17 @@ public final class HoldHandsManager {
     private static void setPairSharedHandPoint(ServerPlayerEntity leader, ServerPlayerEntity follower, Vec3d sharedHandPoint) {
         HoldHandData leaderData = ACTIVE.get(leader.getUuid());
         HoldHandData followerData = ACTIVE.get(follower.getUuid());
-        Vec3d previous = leaderData != null ? leaderData.sharedHandPoint()
-                : followerData != null ? followerData.sharedHandPoint() : null;
-        Vec3d stabilized = stabilizeSharedHandPoint(previous, sharedHandPoint, leader, follower);
+        Vec3d stabilized = finiteVec(sharedHandPoint) ? clampWorldPosition(sharedHandPoint) : Vec3d.ZERO;
         if (leaderData != null) {
             ACTIVE.put(leader.getUuid(), leaderData.withSharedHandPoint(stabilized));
         }
         if (followerData != null) {
             ACTIVE.put(follower.getUuid(), followerData.withSharedHandPoint(stabilized));
         }
+    }
+
+    private static boolean finiteVec(Vec3d value) {
+        return value != null && Double.isFinite(value.x) && Double.isFinite(value.y) && Double.isFinite(value.z);
     }
 
     private static Vec3d stabilizeSharedHandPoint(Vec3d previous, Vec3d target,
@@ -366,8 +598,12 @@ public final class HoldHandsManager {
                     ? previousSharedHandPoint
                     : solveSharedHandPoint(leader, follower, defaultDistance);
             state = new HoldAnchorState(start, Vec3d.ZERO, measuredCenter, Vec3d.ZERO,
-                    Vec3d.ZERO, Vec3d.ZERO, 0, 0);
+                    Vec3d.ZERO, Vec3d.ZERO, 0, 0, 0, 0.0D,
+                    defaultDistance, 0.0D, 0);
         }
+
+        int bootstrapTicks = Math.min(BOOTSTRAP_TICKS, state.bootstrapTicks() + 1);
+        boolean bootstrap = state.bootstrapTicks() < BOOTSTRAP_TICKS;
 
         String rawVerticalLeadReason = verticalLeadReason(leader, follower);
         boolean verticalCandidate = !"none".equals(rawVerticalLeadReason);
@@ -378,10 +614,10 @@ public final class HoldHandsManager {
         String verticalLeadReason = useVerticalLead ? rawVerticalLeadReason
                 : verticalCandidate ? "pending:" + rawVerticalLeadReason : "none";
 
-        Vec3d leaderIntent = filterPairIntent(state.leaderIntent(), inputIntentVelocity(leader), useVerticalLead);
-        Vec3d followerIntent = filterPairIntent(state.followerIntent(), inputIntentVelocity(follower), useVerticalLead);
+        Vec3d leaderIntent = filterPairIntent(state.leaderIntent(), inputIntentVelocity(leader), useVerticalLead, bootstrap);
+        Vec3d followerIntent = filterPairIntent(state.followerIntent(), inputIntentVelocity(follower), useVerticalLead, bootstrap);
         Vec3d pairVelocity = pairIntentVelocity(leaderIntent, followerIntent, useVerticalLead);
-        PairCenterResult centerResult = updatePairCenter(state, measuredCenter, pairVelocity, useVerticalLead);
+        PairCenterResult centerResult = updatePairCenter(state, measuredCenter, pairVelocity, useVerticalLead, bootstrap);
         Vec3d center = centerResult.center();
         Vec3d centerVelocity = centerResult.velocity();
 
@@ -392,24 +628,34 @@ public final class HoldHandsManager {
             leaderTarget = new Vec3d(leaderTarget.x, leader.getY(), leaderTarget.z);
             followerTarget = new Vec3d(followerTarget.x, follower.getY(), followerTarget.z);
         }
+        leaderTarget = resolveReachableFeet(leader, leaderTarget);
+        followerTarget = resolveReachableFeet(follower, followerTarget);
 
-        int teleportTicks = needsPairTeleport(leader, follower, leaderTarget, followerTarget)
+        int teleportTicks = constraintScale() < 0.5D
+                ? 0
+                : needsPairTeleport(leader, follower, leaderTarget, followerTarget)
                 ? state.teleportTicks() + 1 : 0;
         Vec3d leaderCorrection;
         Vec3d followerCorrection;
+        Vec3d actualOffset = follower.getPos().subtract(leader.getPos());
+        Vec3d relativeVelocity = follower.getVelocity().subtract(leader.getVelocity());
         if (teleportTicks >= PAIR_TELEPORT_CONFIRM_TICKS) {
+            TELEPORT_GUARDS.put(key, new TeleportGuard(leader.getWorld().getTime(), leaderTarget, followerTarget));
             leader.requestTeleport(leaderTarget.x, leaderTarget.y, leaderTarget.z);
             follower.requestTeleport(followerTarget.x, followerTarget.y, followerTarget.z);
-            leader.setVelocity(centerVelocity);
-            follower.setVelocity(centerVelocity);
-            leader.velocityModified = true;
-            follower.velocityModified = true;
+            applyBoundedVelocityImpulse(leader, centerVelocity, 0.35D);
+            applyBoundedVelocityImpulse(follower, centerVelocity, 0.35D);
             leaderCorrection = leaderTarget.subtract(leader.getPos());
             followerCorrection = followerTarget.subtract(follower.getPos());
             teleportTicks = 0;
         } else {
-            leaderCorrection = applyPairPlayerCorrection(leader, leaderTarget, centerVelocity, useVerticalLead);
-            followerCorrection = applyPairPlayerCorrection(follower, followerTarget, centerVelocity, useVerticalLead);
+            Vec3d relativeInput = followerIntent.subtract(leaderIntent).multiply(RELATIVE_INPUT_GAIN);
+            Vec3d relativeCorrection = solveSpringCorrection(actualOffset, pairOffset, relativeVelocity,
+                    relativeInput, useVerticalLead);
+            leaderCorrection = applyPairSpringCorrection(leader, centerVelocity, relativeCorrection,
+                    false, useVerticalLead, bootstrap);
+            followerCorrection = applyPairSpringCorrection(follower, centerVelocity, relativeCorrection,
+                    true, useVerticalLead, bootstrap);
         }
 
         double followerPullDistance = Math.max(horizontalDistance(follower.getPos(), followerTarget),
@@ -424,12 +670,41 @@ public final class HoldHandsManager {
                 leaderBodyYaw, followerBodyYaw, defaultDistance, previousSharedHandPoint);
         Vec3d anchorPosition = stabilizeAnchorEndpoint(state.position(), desiredEndpoint, useVerticalLead);
         Vec3d anchorVelocity = state.position() == null ? Vec3d.ZERO : anchorPosition.subtract(state.position());
+        actualOffset = follower.getPos().subtract(leader.getPos());
+        relativeVelocity = follower.getVelocity().subtract(leader.getVelocity());
+        double relativeDistance = finiteVec(actualOffset)
+                ? actualOffset.length() : defaultDistance;
+        double relativeSpeed = finiteVec(relativeVelocity)
+                ? Math.min(MAX_RELATIVE_SPEED, relativeVelocity.length()) : 0.0D;
+        double stretch = Math.max(0.0D, relativeDistance - Math.max(0.001D, defaultDistance));
+        double tension = MathHelper.clamp(stretch / MAX_STRETCH + relativeSpeed * TENSION_SPEED_WEIGHT, 0.0D, 1.0D);
+        boolean noPairInput = new Vec3d(leaderIntent.x, 0.0D, leaderIntent.z).lengthSquared()
+                + new Vec3d(followerIntent.x, 0.0D, followerIntent.z).lengthSquared() <= 0.0004D;
+        Vec3d settleError = actualOffset.subtract(pairOffset);
+        if (!useVerticalLead) {
+            settleError = new Vec3d(settleError.x, 0.0D, settleError.z);
+        }
+        boolean settled = noPairInput
+                && new Vec3d(centerVelocity.x, 0.0D, centerVelocity.z).length() <= SETTLE_SPEED_EPSILON
+                && relativeSpeed <= SETTLE_SPEED_EPSILON
+                && settleError.length() <= SETTLE_POSITION_EPSILON;
+        if (settled) {
+            zeroHorizontalVelocity(leader);
+            zeroHorizontalVelocity(follower);
+            center = measuredCenter;
+            centerVelocity = Vec3d.ZERO;
+        }
+        int strainTicks = tension >= 0.85D ? Math.min(STRAIN_CONFIRM_TICKS, state.strainTicks() + 1)
+                : Math.max(0, state.strainTicks() - 2);
         ANCHORS.put(key, new HoldAnchorState(anchorPosition, anchorVelocity, center, centerVelocity,
-                leaderIntent, followerIntent, verticalTicks, teleportTicks));
+                leaderIntent, followerIntent, verticalTicks, teleportTicks, bootstrapTicks, tension,
+                relativeDistance, relativeSpeed, strainTicks));
+        recordPairHistory(key, leader, follower, anchorPosition);
 
         logAnchorDebug(key, leader, follower, anchorPosition, centerVelocity, desiredEndpoint,
                 leaderTarget, followerTarget, leaderIntent, followerIntent, useVerticalLead,
-                verticalLeadReason, leaderCorrection, followerCorrection);
+                verticalLeadReason, leaderCorrection, followerCorrection,
+                relativeDistance, relativeSpeed, tension, settled);
         if (useVerticalLead) {
             leader.fallDistance = Math.min(leader.fallDistance, follower.fallDistance);
             follower.fallDistance = Math.min(follower.fallDistance, leader.fallDistance);
@@ -438,14 +713,26 @@ public final class HoldHandsManager {
         return anchorPosition;
     }
 
-    private static Vec3d filterPairIntent(Vec3d previous, Vec3d raw, boolean useVerticalLead) {
+    private static void zeroHorizontalVelocity(ServerPlayerEntity player) {
+        if (player == null || !finiteVec(player.getVelocity())) {
+            return;
+        }
+        Vec3d velocity = player.getVelocity();
+        if (Math.abs(velocity.x) > 0.0001D || Math.abs(velocity.z) > 0.0001D) {
+            player.setVelocity(0.0D, velocity.y, 0.0D);
+            player.velocityModified = true;
+        }
+    }
+
+    private static Vec3d filterPairIntent(Vec3d previous, Vec3d raw, boolean useVerticalLead, boolean bootstrap) {
         Vec3d previousIntent = previous == null ? Vec3d.ZERO : previous;
         Vec3d target = raw == null ? Vec3d.ZERO : raw;
         if (!useVerticalLead) {
             previousIntent = new Vec3d(previousIntent.x, 0.0D, previousIntent.z);
             target = new Vec3d(target.x, 0.0D, target.z);
         }
-        return previousIntent.lerp(target, PAIR_INTENT_FILTER_ALPHA);
+        double alpha = bootstrap ? BOOTSTRAP_INTENT_ALPHA : NORMAL_INTENT_ALPHA;
+        return previousIntent.lerp(target, alpha);
     }
 
     private static Vec3d pairIntentVelocity(Vec3d leaderIntent, Vec3d followerIntent, boolean useVerticalLead) {
@@ -458,24 +745,32 @@ public final class HoldHandsManager {
     }
 
     private static PairCenterResult updatePairCenter(HoldAnchorState state, Vec3d measuredCenter,
-                                                     Vec3d pairVelocity, boolean useVerticalLead) {
+                                                     Vec3d pairVelocity, boolean useVerticalLead,
+                                                     boolean bootstrap) {
         Vec3d center = state.center() == null ? measuredCenter : state.center();
         Vec3d previousVelocity = state.centerVelocity() == null ? Vec3d.ZERO : state.centerVelocity();
         Vec3d measuredError = measuredCenter.subtract(center);
         Vec3d measuredCorrection = HoldHandsLinkGeometry.clampSpeed(
-                new Vec3d(measuredError.x, 0.0D, measuredError.z).multiply(PAIR_CENTER_STIFFNESS),
+                new Vec3d(measuredError.x, 0.0D, measuredError.z)
+                        .multiply(PAIR_CENTER_STIFFNESS * constraintScale()),
                 PAIR_CENTER_MAX_MEASURED_CORRECTION);
         double yCorrection = 0.0D;
         if (useVerticalLead) {
-            yCorrection = MathHelper.clamp(measuredError.y * PAIR_CENTER_STIFFNESS,
+            yCorrection = MathHelper.clamp(measuredError.y * PAIR_CENTER_STIFFNESS * constraintScale(),
                     -PAIR_CENTER_MAX_MEASURED_CORRECTION, PAIR_CENTER_MAX_MEASURED_CORRECTION);
         }
 
         Vec3d targetVelocity = clampPairVelocity(pairVelocity.add(measuredCorrection).add(0.0D, yCorrection, 0.0D),
-                useVerticalLead);
+                useVerticalLead, bootstrap);
+        double maxAcceleration = bootstrap ? BOOTSTRAP_MAX_ACCELERATION : NORMAL_MAX_ACCELERATION;
         Vec3d velocityDelta = HoldHandsLinkGeometry.clampSpeed(targetVelocity.subtract(previousVelocity),
-                PAIR_MAX_ACCELERATION);
-        Vec3d nextVelocity = clampPairVelocity(previousVelocity.add(velocityDelta), useVerticalLead);
+                maxAcceleration * constraintScale());
+        Vec3d nextVelocity = clampPairVelocity(previousVelocity.add(velocityDelta), useVerticalLead, bootstrap);
+        if (pairVelocity.lengthSquared() <= CENTER_VELOCITY_DEADBAND * CENTER_VELOCITY_DEADBAND
+                && measuredError.lengthSquared() <= 0.02D * 0.02D
+                && nextVelocity.lengthSquared() <= CENTER_VELOCITY_DEADBAND * CENTER_VELOCITY_DEADBAND) {
+            nextVelocity = Vec3d.ZERO;
+        }
         Vec3d nextCenter = center.add(nextVelocity);
         if (!useVerticalLead) {
             nextVelocity = new Vec3d(nextVelocity.x, 0.0D, nextVelocity.z);
@@ -506,6 +801,63 @@ public final class HoldHandsManager {
                 || follower.getPos().distanceTo(followerTarget) >= PAIR_TELEPORT_DISTANCE;
     }
 
+    private static Vec3d solveSpringCorrection(Vec3d actualOffset, Vec3d desiredOffset,
+                                                Vec3d relativeVelocity, Vec3d relativeInput,
+                                                boolean useVerticalLead) {
+        if (!finiteVec(actualOffset) || !finiteVec(desiredOffset) || !finiteVec(relativeVelocity)) {
+            return Vec3d.ZERO;
+        }
+        Vec3d error = actualOffset.subtract(desiredOffset);
+        if (error.lengthSquared() <= RELATIVE_POSITION_DEADBAND * RELATIVE_POSITION_DEADBAND) {
+            error = Vec3d.ZERO;
+        }
+        if (!useVerticalLead) {
+            error = new Vec3d(error.x, 0.0D, error.z);
+            relativeVelocity = new Vec3d(relativeVelocity.x, 0.0D, relativeVelocity.z);
+        }
+        if (relativeVelocity.lengthSquared() <= RELATIVE_SPEED_DEADBAND * RELATIVE_SPEED_DEADBAND) {
+            relativeVelocity = Vec3d.ZERO;
+        }
+        Vec3d correction = error.multiply(-SPRING_STIFFNESS)
+                .add(relativeVelocity.multiply(-SPRING_DAMPING));
+        if (finiteVec(relativeInput)) {
+            correction = correction.add(relativeInput);
+        }
+        if (correction.lengthSquared() <= 0.0001D) {
+            return Vec3d.ZERO;
+        }
+        return HoldHandsLinkGeometry.clampSpeed(correction, MAX_RELATIVE_CORRECTION);
+    }
+
+    private static Vec3d applyPairSpringCorrection(ServerPlayerEntity player, Vec3d centerVelocity,
+                                                   Vec3d relativeCorrection, boolean follower,
+                                                   boolean useVerticalLead, boolean bootstrap) {
+        if (player == null || !finiteVec(centerVelocity) || !finiteVec(relativeCorrection)) {
+            return Vec3d.ZERO;
+        }
+        Vec3d desired = centerVelocity.add(relativeCorrection.multiply(follower ? 0.5D : -0.5D));
+        Vec3d current = player.getVelocity();
+        if (!finiteVec(current)) {
+            current = Vec3d.ZERO;
+        }
+        Vec3d impulse = desired.subtract(current).multiply(0.42D * constraintScale());
+        if (!useVerticalLead) {
+            impulse = new Vec3d(impulse.x, 0.0D, impulse.z);
+        }
+        double maxImpulse = bootstrap ? BOOTSTRAP_MAX_IMPULSE : NORMAL_MAX_IMPULSE;
+        Vec3d horizontal = HoldHandsLinkGeometry.clampSpeed(new Vec3d(impulse.x, 0.0D, impulse.z), maxImpulse);
+        double vertical = useVerticalLead
+                ? MathHelper.clamp(impulse.y, -maxImpulse * 0.5D, maxImpulse * 0.5D) : 0.0D;
+        Vec3d bounded = new Vec3d(horizontal.x, vertical, horizontal.z);
+        Vec3d nextVelocity = current.add(bounded);
+        if (finiteVec(nextVelocity)) {
+            nextVelocity = HoldHandsLinkGeometry.clampSpeed(nextVelocity, 3.5D);
+            player.setVelocity(nextVelocity);
+            player.velocityModified = true;
+        }
+        return bounded;
+    }
+
     private static Vec3d applyPairPlayerCorrection(ServerPlayerEntity player, Vec3d targetFeet,
                                                    Vec3d centerVelocity, boolean useVerticalLead) {
         Vec3d delta = targetFeet.subtract(player.getPos());
@@ -515,25 +867,32 @@ public final class HoldHandsManager {
             correction = HoldHandsLinkGeometry.clampSpeed(horizontalDelta.multiply(PAIR_POSITION_STIFFNESS),
                     PAIR_MAX_CORRECTION_SPEED);
         }
-        double verticalVelocity = player.getVelocity().y;
+        Vec3d current = player.getVelocity();
+        Vec3d currentHorizontal = new Vec3d(current.x, 0.0D, current.z);
+        Vec3d desiredHorizontal = new Vec3d(centerVelocity.x, 0.0D, centerVelocity.z);
+        Vec3d centerImpulse = desiredHorizontal.subtract(currentHorizontal).multiply(0.35D * constraintScale());
+        Vec3d impulse = centerImpulse.add(correction.multiply(constraintScale()));
+        double verticalImpulse = 0.0D;
         if (useVerticalLead) {
-            double centerY = MathHelper.clamp(centerVelocity.y,
-                    -PAIR_MAX_VERTICAL_CORRECTION_SPEED, PAIR_MAX_VERTICAL_CORRECTION_SPEED);
             double correctionY = MathHelper.clamp(delta.y * PAIR_VERTICAL_STIFFNESS,
                     -PAIR_MAX_VERTICAL_CORRECTION_SPEED, PAIR_MAX_VERTICAL_CORRECTION_SPEED);
-            verticalVelocity = MathHelper.clamp(centerY + correctionY,
+            verticalImpulse = MathHelper.clamp((centerVelocity.y - current.y) * 0.25D
+                            + correctionY * constraintScale(),
                     -PAIR_MAX_VERTICAL_CORRECTION_SPEED, PAIR_MAX_VERTICAL_CORRECTION_SPEED);
         }
-
-        Vec3d horizontalVelocity = new Vec3d(centerVelocity.x, 0.0D, centerVelocity.z).add(correction);
-        player.setVelocity(horizontalVelocity.add(0.0D, verticalVelocity, 0.0D));
-        player.velocityModified = true;
-        return correction.add(0.0D, useVerticalLead ? verticalVelocity : 0.0D, 0.0D);
+        impulse = HoldHandsLinkGeometry.clampSpeed(new Vec3d(impulse.x, 0.0D, impulse.z), 0.45D);
+        Vec3d nextVelocity = current.add(new Vec3d(impulse.x, verticalImpulse, impulse.z));
+        if (nextVelocity.squaredDistanceTo(current) > 0.000001D) {
+            player.setVelocity(nextVelocity);
+            player.velocityModified = true;
+        }
+        return impulse.add(0.0D, verticalImpulse, 0.0D);
     }
 
-    private static Vec3d clampPairVelocity(Vec3d velocity, boolean useVerticalLead) {
-        Vec3d horizontal = HoldHandsLinkGeometry.clampSpeed(new Vec3d(velocity.x, 0.0D, velocity.z),
-                PAIR_MAX_HORIZONTAL_SPEED);
+    private static Vec3d clampPairVelocity(Vec3d velocity, boolean useVerticalLead, boolean bootstrap) {
+        Vec3d horizontal = HoldHandsLinkGeometry.clampSpeed(
+                new Vec3d(velocity.x, 0.0D, velocity.z).multiply(constraintScale()),
+                bootstrap ? BOOTSTRAP_MAX_CENTER_SPEED : NORMAL_MAX_CENTER_SPEED);
         double y = useVerticalLead
                 ? MathHelper.clamp(velocity.y, -PAIR_MAX_VERTICAL_SPEED, PAIR_MAX_VERTICAL_SPEED)
                 : 0.0D;
@@ -563,12 +922,16 @@ public final class HoldHandsManager {
             return Vec3d.ZERO;
         }
 
-        PlayerInput input = player.getPlayerInput();
+        InputSample sample = LATEST_INPUTS.get(player.getUuid());
+        double freshness = inputFreshness(player, sample);
+        PlayerInput input = sample != null && freshness > 0.0D
+                ? sample.input() : player.getPlayerInput();
         double forwardAmount = (input.forward() ? 1.0D : 0.0D) - (input.backward() ? 1.0D : 0.0D);
         double sideAmount = (input.right() ? 1.0D : 0.0D) - (input.left() ? 1.0D : 0.0D);
         Vec3d horizontal = Vec3d.ZERO;
         if (forwardAmount != 0.0D || sideAmount != 0.0D) {
-            double yaw = Math.toRadians(player.getYaw());
+            double yaw = Math.toRadians(sample != null && freshness > 0.0D
+                    ? sample.yaw() : player.getYaw());
             Vec3d forward = new Vec3d(-Math.sin(yaw), 0.0D, Math.cos(yaw));
             Vec3d right = new Vec3d(Math.cos(yaw), 0.0D, Math.sin(yaw));
             horizontal = forward.multiply(forwardAmount).add(right.multiply(sideAmount));
@@ -588,7 +951,122 @@ public final class HoldHandsManager {
             vertical = ANCHOR_JUMP_INPUT_SPEED;
         }
 
-        return new Vec3d(horizontal.x, vertical, horizontal.z);
+        return new Vec3d(horizontal.x, vertical, horizontal.z).multiply(freshness);
+    }
+
+    /** Resolves a server-authoritative target without moving a player through solid blocks. */
+    private static Vec3d resolveReachableFeet(ServerPlayerEntity player, Vec3d desired) {
+        if (player == null || desired == null || !Double.isFinite(desired.x)
+                || !Double.isFinite(desired.y) || !Double.isFinite(desired.z)) {
+            return player == null ? Vec3d.ZERO : player.getPos();
+        }
+        desired = clampWorldPosition(desired);
+        Vec3d current = player.getPos();
+        long tick = player.getWorld().getTime();
+        if (isSafeFeetPosition(player, desired) && isClearPath(player, current, desired)) {
+            REACHABILITY_CACHE.put(player.getUuid(), new ReachabilityCache(tick, desired, desired));
+            return desired;
+        }
+        ReachabilityCache cached = REACHABILITY_CACHE.get(player.getUuid());
+        if (cached != null && tick - cached.tick() <= 2L && cached.desired() != null
+                && cached.desired().distanceTo(desired) <= 0.15D
+                && finiteVec(cached.resolved()) && isSafeFeetPosition(player, cached.resolved())
+                && isClearPath(player, current, cached.resolved())) {
+            return cached.resolved();
+        }
+        double[] horizontal = {0.22D, 0.48D, 0.76D};
+        Vec3d best = current;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (double radius : horizontal) {
+            for (int axis = 0; axis < 8; axis++) {
+                double angle = axis * Math.PI / 4.0D;
+                Vec3d candidate = desired.add(Math.cos(angle) * radius, 0.0D, Math.sin(angle) * radius);
+                if (!finiteVec(candidate) || !isSafeFeetPosition(player, candidate)
+                        || !isClearPath(player, current, candidate)) {
+                    continue;
+                }
+                double distance = candidate.squaredDistanceTo(desired);
+                if (distance < bestDistance) {
+                    best = candidate;
+                    bestDistance = distance;
+                }
+            }
+        }
+        if (!finiteVec(best)) {
+            best = current;
+        }
+        REACHABILITY_CACHE.put(player.getUuid(), new ReachabilityCache(tick, desired, best));
+        return best;
+    }
+
+    private static Vec3d clampWorldPosition(Vec3d position) {
+        if (!finiteVec(position)) {
+            return Vec3d.ZERO;
+        }
+        return new Vec3d(MathHelper.clamp(position.x, -30_000_000.0D, 30_000_000.0D),
+                MathHelper.clamp(position.y, -30_000_000.0D, 30_000_000.0D),
+                MathHelper.clamp(position.z, -30_000_000.0D, 30_000_000.0D));
+    }
+
+    private static boolean isSafeFeetPosition(ServerPlayerEntity player, Vec3d feet) {
+        if (player == null || player.getWorld() == null || !finiteVec(feet)) {
+            return false;
+        }
+        Box box = player.getBoundingBox().offset(feet.subtract(player.getPos()));
+        return player.getWorld().isSpaceEmpty(player, box);
+    }
+
+    private static boolean isClearPath(ServerPlayerEntity player, Vec3d from, Vec3d to) {
+        if (player == null || !finiteVec(from) || !finiteVec(to)) {
+            return false;
+        }
+        double distance = from.distanceTo(to);
+        if (!Double.isFinite(distance) || distance > MAX_PATH_CHECK_DISTANCE) {
+            return false;
+        }
+        int steps = Math.max(1, (int) Math.ceil(distance / 0.45D));
+        for (int i = 1; i <= steps; i++) {
+            Vec3d point = from.lerp(to, i / (double) steps);
+            if (!isSafeFeetPosition(player, point)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static void recordPairHistory(String key, ServerPlayerEntity active,
+                                          ServerPlayerEntity passive, Vec3d sharedHandPoint) {
+        if (key == null || active == null || passive == null || sharedHandPoint == null) {
+            return;
+        }
+        ArrayDeque<HoldPairHistoryEntry> history = PAIR_HISTORY.computeIfAbsent(key, ignored -> new ArrayDeque<>());
+        synchronized (history) {
+            history.addLast(new HoldPairHistoryEntry(active.getWorld().getTime(), active.getPos(), passive.getPos(),
+                    active.getVelocity(), passive.getVelocity(), sharedHandPoint));
+            while (history.size() > PAIR_HISTORY_TICKS) {
+                history.removeFirst();
+            }
+        }
+    }
+
+    private static double inputFreshness(ServerPlayerEntity player, InputSample sample) {
+        if (player == null || player.getWorld() == null) {
+            return 0.0D;
+        }
+        long receivedAt = sample != null
+                ? sample.arrivalTick()
+                : INPUT_ARRIVAL_TICKS.getOrDefault(player.getUuid(), Long.MIN_VALUE);
+        if (receivedAt == Long.MIN_VALUE) {
+            return 1.0D;
+        }
+        long age = Math.max(0L, player.getWorld().getTime() - receivedAt);
+        if (age <= 2L) {
+            return 1.0D;
+        }
+        if (age >= 10L) {
+            return 0.0D;
+        }
+        return 1.0D - (age - 2L) / 8.0D;
     }
 
     private static void logAnchorDebug(String key, ServerPlayerEntity leader, ServerPlayerEntity follower,
@@ -596,7 +1074,9 @@ public final class HoldHandsManager {
                                        Vec3d leaderTarget, Vec3d followerTarget,
                                        Vec3d leaderIntent, Vec3d followerIntent, boolean useVerticalLead,
                                        String verticalLeadReason,
-                                       Vec3d leaderCorrection, Vec3d followerCorrection) {
+                                       Vec3d leaderCorrection, Vec3d followerCorrection,
+                                       double relativeDistance, double relativeSpeed,
+                                       double tension, boolean settled) {
         if (leader == null || leader.getWorld() == null || leader.getWorld().getTime() % ANCHOR_DEBUG_INTERVAL_TICKS != 0L) {
             return;
         }
@@ -604,11 +1084,14 @@ public final class HoldHandsManager {
         Vec3d anchorError = desiredEndpoint == null ? Vec3d.ZERO : desiredEndpoint.subtract(anchorPosition);
         Vec3d leaderDelta = leaderTarget == null ? Vec3d.ZERO : leaderTarget.subtract(leader.getPos());
         Vec3d followerDelta = followerTarget == null ? Vec3d.ZERO : followerTarget.subtract(follower.getPos());
-        LOGGER.info("[HoldHandsAnchor] key={} vertical={} reason={} heightDiff={} targetFeetDistance={} "
+        LOGGER.info("[HoldHandsAnchor] key={} vertical={} reason={} settled={} relDistance={} relSpeed={} tension={} "
+                        + "heightDiff={} targetFeetDistance={} "
                         + "anchor={} anchorVel={} endpointError={} "
                         + "leader={} leaderState={} leaderVel={} leaderIntent={} leaderDelta={} leaderCorrection={} "
                         + "follower={} followerState={} followerVel={} followerIntent={} followerDelta={} followerCorrection={}",
-                key, useVerticalLead, verticalLeadReason,
+                key, useVerticalLead, verticalLeadReason, settled,
+                String.format("%.3f", relativeDistance), String.format("%.3f", relativeSpeed),
+                String.format("%.3f", tension),
                 String.format("%.3f", Math.abs(leader.getY() - follower.getY())),
                 String.format("%.3f", horizontalDistance(leaderTarget, followerTarget)),
                 shortVec(anchorPosition), shortVec(anchorVelocity), shortVec(anchorError),
@@ -737,10 +1220,8 @@ public final class HoldHandsManager {
 
         Vec3d leaderTargetVelocity = sharedVelocity.subtract(correction.multiply(0.5D));
         Vec3d followerTargetVelocity = sharedVelocity.add(correction.multiply(0.5D));
-        leader.setVelocity(leaderTargetVelocity);
-        follower.setVelocity(followerTargetVelocity);
-        leader.velocityModified = true;
-        follower.velocityModified = true;
+        applyBoundedVelocityImpulse(leader, leaderTargetVelocity, 0.35D);
+        applyBoundedVelocityImpulse(follower, followerTargetVelocity, 0.35D);
         if (shouldUseVerticalPositionLead(leader, follower)) {
             follower.fallDistance = Math.min(follower.fallDistance, leader.fallDistance);
         }
@@ -807,8 +1288,24 @@ public final class HoldHandsManager {
             nextY += MathHelper.clamp(delta.y, -maxStep, maxStep);
         }
 
-        follower.requestTeleport(nextX, nextY, nextZ);
+        Vec3d reachable = resolveReachableFeet(follower, new Vec3d(nextX, nextY, nextZ));
+        follower.requestTeleport(reachable.x, reachable.y, reachable.z);
         return desiredFeet.subtract(new Vec3d(nextX, nextY, nextZ));
+    }
+
+    private static void applyBoundedVelocityImpulse(ServerPlayerEntity player, Vec3d desiredVelocity,
+                                                     double gain) {
+        if (player == null || desiredVelocity == null) {
+            return;
+        }
+        Vec3d current = player.getVelocity();
+        Vec3d delta = desiredVelocity.subtract(current).multiply(gain * constraintScale());
+        Vec3d impulse = HoldHandsLinkGeometry.clampSpeed(delta, 0.45D);
+        if (impulse.lengthSquared() <= 0.000001D) {
+            return;
+        }
+        player.setVelocity(current.add(impulse));
+        player.velocityModified = true;
     }
 
     private static Vec3d solveSharedHandPoint(ServerPlayerEntity leader, ServerPlayerEntity follower,
@@ -1006,11 +1503,35 @@ public final class HoldHandsManager {
     private record PairCenterResult(Vec3d center, Vec3d velocity) {
     }
 
+    private record InputSample(int sequence, long arrivalTick, float yaw, PlayerInput input) {
+    }
+
+    private record HoldPairHistoryEntry(long serverTick, Vec3d activePosition, Vec3d passivePosition,
+                                        Vec3d activeVelocity, Vec3d passiveVelocity, Vec3d sharedHandPoint) {
+    }
+
+    private record TeleportGuard(long sentTick, Vec3d leaderTarget, Vec3d followerTarget,
+                                 long lastWarningTick) {
+        private TeleportGuard(long sentTick, Vec3d leaderTarget, Vec3d followerTarget) {
+            this(sentTick, leaderTarget, followerTarget, Long.MIN_VALUE);
+        }
+
+        private TeleportGuard withLastWarningTick(long tick) {
+            return new TeleportGuard(sentTick, leaderTarget, followerTarget, tick);
+        }
+    }
+
     private record HoldAnchorState(Vec3d position, Vec3d velocity, Vec3d center, Vec3d centerVelocity,
                                    Vec3d leaderIntent, Vec3d followerIntent,
-                                   int verticalTicks, int teleportTicks) {
+                                   int verticalTicks, int teleportTicks, int bootstrapTicks,
+                                   double tension, double relativeDistance, double relativeSpeed,
+                                   int strainTicks) {
         private HoldAnchorState(Vec3d position, Vec3d velocity) {
-            this(position, velocity, null, Vec3d.ZERO, Vec3d.ZERO, Vec3d.ZERO, 0, 0);
+            this(position, velocity, null, Vec3d.ZERO, Vec3d.ZERO, Vec3d.ZERO,
+                    0, 0, 0, 0.0D, 0.0D, 0.0D, 0);
         }
+    }
+
+    private record ReachabilityCache(long tick, Vec3d desired, Vec3d resolved) {
     }
 }

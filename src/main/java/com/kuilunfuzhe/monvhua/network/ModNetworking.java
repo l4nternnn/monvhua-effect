@@ -23,6 +23,7 @@ import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.network.gravity.GravityPackets;
 import com.kuilunfuzhe.monvhua.network.hot_backpack_save.HotBackpackPackets;
 import com.kuilunfuzhe.monvhua.network.hold_hands.HoldHandsInteractC2SPacket;
+import com.kuilunfuzhe.monvhua.network.hold_hands.HoldHandsInputC2SPacket;
 import com.kuilunfuzhe.monvhua.network.hold_hands.HoldHandsSyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateConfigS2CPacket;
 import com.kuilunfuzhe.monvhua.network.imitate.ImitateOpenUIPacket;
@@ -106,6 +107,7 @@ public class ModNetworking {
         CarryEntityPayload.register();
         PlaceCarriedEntityPayload.register();
         HoldHandsInteractC2SPacket.register();
+        HoldHandsInputC2SPacket.register();
         ApplySkeletalPoseC2SPacket.register();
         PlacePoseEditorItemsC2SPacket.register();
         PlacePosedBodyC2SPacket.register();

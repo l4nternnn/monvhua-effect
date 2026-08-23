@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.mixin;
 
 import com.kuilunfuzhe.monvhua.client.imitate.AreaSelectClientManager;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityClient;
+import com.kuilunfuzhe.monvhua.event.KeyBindingHandler;
 import com.kuilunfuzhe.monvhua.network.hold_hands.HoldHandsInteractC2SPacket;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import net.minecraft.client.MinecraftClient;
@@ -16,11 +17,12 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Mouse.class)
+@SuppressWarnings("unused")
 public abstract class MouseMixin {
 
     @Inject(method = "onMouseButton", at = @At("HEAD"), cancellable = true)
     private void onMouseButton(long window, int button, int action, int mods, CallbackInfo ci) {
-        if (action == GLFW.GLFW_PRESS && button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE && monvhua$handleHoldHandsMiddleClick()) {
+        if (action == GLFW.GLFW_PRESS && monvhua$isHoldHandsButton(button) && monvhua$handleHoldHandsMiddleClick()) {
             ci.cancel();
             return;
         }
@@ -34,18 +36,23 @@ public abstract class MouseMixin {
     }
 
     private boolean monvhua$handleHoldHandsMiddleClick() {
-//        MinecraftClient client = MinecraftClient.getInstance();
-//        if (client.player == null || !client.player.isSneaking()) {
-//            return false;
-//        }
-//        if (!(client.crosshairTarget instanceof EntityHitResult hitResult) || hitResult.getType() != HitResult.Type.ENTITY) {
-//            return false;
-//        }
-//        if (!(hitResult.getEntity() instanceof PlayerEntity) || hitResult.getEntity() == client.player) {
-//            return false;
-//        }
-//        SafeClientNetworking.send(new HoldHandsInteractC2SPacket(hitResult.getEntity().getId()));
-//        return true;
-        return false;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null || (!client.player.isSneaking() && !client.options.sneakKey.isPressed())) {
+            return false;
+        }
+        if (!(client.crosshairTarget instanceof EntityHitResult hitResult) || hitResult.getType() != HitResult.Type.ENTITY) {
+            return false;
+        }
+        if (!(hitResult.getEntity() instanceof PlayerEntity) || hitResult.getEntity() == client.player) {
+            return false;
+        }
+        SafeClientNetworking.send(new HoldHandsInteractC2SPacket(hitResult.getEntity().getId()));
+        return true;
+    }
+
+    private boolean monvhua$isHoldHandsButton(int button) {
+        return KeyBindingHandler.holdHandsKey != null
+                ? KeyBindingHandler.holdHandsKey.matchesMouse(button)
+                : button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE;
     }
 }

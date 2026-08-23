@@ -17,6 +17,8 @@ public class KeyBindingHandler {
     public static KeyBinding bodyPoseEditorKey;
     public static KeyBinding bodyPoseWorldPreviewKey;
     public static KeyBinding actionEditorKey;
+    /** 牵手触发键，默认鼠标中键；实际操作仍要求同时按住潜行键。 */
+    public static KeyBinding holdHandsKey;
 
     /**
      * 注册按键绑定到Minecraft键位系统。
@@ -28,5 +30,7 @@ public class KeyBindingHandler {
         bodyPoseEditorKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.body_pose_editor", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_B, "category.monvhua"));
         bodyPoseWorldPreviewKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.body_pose_world_preview", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_P, "category.monvhua"));
         actionEditorKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.action_editor", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_J, "category.monvhua"));
+        holdHandsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.monvhua.hold_hands", InputUtil.Type.MOUSE, GLFW.GLFW_MOUSE_BUTTON_MIDDLE, "category.monvhua"));
     }
 }
