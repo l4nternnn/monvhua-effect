@@ -21,15 +21,21 @@ import net.minecraft.util.math.Vec3d;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 final class HoldHandsRigidArmSegmentRenderer {
     private static final double MIN_SEGMENT_LENGTH = 0.04D;
     private static final float ARM_PIXEL_LENGTH = 12.0F;
     private static final float VANILLA_ARM_SCALE = 1.0F;
-    private static final double PASSIVE_ARM_Z_ANGLE_GAIN = 1.28D;
+    private static final double MAX_RENDER_ARM_LENGTH = 1.45D;
+    private static final double HARD_RENDER_ARM_LENGTH = 2.20D;
     private static final BakedArm DEFAULT_LEFT_ARM = bakeArm(HoldHandsSkeletalPose.HandSide.LEFT, false);
     private static final BakedArm DEFAULT_RIGHT_ARM = bakeArm(HoldHandsSkeletalPose.HandSide.RIGHT, false);
     private static final BakedArm SLIM_LEFT_ARM = bakeArm(HoldHandsSkeletalPose.HandSide.LEFT, true);
     private static final BakedArm SLIM_RIGHT_ARM = bakeArm(HoldHandsSkeletalPose.HandSide.RIGHT, true);
+    private static final Map<Long, Quaternionf> LAST_ROTATIONS = new ConcurrentHashMap<>();
+    private static final Map<Long, Vec3d> LAST_VALID_TARGETS = new ConcurrentHashMap<>();
 
     private HoldHandsRigidArmSegmentRenderer() {
     }
@@ -51,25 +57,75 @@ final class HoldHandsRigidArmSegmentRenderer {
             return false;
         }
 
-        float renderBodyYaw = side == HoldHandsSkeletalPose.PASSIVE_ROLE_HAND
+        long renderKey = (((long) state.id) << 1) ^ side.ordinal();
+        if (!HoldHandsClientState.isHoldingHands(state.id)) {
+            LAST_ROTATIONS.remove(renderKey);
+            LAST_VALID_TARGETS.remove(renderKey);
+            return false;
+        }
+
+        float renderBodyYaw = HoldHandsClientState.isFollower(state.id)
                 ? HoldHandsClientState.getHoldBodyYaw(state.id, state.bodyYaw)
                 : state.bodyYaw;
+        Vec3d renderFeet = new Vec3d(state.x, state.y, state.z);
+        if (!finiteVec(renderFeet)) {
+            renderFeet = self.getPos();
+        }
         Vec3d targetWorld = HoldHandsClientState.getSharedHandPoint(state.id);
         if (targetWorld == null) {
             return false;
         }
         Vec3d startLocal = HoldHandsLinkGeometry.shoulderSocket(side);
-        Vec3d endLocal = HoldHandsLinkGeometry.worldVectorToBodyLocal(targetWorld.subtract(self.getPos()), renderBodyYaw);
-        endLocal = adjustVisualEndLocal(startLocal, endLocal, side);
-        endLocal = clampVisualReach(startLocal, endLocal, HoldHandsClientState.getTension(state.id));
-        Vec3d segment = endLocal.subtract(startLocal);
-        if (segment.lengthSquared() <= MIN_SEGMENT_LENGTH * MIN_SEGMENT_LENGTH) {
+        Vec3d endLocal = HoldHandsLinkGeometry.worldVectorToBodyLocal(targetWorld.subtract(renderFeet), renderBodyYaw);
+        Vec3d modelStart = toVanillaModelSpace(startLocal);
+        Vec3d modelEnd = toVanillaModelSpace(endLocal);
+        Vec3d modelSegment = modelEnd.subtract(modelStart);
+        double segmentLength = modelSegment.length();
+        if (!Double.isFinite(segmentLength) || segmentLength <= MIN_SEGMENT_LENGTH) {
             return false;
         }
 
+        if (segmentLength > MAX_RENDER_ARM_LENGTH) {
+            Vec3d previousTarget = LAST_VALID_TARGETS.get(renderKey);
+            if (finiteVec(previousTarget)) {
+                Vec3d previousLocal = HoldHandsLinkGeometry.worldVectorToBodyLocal(
+                        previousTarget.subtract(renderFeet), renderBodyYaw);
+                Vec3d previousModel = toVanillaModelSpace(previousLocal);
+                if (previousModel.subtract(modelStart).length() <= HARD_RENDER_ARM_LENGTH) {
+                    modelEnd = previousModel;
+                    modelSegment = modelEnd.subtract(modelStart);
+                    segmentLength = modelSegment.length();
+                }
+            }
+            if (segmentLength > MAX_RENDER_ARM_LENGTH) {
+                if (segmentLength > HARD_RENDER_ARM_LENGTH) {
+                    modelEnd = modelStart.add(modelSegment.multiply(MAX_RENDER_ARM_LENGTH / segmentLength));
+                    modelSegment = modelEnd.subtract(modelStart);
+                }
+                segmentLength = modelSegment.length();
+            }
+        }
+        if (!Double.isFinite(segmentLength) || segmentLength <= MIN_SEGMENT_LENGTH
+                || segmentLength > HARD_RENDER_ARM_LENGTH) {
+            return false;
+        }
+        Vec3d safeTargetWorld = renderFeet.add(HoldHandsLinkGeometry.bodyLocalToWorldVector(
+                fromVanillaModelSpace(modelEnd), renderBodyYaw));
+        if (finiteVec(safeTargetWorld)) {
+            LAST_VALID_TARGETS.put(renderKey, safeTargetWorld);
+        }
+        if (LAST_ROTATIONS.size() > 4096 || LAST_VALID_TARGETS.size() > 4096) {
+            LAST_ROTATIONS.clear();
+            LAST_VALID_TARGETS.clear();
+            if (finiteVec(safeTargetWorld)) {
+                LAST_VALID_TARGETS.put(renderKey, safeTargetWorld);
+            }
+        }
+
         VertexConsumer vertices = vertexConsumers.getBuffer(RenderLayer.getEntityCutoutNoCull(texture));
-        renderArmModel(matrices, vertices, toVanillaModelSpace(startLocal), toVanillaModelSpace(endLocal),
-                bakedArm(side, slim), side, light);
+        Quaternionf rotation = smoothRotation(renderKey, stableArmRotation(modelSegment.multiply(1.0D / segmentLength), side));
+        renderArmModel(matrices, vertices, modelStart, modelEnd,
+                bakedArm(side, slim), side, light, rotation);
         return true;
     }
 
@@ -77,29 +133,13 @@ final class HoldHandsRigidArmSegmentRenderer {
         return new Vec3d(-bodyLocal.x, 1.501D - bodyLocal.y, -bodyLocal.z);
     }
 
-    private static Vec3d adjustVisualEndLocal(Vec3d startLocal, Vec3d endLocal,
-                                              HoldHandsSkeletalPose.HandSide side) {
-        if (side != HoldHandsSkeletalPose.PASSIVE_ROLE_HAND) {
-            return endLocal;
-        }
-
-        Vec3d segment = endLocal.subtract(startLocal);
-        return startLocal.add(segment.x, segment.y, segment.z * PASSIVE_ARM_Z_ANGLE_GAIN);
-    }
-
-    private static Vec3d clampVisualReach(Vec3d start, Vec3d end, float tension) {
-        Vec3d delta = end.subtract(start);
-        double length = delta.length();
-        double maxLength = HoldHandsLinkGeometry.ARM_REACH + 0.32D
-                * Math.max(0.0D, Math.min(1.0D, Float.isFinite(tension) ? tension : 0.0D));
-        if (!Double.isFinite(length) || length <= maxLength || length <= 0.000001D) {
-            return end;
-        }
-        return start.add(delta.multiply(maxLength / length));
+    private static Vec3d fromVanillaModelSpace(Vec3d model) {
+        return new Vec3d(-model.x, 1.501D - model.y, -model.z);
     }
 
     private static void renderArmModel(MatrixStack matrices, VertexConsumer vertices, Vec3d start, Vec3d end,
-                                       BakedArm arm, HoldHandsSkeletalPose.HandSide side, int light) {
+                                       BakedArm arm, HoldHandsSkeletalPose.HandSide side, int light,
+                                       Quaternionf rotation) {
         Vec3d segment = end.subtract(start);
         double length = segment.length();
         if (length <= MIN_SEGMENT_LENGTH) {
@@ -107,8 +147,6 @@ final class HoldHandsRigidArmSegmentRenderer {
         }
 
         Vec3d axis = segment.multiply(1.0D / length);
-        Quaternionf rotation = stableArmRotation(axis, side);
-
         matrices.push();
         try {
             matrices.translate((float) start.x, (float) start.y, (float) start.z);
@@ -125,18 +163,21 @@ final class HoldHandsRigidArmSegmentRenderer {
         }
     }
 
-    private static Quaternionf stableArmRotation(Vec3d armAxis, HoldHandsSkeletalPose.HandSide side) {
-        Vec3d yAxis = safeNormalize(armAxis, new Vec3d(0.0D, 1.0D, 0.0D));
-        Vec3d preferredZ = new Vec3d(0.0D, 0.0D, -1.0D);
-        Vec3d zAxis = perpendicularComponent(preferredZ, yAxis);
-        if (zAxis.lengthSquared() <= 0.000001D) {
-            double sideSign = side == HoldHandsSkeletalPose.HandSide.LEFT ? -1.0D : 1.0D;
-            zAxis = perpendicularComponent(new Vec3d(sideSign, 0.0D, 0.0D), yAxis);
+    private static Quaternionf smoothRotation(long key, Quaternionf target) {
+        Quaternionf previous = LAST_ROTATIONS.get(key);
+        if (previous == null) {
+            Quaternionf stored = new Quaternionf(target);
+            LAST_ROTATIONS.put(key, stored);
+            return target;
         }
-        zAxis = safeNormalize(zAxis, preferredZ);
-        return new Quaternionf().lookAlong(
-                new Vector3f((float) -zAxis.x, (float) -zAxis.y, (float) -zAxis.z),
-                new Vector3f((float) yAxis.x, (float) yAxis.y, (float) yAxis.z));
+        previous.slerp(target, 0.35F);
+        return new Quaternionf(previous);
+    }
+
+    private static Quaternionf stableArmRotation(Vec3d armAxis, HoldHandsSkeletalPose.HandSide side) {
+        Vec3d direction = safeNormalize(armAxis, new Vec3d(0.0D, 1.0D, 0.0D));
+        return new Quaternionf().rotationTo(new Vector3f(0.0F, 1.0F, 0.0F),
+                new Vector3f((float) direction.x, (float) direction.y, (float) direction.z));
     }
 
     private static Vec3d perpendicularComponent(Vec3d vector, Vec3d normal) {
@@ -145,6 +186,10 @@ final class HoldHandsRigidArmSegmentRenderer {
 
     private static Vec3d safeNormalize(Vec3d vector, Vec3d fallback) {
         return vector.lengthSquared() > 0.000001D ? vector.normalize() : fallback;
+    }
+
+    private static boolean finiteVec(Vec3d value) {
+        return value != null && Double.isFinite(value.x) && Double.isFinite(value.y) && Double.isFinite(value.z);
     }
 
     private static BakedArm bakedArm(HoldHandsSkeletalPose.HandSide side, boolean slim) {

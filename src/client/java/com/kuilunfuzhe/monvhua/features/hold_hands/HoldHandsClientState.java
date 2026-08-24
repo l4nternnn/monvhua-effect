@@ -42,6 +42,13 @@ public final class HoldHandsClientState {
                 || Math.abs(packet.velocityZ()) > CLIENT_MAX_VELOCITY) {
             return;
         }
+        if ((packet.role() != HoldHandsSyncS2CPacket.ROLE_ACTIVE
+                && packet.role() != HoldHandsSyncS2CPacket.ROLE_PASSIVE)
+                || (packet.handSide() != HoldHandsSyncS2CPacket.HAND_LEFT
+                && packet.handSide() != HoldHandsSyncS2CPacket.HAND_RIGHT)
+                || packet.entityId() < 0 || packet.partnerId() == packet.entityId()) {
+            return;
+        }
         long previousSequence = LAST_SEQUENCE.getOrDefault(packet.entityId(), Long.MIN_VALUE);
         if (packet.sequence() < previousSequence) {
             return;
@@ -58,19 +65,25 @@ public final class HoldHandsClientState {
         HoldHandsSkeletalPose.HandSide handSide = packet.handSide() == HoldHandsSyncS2CPacket.HAND_LEFT
                 ? HoldHandsSkeletalPose.HandSide.LEFT
                 : HoldHandsSkeletalPose.HandSide.RIGHT;
+        boolean passive = packet.role() == HoldHandsSyncS2CPacket.ROLE_PASSIVE;
         Vec3d incomingPoint = new Vec3d(packet.sharedHandX(), packet.sharedHandY(), packet.sharedHandZ());
         float tension = clamp01(packet.tension());
         long pairKey = pairKey(packet.entityId(), packet.partnerId());
         PairPoint previousPair = PAIR_POINTS.get(pairKey);
+        if (previousPair != null && packet.serverTick() < previousPair.serverTick()) {
+            return;
+        }
         Vec3d sharedHandPoint = stabilizePairPoint(previousPair, incomingPoint, tension);
         float visualTension = previousPair == null ? tension
                 : previousPair.visualTension() + (tension - previousPair.visualTension()) * 0.28F;
+        int predictionTicks = previousPair != null && packet.serverTick() == previousPair.serverTick()
+                ? previousPair.predictionTicks() : 0;
         PAIR_POINTS.put(pairKey, new PairPoint(incomingPoint, sharedHandPoint,
-                new Vec3d(packet.velocityX(), packet.velocityY(), packet.velocityZ()), packet.serverTick(), 0,
+                new Vec3d(packet.velocityX(), packet.velocityY(), packet.velocityZ()), packet.serverTick(), predictionTicks,
                 tension, visualTension));
         float defaultDistance = MathHelper.clamp(packet.defaultDistance(), 0.82F, 1.26F);
         float holdBodyYaw = MathHelper.wrapDegrees(packet.holdBodyYaw());
-        ACTIVE.put(packet.entityId(), new HoldHandData(handSide, packet.partnerId(),
+        ACTIVE.put(packet.entityId(), new HoldHandData(passive, handSide, packet.partnerId(),
                 defaultDistance, holdBodyYaw, sharedHandPoint));
     }
 
@@ -121,7 +134,7 @@ public final class HoldHandsClientState {
 
     public static boolean isFollower(int entityId) {
         HoldHandData data = ACTIVE.get(entityId);
-        return data != null && HoldHandsSkeletalPose.isFollowerHand(data.handSide());
+        return data != null && data.passive();
     }
 
     public static HoldHandsSkeletalPose.HandSide getHandSide(int entityId) {
@@ -207,7 +220,7 @@ public final class HoldHandsClientState {
         return Float.isFinite(value) ? Math.max(0.0F, Math.min(1.0F, value)) : 0.0F;
     }
 
-    private record HoldHandData(HoldHandsSkeletalPose.HandSide handSide, int partnerId,
+    private record HoldHandData(boolean passive, HoldHandsSkeletalPose.HandSide handSide, int partnerId,
                                  float defaultDistance, float holdBodyYaw, Vec3d sharedHandPoint) {
     }
 

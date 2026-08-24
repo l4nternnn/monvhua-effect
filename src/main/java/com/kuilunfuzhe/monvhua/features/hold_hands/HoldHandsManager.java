@@ -50,15 +50,15 @@ public final class HoldHandsManager {
     private static final double ANCHOR_PLAYER_VERTICAL_STIFFNESS = 0.28D;
     private static final double ANCHOR_PLAYER_MAX_VERTICAL_CORRECTION_SPEED = 0.16D;
     private static final double ANCHOR_PLAYER_TELEPORT_DISTANCE = 3.25D;
-    private static final double ANCHOR_WALK_INPUT_SPEED = 0.11D;
-    private static final double ANCHOR_SPRINT_INPUT_SPEED = 0.16D;
+    private static final double ANCHOR_WALK_INPUT_SPEED = 0.215D;
+    private static final double ANCHOR_SPRINT_INPUT_SPEED = 0.280D;
     private static final double ANCHOR_SNEAK_INPUT_SPEED = 0.055D;
     private static final double ANCHOR_FLY_VERTICAL_INPUT_SPEED = 0.14D;
     private static final double ANCHOR_JUMP_INPUT_SPEED = 0.18D;
     private static final double PAIR_INTENT_FILTER_ALPHA = 0.32D;
     private static final double PAIR_CENTER_STIFFNESS = 0.18D;
     private static final double PAIR_CENTER_MAX_MEASURED_CORRECTION = 0.08D;
-    private static final double PAIR_MAX_HORIZONTAL_SPEED = 0.30D;
+    private static final double PAIR_MAX_HORIZONTAL_SPEED = 0.34D;
     private static final double PAIR_MAX_VERTICAL_SPEED = 0.18D;
     private static final double PAIR_MAX_ACCELERATION = 0.09D;
     private static final double PAIR_POSITION_DEADBAND = 0.055D;
@@ -76,7 +76,7 @@ public final class HoldHandsManager {
     private static final double BOOTSTRAP_MAX_ACCELERATION = 0.18D;
     private static final double NORMAL_MAX_ACCELERATION = 0.12D;
     private static final double BOOTSTRAP_MAX_CENTER_SPEED = 0.40D;
-    private static final double NORMAL_MAX_CENTER_SPEED = 0.30D;
+    private static final double NORMAL_MAX_CENTER_SPEED = 0.34D;
     // These are per-tick gains. Values intended for a seconds-based solver
     // (for example k=7, c=4.2) are unstable when applied directly to velocity
     // every Minecraft tick.
@@ -100,6 +100,7 @@ public final class HoldHandsManager {
     private static final int MAX_INPUT_SEQUENCE_JUMP = 240;
     private static final int PAIR_HISTORY_TICKS = 40;
     private static final int PAIR_VERTICAL_CONFIRM_TICKS = 3;
+    private static final int PAIR_VERTICAL_RELEASE_TICKS = 5;
     private static final double FOLLOW_POSITION_STEP_DEADBAND = 0.20D;
     private static final double TAUT_POSITION_STEP_DEADBAND = 0.08D;
     private static final double FOLLOW_POSITION_MIN_STEP = 0.08D;
@@ -164,7 +165,9 @@ public final class HoldHandsManager {
     private static void startPair(ServerPlayerEntity initiator, ServerPlayerEntity target) {
         float holdBodyYaw = initiator.getBodyYaw();
         double defaultDistance = Math.max(0.001D, HoldHandsLinkGeometry.horizontalDistance(initiator.getPos(), target.getPos()));
-        Vec3d sharedHandPoint = solveSharedHandPoint(initiator, target, defaultDistance);
+        HandPairChoice handChoice = chooseHandPair(initiator, target, defaultDistance);
+        Vec3d sharedHandPoint = solveSharedHandPoint(initiator, target, defaultDistance,
+                handChoice.activeSide(), handChoice.passiveSide());
         String key = pairKey(initiator.getUuid(), target.getUuid());
         TELEPORT_GUARDS.remove(key);
         RECOVERY.remove(key);
@@ -180,16 +183,44 @@ public final class HoldHandsManager {
         Vec3d measuredCenter = initiator.getPos().add(target.getPos()).multiply(0.5D);
         ANCHORS.put(key,
                 new HoldAnchorState(sharedHandPoint, Vec3d.ZERO, measuredCenter, Vec3d.ZERO,
-                        Vec3d.ZERO, Vec3d.ZERO, 0, 0, 0, 0.0D,
+                        Vec3d.ZERO, Vec3d.ZERO, 0, 0, 0, 0, 0.0D,
                         defaultDistance, 0.0D, 0));
         ACTIVE.put(initiator.getUuid(), new HoldHandData(
-                HoldHandsSkeletalPose.handForRole(HoldHandsSkeletalPose.HoldRole.ACTIVE), target.getUuid(),
+                HoldHandsSkeletalPose.HoldRole.ACTIVE, handChoice.activeSide(), target.getUuid(),
                 defaultDistance, holdBodyYaw, sharedHandPoint, initiator.getPos()));
         ACTIVE.put(target.getUuid(), new HoldHandData(
-                HoldHandsSkeletalPose.handForRole(HoldHandsSkeletalPose.HoldRole.PASSIVE), initiator.getUuid(),
+                HoldHandsSkeletalPose.HoldRole.PASSIVE, handChoice.passiveSide(), initiator.getUuid(),
                 defaultDistance, holdBodyYaw, sharedHandPoint, initiator.getPos()));
         sync(initiator, true);
         sync(target, true);
+    }
+
+    private static HandPairChoice chooseHandPair(ServerPlayerEntity initiator, ServerPlayerEntity target,
+                                                  double defaultDistance) {
+        HandPairChoice left = scoreHandPair(initiator, target, defaultDistance,
+                HoldHandsSkeletalPose.HandSide.LEFT, HoldHandsSkeletalPose.HandSide.RIGHT);
+        HandPairChoice right = scoreHandPair(initiator, target, defaultDistance,
+                HoldHandsSkeletalPose.HandSide.RIGHT, HoldHandsSkeletalPose.HandSide.LEFT);
+        return right.score() + 0.06D < left.score() ? right : left;
+    }
+
+    private static HandPairChoice scoreHandPair(ServerPlayerEntity initiator, ServerPlayerEntity target,
+                                                double defaultDistance,
+                                                HoldHandsSkeletalPose.HandSide activeSide,
+                                                HoldHandsSkeletalPose.HandSide passiveSide) {
+        Vec3d point = solveSharedHandPoint(initiator, target, defaultDistance, activeSide, passiveSide);
+        Vec3d activeShoulder = HoldHandsLinkGeometry.shoulderWorld(initiator.getPos(), initiator.getBodyYaw(), activeSide);
+        Vec3d passiveShoulder = HoldHandsLinkGeometry.shoulderWorld(target.getPos(), initiator.getBodyYaw(), passiveSide);
+        double activeReach = activeShoulder.distanceTo(point);
+        double passiveReach = passiveShoulder.distanceTo(point);
+        double overflow = Math.max(0.0D, activeReach - HoldHandsLinkGeometry.ARM_REACH)
+                + Math.max(0.0D, passiveReach - HoldHandsLinkGeometry.ARM_REACH);
+        double score = Math.max(activeReach, passiveReach) + Math.abs(activeReach - passiveReach) * 0.25D
+                + overflow * 4.0D;
+        if (!Double.isFinite(score)) {
+            score = Double.MAX_VALUE;
+        }
+        return new HandPairChoice(activeSide, passiveSide, score);
     }
 
     private static void stopPair(ServerPlayerEntity player) {
@@ -273,7 +304,7 @@ public final class HoldHandsManager {
                 continue;
             }
 
-            ServerPlayerEntity active = data.handSide() == HoldHandsSkeletalPose.ACTIVE_ROLE_HAND ? player : partner;
+            ServerPlayerEntity active = data.role() == HoldHandsSkeletalPose.HoldRole.ACTIVE ? player : partner;
             ServerPlayerEntity passive = active == player ? partner : player;
             HoldHandData activeData = ACTIVE.get(active.getUuid());
             HoldHandData passiveData = ACTIVE.get(passive.getUuid());
@@ -316,7 +347,7 @@ public final class HoldHandsManager {
             Integer recoveryTicks = RECOVERY.get(pairKey);
             if (recoveryTicks != null && recoveryTicks > 0) {
                 Vec3d recoveryPoint = solveSharedHandPoint(active, passive,
-                        activeData.defaultDistance());
+                        activeData.defaultDistance(), activeData.handSide(), passiveData.handSide());
                 setPairSharedHandPoint(active, passive, recoveryPoint);
                 recordPairHistory(pairKey, active, passive, recoveryPoint);
                 RECOVERY.put(pairKey, recoveryTicks - 1);
@@ -424,6 +455,8 @@ public final class HoldHandsManager {
         int side = data != null && data.handSide() == HoldHandsSkeletalPose.HandSide.LEFT
                 ? HoldHandsSyncS2CPacket.HAND_LEFT
                 : HoldHandsSyncS2CPacket.HAND_RIGHT;
+        int role = data != null && data.role() == HoldHandsSkeletalPose.HoldRole.PASSIVE
+                ? HoldHandsSyncS2CPacket.ROLE_PASSIVE : HoldHandsSyncS2CPacket.ROLE_ACTIVE;
         ServerPlayerEntity partner = data != null ? getPlayer(server, data.partnerUuid()) : null;
         int partnerId = partner != null ? partner.getId() : HoldHandsSyncS2CPacket.NO_PARTNER;
         float defaultDistance = data != null && Double.isFinite(data.defaultDistance())
@@ -433,14 +466,15 @@ public final class HoldHandsManager {
                 ? MathHelper.wrapDegrees(data.holdBodyYaw()) : 0.0F;
         Vec3d sharedHandPoint = data != null && finiteVec(data.sharedHandPoint()) ? data.sharedHandPoint() : Vec3d.ZERO;
         long sequence = SYNC_SEQUENCES.merge(player.getUuid(), 1L, Long::sum);
-        Vec3d velocity = finiteVec(player.getVelocity())
-                ? HoldHandsLinkGeometry.clampSpeed(player.getVelocity(), 4.0D) : Vec3d.ZERO;
         HoldAnchorState anchor = data != null && partner != null
                 ? ANCHORS.get(pairKey(player.getUuid(), partner.getUuid())) : null;
+        Vec3d velocity = anchor != null && finiteVec(anchor.centerVelocity())
+                ? HoldHandsLinkGeometry.clampSpeed(anchor.centerVelocity(), 4.0D)
+                : finiteVec(player.getVelocity()) ? HoldHandsLinkGeometry.clampSpeed(player.getVelocity(), 4.0D) : Vec3d.ZERO;
         float tension = anchor == null ? 0.0F : (float) MathHelper.clamp(anchor.tension(), 0.0D, 1.0D);
         float relativeDistance = anchor == null ? defaultDistance : (float) MathHelper.clamp(anchor.relativeDistance(), 0.0D, 8.0D);
         float relativeSpeed = anchor == null ? 0.0F : (float) MathHelper.clamp(anchor.relativeSpeed(), 0.0D, 8.0D);
-        return new HoldHandsSyncS2CPacket(player.getId(), active, sequence, side, partnerId, defaultDistance, holdBodyYaw,
+        return new HoldHandsSyncS2CPacket(player.getId(), active, sequence, role, side, partnerId, defaultDistance, holdBodyYaw,
                 (float) sharedHandPoint.x, (float) sharedHandPoint.y, (float) sharedHandPoint.z,
                 player.getWorld().getTime(), (float) velocity.x, (float) velocity.y, (float) velocity.z,
                 tension, relativeDistance, relativeSpeed);
@@ -592,13 +626,19 @@ public final class HoldHandsManager {
         float followerBodyYaw = holdBodyYaw;
         String key = pairKey(leader.getUuid(), follower.getUuid());
         HoldAnchorState state = ANCHORS.get(key);
+        HoldHandData leaderData = ACTIVE.get(leader.getUuid());
+        HoldHandData followerData = ACTIVE.get(follower.getUuid());
+        HoldHandsSkeletalPose.HandSide leaderSide = leaderData == null
+                ? HoldHandsSkeletalPose.ACTIVE_ROLE_HAND : leaderData.handSide();
+        HoldHandsSkeletalPose.HandSide followerSide = followerData == null
+                ? HoldHandsSkeletalPose.PASSIVE_ROLE_HAND : followerData.handSide();
         Vec3d measuredCenter = leader.getPos().add(follower.getPos()).multiply(0.5D);
         if (state == null || state.center() == null || state.position() == null) {
             Vec3d start = previousSharedHandPoint != null && previousSharedHandPoint.lengthSquared() > 0.000001D
                     ? previousSharedHandPoint
-                    : solveSharedHandPoint(leader, follower, defaultDistance);
+                    : solveSharedHandPoint(leader, follower, defaultDistance, leaderSide, followerSide);
             state = new HoldAnchorState(start, Vec3d.ZERO, measuredCenter, Vec3d.ZERO,
-                    Vec3d.ZERO, Vec3d.ZERO, 0, 0, 0, 0.0D,
+                    Vec3d.ZERO, Vec3d.ZERO, 0, 0, 0, 0, 0.0D,
                     defaultDistance, 0.0D, 0);
         }
 
@@ -609,8 +649,15 @@ public final class HoldHandsManager {
         boolean verticalCandidate = !"none".equals(rawVerticalLeadReason);
         int verticalTicks = verticalCandidate
                 ? Math.min(PAIR_VERTICAL_CONFIRM_TICKS, state.verticalTicks() + 1)
-                : Math.max(0, state.verticalTicks() - 1);
-        boolean useVerticalLead = verticalTicks >= PAIR_VERTICAL_CONFIRM_TICKS;
+                : state.verticalTicks();
+        int verticalReleaseTicks = verticalCandidate
+                ? 0
+                : Math.min(PAIR_VERTICAL_RELEASE_TICKS, state.verticalReleaseTicks() + 1);
+        boolean useVerticalLead = verticalTicks >= PAIR_VERTICAL_CONFIRM_TICKS
+                && verticalReleaseTicks < PAIR_VERTICAL_RELEASE_TICKS;
+        if (!useVerticalLead && verticalReleaseTicks >= PAIR_VERTICAL_RELEASE_TICKS) {
+            verticalTicks = 0;
+        }
         String verticalLeadReason = useVerticalLead ? rawVerticalLeadReason
                 : verticalCandidate ? "pending:" + rawVerticalLeadReason : "none";
 
@@ -621,7 +668,8 @@ public final class HoldHandsManager {
         Vec3d center = centerResult.center();
         Vec3d centerVelocity = centerResult.velocity();
 
-        Vec3d pairOffset = desiredPairOffsetForAnchor(holdBodyYaw, defaultDistance, leader, follower, useVerticalLead);
+        Vec3d pairOffset = desiredPairOffsetForAnchor(holdBodyYaw, defaultDistance, leader, follower,
+                useVerticalLead, leaderSide);
         Vec3d leaderTarget = center.subtract(pairOffset.multiply(0.5D));
         Vec3d followerTarget = center.add(pairOffset.multiply(0.5D));
         if (!useVerticalLead) {
@@ -660,14 +708,14 @@ public final class HoldHandsManager {
 
         double followerPullDistance = Math.max(horizontalDistance(follower.getPos(), followerTarget),
                 horizontalDistance(Vec3d.ZERO, centerVelocity));
-        HoldHandData followerData = ACTIVE.get(follower.getUuid());
         followerBodyYaw = updateHoldBodyYaw(leader, follower, followerData, followerPullDistance);
         applyFollowerBodyYaw(follower, followerBodyYaw);
 
         Vec3d desiredEndpoint = solveSharedHandPoint(leaderTarget, followerTarget,
                 endpointMotion(leaderIntent, useVerticalLead),
                 endpointMotion(followerIntent, useVerticalLead),
-                leaderBodyYaw, followerBodyYaw, defaultDistance, previousSharedHandPoint);
+                leaderBodyYaw, followerBodyYaw, defaultDistance, previousSharedHandPoint,
+                leaderSide, followerSide);
         Vec3d anchorPosition = stabilizeAnchorEndpoint(state.position(), desiredEndpoint, useVerticalLead);
         Vec3d anchorVelocity = state.position() == null ? Vec3d.ZERO : anchorPosition.subtract(state.position());
         actualOffset = follower.getPos().subtract(leader.getPos());
@@ -697,7 +745,7 @@ public final class HoldHandsManager {
         int strainTicks = tension >= 0.85D ? Math.min(STRAIN_CONFIRM_TICKS, state.strainTicks() + 1)
                 : Math.max(0, state.strainTicks() - 2);
         ANCHORS.put(key, new HoldAnchorState(anchorPosition, anchorVelocity, center, centerVelocity,
-                leaderIntent, followerIntent, verticalTicks, teleportTicks, bootstrapTicks, tension,
+                leaderIntent, followerIntent, verticalTicks, verticalReleaseTicks, teleportTicks, bootstrapTicks, tension,
                 relativeDistance, relativeSpeed, strainTicks));
         recordPairHistory(key, leader, follower, anchorPosition);
 
@@ -737,7 +785,8 @@ public final class HoldHandsManager {
 
     private static Vec3d pairIntentVelocity(Vec3d leaderIntent, Vec3d followerIntent, boolean useVerticalLead) {
         Vec3d combined = (leaderIntent == null ? Vec3d.ZERO : leaderIntent)
-                .add(followerIntent == null ? Vec3d.ZERO : followerIntent);
+                .add(followerIntent == null ? Vec3d.ZERO : followerIntent)
+                .multiply(0.5D);
         Vec3d horizontal = HoldHandsLinkGeometry.clampSpeed(new Vec3d(combined.x, 0.0D, combined.z),
                 PAIR_MAX_HORIZONTAL_SPEED);
         double y = useVerticalLead ? MathHelper.clamp(combined.y, -PAIR_MAX_VERTICAL_SPEED, PAIR_MAX_VERTICAL_SPEED) : 0.0D;
@@ -781,8 +830,9 @@ public final class HoldHandsManager {
 
     private static Vec3d desiredPairOffsetForAnchor(float holdBodyYaw, double defaultDistance,
                                                     ServerPlayerEntity leader, ServerPlayerEntity follower,
-                                                    boolean useVerticalLead) {
-        Vec3d base = HoldHandsLinkGeometry.defaultFollowerOffset(holdBodyYaw);
+                                                    boolean useVerticalLead,
+                                                    HoldHandsSkeletalPose.HandSide leaderSide) {
+        Vec3d base = HoldHandsLinkGeometry.defaultFollowerOffset(holdBodyYaw, leaderSide);
         Vec3d horizontal = new Vec3d(base.x, 0.0D, base.z);
         if (horizontal.lengthSquared() <= 0.000001D) {
             horizontal = new Vec3d(1.0D, 0.0D, 0.0D);
@@ -1310,24 +1360,41 @@ public final class HoldHandsManager {
 
     private static Vec3d solveSharedHandPoint(ServerPlayerEntity leader, ServerPlayerEntity follower,
                                               double defaultDistance) {
+        return solveSharedHandPoint(leader, follower, defaultDistance,
+                HoldHandsSkeletalPose.ACTIVE_ROLE_HAND, HoldHandsSkeletalPose.PASSIVE_ROLE_HAND);
+    }
+
+    private static Vec3d solveSharedHandPoint(ServerPlayerEntity leader, ServerPlayerEntity follower,
+                                              double defaultDistance,
+                                              HoldHandsSkeletalPose.HandSide leaderSide,
+                                              HoldHandsSkeletalPose.HandSide followerSide) {
         boolean useVerticalEndpoint = shouldUseVerticalPositionLead(leader, follower);
         return solveSharedHandPoint(leader.getPos(), follower.getPos(),
                 endpointMotion(inputIntentVelocity(leader), useVerticalEndpoint),
                 endpointMotion(inputIntentVelocity(follower), useVerticalEndpoint),
-                leader.getBodyYaw(), follower.getBodyYaw(), defaultDistance, null);
+                leader.getBodyYaw(), follower.getBodyYaw(), defaultDistance, null, leaderSide, followerSide);
     }
 
     private static Vec3d solveSharedHandPoint(Vec3d leaderFeet, Vec3d followerFeet,
                                                Vec3d leaderVelocity, Vec3d followerVelocity,
                                                float leaderBodyYaw, float followerBodyYaw, double defaultDistance,
                                                Vec3d previousSharedHandPoint) {
-        Vec3d leaderShoulder = HoldHandsLinkGeometry.shoulderWorld(leaderFeet, leaderBodyYaw,
-                HoldHandsSkeletalPose.ACTIVE_ROLE_HAND);
-        Vec3d followerShoulder = HoldHandsLinkGeometry.shoulderWorld(followerFeet, followerBodyYaw,
-                HoldHandsSkeletalPose.PASSIVE_ROLE_HAND);
+        return solveSharedHandPoint(leaderFeet, followerFeet, leaderVelocity, followerVelocity,
+                leaderBodyYaw, followerBodyYaw, defaultDistance, previousSharedHandPoint,
+                HoldHandsSkeletalPose.ACTIVE_ROLE_HAND, HoldHandsSkeletalPose.PASSIVE_ROLE_HAND);
+    }
+
+    private static Vec3d solveSharedHandPoint(Vec3d leaderFeet, Vec3d followerFeet,
+                                               Vec3d leaderVelocity, Vec3d followerVelocity,
+                                               float leaderBodyYaw, float followerBodyYaw, double defaultDistance,
+                                               Vec3d previousSharedHandPoint,
+                                               HoldHandsSkeletalPose.HandSide leaderSide,
+                                               HoldHandsSkeletalPose.HandSide followerSide) {
+        Vec3d leaderShoulder = HoldHandsLinkGeometry.shoulderWorld(leaderFeet, leaderBodyYaw, leaderSide);
+        Vec3d followerShoulder = HoldHandsLinkGeometry.shoulderWorld(followerFeet, followerBodyYaw, followerSide);
         float stretch = stretchRatio(leaderFeet, followerFeet, defaultDistance);
         Vec3d desired = HoldHandsLinkGeometry.dynamicEndpoint(leaderFeet, followerFeet,
-                leaderVelocity, followerVelocity, leaderBodyYaw, followerBodyYaw, stretch);
+                leaderVelocity, followerVelocity, leaderBodyYaw, followerBodyYaw, stretch, leaderSide, followerSide);
         boolean verticalEndpoint = usesVerticalEndpointMotion(leaderVelocity, followerVelocity);
         if (!verticalEndpoint) {
             desired = clampGroundedEndpointHeight(desired, leaderFeet, followerFeet, leaderBodyYaw, followerBodyYaw);
@@ -1340,9 +1407,9 @@ public final class HoldHandsManager {
 
         for (int i = 0; i < 3; i++) {
             Vec3d leaderTarget = HoldHandsLinkGeometry.constrainEndpointForArm(target, leaderShoulder, leaderBodyYaw,
-                    HoldHandsSkeletalPose.ACTIVE_ROLE_HAND, HoldHandsLinkGeometry.ARM_REACH);
+                    leaderSide, HoldHandsLinkGeometry.ARM_REACH);
             Vec3d followerTarget = HoldHandsLinkGeometry.constrainEndpointForArm(target, followerShoulder, followerBodyYaw,
-                    HoldHandsSkeletalPose.PASSIVE_ROLE_HAND, HoldHandsLinkGeometry.ARM_REACH);
+                    followerSide, HoldHandsLinkGeometry.ARM_REACH);
             desired = leaderTarget.add(followerTarget).multiply(0.5D);
             if (!verticalEndpoint) {
                 desired = clampGroundedEndpointHeight(desired, leaderFeet, followerFeet,
@@ -1487,20 +1554,25 @@ public final class HoldHandsManager {
         return t * t * (3.0D - 2.0D * t);
     }
 
-    private record HoldHandData(HoldHandsSkeletalPose.HandSide handSide, UUID partnerUuid, double defaultDistance,
+    private record HoldHandData(HoldHandsSkeletalPose.HoldRole role,
+                                HoldHandsSkeletalPose.HandSide handSide, UUID partnerUuid, double defaultDistance,
                                 float holdBodyYaw, Vec3d sharedHandPoint, Vec3d lastLeaderPos) {
         private HoldHandData withHoldBodyYaw(float holdBodyYaw, Vec3d lastLeaderPos) {
-            return new HoldHandData(handSide, partnerUuid, defaultDistance, holdBodyYaw, sharedHandPoint,
+            return new HoldHandData(role, handSide, partnerUuid, defaultDistance, holdBodyYaw, sharedHandPoint,
                     lastLeaderPos == null ? this.lastLeaderPos : lastLeaderPos);
         }
 
         private HoldHandData withSharedHandPoint(Vec3d sharedHandPoint) {
-            return new HoldHandData(handSide, partnerUuid, defaultDistance, holdBodyYaw,
+            return new HoldHandData(role, handSide, partnerUuid, defaultDistance, holdBodyYaw,
                     sharedHandPoint == null ? Vec3d.ZERO : sharedHandPoint, lastLeaderPos);
         }
     }
 
     private record PairCenterResult(Vec3d center, Vec3d velocity) {
+    }
+
+    private record HandPairChoice(HoldHandsSkeletalPose.HandSide activeSide,
+                                  HoldHandsSkeletalPose.HandSide passiveSide, double score) {
     }
 
     private record InputSample(int sequence, long arrivalTick, float yaw, PlayerInput input) {
@@ -1523,12 +1595,13 @@ public final class HoldHandsManager {
 
     private record HoldAnchorState(Vec3d position, Vec3d velocity, Vec3d center, Vec3d centerVelocity,
                                    Vec3d leaderIntent, Vec3d followerIntent,
-                                   int verticalTicks, int teleportTicks, int bootstrapTicks,
+                                   int verticalTicks, int verticalReleaseTicks,
+                                   int teleportTicks, int bootstrapTicks,
                                    double tension, double relativeDistance, double relativeSpeed,
                                    int strainTicks) {
         private HoldAnchorState(Vec3d position, Vec3d velocity) {
             this(position, velocity, null, Vec3d.ZERO, Vec3d.ZERO, Vec3d.ZERO,
-                    0, 0, 0, 0.0D, 0.0D, 0.0D, 0);
+                    0, 0, 0, 0, 0.0D, 0.0D, 0.0D, 0);
         }
     }
 

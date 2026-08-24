@@ -53,7 +53,13 @@ public final class HoldHandsLinkGeometry {
     }
 
     public static Vec3d defaultFollowerOffset(float leaderYaw) {
-        return bodyLocalToWorldVector(new Vec3d(DEFAULT_FOLLOW_SIDE_OFFSET, 0.0D, DEFAULT_FOLLOW_FORWARD_OFFSET), leaderYaw);
+        return defaultFollowerOffset(leaderYaw, HoldHandsSkeletalPose.ACTIVE_ROLE_HAND);
+    }
+
+    public static Vec3d defaultFollowerOffset(float leaderYaw, HoldHandsSkeletalPose.HandSide activeSide) {
+        double sideOffset = activeSide == HoldHandsSkeletalPose.HandSide.RIGHT
+                ? -DEFAULT_FOLLOW_SIDE_OFFSET : DEFAULT_FOLLOW_SIDE_OFFSET;
+        return bodyLocalToWorldVector(new Vec3d(sideOffset, 0.0D, DEFAULT_FOLLOW_FORWARD_OFFSET), leaderYaw);
     }
 
     public static Vec3d defaultEndpoint(Vec3d leaderFeet, float leaderYaw) {
@@ -73,11 +79,21 @@ public final class HoldHandsLinkGeometry {
     public static Vec3d dynamicEndpoint(Vec3d leaderFeet, Vec3d followerFeet,
                                         Vec3d leaderVelocity, Vec3d followerVelocity,
                                         float leaderYaw, float followerYaw, float stretch) {
-        Vec3d base = palmWorld(leaderFeet, leaderYaw, HoldHandsSkeletalPose.ACTIVE_ROLE_HAND)
-                .add(palmWorld(followerFeet, followerYaw, HoldHandsSkeletalPose.PASSIVE_ROLE_HAND))
+        return dynamicEndpoint(leaderFeet, followerFeet, leaderVelocity, followerVelocity,
+                leaderYaw, followerYaw, stretch, HoldHandsSkeletalPose.ACTIVE_ROLE_HAND,
+                HoldHandsSkeletalPose.PASSIVE_ROLE_HAND);
+    }
+
+    public static Vec3d dynamicEndpoint(Vec3d leaderFeet, Vec3d followerFeet,
+                                        Vec3d leaderVelocity, Vec3d followerVelocity,
+                                        float leaderYaw, float followerYaw, float stretch,
+                                        HoldHandsSkeletalPose.HandSide leaderSide,
+                                        HoldHandsSkeletalPose.HandSide followerSide) {
+        Vec3d base = palmWorld(leaderFeet, leaderYaw, leaderSide)
+                .add(palmWorld(followerFeet, followerYaw, followerSide))
                 .multiply(0.5D);
-        Vec3d leaderShoulder = shoulderWorld(leaderFeet, leaderYaw, HoldHandsSkeletalPose.ACTIVE_ROLE_HAND);
-        Vec3d followerShoulder = shoulderWorld(followerFeet, followerYaw, HoldHandsSkeletalPose.PASSIVE_ROLE_HAND);
+        Vec3d leaderShoulder = shoulderWorld(leaderFeet, leaderYaw, leaderSide);
+        Vec3d followerShoulder = shoulderWorld(followerFeet, followerYaw, followerSide);
         Vec3d midpoint = leaderShoulder.add(followerShoulder).multiply(0.5D);
 
         Vec3d leaderMotion = leaderVelocity == null ? Vec3d.ZERO : leaderVelocity;
