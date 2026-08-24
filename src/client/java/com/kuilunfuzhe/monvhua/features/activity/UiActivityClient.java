@@ -21,8 +21,11 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.Util;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Collections;
+import java.util.Set;
 
 public final class UiActivityClient {
     public static final int REVEAL_DURATION_TICKS = 12;
@@ -32,6 +35,10 @@ public final class UiActivityClient {
     private static final long NOT_HIDING = Long.MIN_VALUE;
     private static final Map<UUID, VisualState> REMOTE_STATES = new HashMap<>();
     private static final Map<UUID, SleepState> SLEEP_STATES = new HashMap<>();
+    private static final Map<UUID, Integer> AVATARS = new HashMap<>();
+    private static Map<Integer, UiActivityBubbleAvatarLayout> AVATAR_LAYOUTS = new HashMap<>();
+    /** Local edits must survive an in-flight server layout snapshot. */
+    private static final Set<Integer> DIRTY_AVATAR_LAYOUTS = new HashSet<>();
     private static final long SLEEP_CYCLE_TICKS = 104L;
     private static UiActivityPackets.Activity lastSentActivity = UiActivityPackets.Activity.NONE;
     private static int lastSentContentId;
@@ -56,6 +63,10 @@ public final class UiActivityClient {
         ClientPlayNetworking.registerGlobalReceiver(UiActivityPackets.BubbleStyleS2C.ID, (packet, context) ->
                 context.client().execute(() -> UiActivityBubbleRenderer.setStyle(
                         UiActivityBubbleStyle.fromId(packet.styleId()))));
+        ClientPlayNetworking.registerGlobalReceiver(UiActivityPackets.AvatarS2C.ID, (packet, context) ->
+                context.client().execute(() -> receiveAvatar(packet)));
+        ClientPlayNetworking.registerGlobalReceiver(UiActivityPackets.AvatarLayoutStateS2C.ID, (packet, context) ->
+                context.client().execute(() -> receiveAvatarLayouts(packet)));
         // DISCONNECT may be fired from the connection thread. Keep state changes on the
         // client executor; GPU resources are released after world teardown in tick().
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(UiActivityClient::clear));
@@ -69,6 +80,13 @@ public final class UiActivityClient {
             }
             lastSentActivity = UiActivityPackets.Activity.NONE;
             return;
+        }
+
+        // Resource-backed avatar uploads must happen between frames. The final
+        // composite pass cannot perform a lazy TextureManager upload.
+        for (int avatarId : AVATARS.values()) {
+            UiActivityBubbleRenderer.prepareAvatarTexture(
+                    client, UiActivityBubbleAvatarCatalog.textureId(avatarId));
         }
 
         UiActivityPackets.Activity current = activityFor(client.currentScreen);
@@ -113,6 +131,46 @@ public final class UiActivityClient {
 
     public static int selectedContentId() {
         return selectedContentId;
+    }
+
+    public static int avatarFor(UUID playerUuid) {
+        return AVATARS.getOrDefault(playerUuid, UiActivityBubbleAvatarCatalog.NONE);
+    }
+
+    public static UiActivityBubbleAvatarLayout avatarLayout(int avatarId) {
+        UiActivityBubbleAvatarLayout layout = AVATAR_LAYOUTS.get(avatarId);
+        return layout == null ? UiActivityBubbleAvatarLayout.defaults(avatarId) : layout;
+    }
+
+    public static Map<Integer, UiActivityBubbleAvatarLayout> avatarLayouts() {
+        return Collections.unmodifiableMap(AVATAR_LAYOUTS);
+    }
+
+    public static void requestAvatarLayouts() {
+        SafeClientNetworking.send(new UiActivityPackets.AvatarLayoutRequestC2S());
+    }
+
+    public static void updateAvatarLayout(int avatarId, float centerX, float centerY, float scale) {
+        UiActivityBubbleAvatarLayout next = UiActivityBubbleAvatarLayout.sanitize(
+                centerX, centerY, scale, avatarId);
+        AVATAR_LAYOUTS.put(avatarId, next);
+        DIRTY_AVATAR_LAYOUTS.add(avatarId);
+        SafeClientNetworking.send(new UiActivityPackets.AvatarLayoutUpdateC2S(
+                avatarId, next.centerX(), next.centerY(), next.scale()));
+    }
+
+    public static void previewAvatarLayout(int avatarId, UiActivityBubbleAvatarLayout layout) {
+        if (layout != null && !UiActivityBubbleAvatarCatalog.key(avatarId).isEmpty()) {
+            AVATAR_LAYOUTS.put(avatarId, UiActivityBubbleAvatarLayout.sanitize(
+                    layout.centerX(), layout.centerY(), layout.scale(), avatarId));
+            DIRTY_AVATAR_LAYOUTS.add(avatarId);
+        }
+    }
+
+    public static void updateBubbleStyle(UiActivityBubbleStyle style) {
+        UiActivityBubbleStyle next = style == null ? UiActivityBubbleStyle.DEFAULT : style;
+        UiActivityBubbleRenderer.setStyle(next);
+        SafeClientNetworking.send(new UiActivityPackets.BubbleStyleUpdateC2S(next.ordinal()));
     }
 
     public static void selectContent(int contentId) {
@@ -162,6 +220,34 @@ public final class UiActivityClient {
                 NOT_HIDING,
                 packet.contentId()
         ));
+    }
+
+    private static void receiveAvatar(UiActivityPackets.AvatarS2C packet) {
+        if (packet.avatarId() == UiActivityBubbleAvatarCatalog.NONE) {
+            AVATARS.remove(packet.playerUuid());
+        } else {
+            AVATARS.put(packet.playerUuid(), packet.avatarId());
+            UiActivityBubbleRenderer.prepareAvatarTexture(
+                    MinecraftClient.getInstance(), UiActivityBubbleAvatarCatalog.textureId(packet.avatarId()));
+        }
+    }
+
+    private static void receiveAvatarLayouts(UiActivityPackets.AvatarLayoutStateS2C packet) {
+        Map<Integer, UiActivityBubbleAvatarLayout> merged = new HashMap<>(AVATAR_LAYOUTS);
+        for (Map.Entry<Integer, UiActivityBubbleAvatarLayout> entry : packet.layouts().entrySet()) {
+            int avatarId = entry.getKey();
+            UiActivityBubbleAvatarLayout incoming = entry.getValue();
+            if (!DIRTY_AVATAR_LAYOUTS.contains(avatarId)) {
+                merged.put(avatarId, incoming);
+                continue;
+            }
+            UiActivityBubbleAvatarLayout local = merged.get(avatarId);
+            if (local != null && local.equals(incoming)) {
+                DIRTY_AVATAR_LAYOUTS.remove(avatarId);
+            }
+            // A dirty local draft wins until the server echoes the same value.
+        }
+        AVATAR_LAYOUTS = merged;
     }
 
     /** Tracks sleeping poses locally because they are entity state, not UI activity packets. */
@@ -225,6 +311,9 @@ public final class UiActivityClient {
     private static void clear() {
         REMOTE_STATES.clear();
         SLEEP_STATES.clear();
+        AVATARS.clear();
+        AVATAR_LAYOUTS = new HashMap<>();
+        DIRTY_AVATAR_LAYOUTS.clear();
         UiActivityBubbleRenderer.clearPending();
         lastSentActivity = UiActivityPackets.Activity.NONE;
         lastSentContentId = 0;

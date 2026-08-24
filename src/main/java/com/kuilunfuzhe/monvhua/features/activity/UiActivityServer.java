@@ -36,6 +36,7 @@ public final class UiActivityServer {
     private static final Map<UUID, ContainerScene> ACTIVE_CONTAINERS = new HashMap<>();
     private static final Map<UUID, PendingContainerUse> PENDING_CONTAINERS = new HashMap<>();
     private static final Map<UUID, PendingFoodUse> PENDING_FOOD = new HashMap<>();
+    private static final Map<UUID, Integer> ACTIVE_AVATARS = new HashMap<>();
     private static boolean initialized;
 
     private UiActivityServer() {
@@ -52,6 +53,12 @@ public final class UiActivityServer {
 
         ServerPlayNetworking.registerGlobalReceiver(UiActivityPackets.StateC2S.ID, (packet, context) ->
                 context.server().execute(() -> updateActivity(context.player(), packet.activity(), packet.contentId())));
+        ServerPlayNetworking.registerGlobalReceiver(UiActivityPackets.AvatarLayoutRequestC2S.ID,
+                (packet, context) -> context.server().execute(() -> sendAvatarLayouts(context.player())));
+        ServerPlayNetworking.registerGlobalReceiver(UiActivityPackets.AvatarLayoutUpdateC2S.ID,
+                (packet, context) -> context.server().execute(() -> updateAvatarLayout(context.player(), packet)));
+        ServerPlayNetworking.registerGlobalReceiver(UiActivityPackets.BubbleStyleUpdateC2S.ID,
+                (packet, context) -> context.server().execute(() -> updateBubbleStyle(context.player(), packet)));
 
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (world.isClient() || !(player instanceof ServerPlayerEntity serverPlayer)) {
@@ -92,6 +99,7 @@ public final class UiActivityServer {
         EntityTrackingEvents.START_TRACKING.register((entity, watcher) -> {
             if (entity instanceof ServerPlayerEntity trackedPlayer) {
                 sendCurrentState(trackedPlayer, watcher);
+                sendAvatar(watcher, trackedPlayer.getUuid(), resolveAvatar(trackedPlayer));
             }
         });
 
@@ -104,13 +112,19 @@ public final class UiActivityServer {
                         trackedPlayer.getWorld().getTime(),
                         0
                 ));
+                sendAvatar(watcher, trackedPlayer.getUuid(), UiActivityBubbleAvatarCatalog.NONE);
             }
         });
 
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
                 clearPlayer(handler.getPlayer().getUuid()));
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
-                sendPlayerSettings(handler.getPlayer(), server));
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            sendPlayerSettings(handler.getPlayer(), server);
+            sendAvatarLayouts(handler.getPlayer());
+            for (ServerPlayerEntity tracked : server.getPlayerManager().getPlayerList()) {
+                sendAvatar(handler.getPlayer(), tracked.getUuid(), resolveAvatar(tracked));
+            }
+        });
     }
 
     public static void playTransient(ServerPlayerEntity player, int contentId, int durationTicks) {
@@ -217,10 +231,23 @@ public final class UiActivityServer {
             send(watcher, update);
         }
         send(source, update);
+        sendAvatar(source, source.getUuid(), resolveAvatar(source));
+        for (ServerPlayerEntity watcher : PlayerLookup.tracking(source)) {
+            sendAvatar(watcher, source.getUuid(), resolveAvatar(source));
+        }
     }
 
     private static void tickTransientUses(MinecraftServer server) {
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            int avatar = resolveAvatar(player);
+            int previousAvatar = ACTIVE_AVATARS.getOrDefault(player.getUuid(), UiActivityBubbleAvatarCatalog.NONE);
+            if (avatar != previousAvatar) {
+                ACTIVE_AVATARS.put(player.getUuid(), avatar);
+                for (ServerPlayerEntity watcher : PlayerLookup.tracking(player)) {
+                    sendAvatar(watcher, player.getUuid(), avatar);
+                }
+                sendAvatar(player, player.getUuid(), avatar);
+            }
             UUID uuid = player.getUuid();
             PendingContainerUse pendingContainer = PENDING_CONTAINERS.get(uuid);
             if (pendingContainer != null) {
@@ -289,6 +316,7 @@ public final class UiActivityServer {
         ACTIVE_CONTAINERS.remove(uuid);
         PENDING_CONTAINERS.remove(uuid);
         PENDING_FOOD.remove(uuid);
+        ACTIVE_AVATARS.remove(uuid);
     }
 
     private static void sendCurrentState(ServerPlayerEntity trackedPlayer, ServerPlayerEntity watcher) {
@@ -315,6 +343,57 @@ public final class UiActivityServer {
         if (ServerPlayNetworking.canSend(player, UiActivityPackets.BubbleSizeS2C.ID)) {
             ServerPlayNetworking.send(player, new UiActivityPackets.BubbleSizeS2C(multiplier));
         }
+    }
+
+    private static int resolveAvatar(ServerPlayerEntity player) {
+        return UiActivityBubbleAvatarCatalog.resolveTags(player.getCommandTags());
+    }
+
+    private static void sendAvatar(ServerPlayerEntity recipient, UUID playerUuid, int avatarId) {
+        if (ServerPlayNetworking.canSend(recipient, UiActivityPackets.AvatarS2C.ID)) {
+            ServerPlayNetworking.send(recipient, new UiActivityPackets.AvatarS2C(playerUuid, avatarId));
+        }
+    }
+
+    private static void sendAvatarLayouts(ServerPlayerEntity player) {
+        if (ServerPlayNetworking.canSend(player, UiActivityPackets.AvatarLayoutStateS2C.ID)) {
+            ServerPlayNetworking.send(player, new UiActivityPackets.AvatarLayoutStateS2C(
+                    UiActivityBubbleAvatarLayoutStore.get().snapshot()));
+        }
+    }
+
+    private static void updateAvatarLayout(ServerPlayerEntity player,
+                                            UiActivityPackets.AvatarLayoutUpdateC2S packet) {
+        if (!player.hasPermissionLevel(2)) {
+            sendAvatarLayouts(player);
+            return;
+        }
+        int avatarId = packet.avatarId();
+        if (UiActivityBubbleAvatarCatalog.key(avatarId).isEmpty()) {
+            sendAvatarLayouts(player);
+            return;
+        }
+        UiActivityBubbleAvatarLayoutStore.get().set(
+                avatarId, packet.centerX(), packet.centerY(), packet.scale());
+        MinecraftServer server = player.getServer();
+        if (server != null) {
+            for (ServerPlayerEntity recipient : server.getPlayerManager().getPlayerList()) {
+                sendAvatarLayouts(recipient);
+            }
+        }
+    }
+
+    private static void updateBubbleStyle(ServerPlayerEntity player,
+                                          UiActivityPackets.BubbleStyleUpdateC2S packet) {
+        if (!player.hasPermissionLevel(2)) {
+            sendBubbleStyle(player, UiActivityBubbleStyleStore.get(player.getServer()).style());
+            return;
+        }
+        MinecraftServer server = player.getServer();
+        if (server == null) return;
+        UiActivityBubbleStyle style = UiActivityBubbleStyle.fromId(packet.styleId());
+        UiActivityBubbleStyleStore.get(server).setStyle(style);
+        broadcastBubbleStyle(server, style);
     }
 
     private static void sendPlayerSettings(ServerPlayerEntity player, MinecraftServer server) {

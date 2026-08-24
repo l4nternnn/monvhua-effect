@@ -43,6 +43,20 @@ public final class UiActivityBubblePipelines {
                     .withVertexFormat(VertexFormats.POSITION_TEXTURE_COLOR, VertexFormat.DrawMode.TRIANGLES)
                     .build()
     );
+
+    public static final RenderPipeline AVATAR_COMPOSITE = RenderPipelines.register(
+            RenderPipeline.builder()
+                    .withLocation(Identifier.of(MonvhuaMod.MOD_ID, "pipeline/ui_activity_avatar_composite"))
+                    .withVertexShader(Identifier.of(MonvhuaMod.MOD_ID, "core/ui_activity_avatar_composite"))
+                    .withFragmentShader(Identifier.of(MonvhuaMod.MOD_ID, "core/ui_activity_avatar_composite"))
+                    .withSampler("InSampler")
+                    .withBlend(BlendFunction.TRANSLUCENT)
+                    .withDepthWrite(false)
+                    .withDepthTestFunction(DepthTestFunction.LEQUAL_DEPTH_TEST)
+                    .withCull(false)
+                    .withVertexFormat(VertexFormats.POSITION_TEXTURE_COLOR, VertexFormat.DrawMode.TRIANGLES)
+                    .build()
+    );
     private UiActivityBubblePipelines() {
     }
 }

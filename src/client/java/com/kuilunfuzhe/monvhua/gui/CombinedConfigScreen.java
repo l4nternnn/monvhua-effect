@@ -472,6 +472,10 @@ public final class CombinedConfigScreen {
             Button playerArchive = button(getContext(), "玩家存档");
             playerArchive.setOnClickListener(v -> HotBackpackSaveClient.openAfterWorldFrame(MinecraftClient.getInstance().currentScreen));
             rightPanel.addView(playerArchive, blockParams());
+            Button avatarConfig = button(getContext(), "头像气泡配置");
+            avatarConfig.setOnClickListener(v -> UiActivityBubbleAvatarConfigScreen.open(
+                    MinecraftClient.getInstance().currentScreen));
+            rightPanel.addView(avatarConfig, blockParams());
             rebuilding = false;
         }
 

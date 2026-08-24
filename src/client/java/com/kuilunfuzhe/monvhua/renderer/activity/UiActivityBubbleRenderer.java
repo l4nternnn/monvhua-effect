@@ -9,6 +9,8 @@ import com.kuilunfuzhe.monvhua.features.gravity.SurfaceGravityBasis;
 import com.kuilunfuzhe.monvhua.features.gravity.SurfaceGravityClientEngine;
 import com.kuilunfuzhe.monvhua.features.activity.emotion.EmotionTextureManager;
 import com.kuilunfuzhe.monvhua.features.activity.emotion.FoodAnimation;
+import com.kuilunfuzhe.monvhua.features.activity.UiActivityBubbleAvatarCatalog;
+import com.kuilunfuzhe.monvhua.features.activity.UiActivityBubbleAvatarLayout;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.player.PlayerEntity;
@@ -29,7 +31,9 @@ import net.minecraft.client.gl.Framebuffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 
@@ -46,6 +50,8 @@ public final class UiActivityBubbleRenderer {
     private static volatile float sizeMultiplier = UiActivityBubbleSize.DEFAULT_MULTIPLIER;
     private static volatile UiActivityBubbleStyle style = UiActivityBubbleStyle.DEFAULT;
     private static final List<PendingBubble> PENDING = new ArrayList<>();
+    private static final List<PendingAvatar> PENDING_AVATARS = new ArrayList<>();
+    private static final Set<Identifier> PREPARED_AVATAR_TEXTURES = new HashSet<>();
 
     private UiActivityBubbleRenderer() {
     }
@@ -62,6 +68,19 @@ public final class UiActivityBubbleRenderer {
         style = nextStyle == null ? UiActivityBubbleStyle.DEFAULT : nextStyle;
     }
 
+    public static UiActivityBubbleStyle style() {
+        return style;
+    }
+
+    /** Loads resource-backed avatar textures outside the final composite pass. */
+    public static void prepareAvatarTexture(MinecraftClient client, Identifier textureId) {
+        if (client == null || textureId == null || PREPARED_AVATAR_TEXTURES.contains(textureId)) {
+            return;
+        }
+        client.getTextureManager().getTexture(textureId);
+        PREPARED_AVATAR_TEXTURES.add(textureId);
+    }
+
     public static void render(WorldRenderContext context) {
         renderInternal(context);
     }
@@ -74,6 +93,7 @@ public final class UiActivityBubbleRenderer {
         }
 
         PENDING.clear();
+        PENDING_AVATARS.clear();
 
         float tickProgress = client.getRenderTickCounter().getTickProgress(false);
         double animationTime = client.world.getTime() + tickProgress;
@@ -138,6 +158,22 @@ public final class UiActivityBubbleRenderer {
                 );
                 if (pending != null) {
                     PENDING.add(pending);
+                    int avatarId = UiActivityClient.avatarFor(player.getUuid());
+                    Identifier avatarTexture = UiActivityBubbleAvatarCatalog.textureId(avatarId);
+                    if (avatarTexture != null) {
+                        UiActivityBubbleAvatarLayout layout = UiActivityClient.avatarLayout(avatarId);
+                        boolean pixelAvatar = UiActivityBubbleAvatarCatalog.isPixel(avatarId);
+                        float bubbleWidth = pendingBubbleWidth(style == UiActivityBubbleStyle.PIXEL);
+                        float avatarHeight = HEIGHT * sizeMultiplier * layout.scale();
+                        float avatarWidth = avatarHeight * avatarAspect(avatarId);
+                        float localX = (layout.centerX() - 0.5F) * bubbleWidth * sizeMultiplier;
+                        // Layout Y is measured from the bubble's top edge, while the
+                        // billboard's positive local Y points upward.
+                        float localY = (0.5F - layout.centerY()) * HEIGHT * sizeMultiplier;
+                        PendingAvatar avatar = projectQuad(context, avatarTexture, bubblePos,
+                                localX, localY, avatarWidth, avatarHeight, pixelAvatar);
+                        if (avatar != null) PENDING_AVATARS.add(avatar);
+                    }
                 }
             }
         }
@@ -150,7 +186,7 @@ public final class UiActivityBubbleRenderer {
      * sending the bubble through a shader-pack entity pass.
      */
     public static void renderPostProcess() {
-        if (PENDING.isEmpty()) {
+        if (PENDING.isEmpty() && PENDING_AVATARS.isEmpty()) {
             return;
         }
         MinecraftClient client = MinecraftClient.getInstance();
@@ -183,13 +219,35 @@ public final class UiActivityBubbleRenderer {
                     vertices.close();
                 }
             }
+            for (PendingAvatar avatar : PENDING_AVATARS) {
+                if (!PREPARED_AVATAR_TEXTURES.contains(avatar.textureId())) {
+                    continue;
+                }
+                GpuBuffer vertices = createCompositeBuffer(avatar);
+                try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
+                        () -> "Monvhua activity avatar composite",
+                        main.getColorAttachmentView(), OptionalInt.empty(),
+                        main.getDepthAttachmentView(), OptionalDouble.empty())) {
+                    pass.setPipeline(UiActivityBubblePipelines.AVATAR_COMPOSITE);
+                    pass.setVertexBuffer(0, vertices);
+                    GpuTextureView texture = client.getTextureManager()
+                            .getTexture(avatar.textureId()).getGlTextureView();
+                    if (texture == null) continue;
+                    pass.bindSampler("InSampler", texture);
+                    pass.draw(0, 6);
+                } finally {
+                    vertices.close();
+                }
+            }
         } finally {
             PENDING.clear();
+            PENDING_AVATARS.clear();
         }
     }
 
     public static void clearPending() {
         PENDING.clear();
+        PENDING_AVATARS.clear();
     }
 
     private static float blockOpenProgress(UiActivityClient.VisualState state, double animationTime) {
@@ -275,22 +333,44 @@ public final class UiActivityBubbleRenderer {
 
     private static PendingBubble projectBubble(WorldRenderContext context, Identifier textureId,
                                                Vec3d bubblePos, boolean pixelStyle) {
+        float bubbleWidth = pendingBubbleWidth(pixelStyle);
+        PendingAvatar projected = projectQuad(context, textureId, bubblePos, 0.0F, 0.0F,
+                bubbleWidth * sizeMultiplier, HEIGHT * sizeMultiplier, pixelStyle);
+        return projected == null ? null
+                : new PendingBubble(projected.textureId(), projected.projected(), projected.pixelStyle());
+    }
+
+    private static float pendingBubbleWidth(boolean pixelStyle) {
+        return pixelStyle ? HEIGHT * PIXEL_ASPECT : WIDTH;
+    }
+
+    private static float avatarAspect(int avatarId) {
+        return switch (avatarId) {
+            case UiActivityBubbleAvatarCatalog.HIRO -> 712.0F / 787.0F;
+            case UiActivityBubbleAvatarCatalog.WEIJIE -> 915.0F / 918.0F;
+            case UiActivityBubbleAvatarCatalog.NOA -> 32.0F / 33.0F;
+            default -> 1.0F;
+        };
+    }
+
+    private static PendingAvatar projectQuad(WorldRenderContext context, Identifier textureId,
+                                             Vec3d quadPos, float centerX, float centerY,
+                                             float width, float height, boolean pixelStyle) {
         Vec3d cameraPos = context.camera().getPos();
-        float bubbleWidth = pixelStyle ? HEIGHT * PIXEL_ASPECT : WIDTH;
-        float halfWidth = bubbleWidth * sizeMultiplier * 0.5F;
-        float halfHeight = HEIGHT * sizeMultiplier * 0.5F;
+        float halfWidth = width * 0.5F;
+        float halfHeight = height * 0.5F;
 
         Matrix4f model = new Matrix4f(context.positionMatrix())
-                .translate((float) (bubblePos.x - cameraPos.x),
-                        (float) (bubblePos.y - cameraPos.y),
-                        (float) (bubblePos.z - cameraPos.z))
+                .translate((float) (quadPos.x - cameraPos.x),
+                        (float) (quadPos.y - cameraPos.y),
+                        (float) (quadPos.z - cameraPos.z))
                 .rotate(context.camera().getRotation());
         Matrix4f clip = new Matrix4f(context.projectionMatrix()).mul(model);
         float[][] corners = {
-                {-halfWidth, -halfHeight, 0.0F, 0.0F, 0.0F},
-                {halfWidth, -halfHeight, 0.0F, 1.0F, 0.0F},
-                {halfWidth, halfHeight, 0.0F, 1.0F, 1.0F},
-                {-halfWidth, halfHeight, 0.0F, 0.0F, 1.0F}
+                {centerX - halfWidth, centerY - halfHeight, 0.0F, 0.0F, 0.0F},
+                {centerX + halfWidth, centerY - halfHeight, 0.0F, 1.0F, 0.0F},
+                {centerX + halfWidth, centerY + halfHeight, 0.0F, 1.0F, 1.0F},
+                {centerX - halfWidth, centerY + halfHeight, 0.0F, 0.0F, 1.0F}
         };
         float[] projected = new float[20];
         for (int i = 0; i < corners.length; i++) {
@@ -308,7 +388,7 @@ public final class UiActivityBubbleRenderer {
             projected[offset + 3] = corner[3];
             projected[offset + 4] = corner[4];
         }
-        return new PendingBubble(textureId, projected, pixelStyle);
+        return new PendingAvatar(textureId, projected, pixelStyle);
     }
 
     private static GpuBuffer createCompositeBuffer(PendingBubble bubble) {
@@ -324,6 +404,19 @@ public final class UiActivityBubbleRenderer {
                 () -> "Monvhua activity bubble composite vertices", 40, buffer);
     }
 
+    private static GpuBuffer createCompositeBuffer(PendingAvatar avatar) {
+        ByteBuffer buffer = ByteBuffer.allocateDirect(6 * 24).order(ByteOrder.nativeOrder());
+        putCompositeVertex(buffer, avatar, 0);
+        putCompositeVertex(buffer, avatar, 1);
+        putCompositeVertex(buffer, avatar, 2);
+        putCompositeVertex(buffer, avatar, 0);
+        putCompositeVertex(buffer, avatar, 2);
+        putCompositeVertex(buffer, avatar, 3);
+        buffer.flip();
+        return RenderSystem.getDevice().createBuffer(
+                () -> "Monvhua activity avatar composite vertices", 40, buffer);
+    }
+
     private static void putCompositeVertex(ByteBuffer buffer, PendingBubble bubble, int index) {
         int offset = index * 5;
         float[] vertices = bubble.projected();
@@ -337,6 +430,20 @@ public final class UiActivityBubbleRenderer {
         buffer.putInt(bubble.pixelStyle() ? 0xFEFFFFFF : 0xFFFFFFFF);
     }
 
+    private static void putCompositeVertex(ByteBuffer buffer, PendingAvatar avatar, int index) {
+        int offset = index * 5;
+        float[] vertices = avatar.projected();
+        buffer.putFloat(vertices[offset]);
+        buffer.putFloat(vertices[offset + 1]);
+        buffer.putFloat(vertices[offset + 2]);
+        buffer.putFloat(vertices[offset + 3]);
+        buffer.putFloat(vertices[offset + 4]);
+        buffer.putInt(avatar.pixelStyle() ? 0xFEFFFFFF : 0xFFFFFFFF);
+    }
+
     private record PendingBubble(Identifier textureId, float[] projected, boolean pixelStyle) {
+    }
+
+    private record PendingAvatar(Identifier textureId, float[] projected, boolean pixelStyle) {
     }
 }
