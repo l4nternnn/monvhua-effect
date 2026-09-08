@@ -204,11 +204,8 @@ public final class UiActivityPackets {
         private static boolean registered;
 
         public AvatarS2C {
-            avatarId = switch (avatarId) {
-                case UiActivityBubbleAvatarCatalog.HIRO, UiActivityBubbleAvatarCatalog.WEIJIE,
-                        UiActivityBubbleAvatarCatalog.NOA -> avatarId;
-                default -> UiActivityBubbleAvatarCatalog.NONE;
-            };
+            avatarId = UiActivityBubbleAvatarCatalog.key(avatarId).isEmpty()
+                    ? UiActivityBubbleAvatarCatalog.NONE : avatarId;
         }
 
         private AvatarS2C(RegistryByteBuf buf) {
@@ -314,7 +311,9 @@ public final class UiActivityPackets {
         }
 
         private void write(RegistryByteBuf buf) {
-            int count = Math.min(layouts.size(), 16);
+            // The catalog is data-driven; keep the cap well above the normal
+            // list size so newly added avatars are not silently omitted.
+            int count = Math.min(layouts.size(), 128);
             buf.writeVarInt(count);
             int written = 0;
             for (Map.Entry<Integer, UiActivityBubbleAvatarLayout> entry : layouts.entrySet()) {
@@ -328,7 +327,7 @@ public final class UiActivityPackets {
         }
 
         private static Map<Integer, UiActivityBubbleAvatarLayout> readLayouts(RegistryByteBuf buf) {
-            int count = Math.min(buf.readVarInt(), 16);
+            int count = Math.min(buf.readVarInt(), 128);
             Map<Integer, UiActivityBubbleAvatarLayout> result = new LinkedHashMap<>();
             for (int i = 0; i < count; i++) {
                 int id = buf.readVarInt();

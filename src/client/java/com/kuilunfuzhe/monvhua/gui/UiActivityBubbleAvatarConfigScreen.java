@@ -15,19 +15,25 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /** Three-column editor for an avatar that may extend beyond the bubble. */
 public final class UiActivityBubbleAvatarConfigScreen extends Screen {
-    private static final int[] AVATARS = {
-            UiActivityBubbleAvatarCatalog.HIRO,
-            UiActivityBubbleAvatarCatalog.WEIJIE,
-            UiActivityBubbleAvatarCatalog.NOA
-    };
+    private static final int AVATAR_PAGE_SIZE = 6;
     // The SDF bubble includes a tail and transparent margins. These are the
     // measured visual-center offsets of the complete visible silhouette.
     private static final float BUBBLE_VISUAL_CENTER_X = 0.535F;
     private static final float BUBBLE_VISUAL_CENTER_Y = 0.516F;
     private final Screen parent;
-    private int selected = AVATARS[0];
+    private final List<UiActivityBubbleAvatarCatalog.Definition> avatarDefinitions =
+            UiActivityBubbleAvatarCatalog.definitions();
+    private int selected = avatarDefinitions.isEmpty()
+            ? UiActivityBubbleAvatarCatalog.NONE : avatarDefinitions.get(0).id();
+    private int avatarPage;
+    private final List<ButtonWidget> avatarButtons = new ArrayList<>();
+    private ButtonWidget previousAvatarPage;
+    private ButtonWidget nextAvatarPage;
     private int leftX, leftWidth, centerX, centerWidth, rightX, rightWidth;
     private int previewLeft, previewTop, previewWidth, previewHeight;
     private int bubbleLeft, bubbleTop, bubbleWidth, bubbleHeight;
@@ -56,9 +62,9 @@ public final class UiActivityBubbleAvatarConfigScreen extends Screen {
     @Override
     protected void init() {
         computeColumns();
-        for (int avatarId : AVATARS) {
+        for (UiActivityBubbleAvatarCatalog.Definition definition : avatarDefinitions) {
             UiActivityBubbleRenderer.prepareAvatarTexture(
-                    MinecraftClient.getInstance(), UiActivityBubbleAvatarCatalog.textureId(avatarId));
+                    MinecraftClient.getInstance(), definition.texture());
         }
         addAvatarButtons();
         int controlX = rightX + 12;
@@ -112,11 +118,50 @@ public final class UiActivityBubbleAvatarConfigScreen extends Screen {
 
     private void addAvatarButtons() {
         int buttonWidth = Math.max(100, leftWidth - 24);
-        for (int i = 0; i < AVATARS.length; i++) {
-            int id = AVATARS[i];
-            addDrawableChild(ButtonWidget.builder(Text.literal(UiActivityBubbleAvatarCatalog.key(id)),
-                            button -> select(id))
-                    .dimensions(leftX + 12, 54 + i * 28, buttonWidth, 22).build());
+        for (int i = 0; i < AVATAR_PAGE_SIZE; i++) {
+            final int index = i;
+            ButtonWidget button = addDrawableChild(ButtonWidget.builder(Text.empty(), ignored -> {
+                int definitionIndex = avatarPage * AVATAR_PAGE_SIZE + index;
+                if (definitionIndex < avatarDefinitions.size()) {
+                    select(avatarDefinitions.get(definitionIndex).id());
+                }
+            }).dimensions(leftX + 12, 54 + i * 28, buttonWidth, 22).build());
+            avatarButtons.add(button);
+        }
+        previousAvatarPage = addDrawableChild(ButtonWidget.builder(Text.literal("<"), ignored -> {
+            avatarPage = Math.max(0, avatarPage - 1);
+            refreshAvatarButtons();
+        }).dimensions(leftX + 12, 54 + AVATAR_PAGE_SIZE * 28 + 4, (buttonWidth - 6) / 2, 20).build());
+        nextAvatarPage = addDrawableChild(ButtonWidget.builder(Text.literal(">"), ignored -> {
+            avatarPage = Math.min(maxAvatarPage(), avatarPage + 1);
+            refreshAvatarButtons();
+        }).dimensions(leftX + 18 + (buttonWidth - 6) / 2, 54 + AVATAR_PAGE_SIZE * 28 + 4,
+                (buttonWidth - 6) / 2, 20).build());
+        refreshAvatarButtons();
+    }
+
+    private int maxAvatarPage() {
+        return Math.max(0, (avatarDefinitions.size() - 1) / AVATAR_PAGE_SIZE);
+    }
+
+    private void refreshAvatarButtons() {
+        for (int i = 0; i < avatarButtons.size(); i++) {
+            int definitionIndex = avatarPage * AVATAR_PAGE_SIZE + i;
+            ButtonWidget button = avatarButtons.get(i);
+            if (definitionIndex < avatarDefinitions.size()) {
+                UiActivityBubbleAvatarCatalog.Definition definition = avatarDefinitions.get(definitionIndex);
+                button.visible = true;
+                button.active = definition.id() != selected;
+                button.setMessage(Text.literal(definition.key()));
+            } else {
+                button.visible = false;
+                button.active = false;
+                button.setMessage(Text.empty());
+            }
+        }
+        if (previousAvatarPage != null) {
+            previousAvatarPage.active = avatarPage > 0;
+            nextAvatarPage.active = avatarPage < maxAvatarPage();
         }
     }
 
@@ -139,6 +184,7 @@ public final class UiActivityBubbleAvatarConfigScreen extends Screen {
     private void select(int id) {
         commitFields();
         selected = id;
+        refreshAvatarButtons();
         refreshFields();
     }
 
@@ -206,12 +252,10 @@ public final class UiActivityBubbleAvatarConfigScreen extends Screen {
     }
 
     private float avatarAspect() {
-        return switch (selected) {
-            case UiActivityBubbleAvatarCatalog.HIRO -> 712.0F / 787.0F;
-            case UiActivityBubbleAvatarCatalog.WEIJIE -> 915.0F / 918.0F;
-            case UiActivityBubbleAvatarCatalog.NOA -> 32.0F / 33.0F;
-            default -> 1.0F;
-        };
+        UiActivityBubbleAvatarCatalog.Definition definition =
+                UiActivityBubbleAvatarCatalog.definition(UiActivityBubbleAvatarCatalog.key(selected));
+        return definition == null || !Float.isFinite(definition.aspect()) || definition.aspect() <= 0.0F
+                ? 1.0F : definition.aspect();
     }
 
     /** Matches the world renderer: avatar height is bubble height * layout scale. */

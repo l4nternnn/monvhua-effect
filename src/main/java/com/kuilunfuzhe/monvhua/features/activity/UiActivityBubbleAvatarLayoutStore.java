@@ -119,12 +119,10 @@ public final class UiActivityBubbleAvatarLayoutStore {
 
     private void resetDefaults() {
         layouts.clear();
-        layouts.put(UiActivityBubbleAvatarCatalog.HIRO,
-                UiActivityBubbleAvatarLayout.defaults(UiActivityBubbleAvatarCatalog.HIRO));
-        layouts.put(UiActivityBubbleAvatarCatalog.WEIJIE,
-                UiActivityBubbleAvatarLayout.defaults(UiActivityBubbleAvatarCatalog.WEIJIE));
-        layouts.put(UiActivityBubbleAvatarCatalog.NOA,
-                UiActivityBubbleAvatarLayout.defaults(UiActivityBubbleAvatarCatalog.NOA));
+        for (UiActivityBubbleAvatarCatalog.Definition definition
+                : UiActivityBubbleAvatarCatalog.definitions()) {
+            layouts.put(definition.id(), UiActivityBubbleAvatarLayout.defaults(definition.key()));
+        }
     }
 
     private static float number(Object value, float fallback) {

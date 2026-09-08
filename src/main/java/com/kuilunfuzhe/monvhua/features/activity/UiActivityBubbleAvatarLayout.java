@@ -22,18 +22,24 @@ public record UiActivityBubbleAvatarLayout(float centerX, float centerY, float s
     }
 
     public static UiActivityBubbleAvatarLayout defaults(int avatarId) {
-        return switch (avatarId) {
-            // All avatars use the same logical height. Their source aspect ratio
-            // is preserved by the renderer, but source resolution never changes
-            // the default display size.
-            case UiActivityBubbleAvatarCatalog.NOA -> new UiActivityBubbleAvatarLayout(1.12F, 0.82F, 0.22F);
-            case UiActivityBubbleAvatarCatalog.WEIJIE -> new UiActivityBubbleAvatarLayout(1.10F, 0.82F, 0.22F);
-            default -> new UiActivityBubbleAvatarLayout(1.10F, 0.82F, 0.22F);
-        };
+        return defaults(UiActivityBubbleAvatarCatalog.key(avatarId));
+    }
+
+    public static UiActivityBubbleAvatarLayout defaults(String key) {
+        UiActivityBubbleAvatarCatalog.Definition definition =
+                UiActivityBubbleAvatarCatalog.definition(key);
+        return definition == null
+                ? new UiActivityBubbleAvatarLayout(1.10F, 0.82F, 0.22F)
+                : new UiActivityBubbleAvatarLayout(definition.defaultCenterX(),
+                definition.defaultCenterY(), definition.defaultScale());
     }
 
     public static UiActivityBubbleAvatarLayout sanitize(float centerX, float centerY, float scale, int avatarId) {
-        UiActivityBubbleAvatarLayout fallback = defaults(avatarId);
+        return sanitize(centerX, centerY, scale, UiActivityBubbleAvatarCatalog.key(avatarId));
+    }
+
+    public static UiActivityBubbleAvatarLayout sanitize(float centerX, float centerY, float scale, String key) {
+        UiActivityBubbleAvatarLayout fallback = defaults(key);
         return new UiActivityBubbleAvatarLayout(
                 clampFinite(centerX, fallback.centerX, MIN_POSITION, MAX_POSITION),
                 clampFinite(centerY, fallback.centerY, MIN_POSITION, MAX_POSITION),

@@ -1,0 +1,34 @@
+[
+  {
+    "key": "hiro",
+    "texture": "monvhua:textures/character_bubble/hiro.png",
+    "mode": "smooth",
+    "aspect": 0.9047,
+    "priority": 30,
+    "default": {"centerX": 1.10, "centerY": 0.82, "scale": 0.22}
+  },
+  {
+    "key": "weijie",
+    "texture": "monvhua:textures/character_bubble/weijie.png",
+    "mode": "smooth",
+    "aspect": 0.9967,
+    "priority": 20,
+    "default": {"centerX": 1.10, "centerY": 0.82, "scale": 0.22}
+  },
+  {
+    "key": "noa",
+    "texture": "monvhua:textures/character_bubble/noa.png",
+    "mode": "pixel",
+    "aspect": 0.9697,
+    "priority": 10,
+    "default": {"centerX": 1.12, "centerY": 0.82, "scale": 0.22}
+  },
+  {
+    "key": "muzimi",
+    "texture": "monvhua:textures/character_bubble/muzimi.png",
+    "mode": "smooth",
+    "aspect": 0.9741,
+    "priority": 0,
+    "default": {"centerX": 1.10, "centerY": 0.82, "scale": 0.22}
+  }
+]

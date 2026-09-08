@@ -345,12 +345,10 @@ public final class UiActivityBubbleRenderer {
     }
 
     private static float avatarAspect(int avatarId) {
-        return switch (avatarId) {
-            case UiActivityBubbleAvatarCatalog.HIRO -> 712.0F / 787.0F;
-            case UiActivityBubbleAvatarCatalog.WEIJIE -> 915.0F / 918.0F;
-            case UiActivityBubbleAvatarCatalog.NOA -> 32.0F / 33.0F;
-            default -> 1.0F;
-        };
+        UiActivityBubbleAvatarCatalog.Definition definition =
+                UiActivityBubbleAvatarCatalog.definition(UiActivityBubbleAvatarCatalog.key(avatarId));
+        return definition == null || !Float.isFinite(definition.aspect()) || definition.aspect() <= 0.0F
+                ? 1.0F : definition.aspect();
     }
 
     private static PendingAvatar projectQuad(WorldRenderContext context, Identifier textureId,

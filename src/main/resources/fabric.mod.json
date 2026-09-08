@@ -3,7 +3,7 @@
 	"id": "monvhua",
 	"version": "${version}",
 	"name": "魔女化",
-	"description": "魔女化状态效果系统 + 千里眼/视线诱导/身体部件/镜像/搬运等辅助功能，由 monvhua 计分板驱动。",
+	"description": "魔女化状态效果系统 + 千里眼/视线诱导/身体部件/镜像/搬运等辅助功能，由 monvhua 计分板控制阶段。",
 	"authors": [
 		"kuilunfuzhe",
 		"shushuwonie"
