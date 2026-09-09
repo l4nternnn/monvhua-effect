@@ -13,6 +13,8 @@ import com.kuilunfuzhe.monvhua.features.activity.UiActivityClient;
 import com.kuilunfuzhe.monvhua.features.binding.PlayerBindingClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.ClairvoyanceEnergyClient;
 import com.kuilunfuzhe.monvhua.features.dissolve.client.DissolveClientFeature;
+import com.kuilunfuzhe.monvhua.features.glitch.client.GlitchPlaneClientFeature;
+import com.kuilunfuzhe.monvhua.features.playerglitch.client.PlayerGlitchClientFeature;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.SignedEvilTooltipClient;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.CameraWatchClientHandler;
 import com.kuilunfuzhe.monvhua.features.evil_eyes.watch.ClientCameraWatchReceiver;
@@ -125,6 +127,8 @@ public class MonvhuaModClient implements ClientModInitializer {
         initializeOptionalAxiomAreaTip();
         PaintOverlayClient.initialize();
         DissolveClientFeature.initializeClient();
+        GlitchPlaneClientFeature.initializeClient();
+        PlayerGlitchClientFeature.initializeClient();
         DrawingBoardClient.initialize();
         DhCompat.init(); // 远处地平线兼容初始化
         EmfCompat.init(); // Entity Model Features 兼容初始化

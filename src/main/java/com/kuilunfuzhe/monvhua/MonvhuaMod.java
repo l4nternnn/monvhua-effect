@@ -681,6 +681,8 @@ public class MonvhuaMod implements ModInitializer {
         PaintItems.initialize();
         PaintOverlayFeature.initialize();
         DissolveFeature.initializeServer();
+        com.kuilunfuzhe.monvhua.features.glitch.GlitchPlaneServerController.initialize();
+        com.kuilunfuzhe.monvhua.features.glitch.playerglitch.PlayerGlitchServerController.initialize();
         InjuredBleedingFeature.initialize();
         HotBackpackSaveFeature.initialize();
         PlayerBindingFeature.initialize();

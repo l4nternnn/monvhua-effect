@@ -6,6 +6,8 @@ import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.features.area_tip.AreaTipAreaRenderer;
 import com.kuilunfuzhe.monvhua.features.binding.PlayerBindingClient;
 import com.kuilunfuzhe.monvhua.features.gravity.GravityAreaBoundaryRenderer;
+import com.kuilunfuzhe.monvhua.features.glitch.client.GlitchPlaneClientFeature;
+import com.kuilunfuzhe.monvhua.features.playerglitch.client.PlayerGlitchClientFeature;
 import com.kuilunfuzhe.monvhua.features.injured_and_bleeding.InjuredBleedingClient;
 import com.kuilunfuzhe.monvhua.features.paint.PaintBucketCarryClientState;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
@@ -44,6 +46,8 @@ public class WorldRenderHandler {
             BodyPoseWorldPreviewRenderer.render(context.matrixStack(), context.consumers());
             UiActivityBubbleRenderer.render(context);
             GravityAreaBoundaryRenderer.render(context);
+            GlitchPlaneClientFeature.render(context);
+            PlayerGlitchClientFeature.render(context);
             AreaTipAreaRenderer.render(context);
             PaintOverlayClient.render(context);
             PaintToolTargetPreviewRenderer.render(context);

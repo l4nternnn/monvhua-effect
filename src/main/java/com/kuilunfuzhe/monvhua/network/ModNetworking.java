@@ -19,6 +19,8 @@ import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingEnergySyncS2CPacket;
 import com.kuilunfuzhe.monvhua.network.floating.FloatingPackets;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
+import com.kuilunfuzhe.monvhua.network.glitch.GlitchPlanePackets;
+import com.kuilunfuzhe.monvhua.network.playerglitch.PlayerGlitchPackets;
 import com.kuilunfuzhe.monvhua.network.gazeguidance.*;
 import com.kuilunfuzhe.monvhua.network.gravity.GravityPackets;
 import com.kuilunfuzhe.monvhua.network.hot_backpack_save.HotBackpackPackets;
@@ -94,6 +96,8 @@ public class ModNetworking {
         PlayerListRestrictS2CPacket.register();
         DissolvePackets.registerS2C();
         UiActivityPackets.registerS2C();
+        GlitchPlanePackets.registerS2C();
+        PlayerGlitchPackets.registerS2C();
 
     }
 
