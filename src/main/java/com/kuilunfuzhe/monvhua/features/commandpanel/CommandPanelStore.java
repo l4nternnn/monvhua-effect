@@ -16,8 +16,9 @@ public final class CommandPanelStore extends PersistentState {
     public CommandPanelStore() {}
     private CommandPanelStore(Map<UUID,String> values){this.values.putAll(values);}
     public static CommandPanelStore get(ServerWorld world){return world.getPersistentStateManager().getOrCreate(TYPE);}
-    public String get(UUID id){return values.getOrDefault(id,"[]");}
+    public String get(){return values.values().stream().findFirst().orElse("[]");}
     public long revision(UUID id){return revisions.getOrDefault(id,0L);}
     public boolean putIfRevision(UUID id,long revision,String json){if(revision!=revision(id))return false; values.put(id,json); revisions.put(id,revision+1); markDirty(); return true;}
     public void put(UUID id,String json){values.put(id,json); revisions.put(id,revision(id)+1); markDirty();}
+    public void putGlobal(String json){values.clear(); values.put(new UUID(0,0),json); revisions.put(new UUID(0,0),revision(new UUID(0,0))+1); markDirty();}
 }

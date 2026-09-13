@@ -1,6 +1,6 @@
 {
   "model": {
     "type": "minecraft:model",
-    "model": "monvhua:item/command_panel"
+    "model": "minecraft:item/carrot_on_a_stick"
   }
 }

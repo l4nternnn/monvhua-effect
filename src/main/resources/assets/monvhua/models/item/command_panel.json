@@ -1,11 +1,36 @@
 {
   "parent": "minecraft:item/generated",
-  "textures": { 
+  "textures": {
     "layer0": "monvhua:item/command_panel"
   },
-  "display": {
-    "gui": { "rotation": [0, 0, 0] },
-    "ground": { "rotation": [0, 180, 0] },
-    "fixed": { "rotation": [0, 0, 0] }
+
+  "criteria": {
+    "has_carrot": {
+      "conditions": {
+        "items": [
+          {
+            "items": "minecraft:carrot"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "minecraft:carrot_on_a_stick"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_carrot"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "minecraft:carrot_on_a_stick"
+    ]
   }
 }

@@ -11,6 +11,8 @@ import java.util.*;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import java.lang.reflect.Type;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 public final class CommandPanelScreen extends Screen {
     private static final Gson GSON = new Gson();
@@ -31,9 +33,11 @@ public final class CommandPanelScreen extends Screen {
         super(Text.translatable("item.monvhua.command_panel"));
         UUID id = MinecraftClient.getInstance().player == null ? new UUID(0, 0) : MinecraftClient.getInstance().player.getUuid();
         popups = DATA.computeIfAbsent(id, key -> new ArrayList<>());
+        loadLocal();
         if (popups.isEmpty()) popups.add(new Popup("示例按钮", "/say hello", 120, 90, 160, 52));
         if (MinecraftClient.getInstance().player != null) ClientPlayNetworking.send(new CommandPanelPackets.RequestC2S());
     }
+    private void loadLocal() { try { Path f=MinecraftClient.getInstance().runDirectory.toPath().resolve("config/monvhua_command_panel.json"); if(Files.exists(f)){List<Popup> l=GSON.fromJson(Files.readString(f),POPUP_TYPE); if(l!=null){popups.clear();popups.addAll(l);}} } catch(Exception ignored) {} }
 
     @Override protected void init() {
         if (!permissionReceived) return;
@@ -95,7 +99,7 @@ public final class CommandPanelScreen extends Screen {
     private void select(Popup popup) { selected = popup; popups.remove(popup); popups.add(popup); }
     void updateSelectedCommand(String command) { if (selected != null) { selected.command = command; save(); } }
     void savePanel() { save(); }
-    private void save() { ClientPlayNetworking.send(new CommandPanelPackets.SaveC2S(0L, GSON.toJson(popups, POPUP_TYPE))); }
+    private void save() { try { Path file = MinecraftClient.getInstance().runDirectory.toPath().resolve("config/monvhua_command_panel.json"); Files.createDirectories(file.getParent()); Files.writeString(file, GSON.toJson(popups, POPUP_TYPE)); } catch (Exception ignored) {} }
     private enum Operation { NONE, MOVE, RESIZE, ROTATE }
     static final class Popup { String name, command; float x, y, width, height, rotation; Popup(String n, String c, float px, float py, float w, float h) { name=n; command=c; x=px; y=py; width=w; height=h; } }
 }

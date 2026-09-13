@@ -18,17 +18,17 @@ public final class CommandPanelServer {
     public static void initialize() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher.register(
             CommandManager.literal("commandpanel").then(CommandManager.literal("sync")
+                .executes(ctx -> { ctx.getSource().sendError(Text.literal("用法: /commandpanel sync <targets>")); return 0; })
                 .requires(source -> source.getEntity() instanceof ServerPlayerEntity p && canEdit(p))
                 .then(CommandManager.argument("targets", EntityArgumentType.players()).executes(ctx -> {
                     ServerPlayerEntity sender = ctx.getSource().getPlayerOrThrow();
                     ServerWorld world = sender.getServer().getOverworld();
                     CommandPanelStore store = CommandPanelStore.get(world);
-                    String json = store.get(sender.getUuid());
+                    String json = store.get();
                     int count = 0;
                     for (ServerPlayerEntity target : EntityArgumentType.getPlayers(ctx, "targets")) {
                         if (target.getUuid().equals(sender.getUuid())) continue;
-                        store.put(target.getUuid(), json);
-                        ServerPlayNetworking.send(target, new CommandPanelPackets.DataS2C(store.revision(target.getUuid()), json));
+                        ServerPlayNetworking.send(target, new CommandPanelPackets.DataS2C(store.revision(new java.util.UUID(0,0)), json));
                         target.sendMessage(Text.literal(sender.getName().getString() + " synced a command panel to you"), false);
                         count++;
                     }
@@ -40,14 +40,14 @@ public final class CommandPanelServer {
             ServerWorld world = player.getServer().getOverworld();
             ServerPlayNetworking.send(player, new CommandPanelPackets.PermissionS2C(canEdit(player)));
             CommandPanelStore store = CommandPanelStore.get(world);
-            ServerPlayNetworking.send(player, new CommandPanelPackets.DataS2C(store.revision(player.getUuid()), store.get(player.getUuid())));
+            ServerPlayNetworking.send(player, new CommandPanelPackets.DataS2C(store.revision(new java.util.UUID(0,0)), store.get()));
         }));
         ServerPlayNetworking.registerGlobalReceiver(CommandPanelPackets.SaveC2S.ID, (packet, context) -> context.server().execute(() -> {
             ServerPlayerEntity player = context.player();
             if (packet.json().length() > 32767) return;
             ServerWorld world = player.getServer().getOverworld();
             {
-                CommandPanelStore.get(world).put(player.getUuid(), packet.json());
+                CommandPanelStore.get(world).putGlobal(packet.json());
             }
         }));
         ServerPlayNetworking.registerGlobalReceiver(CommandPanelPackets.ExecuteC2S.ID, (packet, context) -> context.server().execute(() -> {
