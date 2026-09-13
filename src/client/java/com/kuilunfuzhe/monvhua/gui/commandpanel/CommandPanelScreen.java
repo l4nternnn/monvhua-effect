@@ -16,7 +16,7 @@ public final class CommandPanelScreen extends Screen {
     private static final Gson GSON = new Gson();
     private static final Type POPUP_TYPE = new TypeToken<List<Popup>>() {}.getType();
     private static final Map<UUID, List<Popup>> DATA = new HashMap<>();
-    public static void receiveData(String json) { MinecraftClient c=MinecraftClient.getInstance(); if(c.currentScreen instanceof CommandPanelScreen s) try { List<Popup> loaded=GSON.fromJson(json,POPUP_TYPE); if(loaded!=null){s.popups.clear();s.popups.addAll(loaded);s.selected=null;s.clearAndInit();} } catch(Exception ignored) {} }
+    public static void receiveData(long revision, String json) { MinecraftClient c=MinecraftClient.getInstance(); if(c.currentScreen instanceof CommandPanelScreen s) try { List<Popup> loaded=GSON.fromJson(json,POPUP_TYPE); if(loaded!=null){s.revision=revision;s.popups.clear();s.popups.addAll(loaded);s.selected=null;s.clearAndInit();} } catch(Exception ignored) {} }
     public static void receivePermission(boolean value) { if (MinecraftClient.getInstance().currentScreen instanceof CommandPanelScreen screen) { screen.editable = value; screen.permissionReceived = true; screen.clearAndInit(); } }
     private final List<Popup> popups;
     private Popup selected;
@@ -25,6 +25,7 @@ public final class CommandPanelScreen extends Screen {
     private float oldW, oldH, oldRotation;
     private boolean editable;
     private boolean permissionReceived;
+    private long revision;
 
     public CommandPanelScreen() {
         super(Text.translatable("item.monvhua.command_panel"));
@@ -52,7 +53,6 @@ public final class CommandPanelScreen extends Screen {
             context.fill(-w / 2, -h / 2, w / 2, h / 2, 0xE02A2A32);
             context.drawBorder(-w / 2, -h / 2, w, h, popup == selected ? 0xFFFFFFFF : 0xFF777777);
             context.drawTextWithShadow(textRenderer, Text.literal(popup.name), -w / 2 + 6, -h / 2 + 6, 0xFFFFFFFF);
-            context.drawTextWithShadow(textRenderer, Text.literal(popup.command), -w / 2 + 6, -h / 2 + 22, 0xFFB8B8C8);
             context.getMatrices().popMatrix();
             if (popup == selected && editable) {
                 context.fill(x + w - 4, y + h - 4, x + w + 4, y + h + 4, 0xFFFFFFFF);
@@ -66,6 +66,7 @@ public final class CommandPanelScreen extends Screen {
 
     @Override public boolean mouseClicked(double x, double y, int button) {
         if (super.mouseClicked(x, y, button)) return true;
+        if (button == 1) { Popup p = hit(x, y); if (p != null) { select(p); client.setScreen(new CommandPopupEditScreen(this, p)); return true; } return false; }
         if (!editable) { Popup p = hit(x, y); if (button == 0 && p != null) { ClientPlayNetworking.send(new CommandPanelPackets.ExecuteC2S(p.command)); return true; } return false; }
         if (button == 1) { Popup p = hit(x, y); if (p != null) { select(p); client.setScreen(new CommandPopupEditScreen(this, p)); return true; } return false; }
         if (button != 0) return super.mouseClicked(x, y, button);
@@ -94,7 +95,7 @@ public final class CommandPanelScreen extends Screen {
     private void select(Popup popup) { selected = popup; popups.remove(popup); popups.add(popup); }
     void updateSelectedCommand(String command) { if (selected != null) { selected.command = command; save(); } }
     void savePanel() { save(); }
-    private void save() { if (editable) ClientPlayNetworking.send(new CommandPanelPackets.SaveC2S(GSON.toJson(popups, POPUP_TYPE))); }
+    private void save() { ClientPlayNetworking.send(new CommandPanelPackets.SaveC2S(0L, GSON.toJson(popups, POPUP_TYPE))); }
     private enum Operation { NONE, MOVE, RESIZE, ROTATE }
     static final class Popup { String name, command; float x, y, width, height, rotation; Popup(String n, String c, float px, float py, float w, float h) { name=n; command=c; x=px; y=py; width=w; height=h; } }
 }

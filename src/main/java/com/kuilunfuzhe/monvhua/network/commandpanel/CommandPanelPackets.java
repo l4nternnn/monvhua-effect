@@ -16,12 +16,12 @@ public final class CommandPanelPackets {
         public Id<? extends CustomPayload> getId(){return ID;}
         public static void register(){if(!executeRegistered){PayloadTypeRegistry.playC2S().register(ID,CODEC);executeRegistered=true;}}
     }
-    public record SaveC2S(String json) implements CustomPayload {
+    public record SaveC2S(long revision, String json) implements CustomPayload {
         public static final Id<SaveC2S> ID = new Id<>(Identifier.of("monvhua", "command_panel_save"));
-        public static final PacketCodec<RegistryByteBuf, SaveC2S> CODEC = PacketCodec.of((p,b)->b.writeString(p.json,32767), b->new SaveC2S(b.readString(32767)));
+        public static final PacketCodec<RegistryByteBuf, SaveC2S> CODEC = PacketCodec.of((p,b)->{b.writeVarLong(p.revision);b.writeString(p.json,32767);}, b->new SaveC2S(b.readVarLong(),b.readString(32767)));
         public Id<? extends CustomPayload> getId(){return ID;}
         public static void register(){if(!saveRegistered){PayloadTypeRegistry.playC2S().register(ID,CODEC);saveRegistered=true;}}
     }
     public record RequestC2S() implements CustomPayload { public static final Id<RequestC2S> ID=new Id<>(Identifier.of("monvhua","command_panel_request")); public static final PacketCodec<RegistryByteBuf,RequestC2S> CODEC=PacketCodec.unit(new RequestC2S()); public Id<? extends CustomPayload> getId(){return ID;} public static void register(){if(!requestRegistered){PayloadTypeRegistry.playC2S().register(ID,CODEC);requestRegistered=true;}} }
-    public record DataS2C(String json) implements CustomPayload { public static final Id<DataS2C> ID=new Id<>(Identifier.of("monvhua","command_panel_data")); public static final PacketCodec<RegistryByteBuf,DataS2C> CODEC=PacketCodec.of((p,b)->b.writeString(p.json,32767),b->new DataS2C(b.readString(32767))); public Id<? extends CustomPayload> getId(){return ID;} public static void register(){if(!dataRegistered){PayloadTypeRegistry.playS2C().register(ID,CODEC);dataRegistered=true;}} }
+    public record DataS2C(long revision, String json) implements CustomPayload { public static final Id<DataS2C> ID=new Id<>(Identifier.of("monvhua","command_panel_data")); public static final PacketCodec<RegistryByteBuf,DataS2C> CODEC=PacketCodec.of((p,b)->{b.writeVarLong(p.revision);b.writeString(p.json,32767);},b->new DataS2C(b.readVarLong(),b.readString(32767))); public Id<? extends CustomPayload> getId(){return ID;} public static void register(){if(!dataRegistered){PayloadTypeRegistry.playS2C().register(ID,CODEC);dataRegistered=true;}} }
 }

@@ -2,6 +2,8 @@ package com.kuilunfuzhe.monvhua.item;
 
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
 import com.kuilunfuzhe.monvhua.item.area_tip.AreaTipItems;
+import com.kuilunfuzhe.monvhua.item.commandpanel.CommandPanelItem;
+import com.kuilunfuzhe.monvhua.item.commandpanel.CommandPanelItems;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
 import com.kuilunfuzhe.monvhua.item.imitate.ImitateItem;
@@ -40,9 +42,10 @@ public class ModItemGroups {
                             entries.add(AreaTipItems.AREA_TIP_STICK);
                             entries.add(PlantMagicItems.PLANT_WAND);
                             entries.add(ThroughItem.THROUGH_ITEM);
-                            entries.add(PossessionFeature.POSSESSION_ITEM);
-                            entries.add(PortalItems.FRAME_ITEM);
                             entries.add(mirror_of_then_and_now.MIRROR_ITEM);
+                            entries.add(PossessionFeature.POSSESSION_ITEM);
+                            entries.add(CommandPanelItems.COMMAND_PANEL);
+                            entries.add(PortalItems.FRAME_ITEM);
                             entries.add(ImitateItem.IMITATE_ITEM);
                             entries.add(PaintItems.PAINT_BRUSH);
                             entries.add(PaintItems.PAINT_SPRAY_CAN);

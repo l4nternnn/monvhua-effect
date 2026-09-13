@@ -1,6 +1,11 @@
 {
   "parent": "minecraft:item/generated",
   "textures": { 
-    "layer0": "monvhua:item/placeholder" 
+    "layer0": "monvhua:item/command_panel"
+  },
+  "display": {
+    "gui": { "rotation": [0, 0, 0] },
+    "ground": { "rotation": [0, 180, 0] },
+    "fixed": { "rotation": [0, 0, 0] }
   }
 }

@@ -121,7 +121,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets.DataS2C.register();
         com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets.PermissionS2C.register();
         ClientPlayNetworking.registerGlobalReceiver(com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets.DataS2C.ID,
-                (packet, context) -> context.client().execute(() -> com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelScreen.receiveData(packet.json())));
+                (packet, context) -> context.client().execute(() -> com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelScreen.receiveData(packet.revision(), packet.json())));
         ClientPlayNetworking.registerGlobalReceiver(com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets.PermissionS2C.ID,
                 (packet, context) -> context.client().execute(() -> com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelScreen.receivePermission(packet.editable())));
         ModNetworking.registerC2SPackets();
