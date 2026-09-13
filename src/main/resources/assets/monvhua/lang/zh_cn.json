@@ -33,13 +33,11 @@
   "key.monvhua.action_editor": "动作编辑器（已废弃）",
   "key.monvhua.hold_hands": "牵手（潜行+鼠标中键）",
   "category.gazeguidance": "视线诱导",
-
-  "item.monvhua.torso": "玩家躯干",
+  "item.monvhua.torso": "躯干",
   "item.monvhua.left_arm": "玩家左臂",
   "item.monvhua.right_arm": "玩家右臂",
   "item.monvhua.left_leg": "玩家左腿",
   "item.monvhua.right_leg": "玩家右腿",
-
   "block.monvhua.torso": "§3§k123§r§6躯干§r§3§k123§r",
   "block.monvhua.left_arm": "§3§k123§r§6左手臂§r§3§k123§r",
   "block.monvhua.right_arm": "§3§k123§r右手臂§r§3§k123§r",
@@ -50,6 +48,11 @@
 
   "sound.monvhua.sound_wave": "声音震荡",
   "sound.monvhua.tinnitus": "耳鸣",
+
+
+  "command.monvhua.commandpanel.sync.usage": "用法：/commandpanel sync <目标玩家>",
+  "command.monvhua.commandpanel.sync.received": "%s 已向你同步命令面板",
+  "command.monvhua.commandpanel.sync.success": "命令面板已同步给 %s 名玩家",
 
   "effect.monvhua.ema_1": "神智清醒",
   "effect.monvhua.ema_2": "略染污浊",
@@ -166,3 +169,5 @@
   "gui.monvhua.emotion_picker": "表情"
 
 }
+
+

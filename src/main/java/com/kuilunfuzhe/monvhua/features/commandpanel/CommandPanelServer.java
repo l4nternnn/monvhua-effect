@@ -18,7 +18,7 @@ public final class CommandPanelServer {
     public static void initialize() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher.register(
             CommandManager.literal("commandpanel").then(CommandManager.literal("sync")
-                .executes(ctx -> { ctx.getSource().sendError(Text.literal("用法: /commandpanel sync <targets>")); return 0; })
+                .executes(ctx -> { ctx.getSource().sendError(Text.translatable("command.monvhua.commandpanel.sync.usage")); return 0; })
                 .requires(source -> source.getEntity() instanceof ServerPlayerEntity p && canEdit(p))
                 .then(CommandManager.argument("targets", EntityArgumentType.players()).executes(ctx -> {
                     ServerPlayerEntity sender = ctx.getSource().getPlayerOrThrow();
@@ -29,10 +29,11 @@ public final class CommandPanelServer {
                     for (ServerPlayerEntity target : EntityArgumentType.getPlayers(ctx, "targets")) {
                         if (target.getUuid().equals(sender.getUuid())) continue;
                         ServerPlayNetworking.send(target, new CommandPanelPackets.DataS2C(store.revision(new java.util.UUID(0,0)), json));
-                        target.sendMessage(Text.literal(sender.getName().getString() + " synced a command panel to you"), false);
+                        target.sendMessage(Text.translatable("command.monvhua.commandpanel.sync.received", sender.getName().getString()), false);
                         count++;
                     }
-                    ctx.getSource().sendFeedback(() -> Text.literal("Command panel synchronized"), false);
+                    int synced = count;
+                    ctx.getSource().sendFeedback(() -> Text.translatable("command.monvhua.commandpanel.sync.success", synced), false);
                     return count;
                 })))));
         ServerPlayNetworking.registerGlobalReceiver(CommandPanelPackets.RequestC2S.ID, (packet, context) -> context.server().execute(() -> {
