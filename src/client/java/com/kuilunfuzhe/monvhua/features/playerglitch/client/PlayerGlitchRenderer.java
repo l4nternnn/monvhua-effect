@@ -21,7 +21,9 @@ final class PlayerGlitchRenderer {
     private static final double MAX_DISTANCE = 96.0D;
     private static final long ROW_SALT = 0xA24BAED4963EE407L;
     private static final long BLACK_LAYOUT_SALT = 0xC6BC279692B5CC83L;
-    private static final long UNIT_SALT = 0xD1B54A32D192ED03L;
+    private static final long GHOST_SALT = 0xD1B54A32D192ED03L;
+    private static final long SHIFT_SALT = 0x9E3779B97F4A7C15L;
+    private static final long SEGMENT_SALT = 0x632BE59BD9B4E019L;
 
     private PlayerGlitchRenderer() {
     }
@@ -77,7 +79,9 @@ final class PlayerGlitchRenderer {
         Vec3d surfaceOrigin = targetCenter.add(normal.multiply(frontOffset));
 
         double width = Math.clamp(target.getWidth() * 2.6D, 0.8D, 3.2D);
-        double height = Math.clamp(target.getHeight() * 1.08D, 1.2D, 4.5D);
+        double verticalDifference = viewerPos.y - targetCenter.y;
+        double heightFactor = Math.clamp(1.0D + verticalDifference * 0.08D, 0.75D, 1.25D);
+        double height = Math.clamp(target.getHeight() * 1.08D * heightFactor, 1.2D, 4.5D);
         long layoutCycle = Math.floorDiv(time, 3L);
         // Black geometry follows the current cycle immediately; only the row animation
         // itself is time-sliced, so the black layout is never one cycle behind.
@@ -109,31 +113,17 @@ final class PlayerGlitchRenderer {
             double blackLength = rowWidth * (0.30D + unit(rowHash >>> 24) * 0.70D);
             double blackStart = rowMin + unit(rowHash >>> 40) * Math.max(0.0D, rowWidth - blackLength);
             double blackEnd = Math.min(rowMax, blackStart + blackLength);
-            long unitHash = mix(rowHash ^ UNIT_SALT);
-            double edgeGap = Math.max(0.001D, width * 0.003D);
-            double colorMax = Math.max(0.0D, (blackEnd - blackStart) * 0.10D);
-            double blackShift = Math.floorMod(unitHash, 10L) == 0L
-                    ? horizontalShift(state, unitHash, time, width) * 0.35D : 0.0D;
-            double colorShift = horizontalShift(state, unitHash, time, width);
+            double rowShift = rowHorizontalShift(state, row, rowHash, time, rowWidth);
+            double shiftedStart = Math.max(rowMin, Math.min(rowMax, blackStart + rowShift));
+            double shiftedEnd = Math.max(rowMin, Math.min(rowMax, blackEnd + rowShift));
             double surfaceDepth = Math.max(0.0D, width * 0.24D) * ellipseFactor;
             Vec3d rowCenter = surfaceOrigin.add(normal.multiply(surfaceDepth));
-            emit(out, matrix, camera, rowCenter, right, up, blackStart, blackEnd, y0, y1, 0x050609, 238, blackShift);
-            if (colorMax > 0.002D) {
-                double colorMin = Math.min(colorMax, Math.max(0.002D, width * 0.008D));
-                double leftLength = colorMin + (colorMax - colorMin) * unit(unitHash >>> 8);
-                double rightLength = colorMin + (colorMax - colorMin) * unit(unitHash >>> 24);
-                double leftStart = Math.max(rowMin, blackStart - edgeGap - leftLength);
-                double leftEnd = Math.min(rowMax, blackStart - edgeGap);
-                double rightStart = Math.max(rowMin, blackEnd + edgeGap);
-                double rightEnd = Math.min(rowMax, blackEnd + edgeGap + rightLength);
-                boolean redOnLeft = (unitHash & 1L) == 0L;
-                if (redOnLeft) {
-                    emitColorPair(out, matrix, camera, rowCenter, right, up, leftStart, leftEnd, rowMin, rowMax, y0, y1, 0xFF304F, unitHash, time, colorShift);
-                    emitColorPair(out, matrix, camera, rowCenter, right, up, rightStart, rightEnd, rowMin, rowMax, y0, y1, 0x3568FF, unitHash ^ 0x55AA, time, colorShift);
-                } else {
-                    emitColorPair(out, matrix, camera, rowCenter, right, up, leftStart, leftEnd, rowMin, rowMax, y0, y1, 0x3568FF, unitHash, time, colorShift);
-                    emitColorPair(out, matrix, camera, rowCenter, right, up, rightStart, rightEnd, rowMin, rowMax, y0, y1, 0xFF304F, unitHash ^ 0x55AA, time, colorShift);
-                }
+            if (shiftedEnd - shiftedStart >= 0.001D) {
+                emit(out, matrix, camera, rowCenter, right, up,
+                        shiftedStart, shiftedEnd, y0, y1, 0x050609, 238);
+                emitRowGhosts(out, matrix, camera, rowCenter, right, up,
+                        shiftedStart, shiftedEnd, rowMin, rowMax, y0, y1,
+                        rowHash, time, rowShift);
             }
             emitted++;
         }
@@ -143,39 +133,36 @@ final class PlayerGlitchRenderer {
         return 0.5D + unit(mix(seed ^ ROW_SALT * (row + 1L) ^ 0x51ED270B3F5A9C17L)) * 2.5D;
     }
 
-    private static void emitColorPair(VertexConsumer out, Matrix4f matrix, Vec3d camera,
+    private static void emitRowGhosts(VertexConsumer out, Matrix4f matrix, Vec3d camera,
                                       Vec3d center, Vec3d right, Vec3d up,
-                                      double x0, double x1, double rowMin, double rowMax, double y0, double y1,
-                                      int rgb, long hash, long time, double shift) {
-        if (x1 - x0 < 0.001D) {
+                                      double blackStart, double blackEnd,
+                                      double rowMin, double rowMax, double y0, double y1,
+                                      long rowHash, long time, double rowShift) {
+        if (Math.abs(rowShift) < 0.001D) {
             return;
         }
-        int alpha = animatedAlpha(hash, time);
-        int solidAlpha = alpha < 35 ? 0 : 255;
-        if (solidAlpha == 0) {
+        int alpha = animatedAlpha(mix(rowHash ^ GHOST_SALT), time);
+        if (alpha < 35) {
             return;
         }
-        int ghostRgb = rgb == 0xFF304F ? 0x8F182F : 0x1B347F;
-        double length = x1 - x0;
-        double ghostLength = length * 0.70D;
-        double separation = 0.012D;
-        // The ghost is placed outward with a real gap; it is never adjacent to its same-color solid block.
-        if (x1 <= 0.0D) {
-            double ghostStart = Math.max(rowMin, x0 - separation - ghostLength);
-            double ghostEnd = Math.min(rowMax, x0 - separation);
-            if (ghostEnd - ghostStart >= 0.001D) {
-                emit(out, matrix, camera, center, right, up,
-                        ghostStart, ghostEnd, y0, y1, ghostRgb, 255, shift);
-            }
-        } else {
-            double ghostStart = Math.max(rowMin, x1 + separation);
-            double ghostEnd = Math.min(rowMax, x1 + separation + ghostLength);
-            if (ghostEnd - ghostStart >= 0.001D) {
-                emit(out, matrix, camera, center, right, up,
-                        ghostStart, ghostEnd, y0, y1, ghostRgb, 255, shift);
-            }
+        double length = Math.min((blackEnd - blackStart) * 0.10D, Math.abs(rowShift) * 0.75D);
+        if (length < 0.001D) {
+            return;
         }
-        emit(out, matrix, camera, center, right, up, x0, x1, y0, y1, rgb, solidAlpha, shift);
+        double gap = Math.max(0.012D, (rowMax - rowMin) * 0.006D);
+        double leftStart = Math.max(rowMin, blackStart - gap - length);
+        double leftEnd = Math.min(rowMax, blackStart - gap);
+        double rightStart = Math.max(rowMin, blackEnd + gap);
+        double rightEnd = Math.min(rowMax, blackEnd + gap + length);
+        boolean redOnLeft = (rowHash & 1L) == 0L;
+        if (rightEnd - rightStart >= 0.001D) {
+            emit(out, matrix, camera, center, right, up, rightStart, rightEnd,
+                    y0, y1, redOnLeft ? 0xFF304F : 0x3568FF, alpha);
+        }
+        if (leftEnd - leftStart >= 0.001D) {
+            emit(out, matrix, camera, center, right, up, leftStart, leftEnd,
+                    y0, y1, redOnLeft ? 0x3568FF : 0xFF304F, alpha);
+        }
     }
 
     private static int animatedAlpha(long hash, long time) {
@@ -189,23 +176,52 @@ final class PlayerGlitchRenderer {
         return 90;
     }
 
-    private static double horizontalShift(PlayerGlitchPackets.StateS2C state, long hash, long time, double width) {
-        if (Math.floorMod(hash, 10L) >= 5L) {
+    private static double rowHorizontalShift(PlayerGlitchPackets.StateS2C state, int row, long hash, long time, double rowWidth) {
+        long category = Math.floorMod(hash, 20L);
+        double configured = Math.clamp(state.maxOffset(), 0.0F, 0.12F);
+        double maximum = Math.min(rowWidth * 0.18D, rowWidth * configured);
+        if (rowWidth < 0.08D) {
+            maximum = Math.min(maximum, rowWidth * 0.08D);
+        }
+        if (maximum < 0.001D || category < 7L) {
             return 0.0D;
         }
-        long phase = Math.floorMod(time + hash, 18L);
-        double progress = phase < 3L ? 1.0D : phase > 12L ? 0.0D : (phase - 3L) / 9.0D;
-        double direction = (hash & 1L) == 0L ? -1.0D : 1.0D;
-        return direction * width * Math.clamp(state.maxOffset(), 0.0F, 0.12F) * progress;
+
+        long updatePeriod = 4L + Math.floorMod(hash >>> 8, 9L);
+        long phaseOffset = Math.floorMod(hash >>> 20, updatePeriod);
+        long localTime = time + phaseOffset;
+        long keyframe = Math.floorDiv(localTime, updatePeriod);
+        double progress = Math.floorMod(localTime, updatePeriod) / (double) updatePeriod;
+        double smooth = progress * progress * (3.0D - 2.0D * progress);
+
+        long segment = Math.floorDiv(row, 3L);
+        long segmentHash = mix(SEGMENT_SALT * (segment + 1L) ^ state.seed());
+        double segmentShift = randomShift(segmentHash, keyframe, maximum) * 0.35D;
+        double fromShift = randomShift(hash, keyframe, maximum);
+        double toShift = randomShift(hash, keyframe + 1L, maximum);
+        return segmentShift + (fromShift + (toShift - fromShift) * smooth) * 0.65D;
+    }
+
+    private static double randomShift(long rowHash, long keyframe, double maximum) {
+        long value = mix(rowHash ^ SHIFT_SALT * (keyframe + 1L));
+        long category = Math.floorMod(value >>> 4, 10L);
+        if (category < 2L) {
+            return 0.0D;
+        }
+        double strength = category < 6L
+                ? 0.25D + unit(value >>> 16) * 0.30D
+                : 0.60D + unit(value >>> 32) * 0.40D;
+        double direction = (value & 1L) == 0L ? -1.0D : 1.0D;
+        return direction * maximum * strength;
     }
 
     private static void emit(VertexConsumer out, Matrix4f matrix, Vec3d camera, Vec3d center,
                              Vec3d right, Vec3d up, double x0, double x1,
-                             double y0, double y1, int rgb, int alpha, double shift) {
-        point(out, matrix, camera, center.add(right.multiply(x0 + shift)).add(up.multiply(y0)), rgb, alpha);
-        point(out, matrix, camera, center.add(right.multiply(x1 + shift)).add(up.multiply(y0)), rgb, alpha);
-        point(out, matrix, camera, center.add(right.multiply(x1 + shift)).add(up.multiply(y1)), rgb, alpha);
-        point(out, matrix, camera, center.add(right.multiply(x0 + shift)).add(up.multiply(y1)), rgb, alpha);
+                             double y0, double y1, int rgb, int alpha) {
+        point(out, matrix, camera, center.add(right.multiply(x0)).add(up.multiply(y0)), rgb, alpha);
+        point(out, matrix, camera, center.add(right.multiply(x1)).add(up.multiply(y0)), rgb, alpha);
+        point(out, matrix, camera, center.add(right.multiply(x1)).add(up.multiply(y1)), rgb, alpha);
+        point(out, matrix, camera, center.add(right.multiply(x0)).add(up.multiply(y1)), rgb, alpha);
     }
 
     private static void point(VertexConsumer out, Matrix4f matrix, Vec3d camera, Vec3d pos, int rgb, int alpha) {

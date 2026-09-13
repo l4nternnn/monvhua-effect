@@ -15,6 +15,7 @@
   "item.monvhua.paint_paper": "画纸",
   "item.monvhua.paint_bucket": "油漆桶",
   "block.monvhua.paint_bucket": "油漆桶",
+  "item.monvhua.command_panel": "§6典狱长配置面板§r",
   "item.monvhua.drawing_board": "画板",
   "block.monvhua.drawing_board": "画板",
   "category.monvhua": "魔法相关配置菜单",
@@ -162,5 +163,6 @@
   "effect.monvhua.hanna_6": "重度魔女化",
   "effect.monvhua.hanna_7": "准魔女",
   "effect.monvhua.hanna_8": "魔女",
-  "gui.monvhua.emotion_picker": "表情"
+  "gui.monvhua.emotion_picker": "表情",
+  "item.monvhua.command_panel": "命令面板"
 }

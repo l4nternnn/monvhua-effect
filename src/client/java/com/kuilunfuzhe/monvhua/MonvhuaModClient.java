@@ -38,6 +38,7 @@ import com.kuilunfuzhe.monvhua.gui.mirror.mirrorHUD;
 import com.kuilunfuzhe.monvhua.gui.openback.OtherPlayerInventoryScreen;
 import com.kuilunfuzhe.monvhua.features.block_hole.BlockHoleClient;
 import com.kuilunfuzhe.monvhua.item.config.SecretConfig;
+import com.kuilunfuzhe.monvhua.item.commandpanel.CommandPanelItems;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.AnchorDestroyC2S;
@@ -104,12 +105,25 @@ public class MonvhuaModClient implements ClientModInitializer {
      */
     @Override
     public void onInitializeClient() {
+        UseItemCallback.EVENT.register((player, world, hand) -> {
+            if (world.isClient() && player.getStackInHand(hand).isOf(CommandPanelItems.COMMAND_PANEL)) {
+                net.minecraft.client.MinecraftClient.getInstance().setScreen(new com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelScreen());
+                return ActionResult.SUCCESS;
+            }
+            return ActionResult.PASS;
+        });
         BlockHoleClient.register();
         PortalClient.initialize();
         registerSkeletalModelResourceReload();
 
         // ===== 1. 网络包接收器注册 =====
         ModNetworking.registerS2CPackets();
+        com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets.DataS2C.register();
+        com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets.PermissionS2C.register();
+        ClientPlayNetworking.registerGlobalReceiver(com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets.DataS2C.ID,
+                (packet, context) -> context.client().execute(() -> com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelScreen.receiveData(packet.json())));
+        ClientPlayNetworking.registerGlobalReceiver(com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets.PermissionS2C.ID,
+                (packet, context) -> context.client().execute(() -> com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelScreen.receivePermission(packet.editable())));
         ModNetworking.registerC2SPackets();
 
         // ===== 2. 功能模块客户端初始化 =====

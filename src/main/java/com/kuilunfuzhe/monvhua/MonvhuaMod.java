@@ -41,6 +41,7 @@ import com.kuilunfuzhe.monvhua.item.ModItemGroups;
 import com.kuilunfuzhe.monvhua.item.area_tip.AreaTipItems;
 import com.kuilunfuzhe.monvhua.item.block_hole.BlockHoleItems;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
+import com.kuilunfuzhe.monvhua.item.commandpanel.CommandPanelItems;
 import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
 import com.kuilunfuzhe.monvhua.item.imitate.ImitateItem;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
@@ -49,6 +50,7 @@ import com.kuilunfuzhe.monvhua.item.plant.PlantMagicItems;
 import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
+import com.kuilunfuzhe.monvhua.features.commandpanel.CommandPanelServer;
 import com.kuilunfuzhe.monvhua.network.bodypose.ApplySkeletalPoseC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePosedBodyC2SPacket;
 import com.kuilunfuzhe.monvhua.network.bodypose.PlacePoseEditorItemsC2SPacket;
@@ -223,6 +225,7 @@ public class MonvhuaMod implements ModInitializer {
         ThroughStateS2CPacket.register();
 
         ModNetworking.registerC2SPackets();
+        CommandPanelServer.initialize();
         MarkEntityC2S.register();
         ExitViewC2S.register();
         MagicPacket.register();
@@ -670,6 +673,7 @@ public class MonvhuaMod implements ModInitializer {
         com.kuilunfuzhe.monvhua.features.floating.floating.initialize(configManager);
         Gazeguidance.initialize();
         ModItems.initialize();
+        CommandPanelItems.initialize();
         GravityItems.initialize();
         GravityMagic.initialize();
         AreaTipItems.initialize();

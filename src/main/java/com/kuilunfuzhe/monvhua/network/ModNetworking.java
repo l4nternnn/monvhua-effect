@@ -50,6 +50,7 @@ import com.kuilunfuzhe.monvhua.network.through.ThroughConfigUpdateC2SPacket;
 import com.kuilunfuzhe.monvhua.network.through.ThroughStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.fantasy.FantasyS2CPacket;
 import com.kuilunfuzhe.monvhua.network.playerlist.PlayerListRestrictS2CPacket;
+import com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets;
 
 public class ModNetworking {
 
@@ -102,6 +103,9 @@ public class ModNetworking {
     }
 
     public static void registerC2SPackets() {
+        CommandPanelPackets.ExecuteC2S.register();
+        CommandPanelPackets.SaveC2S.register();
+        CommandPanelPackets.RequestC2S.register();
         EvilEyesPackets.registerC2S();
         MagicPacket.register();
         RightClickActionPacket.register();
