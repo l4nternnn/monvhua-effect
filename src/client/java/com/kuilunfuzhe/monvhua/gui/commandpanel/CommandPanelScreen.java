@@ -5,6 +5,8 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
+import net.minecraft.client.gl.RenderPipelines;
+import net.minecraft.util.Identifier;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets;
 import java.util.*;
@@ -17,8 +19,9 @@ import java.nio.file.Path;
 public final class CommandPanelScreen extends Screen {
     private static final Gson GSON = new Gson();
     private static final Type POPUP_TYPE = new TypeToken<List<Popup>>() {}.getType();
-    private static final Map<UUID, List<Popup>> DATA = new HashMap<>();
-    public static void receiveData(long revision, String json) { MinecraftClient c=MinecraftClient.getInstance(); if(c.currentScreen instanceof CommandPanelScreen s) try { List<Popup> loaded=GSON.fromJson(json,POPUP_TYPE); if(loaded!=null){s.revision=revision;s.popups.clear();s.popups.addAll(loaded);s.selected=null;s.clearAndInit();} } catch(Exception ignored) {} }
+    private static final Identifier PANEL_TEXTURE = Identifier.ofVanilla("textures/gui/sprites/widget/button.png");
+
+    public static void receiveData(long revision, String json) { MinecraftClient c=MinecraftClient.getInstance(); if(c.currentScreen instanceof CommandPanelScreen s) try { List<Popup> loaded=GSON.fromJson(json,POPUP_TYPE); if(loaded!=null){s.revision = revision;s.selected=null;s.clearAndInit();} } catch(Exception ignored) {} }
     public static void receivePermission(boolean value) { if (MinecraftClient.getInstance().currentScreen instanceof CommandPanelScreen screen) { screen.editable = value; screen.permissionReceived = true; screen.clearAndInit(); } }
     private final List<Popup> popups;
     private Popup selected;
@@ -31,13 +34,14 @@ public final class CommandPanelScreen extends Screen {
 
     public CommandPanelScreen() {
         super(Text.translatable("item.monvhua.command_panel"));
-        UUID id = MinecraftClient.getInstance().player == null ? new UUID(0, 0) : MinecraftClient.getInstance().player.getUuid();
-        popups = DATA.computeIfAbsent(id, key -> new ArrayList<>());
+        popups = new ArrayList<>();
+
         loadLocal();
         if (popups.isEmpty()) popups.add(new Popup("示例按钮", "/say hello", 120, 90, 160, 52));
         if (MinecraftClient.getInstance().player != null) ClientPlayNetworking.send(new CommandPanelPackets.RequestC2S());
     }
     private void loadLocal() { try { Path f=MinecraftClient.getInstance().runDirectory.toPath().resolve("config/monvhua_command_panel.json"); if(Files.exists(f)){List<Popup> l=GSON.fromJson(Files.readString(f),POPUP_TYPE); if(l!=null){popups.clear();popups.addAll(l);}} } catch(Exception ignored) {} }
+
 
     @Override protected void init() {
         if (!permissionReceived) return;
@@ -54,8 +58,8 @@ public final class CommandPanelScreen extends Screen {
             context.getMatrices().pushMatrix();
             context.getMatrices().translate(x + w / 2.0f, y + h / 2.0f);
             context.getMatrices().rotate((float) Math.toRadians(popup.rotation));
-            context.fill(-w / 2, -h / 2, w / 2, h / 2, 0xE02A2A32);
-            context.drawBorder(-w / 2, -h / 2, w, h, popup == selected ? 0xFFFFFFFF : 0xFF777777);
+            boolean hovered = mouseX >= popup.x && mouseX <= popup.x + popup.width && mouseY >= popup.y && mouseY <= popup.y + popup.height;
+            drawButtonBackground(context, -w / 2, -h / 2, w, h, hovered);
             context.drawTextWithShadow(textRenderer, Text.literal(popup.name), -w / 2 + 6, -h / 2 + 6, 0xFFFFFFFF);
             context.getMatrices().popMatrix();
             if (popup == selected && editable) {
@@ -94,8 +98,40 @@ public final class CommandPanelScreen extends Screen {
     }
 
     @Override public boolean mouseReleased(double x, double y, int button) { if (operation != Operation.NONE) save(); operation = Operation.NONE; return true; }
-    @Override public void removed() { super.removed(); }
+    @Override
+    public void removed() {
+        save();
+        super.removed();
+    }
+
     private Popup hit(double x, double y) { for (int i = popups.size() - 1; i >= 0; i--) { Popup p = popups.get(i); if (x >= p.x && x <= p.x + p.width && y >= p.y && y <= p.y + p.height) return p; } return null; }
+    private void drawButtonBackground(DrawContext c, int x, int y, int w, int h, boolean hovered) {
+        Identifier texture = hovered ? Identifier.ofVanilla("textures/gui/sprites/widget/button_highlighted.png") : PANEL_TEXTURE;
+        int edge = Math.min(4, Math.max(1, w / 2));
+        int top = Math.min(4, h / 2), bottom = top, middle = Math.max(0, h - top - bottom);
+        drawButtonSlice(c, texture, x, y, edge, top, 0, 0);
+        drawButtonSlice(c, texture, x + edge, y, Math.max(1, w - edge * 2), top, edge, 0);
+        drawButtonSlice(c, texture, x + w - edge, y, edge, top, 200 - edge, 0);
+        if (middle > 0) {
+            drawScaledButtonCenter(c, texture, x + edge, y + top, Math.max(1, w - edge * 2), middle);
+        }
+        if (h > top) {
+            int by = y + h - bottom;
+            drawButtonSlice(c, texture, x, by, edge, bottom, 0, 16 - bottom);
+            drawButtonSlice(c, texture, x + edge, by, Math.max(1, w - edge * 2), bottom, edge, 16 - bottom);
+            drawButtonSlice(c, texture, x + w - edge, by, edge, bottom, 200 - edge, 16 - bottom);
+        }
+    }
+    private void drawButtonSlice(DrawContext c, Identifier texture, int x, int y, int w, int h, int u, int v) {
+        c.drawTexture(RenderPipelines.GUI_TEXTURED, texture, x, y, u, v, w, h, 200, 20);
+    }
+    private void drawScaledButtonCenter(DrawContext c, Identifier texture, int x, int y, int w, int h) {
+        c.getMatrices().pushMatrix();
+        c.getMatrices().translate(x, y);
+        c.getMatrices().scale(w / 192.0f, h / 12.0f);
+        c.drawTexture(RenderPipelines.GUI_TEXTURED, texture, 0, 0, 4, 4, 192, 12, 200, 20);
+        c.getMatrices().popMatrix();
+    }
     private void select(Popup popup) { selected = popup; popups.remove(popup); popups.add(popup); }
     void updateSelectedCommand(String command) { if (selected != null) { selected.command = command; save(); } }
     void savePanel() { save(); }

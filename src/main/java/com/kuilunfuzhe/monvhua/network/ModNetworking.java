@@ -103,8 +103,9 @@ public class ModNetworking {
     }
 
     public static void registerC2SPackets() {
+        CommandPanelPackets.SyncUploadC2S.register();
+        CommandPanelPackets.SyncDecisionC2S.register();
         CommandPanelPackets.ExecuteC2S.register();
-        CommandPanelPackets.SaveC2S.register();
         CommandPanelPackets.RequestC2S.register();
         EvilEyesPackets.registerC2S();
         MagicPacket.register();

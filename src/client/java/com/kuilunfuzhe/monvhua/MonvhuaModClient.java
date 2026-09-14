@@ -28,6 +28,7 @@ import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
 import com.kuilunfuzhe.monvhua.features.paint.PlayerPaintCommand;
 import com.kuilunfuzhe.monvhua.features.playerlist.PlayerListRestrictClient;
 import com.kuilunfuzhe.monvhua.features.possession.PossessionClient;
+import com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets;
 import com.kuilunfuzhe.monvhua.network.playerlist.PlayerListRestrictS2CPacket;
 import com.kuilunfuzhe.monvhua.features.paint.drawingboard.DrawingBoardClient;
 import com.kuilunfuzhe.monvhua.features.portal.client.PortalClient;
@@ -107,23 +108,30 @@ public class MonvhuaModClient implements ClientModInitializer {
     public void onInitializeClient() {
         UseItemCallback.EVENT.register((player, world, hand) -> {
             if (world.isClient() && player.getStackInHand(hand).isOf(CommandPanelItems.COMMAND_PANEL)) {
-                net.minecraft.client.MinecraftClient.getInstance().setScreen(new com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelScreen());
+                net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+                if (com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelSyncManager.pending() != null) client.setScreen(new com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelSyncConfirmScreen());
+                else client.setScreen(new com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelScreen());
                 return ActionResult.SUCCESS;
             }
             return ActionResult.PASS;
         });
+
         BlockHoleClient.register();
         PortalClient.initialize();
         registerSkeletalModelResourceReload();
 
         // ===== 1. 网络包接收器注册 =====
         ModNetworking.registerS2CPackets();
+        CommandPanelPackets.SyncRequestS2C.register();
+        CommandPanelPackets.SharedPanelS2C.register();
         com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets.DataS2C.register();
         com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets.PermissionS2C.register();
-        ClientPlayNetworking.registerGlobalReceiver(com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets.DataS2C.ID,
-                (packet, context) -> context.client().execute(() -> com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelScreen.receiveData(packet.revision(), packet.json())));
         ClientPlayNetworking.registerGlobalReceiver(com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets.PermissionS2C.ID,
                 (packet, context) -> context.client().execute(() -> com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelScreen.receivePermission(packet.editable())));
+        ClientPlayNetworking.registerGlobalReceiver(CommandPanelPackets.SyncRequestS2C.ID, (packet, context) -> context.client().execute(() -> {
+            com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelSyncManager.uploadLocal();
+        }));
+        ClientPlayNetworking.registerGlobalReceiver(CommandPanelPackets.SharedPanelS2C.ID, (packet, context) -> context.client().execute(() -> com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelSyncManager.receive(packet.sourceName(), packet.revision(), packet.json())));
         ModNetworking.registerC2SPackets();
 
         // ===== 2. 功能模块客户端初始化 =====
