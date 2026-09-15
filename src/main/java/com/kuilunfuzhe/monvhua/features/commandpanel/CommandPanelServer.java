@@ -23,9 +23,9 @@ public final class CommandPanelServer {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher.register(
             CommandManager.literal("commandpanel").then(CommandManager.literal("sync")
                 .executes(ctx -> { ctx.getSource().sendError(Text.translatable("command.monvhua.commandpanel.sync.usage")); return 0; })
-                .requires(source -> source.getEntity() instanceof ServerPlayerEntity p && canEdit(p))
                 .then(CommandManager.argument("targets", EntityArgumentType.players()).executes(ctx -> {
                     ServerPlayerEntity sender = ctx.getSource().getPlayerOrThrow();
+                    if (!canEdit(sender)) { ctx.getSource().sendError(Text.translatable("command.monvhua.commandpanel.no_permission")); return 0; }
                     ServerWorld world = sender.getServer().getOverworld();
                     List<UUID> targets = EntityArgumentType.getPlayers(ctx, "targets").stream().map(ServerPlayerEntity::getUuid).toList();
                     PENDING.put(sender.getUuid(), targets);
