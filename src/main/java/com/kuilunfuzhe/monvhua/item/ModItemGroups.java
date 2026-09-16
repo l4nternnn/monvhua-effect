@@ -12,6 +12,7 @@ import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
 import com.kuilunfuzhe.monvhua.item.plant.PlantMagicItems;
 import com.kuilunfuzhe.monvhua.item.through.ThroughItem;
+import com.kuilunfuzhe.monvhua.item.swing.SwingAssemblyItems;
 import com.kuilunfuzhe.monvhua.features.portal.PortalItems;
 import com.kuilunfuzhe.monvhua.features.possession.PossessionFeature;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
@@ -41,6 +42,7 @@ public class ModItemGroups {
                             entries.add(GravityItems.GRAVITY_WAND);
                             entries.add(AreaTipItems.AREA_TIP_STICK);
                             entries.add(PlantMagicItems.PLANT_WAND);
+                            entries.add(SwingAssemblyItems.ASSEMBLE_STICK);
                             entries.add(ThroughItem.THROUGH_ITEM);
                             entries.add(mirror_of_then_and_now.MIRROR_ITEM);
                             entries.add(PossessionFeature.POSSESSION_ITEM);

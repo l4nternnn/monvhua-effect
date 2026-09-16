@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.gravity;
 
 import com.kuilunfuzhe.monvhua.entity.ModEntities;
+import com.kuilunfuzhe.monvhua.features.swing.SwingEntityRenderer;
 import com.kuilunfuzhe.monvhua.features.binding.PlayerBindingClient;
 import com.kuilunfuzhe.monvhua.gui.CombinedConfigScreen;
 import com.kuilunfuzhe.monvhua.item.config.GravityConfig;
@@ -43,6 +44,7 @@ public final class GravityClient {
 
     public static void initialize() {
         EntityRendererRegistry.register(ModEntities.GRAVITY_BLOCK, GravityBlockEntityRenderer::new);
+        EntityRendererRegistry.register(ModEntities.SWING, SwingEntityRenderer::new);
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (!scrollCallbackRegistered && client.getWindow() != null) {
                 registerScrollCallback(client);

@@ -47,6 +47,9 @@ import com.kuilunfuzhe.monvhua.item.imitate.ImitateItem;
 import com.kuilunfuzhe.monvhua.item.mirror.mirror_of_then_and_now;
 import com.kuilunfuzhe.monvhua.item.paint.PaintItems;
 import com.kuilunfuzhe.monvhua.item.plant.PlantMagicItems;
+import com.kuilunfuzhe.monvhua.item.swing.SwingAssemblyItems;
+import com.kuilunfuzhe.monvhua.features.swing.SwingAssembly;
+import com.kuilunfuzhe.monvhua.command.SwingCommand;
 import com.kuilunfuzhe.monvhua.item.modblock.ModBlocks;
 import com.kuilunfuzhe.monvhua.item.modblock.moditems.Assembly_ModItems;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
@@ -558,6 +561,7 @@ public class MonvhuaMod implements ModInitializer {
         CommandRegistrationCallback.EVENT.register(ActionCommand::register);
         CommandRegistrationCallback.EVENT.register(SkeletalBodyPartCommand::register);
         CommandRegistrationCallback.EVENT.register(GravityCommand::register);
+        CommandRegistrationCallback.EVENT.register(SwingCommand::register);
         CommandRegistrationCallback.EVENT.register(PaintGraffitiCommand::register);
         CommandRegistrationCallback.EVENT.register(HotBackpackSaveFeature::registerCommands);
         CommandRegistrationCallback.EVENT.register(PlayerListRestrictCommand::register);
@@ -679,6 +683,8 @@ public class MonvhuaMod implements ModInitializer {
         AreaTipItems.initialize();
         AreaTipFeature.initialize();
         PlantMagicItems.initialize();
+        SwingAssemblyItems.initialize();
+        SwingAssembly.initialize();
         PlantMagic.initialize(configManager);
         BlockHoleItems.initialize();
         PortalItems.initialize();

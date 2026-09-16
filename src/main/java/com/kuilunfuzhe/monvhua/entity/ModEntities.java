@@ -9,6 +9,7 @@ import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.util.Identifier;
+import com.kuilunfuzhe.monvhua.features.swing.SwingEntity;
 
 /**
  * 实体类型注册中心。
@@ -29,6 +30,9 @@ public class ModEntities {
                     .maxTrackingRange(96)
                     .trackingTickInterval(1)
                     .build(RegistryKey.of(RegistryKeys.ENTITY_TYPE, Identifier.of("monvhua", "gravity_block")));
+    public static final EntityType<SwingEntity> SWING = EntityType.Builder.<SwingEntity>create(SwingEntity::new, SpawnGroup.MISC)
+            .dimensions(0.1f, 0.1f).maxTrackingRange(96).trackingTickInterval(1)
+            .build(RegistryKey.of(RegistryKeys.ENTITY_TYPE, Identifier.of("monvhua", "swing")));
 
     public static void register() {
         Registry.register(Registries.ENTITY_TYPE,
@@ -39,6 +43,7 @@ public class ModEntities {
                 Identifier.of("monvhua", "gravity_block"),
                 GRAVITY_BLOCK
         );
+        Registry.register(Registries.ENTITY_TYPE, Identifier.of("monvhua", "swing"), SWING);
 
         // 3. 关键：注册实体属性（生命值、移动速度等）
         FabricDefaultAttributeRegistry.register(TEST_MANNEQUIN, TestMannequinEntity.createMobAttributes());

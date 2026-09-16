@@ -159,6 +159,14 @@ java {
 	targetCompatibility = JavaVersion.VERSION_21
 }
 
+dependencies {
+	testImplementation "net.fabricmc:fabric-loader-junit:${project.loader_version}"
+}
+
+test {
+	useJUnitPlatform()
+}
+
 jar {
 	def projectName = project.name
 	inputs.property "projectName", projectName
