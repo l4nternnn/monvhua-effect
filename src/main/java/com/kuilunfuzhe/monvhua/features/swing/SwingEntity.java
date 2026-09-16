@@ -19,12 +19,18 @@ import com.mojang.serialization.Codec;
 import net.minecraft.util.math.Box;
 import java.util.HashMap;
 import java.util.Map;
+import com.kuilunfuzhe.monvhua.item.swing.SwingAssemblyItems;
 
 public class SwingEntity extends Entity {
     private static final double SEAT_HEIGHT_OFFSET = -0.45;
+    private static final float MAX_SWING_ANGLE = MathHelper.RADIANS_PER_DEGREE * 75f;
+    private static final float GRAVITY_ACCELERATION = 0.0075f;
+    private static final float AIR_DAMPING = 0.992f;
+    private static final float INPUT_ACCELERATION = 0.0045f;
     private static final TrackedData<Float> ANGLE = DataTracker.registerData(SwingEntity.class, TrackedDataHandlerRegistry.FLOAT);
     private static final TrackedData<Float> VELOCITY = DataTracker.registerData(SwingEntity.class, TrackedDataHandlerRegistry.FLOAT);
     private static final TrackedData<Boolean> Z_AXIS = DataTracker.registerData(SwingEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
+    private static final TrackedData<Integer> INPUT_SIGN = DataTracker.registerData(SwingEntity.class, TrackedDataHandlerRegistry.INTEGER);
     private static final TrackedData<NbtCompound> STRUCTURE = DataTracker.registerData(SwingEntity.class, TrackedDataHandlerRegistry.NBT_COMPOUND);
     private static final TrackedData<NbtCompound> SEATS = DataTracker.registerData(SwingEntity.class, TrackedDataHandlerRegistry.NBT_COMPOUND);
     private SwingStructure structure = new SwingStructure(java.util.List.of());
@@ -36,9 +42,12 @@ public class SwingEntity extends Entity {
 
     public SwingEntity(EntityType<? extends SwingEntity> type, World world) { super(type, world); noClip = true; }
     public SwingEntity(World world, Vec3d pivot, SwingStructure structure, boolean zAxis) {
-        this(ModEntities.SWING, world); setPosition(pivot); this.structure = structure; dataTracker.set(Z_AXIS, zAxis); syncStructure(); refreshStructureBounds();
+        this(world, pivot, structure, zAxis, 1);
     }
-    @Override protected void initDataTracker(DataTracker.Builder b) { b.add(ANGLE, 0f); b.add(VELOCITY, 0f); b.add(Z_AXIS, false); b.add(STRUCTURE, new NbtCompound()); b.add(SEATS, new NbtCompound()); }
+    public SwingEntity(World world, Vec3d pivot, SwingStructure structure, boolean zAxis, int inputSign) {
+        this(ModEntities.SWING, world); setPosition(pivot); this.structure = structure; dataTracker.set(Z_AXIS, zAxis); dataTracker.set(INPUT_SIGN, inputSign < 0 ? -1 : 1); syncStructure(); refreshStructureBounds();
+    }
+    @Override protected void initDataTracker(DataTracker.Builder b) { b.add(ANGLE, 0f); b.add(VELOCITY, 0f); b.add(Z_AXIS, false); b.add(INPUT_SIGN, 1); b.add(STRUCTURE, new NbtCompound()); b.add(SEATS, new NbtCompound()); }
     private void syncSeats() {
         var n = new NbtCompound();
         passengerSeats.forEach((id, seat) -> n.putInt(id.toString(), seat));
@@ -129,16 +138,30 @@ public class SwingEntity extends Entity {
         }
         if (!getWorld().isClient) {
             float a = dataTracker.get(ANGLE), v = dataTracker.get(VELOCITY);
-            v -= MathHelper.sin(a) * .012f; v *= .985f; a += v;
-            float max = MathHelper.RADIANS_PER_DEGREE * 38f;
-            if (a > max || a < -max) { a = MathHelper.clamp(a, -max, max); v *= -.35f; }
-            dataTracker.set(ANGLE, a); dataTracker.set(VELOCITY, v);
-            float totalInput = 0f;
+            float input = 0f;
             for (Entity p : getPassengerList()) if (p instanceof ServerPlayerEntity player) {
-                totalInput += (player.getPlayerInput().forward() ? 1f : 0f)
+                input += (player.getPlayerInput().forward() ? 1f : 0f)
                         - (player.getPlayerInput().backward() ? 1f : 0f);
             }
-            addImpulse(MathHelper.clamp(totalInput, -1f, 1f) * .018f);
+            input = MathHelper.clamp(input, -1f, 1f);
+            // Pendulum recovery. A one-block horizontal displacement is the
+            // sustained-input target; alternating input can continue building speed.
+            v -= MathHelper.sin(a) * GRAVITY_ACCELERATION;
+            v *= AIR_DAMPING;
+            float ropeLength = Math.max(1f, structure.seatBlocks().stream()
+                    .mapToInt(b -> -b.localPos().getY()).max().orElse(2));
+            float sustained = (float) Math.asin(Math.min(1.0, 1.0 / ropeLength));
+            if (input != 0f) {
+                float target = input * dataTracker.get(INPUT_SIGN) * sustained;
+                float error = target - a;
+                v += MathHelper.clamp(error * INPUT_ACCELERATION, -INPUT_ACCELERATION, INPUT_ACCELERATION);
+            }
+            a += v;
+            if (a > MAX_SWING_ANGLE || a < -MAX_SWING_ANGLE) {
+                a = MathHelper.clamp(a, -MAX_SWING_ANGLE, MAX_SWING_ANGLE);
+                v *= -.25f;
+            }
+            dataTracker.set(ANGLE, a); dataTracker.set(VELOCITY, v);
         }
         refreshStructureBounds();
     }
@@ -233,6 +256,7 @@ public class SwingEntity extends Entity {
         dataTracker.set(ANGLE, view.read("Angle", Codec.FLOAT).orElse(0f));
         dataTracker.set(VELOCITY, view.read("Velocity", Codec.FLOAT).orElse(0f));
         dataTracker.set(Z_AXIS, view.read("ZAxis", Codec.BOOL).orElse(false));
+        dataTracker.set(INPUT_SIGN, view.read("InputSign", Codec.INT).orElse(1) < 0 ? -1 : 1);
         var positions = view.read("Positions", Codec.LONG.listOf()).orElse(java.util.List.of());
         var ids = view.read("StateIds", Codec.INT.listOf()).orElse(java.util.List.of());
         structure = SwingStructure.fromPacked(positions, ids);
@@ -250,6 +274,7 @@ public class SwingEntity extends Entity {
         view.put("Angle", Codec.FLOAT, dataTracker.get(ANGLE));
         view.put("Velocity", Codec.FLOAT, dataTracker.get(VELOCITY));
         view.put("ZAxis", Codec.BOOL, dataTracker.get(Z_AXIS));
+        view.put("InputSign", Codec.INT, dataTracker.get(INPUT_SIGN));
         view.put("Positions", Codec.LONG.listOf(), structure.packedPositions());
         view.put("StateIds", Codec.INT.listOf(), structure.stateIds());
         Map<String, Integer> seats = new HashMap<>();
@@ -265,5 +290,9 @@ public class SwingEntity extends Entity {
         }
         structure = new SwingStructure(java.util.List.of());
     }
-    @Override public boolean damage(ServerWorld world, net.minecraft.entity.damage.DamageSource source, float amount) { removeAllPassengers(); restoreStructure(); discard(); return true; }
+    @Override public boolean damage(ServerWorld world, net.minecraft.entity.damage.DamageSource source, float amount) {
+        Entity attacker = source.getAttacker();
+        if (!(attacker instanceof PlayerEntity player) || !player.getMainHandStack().isOf(SwingAssemblyItems.ASSEMBLE_STICK)) return false;
+        removeAllPassengers(); restoreStructure(); discard(); return true;
+    }
 }

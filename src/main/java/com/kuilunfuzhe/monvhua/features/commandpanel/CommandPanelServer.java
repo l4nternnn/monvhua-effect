@@ -18,8 +18,6 @@ public final class CommandPanelServer {
         return player.isCreative() && player.getCommandTags().contains(EDIT_TAG);
     }
     public static void initialize() {
-        CommandPanelPackets.SyncRequestS2C.register();
-        CommandPanelPackets.SharedPanelS2C.register();
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher.register(
             CommandManager.literal("commandpanel").then(CommandManager.literal("sync")
                 .executes(ctx -> { ctx.getSource().sendError(Text.translatable("command.monvhua.commandpanel.sync.usage")); return 0; })

@@ -55,6 +55,11 @@ import com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets;
 public class ModNetworking {
 
     public static void registerS2CPackets() {
+        // Payload codecs are needed on both the sending server and receiving client.
+        CommandPanelPackets.PermissionS2C.register();
+        CommandPanelPackets.SyncRequestS2C.register();
+        CommandPanelPackets.SharedPanelS2C.register();
+        CommandPanelPackets.DataS2C.register();
         EvilEyesPackets.registerS2C();
         ToggleImagesS2CPacket.register();
         MarkParticleS2CPacket.register();

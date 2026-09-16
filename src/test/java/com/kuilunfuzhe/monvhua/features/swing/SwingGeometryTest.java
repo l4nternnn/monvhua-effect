@@ -11,14 +11,20 @@ import java.util.ArrayList;
 
 /** Real vanilla shape regression fixtures; runs without opening a save or starting Minecraft's client. */
 public final class SwingGeometryTest {
-    @org.junit.jupiter.api.Test
-    public void seatGeometry() {
+    private static boolean bootstrapped;
+    private static void setup() {
+        if (bootstrapped) return;
         SharedConstants.createGameVersion();
         Bootstrap.initialize();
-        // This fixture uses concrete trapdoors only; bind bootstrap tag placeholders without loading a world.
         var registry = (net.minecraft.registry.SimpleRegistry<net.minecraft.block.Block>) net.minecraft.registry.Registries.BLOCK;
         registry.resetTagEntries();
         registry.freeze();
+        bootstrapped = true;
+    }
+    @org.junit.jupiter.api.Test
+    public void seatGeometry() {
+        setup();
+        // This fixture uses concrete trapdoors only; bind bootstrap tag placeholders without loading a world.
         int checks = 0;
         for (boolean zAxis : new boolean[]{false, true}) {
             var blocks = new ArrayList<SwingBlock>();
@@ -49,6 +55,19 @@ public final class SwingGeometryTest {
             checks += 3;
         }
         System.out.println("Swing geometry: " + checks + " checks passed");
+    }
+
+    @org.junit.jupiter.api.Test
+    public void evenWidthSeatGeometry() {
+        setup();
+        var blocks = new ArrayList<SwingBlock>();
+        for (int width = 0; width < 4; width++) {
+            blocks.add(new SwingBlock(new BlockPos(0, -4, width), Blocks.CHERRY_TRAPDOOR.getDefaultState()
+                    .with(TrapdoorBlock.HALF, BlockHalf.TOP).with(TrapdoorBlock.OPEN, false)));
+        }
+        var structure = new SwingStructure(blocks);
+        require(structure.seatSlots().size() == 4, "Even-width swing must expose one slot per seat block");
+        require(structure.seatBounds().minZ < 0 && structure.seatBounds().maxZ > 3, "Even-width seat bounds must retain both ends");
     }
     private static void require(boolean value, String message) {
         if (!value) throw new AssertionError(message);

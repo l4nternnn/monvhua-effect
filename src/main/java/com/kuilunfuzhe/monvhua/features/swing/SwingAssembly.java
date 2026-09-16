@@ -9,6 +9,7 @@ import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Direction;
 
 /** Entry point for assembly. Keeping the item gate here prevents alternate callers bypassing it. */
 public final class SwingAssembly {
@@ -34,7 +35,7 @@ public final class SwingAssembly {
                 return ActionResult.FAIL;
             }
             try {
-                SwingEntity entity = assemble(server, player, pivot, false, trace);
+                SwingEntity entity = assemble(server, player, pivot, false, hit.getSide(), trace);
                 if (entity == null) {
                     player.sendMessage(net.minecraft.text.Text.literal("未匹配到秋千，诊断 #" + trace.id + "；详见日志 [SwingDiag]"), false);
                     return ActionResult.FAIL;
@@ -54,10 +55,13 @@ public final class SwingAssembly {
     }
 
     public static SwingEntity assemble(ServerWorld world, PlayerEntity player, BlockPos pivot, boolean zAxis) {
-        return assemble(world, player, pivot, zAxis, new SwingDiagnostics());
+        return assemble(world, player, pivot, zAxis, Direction.NORTH, new SwingDiagnostics());
     }
 
     private static SwingEntity assemble(ServerWorld world, PlayerEntity player, BlockPos pivot, boolean zAxis, SwingDiagnostics trace) {
+        return assemble(world, player, pivot, zAxis, Direction.NORTH, trace);
+    }
+    private static SwingEntity assemble(ServerWorld world, PlayerEntity player, BlockPos pivot, boolean zAxis, Direction face, SwingDiagnostics trace) {
         if (!canAssemble(player.getMainHandStack())) return null;
         SwingAssemblyDetector.Result result = SwingAssemblyDetector.detect(world, pivot, trace);
         if (result == null) return null;
@@ -75,7 +79,8 @@ public final class SwingAssembly {
                     || !(SwingBlockRoles.rope(block.state()) || SwingBlockRoles.seat(block.state()) || SwingBlockRoles.backrest(block.state())))
                 throw new IllegalArgumentException("结构预检查失败：" + p.toShortString());
         }
-        SwingEntity entity = new SwingEntity(world, pivot.toCenterPos(), structure, result.zAxis());
+        int inputSign = inputSign(result.zAxis(), face, player, pivot);
+        SwingEntity entity = new SwingEntity(world, pivot.toCenterPos(), structure, result.zAxis(), inputSign);
         trace.log("COMMIT_BEGIN blocks=" + structure.blocks().size() + " zAxis=" + result.zAxis());
         java.util.List<SwingBlock> removed = new java.util.ArrayList<>();
         try {
@@ -105,5 +110,15 @@ public final class SwingAssembly {
         }
         trace.log("SPAWN result=true uuid=" + entity.getUuid() + " pos=" + entity.getPos() + " box=" + entity.getBoundingBox());
         return entity;
+    }
+    private static int inputSign(boolean zAxis, Direction face, PlayerEntity player, BlockPos pivot) {
+        if (zAxis) {
+            if (face == Direction.WEST) return -1;
+            if (face == Direction.EAST) return 1;
+            return player.getX() < pivot.getX() ? -1 : 1;
+        }
+        if (face == Direction.NORTH) return -1;
+        if (face == Direction.SOUTH) return 1;
+        return player.getZ() < pivot.getZ() ? -1 : 1;
     }
 }
