@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.features.carryentity;
 
 import com.kuilunfuzhe.monvhua.event.tag_pitch;
 import com.kuilunfuzhe.monvhua.features.floating.floating;
+import com.kuilunfuzhe.monvhua.features.swing.SwingEntity;
 import com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.Entity;
@@ -190,6 +191,10 @@ public class CarryManager {
 	}
 
 	public static void releaseCarried(ServerPlayerEntity carrier, Entity carried) {
+		releaseCarried(carrier, carried, false);
+	}
+
+	public static void releaseCarried(ServerPlayerEntity carrier, Entity carried, boolean trySwingSeat) {
 		CarriedEntityData data = CARRIED_ENTITIES.get(carrier);
 		syncCarryPose(carrier, carried, false);
 		CARRIED_ENTITIES.remove(carrier);
@@ -199,6 +204,10 @@ public class CarryManager {
 		CARRIED_COOLDOWN.put(carried, System.currentTimeMillis() + 5000);
 		restoreCarriedState(carried, data);
 		if (carried.isAlive()) {
+			if (trySwingSeat && carried instanceof ServerPlayerEntity carriedPlayer
+					&& SwingEntity.trySeatCarried(carrier, carriedPlayer)) {
+				return;
+			}
 			Vec3d pos = findSafeReleasePosition(carrier, carried, 0.5D);
 			carried.refreshPositionAndAngles(pos.x, pos.y, pos.z, carried.getYaw(), carried.getPitch());
 			if (carried instanceof ServerPlayerEntity carriedPlayer) {

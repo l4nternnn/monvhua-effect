@@ -14,7 +14,7 @@ public final class SwingAssemblyDetector {
   trace.log("DETECT_BEGIN " + SwingDiagnostics.describe(world,pivot));
   for (boolean zAxis : new boolean[]{false,true}) for (int left=-5; left<=4; left++) for (int width=2; width<=7; width++) {
    int right = left + width - 1;
-   for (int length=2; length<=7; length++) {
+   for (int length=2; length<=20; length++) {
     boolean ok=true;
     for(int y=1;y<=length;y++) {
       BlockPos p=offset(pivot,left,-y,zAxis);

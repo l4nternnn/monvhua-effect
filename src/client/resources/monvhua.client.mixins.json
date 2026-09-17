@@ -19,6 +19,7 @@
 		"carrymodelpose.FirstPersonCarrierAttachedEntityRenderMixin",
 		"PlayerSkinGuiElementRendererMixin",
 		"SoundManagerMixin",
+		"SwingCrosshairTargetMixin",
 		"gravity.GravityCameraMixin",
 		"gravity.GravityCrosshairTargetMixin",
 		"gravity.GravityEyePositionMixin",

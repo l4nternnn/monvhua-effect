@@ -69,6 +69,31 @@ public final class SwingGeometryTest {
         require(structure.seatSlots().size() == 4, "Even-width swing must expose one slot per seat block");
         require(structure.seatBounds().minZ < 0 && structure.seatBounds().maxZ > 3, "Even-width seat bounds must retain both ends");
     }
+
+    @org.junit.jupiter.api.Test
+    public void longSuspensionCollisionGeometry() {
+        setup();
+        var blocks = new ArrayList<SwingBlock>();
+        for (int y = 1; y <= 20; y++) {
+            blocks.add(new SwingBlock(new BlockPos(-2, -y, 0), Blocks.CHAIN.getDefaultState()));
+            blocks.add(new SwingBlock(new BlockPos(2, -y, 0), Blocks.CHAIN.getDefaultState()));
+        }
+        for (int x = -2; x <= 2; x++) blocks.add(new SwingBlock(new BlockPos(x, -21, 0), Blocks.OAK_SLAB.getDefaultState()));
+        var structure = new SwingStructure(blocks);
+        require(structure.localBounds().minY == -21.5, "Twenty-block suspension must retain its full local extent");
+        require(!structure.collisionShapes().isEmpty(), "Long suspension must expose block collision geometry");
+        require(structure.collisionShapes().stream().mapToDouble(box -> box.minY).min().orElseThrow() < -21.0,
+                "Collision geometry must reach the lower seat instead of stopping near the pivot");
+        require(structure.collisionShapes().size() >= 45,
+                "Collision geometry must preserve separate chain and seat block shapes");
+        require(structure.seatSlots().size() == 5, "Long suspension must retain all seat slots");
+    }
+
+    @org.junit.jupiter.api.Test
+    public void swingInteractionMixinTargetLoads() throws ClassNotFoundException {
+        setup();
+        Class.forName("net.minecraft.server.network.ServerPlayNetworkHandler");
+    }
     private static void require(boolean value, String message) {
         if (!value) throw new AssertionError(message);
     }

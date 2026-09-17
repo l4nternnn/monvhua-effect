@@ -37,6 +37,14 @@ public record SwingStructure(List<SwingBlock> blocks) {
                 b.state().getOutlineShape(net.minecraft.world.EmptyBlockView.INSTANCE, b.localPos()).getBoundingBoxes().stream()
                         .map(box -> box.offset(b.localPos().getX() - .5, b.localPos().getY() - .5, b.localPos().getZ() - .5))).toList();
     }
+    /** Per-block collision shapes in the same local coordinate system used by rendering. */
+    public List<Box> collisionShapes() {
+        return blocks.stream().flatMap(b -> b.state()
+                .getCollisionShape(net.minecraft.world.EmptyBlockView.INSTANCE, b.localPos())
+                .getBoundingBoxes().stream()
+                .map(box -> box.offset(b.localPos().getX() - .5, b.localPos().getY() - .5, b.localPos().getZ() - .5)))
+                .toList();
+    }
     /** One stable rideable slot per seat block in the lowest seat row. */
     public List<Box> seatSlots() {
         int bottom = seatBlocks().stream().mapToInt(b -> b.localPos().getY()).min().orElse(Integer.MIN_VALUE);

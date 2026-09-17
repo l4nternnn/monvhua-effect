@@ -125,7 +125,7 @@ public class CarryEvents {
 
 			CarryManager.CarriedEntityData currentData = CarryManager.CARRIED_ENTITIES.get(carrier);
 			if (currentData != null && currentData.entity == target) {
-				CarryManager.releaseCarried(carrier, target);
+				CarryManager.releaseCarried(carrier, target, true);
 				carrier.sendMessage(Text.literal("§a放下了" + tag_pitch.entityDisplayName(target)), false);
 				return;
 			}
@@ -188,7 +188,7 @@ public class CarryEvents {
 			CarryManager.CarriedEntityData data = CarryManager.CARRIED_ENTITIES.get(carrier);
 			if (data == null) return;
 			Entity carried = data.entity;
-			CarryManager.releaseCarried(carrier, carried);
+			CarryManager.releaseCarried(carrier, carried, true);
 			if (carried.isAlive()) {
 				carrier.sendMessage(Text.literal("§a放下了抱起的实体"), false);
 			} else {

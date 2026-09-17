@@ -33,6 +33,8 @@
 		"ServerPlayNetworkHandlerAccessor",
 		"ServerCommonNetworkHandlerMixin",
 		"ThroughPhaseCollisionMixin",
+		"SwingInteractionNetworkMixin",
+		"SwingWorldCollisionMixin",
 		"possession.PossessionMovementMixin",
 		"possession.PossessionNetworkInputMixin",
 		"possession.PossessionBlockStateSyncMixin",
