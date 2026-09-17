@@ -9,6 +9,8 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets;
 import java.util.*;
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
 import java.lang.reflect.Type;
 import java.nio.file.Files;
@@ -17,7 +19,10 @@ import java.nio.file.Path;
 public final class CommandPanelScreen extends Screen {
     private static final Gson GSON = new Gson();
     private static final Type POPUP_TYPE = new TypeToken<List<Popup>>() {}.getType();
+    private static final int CONFIG_VERSION = 2;
     private final Map<Popup, ButtonWidget> popupButtons = new HashMap<>();
+    private final Deque<QueuedCommand> commandQueue = new ArrayDeque<>();
+    private int commandWaitTicks;
 
     public static void receiveData(long revision, String json) { MinecraftClient c=MinecraftClient.getInstance(); if(c.currentScreen instanceof CommandPanelScreen s) try { List<Popup> loaded=GSON.fromJson(json,POPUP_TYPE); if(loaded!=null){s.revision = revision;s.selected=null;s.clearAndInit();} } catch(Exception ignored) {} }
     public static void receivePermission(boolean value) { if (MinecraftClient.getInstance().currentScreen instanceof CommandPanelScreen screen) { screen.editable = value; screen.permissionReceived = true; screen.clearAndInit(); } }
@@ -35,10 +40,29 @@ public final class CommandPanelScreen extends Screen {
         popups = new ArrayList<>();
 
         loadLocal();
-        if (popups.isEmpty()) popups.add(new Popup("示例按钮", "/say hello", 120, 90, 160, 52));
+        if (popups.isEmpty()) { popups.add(new Popup("示例按钮", "/say hello", 120, 90, 160, 52)); save(); }
         if (MinecraftClient.getInstance().player != null) ClientPlayNetworking.send(new CommandPanelPackets.RequestC2S());
     }
-    private void loadLocal() { try { Path f=MinecraftClient.getInstance().runDirectory.toPath().resolve("config/monvhua_command_panel.json"); if(Files.exists(f)){List<Popup> l=GSON.fromJson(Files.readString(f),POPUP_TYPE); if(l!=null){popups.clear();popups.addAll(l);}} } catch(Exception ignored) {} }
+    private void loadLocal() {
+        try {
+            Path f = MinecraftClient.getInstance().runDirectory.toPath().resolve("config/monvhua_command_panel.json");
+            if (!Files.exists(f)) return;
+            String json = Files.readString(f);
+            JsonElement root = JsonParser.parseString(json);
+            Config config;
+            if (root.isJsonArray()) {
+                config = new Config();
+                List<Popup> legacy = GSON.fromJson(root, POPUP_TYPE);
+                config.popups = legacy == null ? new ArrayList<>() : legacy;
+            } else {
+                config = GSON.fromJson(root, Config.class);
+            }
+            if (config != null && config.popups != null) {
+                revision = config.revision;
+                for (Popup popup : config.popups) { popup.normalize(); popups.add(popup); }
+            }
+        } catch (Exception ignored) {}
+    }
 
 
     @Override protected void init() {
@@ -46,7 +70,7 @@ public final class CommandPanelScreen extends Screen {
         popupButtons.clear();
         for (Popup popup : popups) {
             ButtonWidget widget = ButtonWidget.builder(Text.literal(popup.name), b -> {
-                if (!editable) ClientPlayNetworking.send(new CommandPanelPackets.ExecuteC2S(popup.command));
+                if (!editable) startExecution(popup);
             }).dimensions((int) popup.x, (int) popup.y, Math.max(20, (int) popup.width), Math.max(20, (int) popup.height)).build();
             widget.active = true;
             popupButtons.put(popup, widget);
@@ -71,6 +95,16 @@ public final class CommandPanelScreen extends Screen {
     }
 
     @Override public boolean shouldPause() { return false; }
+
+    @Override public void tick() {
+        super.tick();
+        if (commandWaitTicks > 0 && --commandWaitTicks > 0) return;
+        QueuedCommand queued = commandQueue.pollFirst();
+        if (queued != null) {
+            ClientPlayNetworking.send(new CommandPanelPackets.ExecuteC2S(queued.command));
+            commandWaitTicks = Math.max(0, queued.delay);
+        }
+    }
 
     @Override public boolean mouseClicked(double x, double y, int button) {
         if (button == 1) { Popup p = hit(x, y); if (p != null) { select(p); client.setScreen(new CommandPopupEditScreen(this, p)); return true; } }
@@ -108,9 +142,20 @@ public final class CommandPanelScreen extends Screen {
     private Popup hit(double x, double y) { for (int i = popups.size() - 1; i >= 0; i--) { Popup p = popups.get(i); if (x >= p.x && x <= p.x + p.width && y >= p.y && y <= p.y + p.height) return p; } return null; }
     private void select(Popup popup) { selected = popup; popups.remove(popup); popups.add(popup); }
     private void syncWidget(Popup popup) { ButtonWidget w = popupButtons.get(popup); if (w != null) { w.setX((int)popup.x); w.setY((int)popup.y); w.setWidth(Math.max(20,(int)popup.width)); w.setHeight(Math.max(20,(int)popup.height)); w.setMessage(Text.literal(popup.name)); } }
-    void updateSelectedCommand(String command) { if (selected != null) { selected.command = command; save(); } }
+    private void startExecution(Popup popup) {
+        commandQueue.clear();
+        for (CommandLine line : popup.commands) {
+            if (line.command == null || line.command.isBlank()) continue;
+            commandQueue.addLast(new QueuedCommand(line.command, Math.max(0, line.delay)));
+        }
+        commandWaitTicks = 0;
+    }
+    void updateSelectedCommand(String command) { if (selected != null) { selected.commands.clear(); selected.commands.add(new CommandLine(command)); save(); } }
     void savePanel() { save(); }
-    private void save() { try { Path file = MinecraftClient.getInstance().runDirectory.toPath().resolve("config/monvhua_command_panel.json"); Files.createDirectories(file.getParent()); Files.writeString(file, GSON.toJson(popups, POPUP_TYPE)); } catch (Exception ignored) {} }
+    private void save() { try { Path file = MinecraftClient.getInstance().runDirectory.toPath().resolve("config/monvhua_command_panel.json"); Files.createDirectories(file.getParent()); Config config = new Config(); config.revision = revision; config.popups = popups; Files.writeString(file, GSON.toJson(config)); } catch (Exception ignored) {} }
     private enum Operation { NONE, MOVE, RESIZE, ROTATE }
-    static final class Popup { String name, command; float x, y, width, height, rotation; Popup(String n, String c, float px, float py, float w, float h) { name=n; command=c; x=px; y=py; width=w; height=h; } }
+    private record QueuedCommand(String command, int delay) {}
+    static final class Config { int version = CONFIG_VERSION; long revision; List<Popup> popups = new ArrayList<>(); }
+    static final class CommandLine { String id = UUID.randomUUID().toString(); String command = ""; int delay = 2; CommandLine() {} CommandLine(String value) { command = value; } }
+    static final class Popup { String id = UUID.randomUUID().toString(); String name, command; List<CommandLine> commands = new ArrayList<>(); float x, y, width, height, rotation; Popup() {} Popup(String n, String c, float px, float py, float w, float h) { name=n; command=c; commands.add(new CommandLine(c)); x=px; y=py; width=w; height=h; } void normalize() { if (id == null || id.isBlank()) id = UUID.randomUUID().toString(); if (name == null || name.isBlank()) name = "Popup"; if (commands == null) commands = new ArrayList<>(); commands.removeIf(Objects::isNull); if (commands.isEmpty() && command != null && !command.isBlank()) commands.add(new CommandLine(command)); if (commands.isEmpty()) commands.add(new CommandLine("")); for (CommandLine line : commands) { if (line.id == null || line.id.isBlank()) line.id = UUID.randomUUID().toString(); if (line.command == null) line.command = ""; if (line.delay < 0) line.delay = 2; } command = null; } }
 }

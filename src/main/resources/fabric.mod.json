@@ -47,6 +47,7 @@
 		"modernui": "*"
 	},
 	"suggests": {
-		"axiom": "*"
+		"axiom": "*",
+		"bettercommandblockui": "*"
 	}
 }
