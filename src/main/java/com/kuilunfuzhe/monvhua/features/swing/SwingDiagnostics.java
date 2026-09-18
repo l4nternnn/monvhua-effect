@@ -26,7 +26,7 @@ public final class SwingDiagnostics {
 
     public void failed(ServerWorld world, BlockPos pivot) {
         log("NO_MATCH rejectedChecks=" + rejected + " distinctDetails=" + failures.size()
-                + " (max 40). Current search requires symmetric integer offsets from clicked block, same plane and a single seat row.");
+                + " (max 40). Search supports widths 2-7 and lengths 2-20, with two suspension columns and a continuous seat row.");
         int count = 0;
         // Include the neighboring planes: this exposes a seat/backrest offset from its chains.
         for (BlockPos p : BlockPos.iterate(pivot.add(-5, -21, -5), pivot.add(5, 0, 5))) {

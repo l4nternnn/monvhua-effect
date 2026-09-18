@@ -1,15 +1,30 @@
 package com.kuilunfuzhe.monvhua.features.swing;
 
-import com.mojang.serialization.Codec;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.util.math.BlockPos;
 import java.util.List;
 import net.minecraft.util.math.Box;
 
-public record SwingStructure(List<SwingBlock> blocks) {
+public final class SwingStructure {
     public static final int MAX_BLOCKS = 512;
-    public SwingStructure { blocks = List.copyOf(blocks); }
+    private final List<SwingBlock> blocks;
+    private final SwingBlockWorld blockWorld;
+    private List<Box> cachedCollisions;
+    private List<Box> cachedSeats;
+    private List<Box> cachedSlots;
+    private SwingStructureSpace.Geometry geometry;
+
+    public SwingStructure(List<SwingBlock> blocks) {
+        this.blocks = List.copyOf(blocks);
+        this.blockWorld = new SwingBlockWorld(this.blocks);
+    }
+    public List<SwingBlock> blocks() { return blocks; }
+    public SwingBlockWorld blockWorld() { return blockWorld; }
+    public SwingStructureSpace.Geometry geometry() {
+        if (geometry == null) geometry = new SwingStructureSpace.Geometry(this);
+        return geometry;
+    }
     public List<SwingBlock> seatBlocks() { return blocks.stream().filter(b -> SwingBlockRoles.seat(b.state())).toList(); }
     public List<SwingBlock> backrestBlocks() { return blocks.stream().filter(b -> SwingBlockRoles.backrest(b.state()) && !SwingBlockRoles.seat(b.state())).toList(); }
     public Box localBounds() {
@@ -32,24 +47,27 @@ public record SwingStructure(List<SwingBlock> blocks) {
     }
     /** Shapes use the same block-center origin as the renderer. Only the lowest seat row is rideable. */
     public List<Box> seatShapes() {
+        if (cachedSeats != null) return cachedSeats;
         int bottom = seatBlocks().stream().mapToInt(b -> b.localPos().getY()).min().orElse(Integer.MIN_VALUE);
-        return seatBlocks().stream().filter(b -> b.localPos().getY() == bottom).flatMap(b ->
-                b.state().getOutlineShape(net.minecraft.world.EmptyBlockView.INSTANCE, b.localPos()).getBoundingBoxes().stream()
+        return cachedSeats = seatBlocks().stream().filter(b -> b.localPos().getY() == bottom).flatMap(b ->
+                b.state().getOutlineShape(blockWorld, b.localPos()).getBoundingBoxes().stream()
                         .map(box -> box.offset(b.localPos().getX() - .5, b.localPos().getY() - .5, b.localPos().getZ() - .5))).toList();
     }
     /** Per-block collision shapes in the same local coordinate system used by rendering. */
     public List<Box> collisionShapes() {
-        return blocks.stream().flatMap(b -> b.state()
-                .getCollisionShape(net.minecraft.world.EmptyBlockView.INSTANCE, b.localPos())
+        if (cachedCollisions != null) return cachedCollisions;
+        return cachedCollisions = blocks.stream().flatMap(b -> b.state()
+                .getCollisionShape(blockWorld, b.localPos())
                 .getBoundingBoxes().stream()
                 .map(box -> box.offset(b.localPos().getX() - .5, b.localPos().getY() - .5, b.localPos().getZ() - .5)))
                 .toList();
     }
     /** One stable rideable slot per seat block in the lowest seat row. */
     public List<Box> seatSlots() {
+        if (cachedSlots != null) return cachedSlots;
         int bottom = seatBlocks().stream().mapToInt(b -> b.localPos().getY()).min().orElse(Integer.MIN_VALUE);
-        return seatBlocks().stream().filter(b -> b.localPos().getY() == bottom).map(b ->
-                b.state().getOutlineShape(net.minecraft.world.EmptyBlockView.INSTANCE, b.localPos()).getBoundingBoxes().stream()
+        return cachedSlots = seatBlocks().stream().filter(b -> b.localPos().getY() == bottom).map(b ->
+                b.state().getOutlineShape(blockWorld, b.localPos()).getBoundingBoxes().stream()
                         .map(box -> box.offset(b.localPos().getX() - .5, b.localPos().getY() - .5, b.localPos().getZ() - .5))
                         .reduce(Box::union).orElse(null)).filter(java.util.Objects::nonNull).toList();
     }

@@ -24,16 +24,28 @@ public abstract class SwingCrosshairTargetMixin {
         Vec3d start = client.player.getEyePos();
         double reach = client.player.getEntityInteractionRange();
         Vec3d end = start.add(client.player.getRotationVec(tickProgress).multiply(reach));
+        // Vanilla may select the large broad-phase box, including empty space between chains.
+        if (client.crosshairTarget instanceof EntityHitResult old && old.getEntity() instanceof SwingEntity) {
+            client.crosshairTarget = client.player.raycast(client.player.getBlockInteractionRange(), tickProgress, false);
+            client.targetedEntity = null;
+            double maxDistance = Math.min(reach * reach, start.squaredDistanceTo(client.crosshairTarget.getPos()));
+            var other = net.minecraft.entity.projectile.ProjectileUtil.raycast(client.player, start, end,
+                    new Box(start, end).expand(1), entity -> !(entity instanceof SwingEntity) && entity.canHit() && !entity.isSpectator(), maxDistance);
+            if (other != null) {
+                client.crosshairTarget = other;
+                client.targetedEntity = other.getEntity();
+            }
+        }
         SwingEntity selected = null;
         Vec3d selectedHit = null;
         double best = Double.POSITIVE_INFINITY;
         for (SwingEntity swing : SwingSpatialIndex.find(client.world, new Box(start, end).expand(0.5))) {
-            var hit = swing.raycastSeat(start, end, tickProgress);
+            var hit = swing.raycastStructure(start, end, tickProgress);
             if (hit.isEmpty()) continue;
-            double distance = start.squaredDistanceTo(hit.get());
+            double distance = start.squaredDistanceTo(hit.get().worldPoint());
             if (distance < best) {
                 selected = swing;
-                selectedHit = hit.get();
+                selectedHit = hit.get().worldPoint();
                 best = distance;
             }
         }

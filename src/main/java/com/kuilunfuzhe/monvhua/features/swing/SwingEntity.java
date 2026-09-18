@@ -33,23 +33,28 @@ public class SwingEntity extends Entity {
     private static final float AIR_DAMPING = 0.992f;
     private static final float INPUT_ACCELERATION = 0.0045f;
     private static final float CLIENT_CORRECTION = 0.2f;
-    private static final int CLIENT_PREDICTION_TICKS = 5;
     private static final double COLLISION_EPSILON = 0.015;
-    private static final double COLLISION_CELL_SIZE = 0.25;
     private static final TrackedData<Float> ANGLE = DataTracker.registerData(SwingEntity.class, TrackedDataHandlerRegistry.FLOAT);
     private static final TrackedData<Float> VELOCITY = DataTracker.registerData(SwingEntity.class, TrackedDataHandlerRegistry.FLOAT);
     private static final TrackedData<Boolean> Z_AXIS = DataTracker.registerData(SwingEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
     private static final TrackedData<Integer> INPUT_SIGN = DataTracker.registerData(SwingEntity.class, TrackedDataHandlerRegistry.INTEGER);
     private static final TrackedData<NbtCompound> STRUCTURE = DataTracker.registerData(SwingEntity.class, TrackedDataHandlerRegistry.NBT_COMPOUND);
     private static final TrackedData<NbtCompound> SEATS = DataTracker.registerData(SwingEntity.class, TrackedDataHandlerRegistry.NBT_COMPOUND);
+    private static final TrackedData<NbtCompound> MOTION = DataTracker.registerData(SwingEntity.class, TrackedDataHandlerRegistry.NBT_COMPOUND);
     private SwingStructure structure = new SwingStructure(java.util.List.of());
     private float previousAngle;
     private float renderAngle;
     private float renderPreviousAngle;
     private boolean renderAngleInitialized;
-    private int clientSnapshotAge;
+    private final SwingMotionTimeline motionTimeline = new SwingMotionTimeline();
+    private final java.util.ArrayDeque<SwingMotionTimeline.Snapshot> interactionHistory = new java.util.ArrayDeque<>();
     private final Map<java.util.UUID, Integer> passengerSeats = new HashMap<>();
-    private java.util.List<Box> collisionShapes = java.util.List.of();
+    private Entity platformPassenger;
+    private SwingStructureSpace collisionPose;
+    private java.util.List<Box> collisionBoxes = java.util.List.of();
+    private long collisionBuilds;
+    public long collisionBuilds() { return collisionBuilds; }
+    public int cachedCollisionBoxCount() { return collisionBoxes.size(); }
 
     public SwingEntity(EntityType<? extends SwingEntity> type, World world) { super(type, world); noClip = true; }
     public SwingEntity(World world, Vec3d pivot, SwingStructure structure, boolean zAxis) {
@@ -58,7 +63,7 @@ public class SwingEntity extends Entity {
     public SwingEntity(World world, Vec3d pivot, SwingStructure structure, boolean zAxis, int inputSign) {
         this(ModEntities.SWING, world); setPosition(pivot); this.structure = structure; dataTracker.set(Z_AXIS, zAxis); dataTracker.set(INPUT_SIGN, inputSign < 0 ? -1 : 1); syncStructure(); refreshStructureBounds();
     }
-    @Override protected void initDataTracker(DataTracker.Builder b) { b.add(ANGLE, 0f); b.add(VELOCITY, 0f); b.add(Z_AXIS, false); b.add(INPUT_SIGN, 1); b.add(STRUCTURE, new NbtCompound()); b.add(SEATS, new NbtCompound()); }
+    @Override protected void initDataTracker(DataTracker.Builder b) { b.add(ANGLE, 0f); b.add(VELOCITY, 0f); b.add(Z_AXIS, false); b.add(INPUT_SIGN, 1); b.add(STRUCTURE, new NbtCompound()); b.add(SEATS, new NbtCompound()); b.add(MOTION, new NbtCompound()); }
     private void syncSeats() {
         var n = new NbtCompound();
         passengerSeats.forEach((id, seat) -> n.putInt(id.toString(), seat));
@@ -70,7 +75,6 @@ public class SwingEntity extends Entity {
     }
     public SwingStructure structure() { return structure; }
     private void syncStructure() {
-        collisionShapes = structure.collisionShapes();
         var n = new NbtCompound();
         n.putLongArray("P", structure.packedPositions().stream().mapToLong(Long::longValue).toArray());
         n.putIntArray("S", structure.stateIds().stream().mapToInt(Integer::intValue).toArray());
@@ -79,7 +83,16 @@ public class SwingEntity extends Entity {
     }
     @Override public void onTrackedDataSet(TrackedData<?> data) {
         super.onTrackedDataSet(data);
-        if ((data == ANGLE || data == VELOCITY) && getWorld().isClient()) clientSnapshotAge = 0;
+        if (data == MOTION && getWorld().isClient()) {
+            var snapshot = dataTracker.get(MOTION);
+            float a = snapshot.getFloat("Angle").orElse(0f);
+            motionTimeline.accept(snapshot.getLong("Tick").orElse(0L), a,
+                    snapshot.getFloat("Velocity").orElse(0f), age);
+            if (Math.abs(a - renderAngle) > 1f) {
+                renderAngle = a;
+                renderPreviousAngle = a;
+            }
+        }
         if (data == SEATS && getWorld().isClient()) {
             passengerSeats.clear();
             var n = dataTracker.get(SEATS);
@@ -89,9 +102,11 @@ public class SwingEntity extends Entity {
             }
         }
         if (data == STRUCTURE) {
+            renderAngleInitialized = false;
+            motionTimeline.clear();
+            interactionHistory.clear();
             var n = dataTracker.get(STRUCTURE);
             structure = SwingStructure.fromPacked(java.util.Arrays.stream(n.getLongArray("P").orElse(new long[0])).boxed().toList(), java.util.Arrays.stream(n.getIntArray("S").orElse(new int[0])).boxed().toList());
-            collisionShapes = structure.collisionShapes();
             refreshStructureBounds();
             SwingSpatialIndex.register(this);
             com.kuilunfuzhe.monvhua.MonvhuaMod.LOGGER.info("[SwingDiag] STRUCTURE_RECEIVED side={} uuid={} blocks={} pos={} bounds={}",
@@ -109,28 +124,41 @@ public class SwingEntity extends Entity {
         return MathHelper.lerp(tickDelta, renderPreviousAngle, renderAngle);
     }
     public boolean zAxis() { return dataTracker.get(Z_AXIS); }
+    public SwingStructureSpace space(float tickDelta) {
+        return new SwingStructureSpace(structure, getPos(), angle(tickDelta), zAxis());
+    }
+    public boolean ignoresCollision(Entity entity) { return entity.getVehicle() == this || entity == platformPassenger; }
     public java.util.List<VoxelShape> worldCollisionShapes() {
         return worldCollisionShapes(null);
     }
     public java.util.List<VoxelShape> worldCollisionShapes(Box query) {
-        float angle = getWorld().isClient() ? angle(1.0f) : dataTracker.get(ANGLE);
-        java.util.ArrayList<VoxelShape> result = new java.util.ArrayList<>();
-        for (Box local : collisionShapes) {
-            for (Box cell : collisionCells(local)) {
-                Box world = transformedBounds(cell, angle);
-                if (query == null || world.intersects(query)) result.add(VoxelShapes.cuboid(world));
-            }
+        SwingStructureSpace pose = space(1);
+        if (!pose.equals(collisionPose)) {
+            collisionPose = pose;
+            collisionBoxes = pose.collisionBoxes(null);
+            collisionBuilds++;
         }
-        return result;
+        return collisionBoxes.stream().filter(box -> query == null || box.intersects(query)).map(VoxelShapes::cuboid).toList();
+    }
+    public Optional<SwingStructureSpace.Hit> raycastStructure(Vec3d start, Vec3d end, float tickDelta) {
+        return space(tickDelta).raycast(start, end);
+    }
+    private Optional<SwingStructureSpace.Hit> interactionHit(Vec3d start, Vec3d end) {
+        var current = raycastStructure(start, end, 1);
+        if (current.isPresent() || getWorld().isClient()) return current;
+        // The client displays a buffered server pose. Recheck the same in-range ray against
+        // recent authoritative poses; client-supplied positions never authorize a hit.
+        var recent = interactionHistory.descendingIterator();
+        while (recent.hasNext()) {
+            var sample = recent.next();
+            if (getWorld().getTime() - sample.tick() > 8) continue;
+            var hit = new SwingStructureSpace(structure, getPos(), sample.angle(), zAxis()).raycast(start, end);
+            if (hit.isPresent()) return hit;
+        }
+        return Optional.empty();
     }
     public Optional<Vec3d> raycastSeat(Vec3d start, Vec3d end, float tickDelta) {
-        float angle = getWorld().isClient() ? angle(tickDelta) : dataTracker.get(ANGLE);
-        Vec3d localStart = SwingTransform.rotate(start.subtract(getPos()), -angle, zAxis());
-        Vec3d localEnd = SwingTransform.rotate(end.subtract(getPos()), -angle, zAxis());
-        return structure.seatSlots().stream()
-                .flatMap(box -> box.raycast(localStart, localEnd).stream())
-                .min(Comparator.comparingDouble(localStart::squaredDistanceTo))
-                .map(hit -> SwingTransform.localToWorld(hit, getPos(), angle, zAxis()));
+        return raycastStructure(start, end, tickDelta).filter(hit -> hit.seat() >= 0).map(SwingStructureSpace.Hit::worldPoint);
     }
     @Override public boolean canHit() { return !isRemoved() && !structure.blocks().isEmpty(); }
     public boolean isSeatPoint(Vec3d worldPoint) {
@@ -140,7 +168,9 @@ public class SwingEntity extends Entity {
     private void refreshStructureBounds() {
         setBoundingBox(calculateStructureBounds());
     }
-    public Box structureBounds() { return getBoundingBox(); }
+    public Box structureBounds() {
+        return getWorld().isClient() ? space(0).bounds().union(space(1).bounds()) : getBoundingBox();
+    }
     @Override public void setPosition(double x, double y, double z) {
         super.setPosition(x, y, z);
         refreshStructureBounds();
@@ -152,12 +182,7 @@ public class SwingEntity extends Entity {
     private Box calculateStructureBounds() {
         // Entity's constructor calls this before our fields and tracked data exist.
         if (structure == null || structure.blocks().isEmpty()) return new Box(getX(), getY(), getZ(), getX(), getY(), getZ());
-        Box b = structure.localBounds();
-        Vec3d[] corners = new Vec3d[8]; int i=0;
-        for (double x : new double[]{b.minX,b.maxX}) for (double y : new double[]{b.minY,b.maxY}) for (double z : new double[]{b.minZ,b.maxZ}) corners[i++]=SwingTransform.rotate(new Vec3d(x,y,z), dataTracker.get(ANGLE), zAxis());
-        double minX=Double.POSITIVE_INFINITY,minY=Double.POSITIVE_INFINITY,minZ=Double.POSITIVE_INFINITY,maxX=Double.NEGATIVE_INFINITY,maxY=Double.NEGATIVE_INFINITY,maxZ=Double.NEGATIVE_INFINITY;
-        for (Vec3d p: corners) { minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); minZ=Math.min(minZ,p.z); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); maxZ=Math.max(maxZ,p.z); }
-        return new Box(getX()+minX,getY()+minY,getZ()+minZ,getX()+maxX,getY()+maxY,getZ()+maxZ);
+        return space(1).bounds();
     }
 
     public void addImpulse(float amount) { dataTracker.set(VELOCITY, MathHelper.clamp(dataTracker.get(VELOCITY) + amount, -.12f, .12f)); }
@@ -171,12 +196,11 @@ public class SwingEntity extends Entity {
                 renderAngleInitialized = true;
             }
             renderPreviousAngle = renderAngle;
-            int predictionTicks = Math.min(++clientSnapshotAge, CLIENT_PREDICTION_TICKS);
-            float target = MathHelper.clamp(dataTracker.get(ANGLE) + dataTracker.get(VELOCITY) * predictionTicks,
-                    -MAX_SWING_ANGLE, MAX_SWING_ANGLE);
-            float predicted = MathHelper.clamp(renderAngle + dataTracker.get(VELOCITY), -MAX_SWING_ANGLE, MAX_SWING_ANGLE);
-            // Continue locally between server snapshots, then converge gently when a snapshot arrives.
+            float target = motionTimeline.sample(age, dataTracker.get(ANGLE));
+            float previousTarget = motionTimeline.sample(age - 1, dataTracker.get(ANGLE));
+            float predicted = MathHelper.clamp(renderAngle + target - previousTarget, -MAX_SWING_ANGLE, MAX_SWING_ANGLE);
             renderAngle = MathHelper.lerp(CLIENT_CORRECTION, predicted, target);
+            carryStandingPlayers(space(0).bounds().union(space(1).bounds()), renderPreviousAngle, renderAngle);
         }
         if (!getWorld().isClient) {
             Box previousBounds = getBoundingBox();
@@ -205,11 +229,19 @@ public class SwingEntity extends Entity {
                 v *= -.25f;
             }
             dataTracker.set(ANGLE, a); dataTracker.set(VELOCITY, v);
+            var snapshot = new NbtCompound();
+            snapshot.putLong("Tick", getWorld().getTime());
+            snapshot.putFloat("Angle", a);
+            snapshot.putFloat("Velocity", v);
+            dataTracker.set(MOTION, snapshot);
+            interactionHistory.addLast(new SwingMotionTimeline.Snapshot(getWorld().getTime(), a, v));
+            while (interactionHistory.size() > 9) interactionHistory.removeFirst();
             refreshStructureBounds();
-            carryStandingPlayers(previousBounds.union(getBoundingBox()), previousAngle, a);
-            pushIntersectingPlayers(previousBounds.union(getBoundingBox()), previousAngle, a);
+            var supported = carryStandingPlayers(previousBounds.union(getBoundingBox()), previousAngle, a);
+            pushIntersectingPlayers(previousBounds.union(getBoundingBox()), previousAngle, a, supported);
         }
         refreshStructureBounds();
+        SwingSpatialIndex.register(this);
     }
     @Override protected void updatePassengerPosition(Entity passenger, PositionUpdater updater) {
         var slots = structure.seatSlots();
@@ -224,8 +256,7 @@ public class SwingEntity extends Entity {
             syncSeats();
         }
         Box bounds = slots.get(index);
-        float seatAngle = getWorld().isClient() ? angle(1f) : dataTracker.get(ANGLE);
-        Vec3d seat = SwingTransform.localToWorld(new Vec3d((bounds.minX + bounds.maxX) / 2, bounds.maxY + SEAT_HEIGHT_OFFSET, (bounds.minZ + bounds.maxZ) / 2), getPos(), seatAngle, zAxis());
+        Vec3d seat = space(1).toWorld(new Vec3d((bounds.minX + bounds.maxX) / 2, bounds.maxY + SEAT_HEIGHT_OFFSET, (bounds.minZ + bounds.maxZ) / 2));
         updater.accept(passenger, seat.x, seat.y, seat.z);
     }
     @Override public Vec3d updatePassengerForDismount(net.minecraft.entity.LivingEntity passenger) {
@@ -260,23 +291,19 @@ public class SwingEntity extends Entity {
         Vec3d selectedHit = null;
         double best = Double.POSITIVE_INFINITY;
         for (SwingEntity swing : SwingSpatialIndex.find(observer.getWorld(), new Box(start, end).expand(1.0))) {
-            Vec3d localStart = SwingTransform.rotate(start.subtract(swing.getPos()), -swing.dataTracker.get(ANGLE), swing.zAxis());
-            Vec3d localEnd = SwingTransform.rotate(end.subtract(swing.getPos()), -swing.dataTracker.get(ANGLE), swing.zAxis());
-            var slots = swing.structure.seatSlots();
-            for (int i = 0; i < slots.size(); i++) {
-                Optional<Vec3d> candidate = slots.get(i).raycast(localStart, localEnd);
-                if (candidate.isEmpty()) continue;
-                Vec3d worldHit = SwingTransform.localToWorld(candidate.get(), swing.getPos(), swing.dataTracker.get(ANGLE), swing.zAxis());
+            var candidate = swing.interactionHit(start, end);
+            if (candidate.isPresent()) {
+                Vec3d worldHit = candidate.get().worldPoint();
                 double distance = start.squaredDistanceTo(worldHit);
                 if (distance < best) {
                     best = distance;
                     selectedSwing = swing;
-                    selectedSeat = i;
+                    selectedSeat = candidate.get().seat();
                     selectedHit = worldHit;
                 }
             }
         }
-        if (selectedSwing == null || selectedHit == null) return false;
+        if (selectedSwing == null || selectedHit == null || selectedSeat < 0) return false;
         var obstruction = observer.getWorld().raycast(new net.minecraft.world.RaycastContext(start, selectedHit,
                 net.minecraft.world.RaycastContext.ShapeType.OUTLINE, net.minecraft.world.RaycastContext.FluidHandling.NONE, observer));
         if (obstruction.getType() != net.minecraft.util.hit.HitResult.Type.MISS
@@ -284,18 +311,18 @@ public class SwingEntity extends Entity {
         return selectedSwing.mountAtSeat(passenger, selectedSeat);
     }
 
-    private void pushIntersectingPlayers(Box sweptBounds, float fromAngle, float toAngle) {
+    private void pushIntersectingPlayers(Box sweptBounds, float fromAngle, float toAngle, java.util.Set<java.util.UUID> supported) {
         if (!(getWorld() instanceof ServerWorld world) || structure.blocks().isEmpty()) return;
         double radius = Math.max(1.0, -structure.localBounds().minY);
         int steps = MathHelper.clamp((int) Math.ceil(Math.abs(toAngle - fromAngle) * radius / .35), 1, 12);
         for (PlayerEntity player : world.getEntitiesByClass(PlayerEntity.class, sweptBounds.expand(.25),
                 player -> player.isAlive() && player.getVehicle() != this && !player.isSpectator())) {
             Box playerBox = player.getBoundingBox();
-            for (int step = 1; step <= steps; step++) {
+            // A carried standing player is already at the final pose. Earlier sweep samples
+            // must not push them backwards into the old platform position.
+            for (int step = supported.contains(player.getUuid()) ? steps : 1; step <= steps; step++) {
                 float angle = MathHelper.lerp(step / (float) steps, fromAngle, toAngle);
-                for (Box local : collisionShapes) {
-                    for (Box cell : collisionCells(local)) {
-                        Box shape = transformedBounds(cell, angle);
+                for (Box shape : new SwingStructureSpace(structure, getPos(), angle, zAxis()).collisionBoxes(playerBox.expand(.5))) {
                         if (!shape.intersects(playerBox)) continue;
                         for (Vec3d correction : separations(playerBox, shape)) {
                             Box moved = playerBox.offset(correction);
@@ -308,70 +335,42 @@ public class SwingEntity extends Entity {
                             playerBox = moved;
                             break;
                         }
-                    }
                 }
             }
         }
     }
 
-    private void carryStandingPlayers(Box sweptBounds, float fromAngle, float toAngle) {
-        if (!(getWorld() instanceof ServerWorld world) || Math.abs(toAngle - fromAngle) < 1.0e-6) return;
-        for (PlayerEntity player : world.getEntitiesByClass(PlayerEntity.class, sweptBounds.expand(.25),
-                player -> player.isAlive() && player.getVehicle() != this && !player.isSpectator())) {
+    private java.util.Set<java.util.UUID> carryStandingPlayers(Box sweptBounds, float fromAngle, float toAngle) {
+        java.util.Set<java.util.UUID> carried = new java.util.HashSet<>();
+        if (Math.abs(toAngle - fromAngle) < 1.0e-6) return carried;
+        for (PlayerEntity player : getWorld().getEntitiesByClass(PlayerEntity.class, sweptBounds.expand(.25),
+                player -> player.isAlive() && !player.hasVehicle() && !player.isSpectator()
+                        && (!getWorld().isClient() || player.isMainPlayer()))) {
+            if (player.getVelocity().y > .1) continue;
             Box playerBox = player.getBoundingBox();
             Vec3d feet = new Vec3d((playerBox.minX + playerBox.maxX) * .5, playerBox.minY,
                     (playerBox.minZ + playerBox.maxZ) * .5);
             boolean supported = false;
-            outer:
-            for (Box local : collisionShapes) {
-                for (Box cell : collisionCells(local)) {
-                    Box oldShape = transformedBounds(cell, fromAngle);
+            for (Box oldShape : new SwingStructureSpace(structure, getPos(), fromAngle, zAxis()).collisionBoxes(playerBox.expand(.2))) {
                     if (feet.y < oldShape.maxY - .08 || feet.y > oldShape.maxY + .16) continue;
                     if (playerBox.maxX <= oldShape.minX || playerBox.minX >= oldShape.maxX
                             || playerBox.maxZ <= oldShape.minZ || playerBox.minZ >= oldShape.maxZ) continue;
                     supported = true;
-                    break outer;
-                }
+                    break;
             }
             if (!supported) continue;
             Vec3d localFeet = SwingTransform.rotate(feet.subtract(getPos()), -fromAngle, zAxis());
             Vec3d movedFeet = SwingTransform.localToWorld(localFeet, getPos(), toAngle, zAxis());
-            player.move(MovementType.SHULKER_BOX, movedFeet.subtract(feet));
+            platformPassenger = player;
+            try {
+                player.move(MovementType.SHULKER_BOX, movedFeet.subtract(feet));
+            } finally {
+                platformPassenger = null;
+            }
             player.fallDistance = 0;
+            carried.add(player.getUuid());
         }
-    }
-
-    private java.util.List<Box> collisionCells(Box box) {
-        int xParts = zAxis() ? parts(box.getLengthX()) : 1;
-        int yParts = parts(box.getLengthY());
-        int zParts = zAxis() ? 1 : parts(box.getLengthZ());
-        if (xParts == 1 && yParts == 1 && zParts == 1) return java.util.List.of(box);
-        java.util.ArrayList<Box> cells = new java.util.ArrayList<>(xParts * yParts * zParts);
-        for (int x = 0; x < xParts; x++) for (int y = 0; y < yParts; y++) for (int z = 0; z < zParts; z++) {
-            cells.add(new Box(
-                    MathHelper.lerp(x / (double) xParts, box.minX, box.maxX),
-                    MathHelper.lerp(y / (double) yParts, box.minY, box.maxY),
-                    MathHelper.lerp(z / (double) zParts, box.minZ, box.maxZ),
-                    MathHelper.lerp((x + 1) / (double) xParts, box.minX, box.maxX),
-                    MathHelper.lerp((y + 1) / (double) yParts, box.minY, box.maxY),
-                    MathHelper.lerp((z + 1) / (double) zParts, box.minZ, box.maxZ)));
-        }
-        return cells;
-    }
-
-    private static int parts(double length) {
-        return Math.max(1, (int) Math.ceil(length / COLLISION_CELL_SIZE));
-    }
-
-    private Box transformedBounds(Box local, float angle) {
-        double minX=Double.POSITIVE_INFINITY,minY=Double.POSITIVE_INFINITY,minZ=Double.POSITIVE_INFINITY;
-        double maxX=Double.NEGATIVE_INFINITY,maxY=Double.NEGATIVE_INFINITY,maxZ=Double.NEGATIVE_INFINITY;
-        for (double x : new double[]{local.minX, local.maxX}) for (double y : new double[]{local.minY, local.maxY}) for (double z : new double[]{local.minZ, local.maxZ}) {
-            Vec3d p = SwingTransform.localToWorld(new Vec3d(x, y, z), getPos(), angle, zAxis());
-            minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); minZ=Math.min(minZ,p.z);
-            maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); maxZ=Math.max(maxZ,p.z);
-        }
-        return new Box(minX,minY,minZ,maxX,maxY,maxZ);
+        return carried;
     }
 
     private static java.util.List<Vec3d> separations(Box entity, Box obstacle) {
@@ -399,25 +398,12 @@ public class SwingEntity extends Entity {
         if (hand != Hand.MAIN_HAND || player.isSpectator()) return ActionResult.PASS;
         Vec3d start = player.getEyePos();
         Vec3d end = start.add(player.getRotationVec(1.0f).multiply(player.getEntityInteractionRange()));
-        Vec3d localStart = SwingTransform.rotate(start.subtract(getPos()), -dataTracker.get(ANGLE), zAxis());
-        Vec3d localEnd = SwingTransform.rotate(end.subtract(getPos()), -dataTracker.get(ANGLE), zAxis());
-        Vec3d localHit = null;
-        int seat = -1;
-        double bestDistance = Double.POSITIVE_INFINITY;
+        var selection = interactionHit(start, end);
+        if (selection.isEmpty() || selection.get().seat() < 0) return ActionResult.PASS;
+        Vec3d localHit = selection.get().localPoint();
+        int seat = selection.get().seat();
         var slots = structure.seatSlots();
-        for (int i = 0; i < slots.size(); i++) {
-            var candidate = slots.get(i).raycast(localStart, localEnd);
-            if (candidate.isPresent()) {
-                double distance = localStart.squaredDistanceTo(candidate.get());
-                if (distance < bestDistance) {
-                    bestDistance = distance;
-                    localHit = candidate.get();
-                    seat = i;
-                }
-            }
-        }
-        java.util.Optional<Vec3d> hit = localHit == null ? java.util.Optional.empty()
-                : java.util.Optional.of(SwingTransform.localToWorld(localHit, getPos(), dataTracker.get(ANGLE), zAxis()));
+        java.util.Optional<Vec3d> hit = java.util.Optional.of(selection.get().worldPoint());
         com.kuilunfuzhe.monvhua.MonvhuaMod.LOGGER.info("[SwingDiag] SEAT_RAY uuid={} eye={} end={} hit={} accepted={} angle={}",
                 getUuid(), start, end, hit, hit.isPresent(), dataTracker.get(ANGLE));
         if (hit.isEmpty()) return ActionResult.PASS;
@@ -482,6 +468,7 @@ public class SwingEntity extends Entity {
     @Override public boolean damage(ServerWorld world, net.minecraft.entity.damage.DamageSource source, float amount) {
         Entity attacker = source.getAttacker();
         if (!(attacker instanceof PlayerEntity player) || !player.getMainHandStack().isOf(SwingAssemblyItems.ASSEMBLE_STICK)) return false;
+        if (!canPlayerReachStructure(player)) return false;
         removeAllPassengers(); restoreStructure(); discard(); return true;
     }
     @Override public ActionResult interactAt(PlayerEntity player, Vec3d hitPos, Hand hand) {
@@ -491,6 +478,17 @@ public class SwingEntity extends Entity {
         Vec3d start = player.getEyePos();
         Vec3d end = start.add(player.getRotationVec(1.0f).multiply(player.getEntityInteractionRange()));
         return raycastSeat(start, end, 1.0f).isPresent();
+    }
+    public boolean canPlayerReachStructure(PlayerEntity player) {
+        if (player.isSpectator()) return false;
+        Vec3d start = player.getEyePos();
+        Vec3d end = start.add(player.getRotationVec(1).multiply(player.getEntityInteractionRange()));
+        var hit = interactionHit(start, end);
+        if (hit.isEmpty()) return false;
+        var obstruction = getWorld().raycast(new net.minecraft.world.RaycastContext(start, hit.get().worldPoint(),
+                net.minecraft.world.RaycastContext.ShapeType.OUTLINE, net.minecraft.world.RaycastContext.FluidHandling.NONE, player));
+        return obstruction.getType() == net.minecraft.util.hit.HitResult.Type.MISS
+                || start.squaredDistanceTo(obstruction.getPos()) + 1.0e-6 >= start.squaredDistanceTo(hit.get().worldPoint());
     }
     @Override public void remove(RemovalReason reason) {
         SwingSpatialIndex.unregister(this);

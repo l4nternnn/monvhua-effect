@@ -45,6 +45,7 @@ public final class GravityClient {
     public static void initialize() {
         EntityRendererRegistry.register(ModEntities.GRAVITY_BLOCK, GravityBlockEntityRenderer::new);
         EntityRendererRegistry.register(ModEntities.SWING, SwingEntityRenderer::new);
+        com.kuilunfuzhe.monvhua.features.swing.SwingStructureRenderer.initialize();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (!scrollCallbackRegistered && client.getWindow() != null) {
                 registerScrollCallback(client);

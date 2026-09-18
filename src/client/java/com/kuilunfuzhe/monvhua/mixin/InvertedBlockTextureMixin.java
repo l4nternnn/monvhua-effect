@@ -25,6 +25,8 @@ public abstract class InvertedBlockTextureMixin {
             ordinal = 0
     )
     private VertexConsumer monvhua$flipInvertedAreaBlockTextures(VertexConsumer vertexConsumer, BlockRenderView world, List<BlockModelPart> parts, BlockState state, BlockPos pos, MatrixStack matrices) {
+        // Local structure coordinates must not be interpreted as positions near world origin.
+        if (world instanceof com.kuilunfuzhe.monvhua.features.swing.SwingRenderWorld) return vertexConsumer;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null || !InvertedBlockContext.shouldMirror(client.world.getRegistryKey(), world, pos, state)) {
             return vertexConsumer;
