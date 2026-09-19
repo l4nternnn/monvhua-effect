@@ -55,6 +55,8 @@ import com.kuilunfuzhe.monvhua.register.BodyBlockModelRegister;
 import com.kuilunfuzhe.monvhua.register.ClientPacketHandler;
 import com.kuilunfuzhe.monvhua.register.imitate.ImitateClientPacketHandler;
 import com.kuilunfuzhe.monvhua.renderer.bodypose.skeletal.BodyPoseSkeletalPreviewRenderer;
+import com.kuilunfuzhe.monvhua.renderer.commandpanel.CommandPanelItemRenderer;
+import com.kuilunfuzhe.monvhua.client.commandpanel.CommandPanelItemUiState;
 import com.kuilunfuzhe.monvhua.screen.ModScreenHandlers;
 import com.kuilunfuzhe.monvhua.fantasy.FantasyClientHandler;
 import com.kuilunfuzhe.monvhua.fantasy.FantasyRenderer;
@@ -108,10 +110,15 @@ public class MonvhuaModClient implements ClientModInitializer {
     public void onInitializeClient() {
         UseItemCallback.EVENT.register((player, world, hand) -> {
             if (world.isClient() && player.getStackInHand(hand).isOf(CommandPanelItems.COMMAND_PANEL)) {
+                if (hand == Hand.MAIN_HAND && player.isSneaking()) {
+                    CommandPanelItemUiState.toggle();
+                    CommandPanelItemUiState.trigger(player, "press");
+                    return ActionResult.CONSUME;
+                }
                 net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
                 if (com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelSyncManager.pending() != null) client.setScreen(new com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelSyncConfirmScreen());
                 else client.setScreen(new com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelScreen());
-                return ActionResult.SUCCESS;
+                return ActionResult.CONSUME;
             }
             return ActionResult.PASS;
         });
@@ -158,6 +165,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         WorldRenderHandler.register();
         mirrorHUD.register();
         BodyBlockModelRegister.register();
+        CommandPanelItemRenderer.register();
         CarryTransformDebugCommand.register();
         PlayerPaintCommand.register();
 

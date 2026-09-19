@@ -19,6 +19,8 @@ public class KeyBindingHandler {
     public static KeyBinding actionEditorKey;
     /** 牵手触发键，默认鼠标中键；实际操作仍要求同时按住潜行键。 */
     public static KeyBinding holdHandsKey;
+    public static KeyBinding commandPanelPreviousKey;
+    public static KeyBinding commandPanelNextKey;
 
     /**
      * 注册按键绑定到Minecraft键位系统。
@@ -32,5 +34,9 @@ public class KeyBindingHandler {
         actionEditorKey = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.action_editor", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_J, "category.monvhua"));
         holdHandsKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.monvhua.hold_hands", InputUtil.Type.MOUSE, GLFW.GLFW_MOUSE_BUTTON_MIDDLE, "category.monvhua"));
+        commandPanelPreviousKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.monvhua.command_panel_previous", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_LEFT, "category.monvhua"));
+        commandPanelNextKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.monvhua.command_panel_next", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT, "category.monvhua"));
     }
 }

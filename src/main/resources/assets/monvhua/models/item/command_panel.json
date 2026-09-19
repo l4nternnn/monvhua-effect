@@ -1,4 +1,15 @@
 {
-  "parent": "minecraft:item/handheld",
-  "textures": { "layer0": "monvhua:item/command_panel" }
+  "parent": "monvhua:entity/switch",
+  "display": {
+    "firstperson_righthand": {
+      "rotation": [0, 0, 0],
+      "translation": [0, 0, 0],
+      "scale": [1, 1, 1]
+    },
+    "firstperson_lefthand": {
+      "rotation": [0, 0, 0],
+      "translation": [0, 0, 0],
+      "scale": [1, 1, 1]
+    }
+  }
 }

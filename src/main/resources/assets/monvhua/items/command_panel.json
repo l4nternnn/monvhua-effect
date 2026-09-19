@@ -1,6 +1,9 @@
 {
   "model": {
-    "type": "minecraft:model",
-    "model": "minecraft:item/carrot_on_a_stick"
+    "type": "minecraft:special",
+    "base": "monvhua:item/command_panel",
+    "model": {
+      "type": "geckolib:geckolib"
+    }
   }
 }

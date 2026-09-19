@@ -1,0 +1,53 @@
+{
+	"format_version": "1.8.0",
+	"animations": {
+		"right_switch": {
+			"loop": "hold_on_last_frame",
+			"animation_length": 0.75,
+			"bones": {
+				"button_right_right": {
+					"position": {
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
+						"0.75": {
+							"vector": [0, -0.175, 0]
+						}
+					}
+				}
+			}
+		},
+		"left_switch": {
+			"loop": "hold_on_last_frame",
+			"animation_length": 0.75,
+			"bones": {
+				"button_right_left": {
+					"position": {
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
+						"0.75": {
+							"vector": [0, -0.15, 0]
+						}
+					}
+				}
+			}
+		},
+		"press": {
+			"loop": "hold_on_last_frame",
+			"animation_length": 1,
+			"bones": {
+				"button_right_big": {
+					"position": {
+						"0.0": {
+							"vector": [0, 0, 0]
+						},
+						"1.0": {
+							"vector": [0, -0.45, 0]
+						}
+					}
+				}
+			}
+		}
+	}
+}

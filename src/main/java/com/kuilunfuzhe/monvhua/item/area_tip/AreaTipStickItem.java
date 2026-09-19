@@ -14,7 +14,9 @@ public class AreaTipStickItem extends Item {
 
     @Override
     public ActionResult use(World world, PlayerEntity user, Hand hand) {
-        return ActionResult.SUCCESS;
+        return ActionResult.
+                SUCCESS
+                ;
     }
 
     @Override

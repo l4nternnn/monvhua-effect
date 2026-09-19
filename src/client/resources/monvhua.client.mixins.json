@@ -61,6 +61,7 @@
 		"ThroughPhaseInputMixin",
 		"ThroughStalledMotionMixin",
 		"ThroughItemUsePriorityMixin",
+		"CommandPanelUseMixin",
 		"SpriteContentsAccessor",
 		"MouseMixin",
 		"PlayerEntityRenderStateAccessor",

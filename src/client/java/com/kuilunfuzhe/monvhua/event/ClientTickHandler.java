@@ -8,6 +8,7 @@ import com.kuilunfuzhe.monvhua.features.mirror.MirrorViewportRenderer;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
 import com.kuilunfuzhe.monvhua.features.through.ThroughClientManager;
 import com.kuilunfuzhe.monvhua.features.hold_hands.HoldHandsClientState;
+import com.kuilunfuzhe.monvhua.client.commandpanel.CommandPanelItemUiState;
 import com.kuilunfuzhe.monvhua.client.imitate.AreaSelectClientManager;
 import com.kuilunfuzhe.monvhua.gui.action.ActionEditorFragment;
 import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorFragment;
@@ -46,12 +47,25 @@ public class ClientTickHandler {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             HoldHandsClientState.tickInput(client);
             HoldHandsClientState.tickPrediction(client);
+            CommandPanelItemUiState.tick(client);
             UiActivityClient.tick(client);
             ThroughClientManager.tick();
             AreaSelectClientManager.tick(client);
             ActionEditorFragment.tickActive();
             BodyPoseEditorFragment.tickWorldPlacementOverlay(client);
             if (client.player == null) return;
+            if (KeyBindingHandler.commandPanelPreviousKey.wasPressed()
+                    && CommandPanelItemUiState.isVisible()
+                    && client.player.getMainHandStack().isOf(com.kuilunfuzhe.monvhua.item.commandpanel.CommandPanelItems.COMMAND_PANEL)) {
+                CommandPanelItemUiState.selectPrevious();
+                CommandPanelItemUiState.trigger(client.player, "left_switch");
+            }
+            if (KeyBindingHandler.commandPanelNextKey.wasPressed()
+                    && CommandPanelItemUiState.isVisible()
+                    && client.player.getMainHandStack().isOf(com.kuilunfuzhe.monvhua.item.commandpanel.CommandPanelItems.COMMAND_PANEL)) {
+                CommandPanelItemUiState.selectNext();
+                CommandPanelItemUiState.trigger(client.player, "right_switch");
+            }
             if (PaintOverlayClient.isPaintEditorActive(client)) {
                 return;
             }
