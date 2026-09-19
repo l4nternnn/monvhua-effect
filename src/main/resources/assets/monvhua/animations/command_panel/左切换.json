@@ -1,0 +1,1 @@
+{"length":0.75,"animations":[{"bone":"button_right_left","target":"position","keyframes":[{"timestamp":0,"target":[0,0,0],"interpolation":"linear"},{"timestamp":0.75,"target":[0,-0.15,0],"interpolation":"linear"}]}]}

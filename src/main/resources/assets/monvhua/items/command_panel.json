@@ -1,9 +1,32 @@
 {
   "model": {
-    "type": "minecraft:special",
-    "base": "monvhua:item/command_panel",
-    "model": {
-      "type": "geckolib:geckolib"
+    "type": "minecraft:select",
+    "property": "minecraft:display_context",
+    "cases": [
+      {
+        "when": "firstperson_righthand",
+        "model": {
+          "type": "minecraft:special",
+          "base": "monvhua:item/command_panel",
+          "model": {
+            "type": "geckolib:geckolib"
+          }
+        }
+      },
+      {
+        "when": "firstperson_lefthand",
+        "model": {
+          "type": "minecraft:special",
+          "base": "monvhua:item/command_panel",
+          "model": {
+            "type": "geckolib:geckolib"
+          }
+        }
+      }
+    ],
+    "fallback": {
+      "type": "minecraft:model",
+      "model": "monvhua:item/command_panel"
     }
   }
 }

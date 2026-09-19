@@ -1,0 +1,11 @@
+[21:50:38] [Test worker/INFO]: Loaded configuration file for Sodium: 42 options available, 1 override(s) found
+[21:50:38] [Test worker/INFO]: Iris API installed...
+[21:50:38] [Test worker/WARN]: Force-disabling mixin 'features.render.world.sky.FogRendererMixin' as rule 'mixin.features.render.world.sky' (added by mods [iris]) disables it and children
+[21:50:38] [Test worker/WARN]: Force-disabling mixin 'features.render.world.sky.ClientLevelMixin' as rule 'mixin.features.render.world.sky' (added by mods [iris]) disables it and children
+[21:50:38] [Test worker/WARN]: Force-disabling mixin 'features.render.world.sky.LevelRendererMixin' as rule 'mixin.features.render.world.sky' (added by mods [iris]) disables it and children
+[21:50:38] [Test worker/INFO]: Searching for graphics cards...
+[21:50:39] [Test worker/INFO]: Found graphics adapter: AdapterInfo{vendor=NVIDIA, description='NVIDIA GeForce RTX 4050 Laptop GPU', adapterType=0x00002313, openglIcdFilePath='C:\WINDOWS\System32\DriverStore\FileRepository\nvami.inf_amd64_734224edc3748001\nvoglv64.dll', openglIcdVersion=32.0.16.1656}
+[21:50:39] [Test worker/INFO]: Found graphics adapter: AdapterInfo{vendor=AMD, description='AMD Radeon 780M Graphics', adapterType=0x0000232B, openglIcdFilePath='C:\WINDOWS\System32\DriverStore\FileRepository\u0202082.inf_amd64_61e8e071c4b56ef4\B026218\atig6pxx.dll', openglIcdVersion=32.0.31021.5001}
+[21:50:39] [Test worker/WARN]: Sodium has applied one or more workarounds to prevent crashes or other issues on your system: [NVIDIA_THREADED_OPTIMIZATIONS_BROKEN]
+[21:50:39] [Test worker/WARN]: This is not necessarily an issue, but it may result in certain features or optimizations being disabled. You can sometimes fix these issues by upgrading your graphics driver.
+[21:50:44] [Test worker/INFO]: [STDOUT]: Swing geometry: 36 checks passed
