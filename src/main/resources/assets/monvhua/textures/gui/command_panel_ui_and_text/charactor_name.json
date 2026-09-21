@@ -1,0 +1,163 @@
+{
+  "ema": {
+    "name": "樱羽艾玛",
+    "char_scales": {"1": 2,"3": 1.5},
+    "first_color": "#FF9DCF",
+    "color": "#DDDDDD"
+  },
+  "cero": {
+    "name":"二阶堂希罗",
+    "char_scales": {"1": 2,"4": 1.5},
+    "first_color": "#ec0606",
+    "color": "#DDDDDD"
+  },
+  "nnk": {
+    "name":  "黑部奈叶香",
+    "char_scales": {"1": 2,"3": 1.5},
+    "first_color": "#808080",
+    "color": "#DDDDDD"
+  },
+  "leiya": {
+    "name": "莲见蕾雅",
+    "char_scales": {"1": 2,"3": 1.5},
+    "first_color": "#ffaa00",
+    "color": "#DDDDDD"
+  },
+  "sherry": {
+    "name":   "橘雪莉",
+    "char_scales": {"1": 2,"2": 1.2},
+    "first_color": "#94e9ff",
+    "color": "#DDDDDD"
+  },
+  "yalisa": {
+    "name": "紫藤亚里沙",
+    "char_scales": {"1": 2,"3": 1.5},
+    "first_color": "#cc5208",
+    "color": "#DDDDDD"
+  },
+  "noa": {
+    "name": "城崎诺亚",
+    "char_scales": {"1": 2,"3": 1.5},
+    "first_color": "#00ecff",
+    "color": "#DDDDDD"
+  },
+  "anan": {
+    "name":  "夏目安安",
+    "char_scales": {"1": 2,"3": 1.5},
+    "first_color": "#08328c",
+    "color": "#DDDDDD"
+  },
+  "coco": {
+    "name": "泽渡可可",
+    "char_scales": {"1": 2,"3": 1.5},
+    "first_color": "#ff8800",
+    "color": "#DDDDDD"
+  },
+  "milya": {
+    "name": "佐伯米莉亚",
+    "char_scales": {"1": 2,"3": 1.5},
+    "first_color": "#f4c188",
+    "color": "#DDDDDD"
+  },
+  "mago": {
+    "name": "宝生玛格",
+    "char_scales": {"1": 2,"3": 1.5},
+    "first_color": "#8a1cbb",
+    "color": "#DDDDDD"
+  },
+  "hanna": {
+    "name":   "原野汉娜",
+    "char_scales": {"1": 2,"3": 1.5},
+    "first_color": "#36da0e",
+    "color": "#DDDDDD"
+  },
+  "mll": {
+    "name": "冰上梅露露",
+    "char_scales": {"1": 2,"3": 1.5},
+    "first_color": "#0ae6df",
+    "color": "#DDDDDD"
+  },
+  "yuki": {
+    "name": "月代雪",
+    "char_scales": {"1": 2},
+    "first_color": "#83fffe",
+    "color": "#DDDDDD"
+  },
+
+
+
+  "dream": {
+    "name": "忆   梦",
+    "char_scales": {"1": 2},
+    "first_color": "#db0d82",
+    "color": "#DDDDDD"
+  },
+  "Sunday": {
+    "name": "白鹿游云",
+    "char_scales": {"1": 2,"3": 1.5},
+    "first_color": "#fed800",
+    "color": "#DDDDDD"
+  },
+  "soft": {
+    "name":  "清梦",
+    "char_scales": {"1": 2},
+    "first_color": "#290081",
+    "color": "#DDDDDD"
+  },
+  "Tide_tree": {
+    "name": "汐下李树",
+    "char_scales": {
+      "1": 2,
+      "3": 1.5
+    },
+    "first_color": "#09ffca",
+    "color": "#DDDDDD"
+  },
+  "JKL": {
+    "name": "酒馆诺亚",
+    "char_scales": {
+      "1": 2,
+      "3": 1.5
+    },
+    "first_color": "#90e8ff",
+    "color": "#DDDDDD"
+  },
+
+  "Tsukiyo": {
+    "name": "酒馆安安",
+    "char_scales": {
+      "1": 2,
+      "3": 1.5
+    },
+    "first_color": "#90e8ff",
+    "color": "#DDDDDD"
+  },
+
+  "4NAN": {
+    "name": "夏目·斯内克",
+    "char_scales": {
+      "1": 2,
+      "4": 1.5
+    },
+    "first_color": "#a451ff",
+    "color": "#DDDDDD"
+  },
+  "perfect": {
+    "name": "天弓伊星",
+    "char_scales": {
+      "1": 2,
+      "3": 1.5
+    },
+    "first_color": "#d6f7ff",
+    "color": "#DDDDDD"
+  },
+
+  "Nihilum": {
+    "name": "无",
+    "char_scales": {
+      "1": 2
+    },
+    "first_color": "#969696",
+    "color": "#DDDDDD"
+  }
+}

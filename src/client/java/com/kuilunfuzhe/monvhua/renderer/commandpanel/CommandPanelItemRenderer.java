@@ -10,6 +10,7 @@ public final class CommandPanelItemRenderer {
     private CommandPanelItemRenderer() {}
 
     public static void register() {
+        PanelUiTexture.initialize();
         CommandPanelItem item = (CommandPanelItem) CommandPanelItems.COMMAND_PANEL;
         item.setClientRenderProvider(new GeoRenderProvider() {
             private GeoItemRenderer<CommandPanelItem> renderer;
@@ -17,8 +18,7 @@ public final class CommandPanelItemRenderer {
             @Override
             public GeoItemRenderer<?> getGeoItemRenderer() {
                 if (renderer == null) {
-                    // Blockbench exported pixel coordinates; GeckoLib's renderer uses model units.
-                    // Convert the 0..16 pixel range back to one Minecraft block.
+                    // GeckoLib handles pixel-to-model conversion internally.
                     renderer = new CommandPanelItemGeoRenderer(new CommandPanelGeoModel());
                     renderer.addRenderLayer(new CommandPanelUiLayer(renderer));
                 }

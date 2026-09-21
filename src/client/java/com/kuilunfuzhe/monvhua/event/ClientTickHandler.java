@@ -56,15 +56,19 @@ public class ClientTickHandler {
             if (client.player == null) return;
             if (KeyBindingHandler.commandPanelPreviousKey.wasPressed()
                     && CommandPanelItemUiState.isVisible()
+                    && client.currentScreen == null
                     && client.player.getMainHandStack().isOf(com.kuilunfuzhe.monvhua.item.commandpanel.CommandPanelItems.COMMAND_PANEL)) {
-                CommandPanelItemUiState.selectPrevious();
-                CommandPanelItemUiState.trigger(client.player, "left_switch");
+                if (CommandPanelItemUiState.selectPrevious()) {
+                    CommandPanelItemUiState.trigger(client.player, "left_switch");
+                }
             }
             if (KeyBindingHandler.commandPanelNextKey.wasPressed()
                     && CommandPanelItemUiState.isVisible()
+                    && client.currentScreen == null
                     && client.player.getMainHandStack().isOf(com.kuilunfuzhe.monvhua.item.commandpanel.CommandPanelItems.COMMAND_PANEL)) {
-                CommandPanelItemUiState.selectNext();
-                CommandPanelItemUiState.trigger(client.player, "right_switch");
+                if (CommandPanelItemUiState.selectNext()) {
+                    CommandPanelItemUiState.trigger(client.player, "right_switch");
+                }
             }
             if (PaintOverlayClient.isPaintEditorActive(client)) {
                 return;

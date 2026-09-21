@@ -129,12 +129,24 @@ public class MonvhuaModClient implements ClientModInitializer {
 
         // ===== 1. 网络包接收器注册 =====
         ModNetworking.registerS2CPackets();
+        CommandPanelPackets.PanelRosterS2C.register();
+        CommandPanelPackets.PanelViewResultS2C.register();
         ClientPlayNetworking.registerGlobalReceiver(com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets.PermissionS2C.ID,
                 (packet, context) -> context.client().execute(() -> com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelScreen.receivePermission(packet.editable())));
         ClientPlayNetworking.registerGlobalReceiver(CommandPanelPackets.SyncRequestS2C.ID, (packet, context) -> context.client().execute(() -> {
             com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelSyncManager.uploadLocal();
         }));
         ClientPlayNetworking.registerGlobalReceiver(CommandPanelPackets.SharedPanelS2C.ID, (packet, context) -> context.client().execute(() -> com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelSyncManager.receive(packet.sourceName(), packet.revision(), packet.json())));
+        ClientPlayNetworking.registerGlobalReceiver(CommandPanelPackets.ReloadS2C.ID, (packet, context) -> context.client().execute(() ->
+                com.kuilunfuzhe.monvhua.renderer.commandpanel.PanelUiTexture.reloadForCommand()));
+        ClientPlayNetworking.registerGlobalReceiver(CommandPanelPackets.PanelViewResultS2C.ID, (packet, context) -> context.client().execute(() ->
+                {
+                    CommandPanelItemUiState.receiveViewResult(packet.sessionId(), packet.requestSeq(), packet.accepted(), packet.roleTag(), packet.playerUuid());
+                    com.kuilunfuzhe.monvhua.renderer.commandpanel.PanelUiTexture.acceptSelection(
+                            packet.sessionId(), packet.requestSeq(), packet.accepted(), packet.roleTag(), packet.playerUuid());
+                }));
+        ClientPlayNetworking.registerGlobalReceiver(CommandPanelPackets.PanelRosterS2C.ID, (packet, context) -> context.client().execute(() ->
+                CommandPanelItemUiState.receiveRoster(packet.sessionId(), packet.revision(), packet.entries())));
         ModNetworking.registerC2SPackets();
 
         // ===== 2. 功能模块客户端初始化 =====

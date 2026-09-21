@@ -51,14 +51,17 @@ import com.kuilunfuzhe.monvhua.network.through.ThroughStateS2CPacket;
 import com.kuilunfuzhe.monvhua.network.fantasy.FantasyS2CPacket;
 import com.kuilunfuzhe.monvhua.network.playerlist.PlayerListRestrictS2CPacket;
 import com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets;
+import com.kuilunfuzhe.monvhua.network.commandpanel.PanelStatusS2C;
 
 public class ModNetworking {
 
     public static void registerS2CPackets() {
         // Payload codecs are needed on both the sending server and receiving client.
+        PanelStatusS2C.register();
         CommandPanelPackets.PermissionS2C.register();
         CommandPanelPackets.SyncRequestS2C.register();
         CommandPanelPackets.SharedPanelS2C.register();
+        CommandPanelPackets.ReloadS2C.register();
         CommandPanelPackets.DataS2C.register();
         EvilEyesPackets.registerS2C();
         ToggleImagesS2CPacket.register();
@@ -108,6 +111,7 @@ public class ModNetworking {
     }
 
     public static void registerC2SPackets() {
+        CommandPanelPackets.PanelViewC2S.register();
         CommandPanelPackets.SyncUploadC2S.register();
         CommandPanelPackets.SyncDecisionC2S.register();
         CommandPanelPackets.ExecuteC2S.register();

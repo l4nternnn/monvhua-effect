@@ -53,6 +53,8 @@
   "command.monvhua.commandpanel.sync.usage": "用法：/commandpanel sync <目标玩家>",
   "command.monvhua.commandpanel.sync.received": "%s 已向你同步命令面板",
   "command.monvhua.commandpanel.sync.success": "命令面板已同步给 %s 名玩家",
+  "command.monvhua.commandpanel.reload.usage": "用法：/commandpanel reload <目标玩家>",
+  "command.monvhua.commandpanel.reload.success": "已向 %s 名玩家发送面板资源重载请求",
 
   "effect.monvhua.ema_1": "神智清醒",
   "effect.monvhua.ema_2": "略染污浊",

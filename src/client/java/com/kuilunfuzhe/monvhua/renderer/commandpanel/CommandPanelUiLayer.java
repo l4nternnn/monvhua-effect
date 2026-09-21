@@ -6,30 +6,18 @@ import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.Identifier;
-import org.joml.Matrix4f;
 import software.bernie.geckolib.cache.object.BakedGeoModel;
-import software.bernie.geckolib.cache.object.GeoBone;
+import software.bernie.geckolib.constant.DataTickets;
+import net.minecraft.item.ItemDisplayContext;
 import software.bernie.geckolib.renderer.GeoItemRenderer;
 import software.bernie.geckolib.renderer.layer.GeoRenderLayer;
 import software.bernie.geckolib.renderer.base.GeoRenderState;
 
-/** Draws a small translucent display plane directly on the screen bone. */
+/** One attached screen pass, sharing the item's pose, pivot and scale. */
 public final class CommandPanelUiLayer extends GeoRenderLayer<CommandPanelItem, GeoItemRenderer.RenderData, GeoRenderState> {
-    private static final Identifier UI_TEXTURE = Identifier.of("minecraft", "textures/misc/white.png");
 
     public CommandPanelUiLayer(GeoItemRenderer<CommandPanelItem> renderer) {
         super(renderer);
-    }
-
-    @Override
-    public void addPerBoneRender(GeoRenderState state, BakedGeoModel model,
-                                 java.util.function.BiConsumer<GeoBone, software.bernie.geckolib.renderer.base.PerBoneRender<GeoRenderState>> consumer) {
-        model.getBone("screen").ifPresent(screen -> consumer.accept(screen,
-                (renderState, matrices, bone, renderType, vertices, light, overlay, color) -> {
-                    if (!CommandPanelItemUiState.isVisible()) return;
-                    drawDisplay(matrices, vertices, light, overlay);
-                }));
     }
 
     @Override
@@ -38,21 +26,11 @@ public final class CommandPanelUiLayer extends GeoRenderLayer<CommandPanelItem, 
                        VertexConsumerProvider vertices, VertexConsumer buffer,
                        int light, int overlay, int color) {
         if (!CommandPanelItemUiState.isVisible()) return;
-        // Diagnostic fallback: keep a visible yellow plane even if the per-bone callback
-        // is skipped by a renderer implementation.
+        if (!state.getOrDefaultGeckolibData(DataTickets.ITEM_RENDER_PERSPECTIVE, ItemDisplayContext.NONE).isFirstPerson()) return;
         drawDisplay(matrices, vertices, light, overlay);
     }
 
     private static void drawDisplay(MatrixStack matrices, VertexConsumerProvider vertices, int light, int overlay) {
-        Matrix4f matrix = matrices.peek().getPositionMatrix();
-        VertexConsumer buffer = vertices.getBuffer(RenderLayer.getEntityTranslucent(UI_TEXTURE));
-        float x0 = -5.0f / 16.0f, x1 = 5.0f / 16.0f;
-        // Leave the 0.72-unit upper and lower frame strips visible.
-        float z0 = -3.2f / 16.0f, z1 = 3.2f / 16.0f;
-        float y = 1.015f / 16.0f;
-        buffer.vertex(matrix, x0, y, z0).color(255, 220, 0, 255).texture(0, 0).overlay(overlay).light(light).normal(0, 1, 0);
-        buffer.vertex(matrix, x1, y, z0).color(255, 220, 0, 255).texture(1, 0).overlay(overlay).light(light).normal(0, 1, 0);
-        buffer.vertex(matrix, x1, y, z1).color(255, 220, 0, 255).texture(1, 1).overlay(overlay).light(light).normal(0, 1, 0);
-        buffer.vertex(matrix, x0, y, z1).color(255, 220, 0, 255).texture(0, 1).overlay(overlay).light(light).normal(0, 1, 0);
+        PanelUiTexture.render(matrices, vertices, light, overlay);
     }
 }

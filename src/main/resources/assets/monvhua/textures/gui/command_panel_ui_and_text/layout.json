@@ -1,0 +1,100 @@
+{
+  "canvas": [
+    1000,
+    640
+  ],
+  "render_scale": 2,
+  "role": "noa",
+  "regions": {
+    "立绘底框": {
+      "kind": "profile_frame",
+      "x": 0,
+      "y": 40,
+      "width": 480,
+      "height": 510,
+      "size": 20,
+      "text": ""
+    },
+    "立绘": {
+      "kind": "avatar",
+      "x": 78,
+      "y": 127,
+      "width": 330,
+      "height": 330,
+      "size": 16,
+      "text": "11"
+    },
+    "名字背景": {
+      "kind": "background",
+      "x": -40,
+      "y": 400,
+      "width": 350,
+      "height": 150,
+      "size": 20,
+      "text": ""
+    },
+    "角色名字": {
+      "kind": "text",
+      "x": 30,
+      "y": 420,
+      "width": 270,
+      "height": 55,
+      "size": 38,
+      "text": "城崎诺亚"
+    },
+    "MC名字": {
+      "kind": "text",
+      "x": 28,
+      "y": 604,
+      "width": 230,
+      "height": 35,
+      "size": 20,
+      "text": "Player629"
+    },
+    "魔女化标题": {
+      "kind": "text",
+      "x": 520,
+      "y": 100,
+      "width": 400,
+      "height": 45,
+      "size": 29,
+      "text": "魔女化数值"
+    },
+    "魔女化数值": {
+      "kind": "text",
+      "x": 520,
+      "y": 155,
+      "width": 400,
+      "height": 60,
+      "size": 42,
+      "text": "325"
+    },
+    "健康标题": {
+      "kind": "text",
+      "x": 523,
+      "y": 260,
+      "width": 400,
+      "height": 45,
+      "size": 28,
+      "text": "健康状态"
+    },
+    "血量方框": {
+      "kind": "health",
+      "x": 520,
+      "y": 310,
+      "width": 410,
+      "height": 75,
+      "size": 24,
+      "text": ""
+    },
+    "角色介绍": {
+      "kind": "intro",
+      "x": 515,
+      "y": 415,
+      "width": 410,
+      "height": 175,
+      "size": 15,
+      "text": ""
+    }
+  }
+}

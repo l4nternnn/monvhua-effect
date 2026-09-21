@@ -33,6 +33,9 @@
   "block.monvhua.skeletal_left_leg": "Skeletal Left Leg",
   "block.monvhua.skeletal_right_leg": "Skeletal Right Leg",
 
+  "command.monvhua.commandpanel.reload.usage": "Usage: /commandpanel reload <targets>",
+  "command.monvhua.commandpanel.reload.success": "Sent panel resource reload request to %s player(s)",
+
 
   "effect.monvhua.ema_1": "Sane",
   "effect.monvhua.ema_2": "Tainted",

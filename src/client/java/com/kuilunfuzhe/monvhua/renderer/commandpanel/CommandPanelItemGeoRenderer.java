@@ -19,7 +19,8 @@ public final class CommandPanelItemGeoRenderer extends GeoItemRenderer<CommandPa
     private static final float MAP_TILT_RANGE = 75.0F;
     /** Static screen orientation, independent of the player's pitch. */
     private static final float MODEL_SCREEN_HEADING = 180.0F;
-    private static final float FIRST_PERSON_SCALE = 1.00F;
+    private static final float FOLDED_SCALE = 1.20F;
+    private static final float VIEW_SCALE = 1.80F;
     private static final float PIVOT_FROM_BOTTOM = 0.25F;
     private static final float MODEL_TOP_Z = -4.0F;
     private static final float MODEL_BOTTOM_Z = 4.05F;
@@ -61,30 +62,40 @@ public final class CommandPanelItemGeoRenderer extends GeoItemRenderer<CommandPa
     private static void applyMapTransform(MatrixStack matrices, GeoRenderState state, double handX) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null) return;
-        float partialTick = state.getOrDefaultGeckolibData(DataTickets.PARTIAL_TICK, 0.0F);
-        // Vanilla map curve: level/upward views use the flat end; looking down
-        // reaches the viewing end between player pitches 4.5 and 49.5 degrees.
-        float pitch = client.player.getLerpedPitch(partialTick);
-        float progress = MathHelper.clamp(1.0F - pitch / 45.0F + 0.1F, 0.0F, 1.0F);
-        float mapAngle = 0.5F - 0.5F * MathHelper.cos(progress * MathHelper.PI);
+        float viewProgress = viewProgress(state);
+        float mapAngle = 1.0F - viewProgress;
         float target = VIEW_ANGLE - MAP_TILT_RANGE * mapAngle;
-        float viewProgress = 1.0F - mapAngle;
         double yOffset = MathHelper.lerp(viewProgress, FOLDED_Y_OFFSET, VIEW_Y_OFFSET);
 
         // MatrixStack post-multiplies: local screen orientation is applied to
         // vertices before the dynamic tilt, without rotating the held position.
         matrices.translate(handX, yOffset, FIRST_PERSON_Z_OFFSET);
-        double pivotZ = firstPersonPivotZ();
+        double pivotZ = firstPersonPivotZ(firstPersonScale(viewProgress));
         matrices.translate(0.0D, 0.0D, pivotZ);
         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(target));
         matrices.translate(0.0D, 0.0D, -pivotZ);
         applyModelScreenOrientation(matrices);
     }
 
-    private static double firstPersonPivotZ() {
+    private static float viewProgress(GeoRenderState state) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return 0.0F;
+        float partialTick = state.getOrDefaultGeckolibData(DataTickets.PARTIAL_TICK, 0.0F);
+        // Share the vanilla map curve for tilt, position, scale and pivot.
+        // Pitch <= 4.5 is folded; pitch >= 49.5 is fully viewed.
+        float pitch = client.player.getLerpedPitch(partialTick);
+        float progress = MathHelper.clamp(1.0F - pitch / 45.0F + 0.1F, 0.0F, 1.0F);
+        return 0.5F + 0.5F * MathHelper.cos(progress * MathHelper.PI);
+    }
+
+    private static float firstPersonScale(float viewProgress) {
+        return MathHelper.lerp(viewProgress, FOLDED_SCALE, VIEW_SCALE);
+    }
+
+    private static double firstPersonPivotZ(float scale) {
         float modelPivotZ = MODEL_BOTTOM_Z
                 - (MODEL_BOTTOM_Z - MODEL_TOP_Z) * PIVOT_FROM_BOTTOM;
-        return modelPivotZ / 16.0D * FIRST_PERSON_SCALE;
+        return modelPivotZ / 16.0D * scale;
     }
 
     private static void applyModelScreenOrientation(MatrixStack matrices) {
@@ -97,7 +108,7 @@ public final class CommandPanelItemGeoRenderer extends GeoItemRenderer<CommandPa
 
     private static float scaleFor(GeoRenderState state) {
         return switch (perspective(state)) {
-            case FIRST_PERSON_RIGHT_HAND, FIRST_PERSON_LEFT_HAND -> FIRST_PERSON_SCALE;
+            case FIRST_PERSON_RIGHT_HAND, FIRST_PERSON_LEFT_HAND -> firstPersonScale(viewProgress(state));
             case GUI -> 0.13F;
             case THIRD_PERSON_RIGHT_HAND, THIRD_PERSON_LEFT_HAND -> 0.5F;
             case GROUND, FIXED -> 0.5F;

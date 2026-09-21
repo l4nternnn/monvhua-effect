@@ -18,8 +18,27 @@ public final class CommandPanelServer {
         return player.isCreative() && player.getCommandTags().contains(EDIT_TAG);
     }
     public static void initialize() {
+        PanelStatusServer.initialize();
+        CommandPanelPackets.ReloadS2C.register();
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher.register(
-            CommandManager.literal("commandpanel").then(CommandManager.literal("sync")
+            CommandManager.literal("commandpanel")
+                .then(CommandManager.literal("reload")
+                .requires(source -> source.hasPermissionLevel(2))
+                .executes(ctx -> { ctx.getSource().sendError(Text.translatable("command.monvhua.commandpanel.reload.usage")); return 0; })
+                .then(CommandManager.argument("targets", EntityArgumentType.players()).executes(ctx -> {
+                    Collection<ServerPlayerEntity> targets = EntityArgumentType.getPlayers(ctx, "targets");
+                    int sent = 0;
+                    for (ServerPlayerEntity target : targets) {
+                        if (ServerPlayNetworking.canSend(target, CommandPanelPackets.ReloadS2C.ID)) {
+                            ServerPlayNetworking.send(target, new CommandPanelPackets.ReloadS2C());
+                            sent++;
+                        }
+                    }
+                    int count = sent;
+                    ctx.getSource().sendFeedback(() -> Text.translatable("command.monvhua.commandpanel.reload.success", count), false);
+                    return count;
+                })))
+                .then(CommandManager.literal("sync")
                 .executes(ctx -> { ctx.getSource().sendError(Text.translatable("command.monvhua.commandpanel.sync.usage")); return 0; })
                 .then(CommandManager.argument("targets", EntityArgumentType.players()).executes(ctx -> {
                     ServerPlayerEntity sender = ctx.getSource().getPlayerOrThrow();
