@@ -137,6 +137,9 @@ public class MonvhuaModClient implements ClientModInitializer {
             com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelSyncManager.uploadLocal();
         }));
         ClientPlayNetworking.registerGlobalReceiver(CommandPanelPackets.SharedPanelS2C.ID, (packet, context) -> context.client().execute(() -> com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelSyncManager.receive(packet.sourceName(), packet.revision(), packet.json())));
+        ClientPlayNetworking.registerGlobalReceiver(CommandPanelPackets.SharedPanelChunkS2C.ID, (packet, context) -> context.client().execute(() ->
+                com.kuilunfuzhe.monvhua.gui.commandpanel.CommandPanelSyncManager.receiveChunk(
+                        packet.sourceName(), packet.revision(), packet.transferId(), packet.index(), packet.count(), packet.chunk())));
         ClientPlayNetworking.registerGlobalReceiver(CommandPanelPackets.ReloadS2C.ID, (packet, context) -> context.client().execute(() ->
                 com.kuilunfuzhe.monvhua.renderer.commandpanel.PanelUiTexture.reloadForCommand()));
         ClientPlayNetworking.registerGlobalReceiver(CommandPanelPackets.PanelViewResultS2C.ID, (packet, context) -> context.client().execute(() ->

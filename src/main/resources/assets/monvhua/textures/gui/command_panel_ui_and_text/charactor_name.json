@@ -159,5 +159,15 @@
     },
     "first_color": "#969696",
     "color": "#DDDDDD"
+  },
+
+  "Ember": {
+    "name": "鸢梦",
+    "char_scales": {
+      "1": 2
+    },
+    "first_color": "#7d2d26",
+    "color": "#DDDDDD"
   }
+
 }

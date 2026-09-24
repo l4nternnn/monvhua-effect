@@ -4,7 +4,7 @@
     640
   ],
   "render_scale": 2,
-  "role": "noa",
+  "role": "Ember",
   "regions": {
     "立绘底框": {
       "kind": "profile_frame",
@@ -40,7 +40,7 @@
       "width": 270,
       "height": 55,
       "size": 38,
-      "text": "城崎诺亚"
+      "text": "鸢梦"
     },
     "MC名字": {
       "kind": "text",
@@ -67,7 +67,7 @@
       "width": 400,
       "height": 60,
       "size": 42,
-      "text": "325"
+      "text": "███"
     },
     "健康标题": {
       "kind": "text",

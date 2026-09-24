@@ -61,6 +61,7 @@ public class ModNetworking {
         CommandPanelPackets.PermissionS2C.register();
         CommandPanelPackets.SyncRequestS2C.register();
         CommandPanelPackets.SharedPanelS2C.register();
+        CommandPanelPackets.SharedPanelChunkS2C.register();
         CommandPanelPackets.ReloadS2C.register();
         CommandPanelPackets.DataS2C.register();
         EvilEyesPackets.registerS2C();
@@ -113,6 +114,7 @@ public class ModNetworking {
     public static void registerC2SPackets() {
         CommandPanelPackets.PanelViewC2S.register();
         CommandPanelPackets.SyncUploadC2S.register();
+        CommandPanelPackets.SyncUploadChunkC2S.register();
         CommandPanelPackets.SyncDecisionC2S.register();
         CommandPanelPackets.ExecuteC2S.register();
         CommandPanelPackets.RequestC2S.register();

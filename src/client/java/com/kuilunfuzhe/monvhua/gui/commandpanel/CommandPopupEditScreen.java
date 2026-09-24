@@ -40,10 +40,16 @@ public final class CommandPopupEditScreen extends Screen {
         listTop = 76;
         listBottom = height - 52;
 
-        nameField = new TextFieldWidget(textRenderer, left, 45, contentWidth, 20, Text.literal("名称"));
+        nameField = new TextFieldWidget(textRenderer, left, 45, contentWidth - 28, 20, Text.literal("名称"));
         nameField.setMaxLength(256);
         nameField.setText(draftName);
         addDrawableChild(nameField);
+        addDrawableChild(ButtonWidget.builder(Text.literal("×"), button -> {
+            if (client != null) client.setScreen(new CommandPanelConfirmScreen(this,
+                    Text.literal("删除弹窗"), Text.literal("确定删除“" + popup.name + "”吗？"),
+                    () -> parent.deletePopup(popup)));
+        }).dimensions(left + contentWidth - 24, 45, 24, 20)
+                .tooltip(Tooltip.of(Text.literal("删除弹窗"))).build());
 
         rows.clear();
         for (int i = 0; i < commands.size(); i++) addRowWidgets(i, left, contentWidth);

@@ -8,7 +8,7 @@ import net.minecraft.util.Identifier;
 
 public final class CommandPanelPackets {
     private CommandPanelPackets() {}
-    private static boolean executeRegistered, requestRegistered, dataRegistered, permissionRegistered, uploadRegistered, sharedRegistered, decisionRegistered, syncRequestRegistered, viewRegistered, rosterRegistered, viewResultRegistered, reloadRegistered;
+    private static boolean executeRegistered, requestRegistered, dataRegistered, permissionRegistered, uploadRegistered, sharedRegistered, decisionRegistered, syncRequestRegistered, viewRegistered, rosterRegistered, viewResultRegistered, reloadRegistered, uploadChunkRegistered, sharedChunkRegistered;
     public record PanelViewC2S(byte operation, long sessionId, int requestSeq, String roleTag, String playerUuid) implements CustomPayload {
         public static final Id<PanelViewC2S> ID=new Id<>(Identifier.of("monvhua","command_panel_view"));
         public static final PacketCodec<RegistryByteBuf,PanelViewC2S> CODEC=PacketCodec.of((p,b)->{b.writeByte(p.operation);b.writeVarLong(p.sessionId);b.writeVarInt(p.requestSeq);b.writeString(p.roleTag,64);b.writeString(p.playerUuid,40);},b->new PanelViewC2S(b.readByte(),b.readVarLong(),b.readVarInt(),b.readString(64),b.readString(40)));
@@ -35,7 +35,23 @@ public final class CommandPanelPackets {
     public record DataS2C(long revision, String json) implements CustomPayload { public static final Id<DataS2C> ID=new Id<>(Identifier.of("monvhua","command_panel_data")); public static final PacketCodec<RegistryByteBuf,DataS2C> CODEC=PacketCodec.of((p,b)->{b.writeVarLong(p.revision);b.writeString(p.json,32767);},b->new DataS2C(b.readVarLong(),b.readString(32767))); public Id<? extends CustomPayload> getId(){return ID;} public static void register(){if(!dataRegistered){PayloadTypeRegistry.playS2C().register(ID,CODEC);dataRegistered=true;}} }
     public record SyncRequestS2C(String targets) implements CustomPayload { public static final Id<SyncRequestS2C> ID=new Id<>(Identifier.of("monvhua","command_panel_sync_request")); public static final PacketCodec<RegistryByteBuf,SyncRequestS2C> CODEC=PacketCodec.of((p,b)->b.writeString(p.targets,32767),b->new SyncRequestS2C(b.readString(32767))); public Id<? extends CustomPayload> getId(){return ID;} public static void register(){if(!syncRequestRegistered){PayloadTypeRegistry.playS2C().register(ID,CODEC);syncRequestRegistered=true;}} }
     public record SyncUploadC2S(String json) implements CustomPayload { public static final Id<SyncUploadC2S> ID=new Id<>(Identifier.of("monvhua","command_panel_sync_upload")); public static final PacketCodec<RegistryByteBuf,SyncUploadC2S> CODEC=PacketCodec.of((p,b)->b.writeString(p.json,32767),b->new SyncUploadC2S(b.readString(32767))); public Id<? extends CustomPayload> getId(){return ID;} public static void register(){if(!uploadRegistered){PayloadTypeRegistry.playC2S().register(ID,CODEC);uploadRegistered=true;}} }
+    public record SyncUploadChunkC2S(String transferId, int index, int count, String chunk) implements CustomPayload {
+        public static final Id<SyncUploadChunkC2S> ID = new Id<>(Identifier.of("monvhua", "command_panel_sync_upload_chunk"));
+        public static final PacketCodec<RegistryByteBuf, SyncUploadChunkC2S> CODEC = PacketCodec.of(
+                (p, b) -> { b.writeString(p.transferId, 40); b.writeVarInt(p.index); b.writeVarInt(p.count); b.writeString(p.chunk, 8000); },
+                b -> new SyncUploadChunkC2S(b.readString(40), b.readVarInt(), b.readVarInt(), b.readString(8000)));
+        public Id<? extends CustomPayload> getId() { return ID; }
+        public static void register() { if (!uploadChunkRegistered) { PayloadTypeRegistry.playC2S().register(ID, CODEC); uploadChunkRegistered = true; } }
+    }
     public record SharedPanelS2C(String sourceName,long revision,String json) implements CustomPayload { public static final Id<SharedPanelS2C> ID=new Id<>(Identifier.of("monvhua","command_panel_shared")); public static final PacketCodec<RegistryByteBuf,SharedPanelS2C> CODEC=PacketCodec.of((p,b)->{b.writeString(p.sourceName,256);b.writeVarLong(p.revision);b.writeString(p.json,32767);},b->new SharedPanelS2C(b.readString(256),b.readVarLong(),b.readString(32767))); public Id<? extends CustomPayload> getId(){return ID;} public static void register(){if(!sharedRegistered){PayloadTypeRegistry.playS2C().register(ID,CODEC);sharedRegistered=true;}} }
+    public record SharedPanelChunkS2C(String sourceName, long revision, String transferId, int index, int count, String chunk) implements CustomPayload {
+        public static final Id<SharedPanelChunkS2C> ID = new Id<>(Identifier.of("monvhua", "command_panel_shared_chunk"));
+        public static final PacketCodec<RegistryByteBuf, SharedPanelChunkS2C> CODEC = PacketCodec.of(
+                (p, b) -> { b.writeString(p.sourceName, 256); b.writeVarLong(p.revision); b.writeString(p.transferId, 40); b.writeVarInt(p.index); b.writeVarInt(p.count); b.writeString(p.chunk, 8000); },
+                b -> new SharedPanelChunkS2C(b.readString(256), b.readVarLong(), b.readString(40), b.readVarInt(), b.readVarInt(), b.readString(8000)));
+        public Id<? extends CustomPayload> getId() { return ID; }
+        public static void register() { if (!sharedChunkRegistered) { PayloadTypeRegistry.playS2C().register(ID, CODEC); sharedChunkRegistered = true; } }
+    }
     public record SyncDecisionC2S(long revision,boolean accept) implements CustomPayload { public static final Id<SyncDecisionC2S> ID=new Id<>(Identifier.of("monvhua","command_panel_sync_decision")); public static final PacketCodec<RegistryByteBuf,SyncDecisionC2S> CODEC=PacketCodec.of((p,b)->{b.writeVarLong(p.revision);b.writeBoolean(p.accept);},b->new SyncDecisionC2S(b.readVarLong(),b.readBoolean())); public Id<? extends CustomPayload> getId(){return ID;} public static void register(){if(!decisionRegistered){PayloadTypeRegistry.playC2S().register(ID,CODEC);decisionRegistered=true;}} }
     public record ReloadS2C() implements CustomPayload { public static final Id<ReloadS2C> ID=new Id<>(Identifier.of("monvhua","command_panel_reload")); public static final PacketCodec<RegistryByteBuf,ReloadS2C> CODEC=PacketCodec.unit(new ReloadS2C()); public Id<? extends CustomPayload> getId(){return ID;} public static void register(){if(!reloadRegistered){PayloadTypeRegistry.playS2C().register(ID,CODEC);reloadRegistered=true;}} }
 }
