@@ -1,542 +1,1509 @@
 {
   "version": 3,
-  "revision": 2,
-  "activePanelId": "8b99707f-ac33-4d58-ab22-e3acd477b080",
+  "revision": 36,
+  "activePanelId": "802ef99e-57c3-4430-8145-9cbe61612001",
   "preview": {
     "width": 854,
     "height": 480
   },
   "panels": [
     {
-      "id": "8b99707f-ac33-4d58-ab22-e3acd477b080",
-      "name": "面板 1",
+      "id": "802ef99e-57c3-4430-8145-9cbe61612001",
+      "name": "主配置面板",
       "popups": [
         {
-          "id": "48c3c517-be1a-4db2-a753-4fcc9c472fbd",
-          "name": "New popup",
+          "id": "a61c3589-e087-4164-b43e-cbeaa2f8d501",
+          "name": "地雷复原",
           "commands": [
             {
-              "id": "e43622ea-1c41-4ed9-b3ee-39c5c359e54e",
-              "command": "/say bye",
+              "id": "9ea76c64-a408-457c-bccf-f4db98764e7b",
+              "command": "/tp -19 24 15",
               "delay": 2
             }
           ],
-          "x": 490.68356,
-          "y": 84.66668,
-          "width": 140.0,
-          "height": 48.0,
+          "x": 765.0,
+          "y": 28.5023,
+          "width": 92.2961,
+          "height": 25.6454,
           "rotation": 0.0
         },
         {
-          "id": "a3a90cc3-e7e9-4c1a-a588-135c1fc0ca4c",
-          "name": "New popup",
+          "id": "db597a65-21f5-4f38-be46-06b43cc4906e",
+          "name": "投票",
           "commands": [
             {
-              "id": "be1b5a11-a0f9-4b5e-acac-bb5a4879e749",
-              "command": "/say hello",
+              "id": "77ca47fe-42e4-4620-8e05-d99fd66f70bd",
+              "command": "/function xianxing:start",
               "delay": 2
             }
           ],
-          "x": 87.66484,
-          "y": 253.33333,
-          "width": 140.0,
-          "height": 48.0,
+          "x": 75.0,
+          "y": 205.0,
+          "width": 100.0,
+          "height": 20.0,
           "rotation": 0.0
         },
         {
-          "id": "e8c94b0c-8e5e-4c4a-aef3-4a4433dbdd07",
-          "name": "查询",
+          "id": "5fcafea9-b98a-4f28-9183-6a587ffc8dfc",
+          "name": "投票结束",
           "commands": [
             {
-              "id": "a04c8eb8-91ea-4501-a76f-82a01c3761d9",
-              "command": "execute as @a[tag=player] run tellraw @p [\"\",{\"selector\":\"@s\"},{\"text\":\" 魔女化: \"},{\"score\":{\"name\":\"@s\",\"objective\":\"monvhua\"}}]",
+              "id": "c7e621de-1121-46ce-a69a-9847c275945d",
+              "command": "/function xianxing:end",
               "delay": 2
             }
           ],
-          "x": 282.83594,
-          "y": 25.666672,
-          "width": 123.32031,
-          "height": 39.333332,
+          "x": 75.0,
+          "y": 225.0,
+          "width": 100.0,
+          "height": 20.0,
           "rotation": 0.0
         },
         {
-          "id": "053396e5-554a-4693-889f-301f26122d0f",
-          "name": "删除，新创tv",
+          "id": "76c54fe6-efd0-43ab-a434-21c7e4b04868",
+          "name": "魔女投票",
           "commands": [
             {
-              "id": "d1ae6c8f-6010-4d98-9ee0-be78d63e7c14",
-              "command": "/summon armor_stand ~ ~3 ~ {ShowArms:1,  CustomNameVisible:0b,CustomName:'{\"text\":\"mcdia_player\"}',Rotation:[90f,0f], NoBasePlate:0b, Small:0b, Invisible:0b, Invulnerable:0b, equipment:{offhand:{id:\"minecraft:writable_book\",count:1,components:{\"minecraft:writable_book_content\":{pages:[{raw:\"-5\\n3\\n-1.0\\n2.0\\n\"},{raw:\"-5\\n3\\n-0.5\\n10\\n10\\n15\"}]}}}}}",
+              "id": "cc34fea3-ca57-46bc-962f-5a2a07d844fd",
+              "command": "/function shenpan_vote:start",
+              "delay": 2
+            }
+          ],
+          "x": 75.0,
+          "y": 245.0,
+          "width": 100.0,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "e70aa974-07ee-4c2c-8fcd-12a48982c47c",
+          "name": "魔女投票结束",
+          "commands": [
+            {
+              "id": "d992aa8f-0433-4409-a2b9-7c5ff100e3c2",
+              "command": "/function shenpan_vote:end",
+              "delay": 2
+            }
+          ],
+          "x": 75.0,
+          "y": 265.0,
+          "width": 100.0,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "1d1ef054-d20d-41e6-8e60-fa460aa73493",
+          "name": "开启死回检测（场务决策）",
+          "commands": [
+            {
+              "id": "7143e5a2-1ce5-48ac-9ce6-febd287cf0e6",
+              "command": "/reversal confirm on",
+              "delay": 2
+            }
+          ],
+          "x": 75.0,
+          "y": 305.0,
+          "width": 100.0,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "203f9bf8-e463-4d70-a617-6a419056551d",
+          "name": "关闭死回检测（立即生效）",
+          "commands": [
+            {
+              "id": "c72d5cdd-8d25-40c0-91b3-49d8ab53f1c2",
+              "command": "/reversal confirm off",
+              "delay": 2
+            }
+          ],
+          "x": 75.0,
+          "y": 325.0,
+          "width": 100.0,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "e553f193-0d8b-49eb-b156-c2d6c554c733",
+          "name": "给隐身",
+          "commands": [
+            {
+              "id": "5b952bda-3754-4eb1-be79-5c8c3f94e6db",
+              "command": "/effect give @s minecraft:invisibility infinite 1 true",
+              "delay": 2
+            }
+          ],
+          "x": 75.0,
+          "y": 365.0,
+          "width": 50.0,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "58baf43f-6949-4101-95a0-316336bfa09a",
+          "name": "给隐身（1000s）",
+          "commands": [
+            {
+              "id": "7d0063ee-3d1c-43e8-8665-a5c6a3b92ee9",
+              "command": "/effect give @s minecraft:invisibility 1000 1 true",
+              "delay": 2
+            }
+          ],
+          "x": 125.0,
+          "y": 365.0,
+          "width": 50.0,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "68055bb2-f513-49ed-b961-20296c6f3119",
+          "name": "给夜视（1000s）",
+          "commands": [
+            {
+              "id": "db83a3d0-13a9-4be7-a491-ac2093fee156",
+              "command": "/effect give @s minecraft:night_vision 1000 1 true",
+              "delay": 2
+            }
+          ],
+          "x": 125.0,
+          "y": 345.0,
+          "width": 50.0,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "1e3adc25-53ff-46f6-a53b-33b1ad529495",
+          "name": "清除效果（全部）",
+          "commands": [
+            {
+              "id": "38ac52ca-da94-4889-aea6-6978b5bba2e4",
+              "command": "/effect clear @s",
+              "delay": 2
+            }
+          ],
+          "x": 75.0,
+          "y": 385.0,
+          "width": 100.0,
+          "height": 35.3333,
+          "rotation": 0.0
+        },
+        {
+          "id": "666bc288-aed4-4d6d-b322-728108af144a",
+          "name": "消散",
+          "commands": [
+            {
+              "id": "14482bb4-7bab-4e13-9d5a-762c2fb09741",
+              "command": "/monvhua-dissolve_消散 玩家",
+              "delay": 2
+            }
+          ],
+          "x": 779.4759762790698,
+          "y": 453.25383744186047,
+          "width": 72.93203,
+          "height": 24.626204,
+          "rotation": 0.0
+        },
+        {
+          "id": "f843d830-e9b5-475a-8325-b46b65c0a72a",
+          "name": "给夜视",
+          "commands": [
+            {
+              "id": "36a7e453-a05d-45d6-adb7-3f2987152701",
+              "command": "/effect give @s minecraft:night_vision infinite 1 true",
+              "delay": 2
+            }
+          ],
+          "x": 75.0,
+          "y": 345.0,
+          "width": 50.0,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "e66b432b-f9e4-4a21-a927-bc9336c132be",
+          "name": "魔女岛正门",
+          "commands": [
+            {
+              "id": "240bbf89-eccd-46df-858d-dd794a148bbb",
+              "command": "/tp -24 37 -2",
+              "delay": 2
+            }
+          ],
+          "x": 370.0,
+          "y": 100.0,
+          "width": 110.0,
+          "height": 30.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "0196c012-c761-417c-923e-2f0cc040311e",
+          "name": "重置天数",
+          "commands": [
+            {
+              "id": "350811e9-c8b4-4636-bfda-326afa0c5c00",
+              "command": "/scoreboard players set GlobalTime Days 1",
+              "delay": 2
+            }
+          ],
+          "x": 2.82049418604651,
+          "y": 41.565116279069784,
+          "width": 52.264847,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "010faa92-6ec0-4913-b967-51c2834da51c",
+          "name": "传送审判庭",
+          "commands": [
+            {
+              "id": "080d2366-2fd7-4d16-8358-45c9458df2b8",
+              "command": "/tp @p 71.48 44.00 -87.80",
+              "delay": 2
+            }
+          ],
+          "x": 370.0,
+          "y": 130.0,
+          "width": 110.0,
+          "height": 30.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "54287345-28b2-4876-a700-4711ab376b5a",
+          "name": "审判庭开",
+          "commands": [
+            {
+              "id": "0a4f5b89-7370-4e68-873a-f23eea54ec2b",
+              "command": "fill 70 41 -46 72 41 -46 minecraft:iron_bars[east=true,north=false,south=false,waterlogged=false,west=true]",
               "delay": 2
             },
             {
-              "id": "fce78809-58ac-4cdc-badf-c2f3bd138177",
-              "command": "/summon armor_stand ~8 ~3 ~2 {ShowArms:1,  CustomNameVisible:0b,CustomName:'{\"text\":\"mcdia_player\"}',Rotation:[90f,0f], NoBasePlate:0b, Small:0b, Invisible:0b, Invulnerable:0b, equipment:{offhand:{id:\"minecraft:writable_book\",count:1,components:{\"minecraft:writable_book_content\":{pages:[{raw:\"-5\\n3\\n-1.0\\n2.0\\n\"},{raw:\"-5\\n3\\n-0.5\\n10\\n10\\n15\"}]}}}}}",
+              "id": "0b5f3fbb-045e-4c39-a2a4-8f0020b95873",
+              "command": "fill 72 40 -46 70 37 -46 air",
+              "delay": 2
+            }
+          ],
+          "x": 550.0,
+          "y": 30.8844,
+          "width": 80.0,
+          "height": 25.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "a7ff53c2-afec-425b-8ecd-88ebfb010041",
+          "name": "审判庭关",
+          "commands": [
+            {
+              "id": "d6fa0ee4-4703-4a5f-aadf-e691f02ac83a",
+              "command": "fill 72 41 -46 70 41 -46 minecraft:chain[axis=y,waterlogged=false]",
               "delay": 2
             },
             {
-              "id": "ab90acc9-62f1-4fce-9116-75cd10db366e",
-              "command": "/summon armor_stand ~6 ~3 ~4 {ShowArms:1,  CustomNameVisible:0b,CustomName:'{\"text\":\"mcdia_player\"}',Rotation:[90f,0f], NoBasePlate:0b, Small:0b, Invisible:0b, Invulnerable:0b, equipment:{offhand:{id:\"minecraft:writable_book\",count:1,components:{\"minecraft:writable_book_content\":{pages:[{raw:\"-5\\n3\\n-1.0\\n2.0\\n\"},{raw:\"-5\\n3\\n-0.5\\n10\\n10\\n15\"}]}}}}}",
+              "id": "dd8bf6c9-488f-45c4-b165-580bda0fc379",
+              "command": "fill 72 40 -46 70 37 -46 minecraft:iron_bars[east=true,north=false,south=false,waterlogged=false,west=true]",
+              "delay": 2
+            }
+          ],
+          "x": 550.0,
+          "y": 59.1622,
+          "width": 80.0,
+          "height": 25.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "09324e74-6291-4b9b-b25a-97f28c31118d",
+          "name": "显示标题",
+          "commands": [
+            {
+              "id": "170aa581-f75c-41c8-baa1-1b003d2051f6",
+              "command": "/setblock -26 -37 69 minecraft:redstone_block",
+              "delay": 2
+            }
+          ],
+          "x": 791.2871027906978,
+          "y": 416.7767441860465,
+          "width": 60.93828,
+          "height": 32.333332,
+          "rotation": 0.0
+        },
+        {
+          "id": "9c9dbbc6-28ba-4cf3-b969-391da4c44bf7",
+          "name": "重置电视机",
+          "commands": [
+            {
+              "id": "4f3edff7-6e05-4a2c-9756-424d01778561",
+              "command": "/kill @e[tag=kuijiajia]",
               "delay": 2
             },
             {
-              "id": "d0d1c95a-e944-4859-ad2e-cae1110b4732",
-              "command": "/summon armor_stand ~5 ~3 ~5 {ShowArms:1,  CustomNameVisible:0b,CustomName:'{\"text\":\"mcdia_player\"}',Rotation:[90f,0f], NoBasePlate:0b, Small:0b, Invisible:0b, Invulnerable:0b, equipment:{offhand:{id:\"minecraft:writable_book\",count:1,components:{\"minecraft:writable_book_content\":{pages:[{raw:\"-5\\n3\\n-1.0\\n2.0\\n\"},{raw:\"-5\\n3\\n-0.5\\n10\\n10\\n15\"}]}}}}}",
+              "id": "c8924892-954f-46ae-b786-ba65e3724e92",
+              "command": "/summon armor_stand -74.50 48.00 -63.50 {Tags:[\"kuijiajia\"],ShowArms:1,  CustomNameVisible:0b,CustomName:'{\"text\":\"mcdia_player\"}',Rotation:[90f,0f], NoBasePlate:0b, Small:0b, Invisible:0b, Invulnerable:0b, equipment:{offhand:{id:\"minecraft:writable_book\",count:1,components:{\"minecraft:writable_book_content\":{pages:[{raw:\"-5\\n3\\n-1.0\\n2.0\\n\"},{raw:\"-5\\n3\\n-0.5\\n10\\n10\\n15\"}]}}}}}",
+              "delay": 2
+            }
+          ],
+          "x": 775.0,
+          "y": 62.9393,
+          "width": 76.9508,
+          "height": 24.641,
+          "rotation": 0.0
+        },
+        {
+          "id": "eeb51e31-a8ad-4208-a83f-5aaabc4f63b8",
+          "name": "开牢房门",
+          "commands": [
+            {
+              "id": "5ddbad56-d733-43d2-81d8-179391b578c5",
+              "command": "/setblock -70 16 -94 create:creative_motor[facing=east]",
               "delay": 2
             },
             {
-              "id": "88b058cd-d30c-45d2-82c8-6be2806420b2",
-              "command": "/summon armor_stand ~4 ~3 ~6 {ShowArms:1,  CustomNameVisible:0b,CustomName:'{\"text\":\"mcdia_player\"}',Rotation:[90f,0f], NoBasePlate:0b, Small:0b, Invisible:0b, Invulnerable:0b, equipment:{offhand:{id:\"minecraft:writable_book\",count:1,components:{\"minecraft:writable_book_content\":{pages:[{raw:\"-5\\n3\\n-1.0\\n2.0\\n\"},{raw:\"-5\\n3\\n-0.5\\n10\\n10\\n15\"}]}}}}}",
+              "id": "b5642205-94e2-4dc3-b5c2-9be69adc5a5c",
+              "command": "/setblock -69 17 -94 minecraft:redstone_block",
+              "delay": 2
+            }
+          ],
+          "x": 216.5125,
+          "y": 64.66667,
+          "width": 82.288284,
+          "height": 37.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "c0ec17c8-b92d-45ad-8d81-92fc06ec5fe6",
+          "name": "关牢房门",
+          "commands": [
+            {
+              "id": "835f1484-3134-4fcf-9e10-55d7effa977f",
+              "command": "/setblock -70 16 -94 create:creative_motor[facing=east]",
               "delay": 2
             },
             {
-              "id": "01c65f5f-8667-40dc-8e5b-b1937c164619",
-              "command": "/summon armor_stand ~2 ~3 ~8 {ShowArms:1,  CustomNameVisible:0b,CustomName:'{\"text\":\"mcdia_player\"}',Rotation:[90f,0f], NoBasePlate:0b, Small:0b, Invisible:0b, Invulnerable:0b, equipment:{offhand:{id:\"minecraft:writable_book\",count:1,components:{\"minecraft:writable_book_content\":{pages:[{raw:\"-5\\n3\\n-1.0\\n2.0\\n\"},{raw:\"-5\\n3\\n-0.5\\n10\\n10\\n15\"}]}}}}}",
+              "id": "63cb6f63-1a30-4d04-a222-e9e8c46f6b82",
+              "command": "/setblock -69 17 -94 minecraft:air",
+              "delay": 2
+            }
+          ],
+          "x": 213.50078,
+          "y": 113.333336,
+          "width": 86.291405,
+          "height": 30.666664,
+          "rotation": 0.0
+        },
+        {
+          "id": "3b8775b6-10dd-458b-8569-2a69576cfa3f",
+          "name": "招待所钥匙",
+          "commands": [
+            {
+              "id": "47e3bddb-d8d3-439b-8a52-4d9280a98b7c",
+              "command": "/give @s minecraft:trial_key[minecraft:custom_data={key:1b},minecraft:custom_name={text:\"招待所钥匙\",italic:false}]",
+              "delay": 2
+            }
+          ],
+          "x": 810.0,
+          "y": 255.0,
+          "width": 43.5914,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "0fe27b10-25f8-403b-a779-1b2209dc977b",
+          "name": "地下室钥匙（开启暗道）",
+          "commands": [
+            {
+              "id": "135c8aa9-923c-4ef0-9f43-0b43712a293c",
+              "command": "/give @p minecraft:ominous_trial_key[custom_name={\"text\":\"高级的钥匙\",\"color\":\"#9D00E3\",\"bold\":true,italic:false},lore=[''],minecraft:custom_data={basement_key:1b},minecraft:enchantment_glint_override=true] 1",
+              "delay": 2
+            }
+          ],
+          "x": 810.0,
+          "y": 276.0,
+          "width": 44.5922,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "50571f39-6204-41a5-87bc-f10e44a5a42b",
+          "name": "断掉/锋利的铁栏杆",
+          "commands": [
+            {
+              "id": "38820136-8ac9-4251-9630-0bc040decd7f",
+              "command": "/give @p iron_bars[custom_name=[{\"text\":\"锋利的铁栏杆\",\"italic\":false,\"color\":\"#af1ec2\"}],enchantments={sharpness:10}]",
+              "delay": 2
+            }
+          ],
+          "x": 810.0,
+          "y": 298.0,
+          "width": 48.5953,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "1f24867a-a4e8-444d-8944-b9739a54a230",
+          "name": "隐形展示框",
+          "commands": [
+            {
+              "id": "f50c1e85-6ddc-4c53-8895-afb456408cfc",
+              "command": "/give @s item_frame[entity_data={id:\"minecraft:item_frame\",Invisible:1b}]",
+              "delay": 2
+            }
+          ],
+          "x": 810.0,
+          "y": 320.0,
+          "width": 45.0,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "aa0938b0-3045-4459-b3a8-16f5efc76961",
+          "name": "开门卡（冷冻室）",
+          "commands": [
+            {
+              "id": "53fbe78f-df83-43ac-87a1-9e98be5d97fd",
+              "command": "/give @s paper[minecraft:custom_name=\"开门卡\"]",
+              "delay": 2
+            }
+          ],
+          "x": 810.0,
+          "y": 195.333,
+          "width": 41.9234,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "0dbb7d17-f168-4641-a91e-e51f264fcaf5",
+          "name": "仓库门卡",
+          "commands": [
+            {
+              "id": "4fdcb7be-9f75-406c-afdb-80a8b10835dd",
+              "command": "/give @s paper[minecraft:custom_name=\"某处的门卡\",minecraft:custom_data={card:1b}]",
+              "delay": 2
+            }
+          ],
+          "x": 810.0,
+          "y": 215.0,
+          "width": 39.5883,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "b40f629a-e83f-4130-b994-1e6b1fed1924",
+          "name": "惩罚室钥匙",
+          "commands": [
+            {
+              "id": "b958737f-0ff6-4b7f-964a-dac32d8d2499",
+              "command": "/give @s minecraft:trial_key[minecraft:custom_name=\"惩罚室钥匙\"]",
+              "delay": 2
+            }
+          ],
+          "x": 810.0,
+          "y": 235.667,
+          "width": 40.9227,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "06e18288-72e2-4a6e-a1bd-49fed9895c01",
+          "name": "拿消音枪",
+          "commands": [
+            {
+              "id": "a5115d7c-8b40-4fdd-bf6f-c6c078592846",
+              "command": "/give @p minecraft:carrot_on_a_stick[damage=0,custom_model_data={floats:[2]},item_name='\"装了简易消音器的魔法枪\"',lore=['\"每天补充一发子弹\"'],minecraft:equippable={slot:\"head\"},minecraft:item_model=\"minecraft:nnk_gun\"] 1",
+              "delay": 2
+            }
+          ],
+          "x": 825.0,
+          "y": 172.667,
+          "width": 30.0,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "8dd00b91-5c41-4b75-acd2-40dc8a641424",
+          "name": "拿枪",
+          "commands": [
+            {
+              "id": "cfebd177-9bea-4ea9-b18b-c48e3bea7304",
+              "command": "/give @p minecraft:carrot_on_a_stick[damage=0,custom_model_data={floats:[1]},item_name='\"前人用魔法制成的枪\"',lore=['\"每天补充一发子弹\"'],minecraft:equippable={slot:\"head\"},minecraft:item_model=\"minecraft:nnk_gun\"] 1",
+              "delay": 2
+            }
+          ],
+          "x": 800.0,
+          "y": 173.595,
+          "width": 30.0,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "591a99fa-15bc-418a-823e-1197d11e8ff7",
+          "name": "清除尸体",
+          "commands": [
+            {
+              "id": "e0d01697-74ff-4610-85c8-94c0546f7be7",
+              "command": "execute as @e[type=chest_minecart,tag=body_store,distance=..4] at @s run tp @s ~ -1000 ~",
               "delay": 2
             },
             {
-              "id": "5585fb11-001d-4182-8ce4-143ba92ff35d",
-              "command": "/summon armor_stand ~ ~3 ~10 {ShowArms:1,  CustomNameVisible:0b,CustomName:'{\"text\":\"mcdia_player\"}',Rotation:[90f,0f], NoBasePlate:0b, Small:0b, Invisible:0b, Invulnerable:0b, equipment:{offhand:{id:\"minecraft:writable_book\",count:1,components:{\"minecraft:writable_book_content\":{pages:[{raw:\"-5\\n3\\n-1.0\\n2.0\\n\"},{raw:\"-5\\n3\\n-0.5\\n10\\n10\\n15\"}]}}}}}",
+              "id": "fa561814-1127-4171-91fe-08ee53254c93",
+              "command": "kill @e[type=minecraft:interaction,tag=body_pickup,distance=..4]",
               "delay": 2
             },
             {
-              "id": "55167883-2b68-4812-87e8-6e95616a0212",
-              "command": "/summon armor_stand ~10 ~3 ~ {ShowArms:1,  CustomNameVisible:0b,CustomName:'{\"text\":\"mcdia_player\"}',Rotation:[90f,0f], NoBasePlate:0b, Small:0b, Invisible:0b, Invulnerable:0b, equipment:{offhand:{id:\"minecraft:writable_book\",count:1,components:{\"minecraft:writable_book_content\":{pages:[{raw:\"-5\\n3\\n-1.0\\n2.0\\n\"},{raw:\"-5\\n3\\n-0.5\\n10\\n10\\n15\"}]}}}}}",
+              "id": "f96f6b7a-fa5e-467d-bb15-c55d3843a35e",
+              "command": "kill @e[type=minecraft:item_display,tag=body,distance=..4]",
+              "delay": 2
+            }
+          ],
+          "x": 686.6421055456171,
+          "y": 135.65039355992843,
+          "width": 70.0,
+          "height": 30.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "65699dfb-24fc-4902-a04e-d31b45fe36ac",
+          "name": "跳过一天",
+          "commands": [
+            {
+              "id": "ec7545a6-8c80-4b8a-a314-6286b3e097a2",
+              "command": "/scoreboard players set GlobalTime TimeRun 43200",
+              "delay": 2
+            }
+          ],
+          "x": 93.65314,
+          "y": 38.83333,
+          "width": 73.94844,
+          "height": 26.333334,
+          "rotation": 0.0
+        },
+        {
+          "id": "17c11e9d-26da-400c-a236-7fbbcc17b256",
+          "name": "分发，补发魔女图鉴（固定槽位）",
+          "commands": [
+            {
+              "id": "f6304979-5e27-48e3-94e1-0410e54ab9bb",
+              "command": "/item replace entity @a[tag=player] container.7 with manosaba-ice-expand:clue_bag[minecraft:custom_data={is_magic:1b},minecraft:custom_name=[{text:\"【 \",color:white,bold:false,italic:false},{text:\"图\",color:red,bold:true,italic:false},{text:\"鉴 】\",color:white,bold:false}],manosaba-ice-expand:stored_items=[{slot:0,item:{id:\"minecraft:written_book\",count:1,components:{\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:written_book_content\":{pages:[{raw:\"图鉴用于收录证物。\\n\\n右键图鉴中的证物可以将其清除，打开图鉴后也可以对准证物按下⌈出示⌋。\\n\\n除了直接放入之外，用鼠标拿起证物右键图鉴以将其收录，拿图鉴右键证物也能将其收录。\\n\\n手持图鉴时潜行右键物品展示框也可以快捷收录展示框中的证物。\"}],resolved:1b,title:{raw:\"点我打开使用说明\"},author:\"Ice_in_North\"}}}},{slot:1,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_ema\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#F76EDC\",bold:1b,text:\"樱羽艾玛\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:2,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_hiro\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#871E1E\",bold:1b,text:\"二阶堂希罗\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:3,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_anan\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#3700FF\",bold:1b,text:\"夏目安安\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:4,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_noa\",\"minecraft:custom_name\":{italic:0b,extra:[{color:\"#48FF00\",text:\"崎\"},{color:\"#FF0000\",text:\"诺\"},{color:\"yellow\",text:\"亚\"},{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"aqua\",bold:1b,text:\"城\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:5,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_reiya\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#E5A332\",bold:1b,text:\"莲见蕾雅\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:6,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_miria\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#FFE807\",bold:1b,text:\"佐伯米莉亚\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:7,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_mago\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"dark_purple\",bold:1b,text:\"宝生玛格\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:8,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_nnk\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#2A2A2A\",bold:1b,text:\"黑部奈叶香\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:9,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_yalisa\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#585858\",bold:1b,text:\"紫藤亚里沙\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:10,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_sherry\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#1EBFFF\",bold:1b,text:\"橘雪莉\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:11,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_hanna\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#54C31C\",bold:1b,text:\"远野汉娜\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:12,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_coco\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#FF7400\",bold:1b,text:\"泽渡可可\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:13,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_mll\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#B69ABC\",bold:1b,text:\"冰上梅露露\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:14,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_yuki\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#9DC5D4\",bold:1b,text:\"月代雪\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:15,item:{id:\"minecraft:chicken_spawn_egg\",count:1,components:{\"minecraft:custom_name\":'\"典狱长的手办\"',\"minecraft:custom_data\":{lock_clue:\"\"}}}},{slot:16,item:{id:\"minecraft:pig_spawn_egg\",count:1,components:{\"minecraft:item_model\":\"minecraft:scythe\",\"minecraft:custom_name\":'\"看守的手办\"',\"minecraft:custom_data\":{lock_clue:\"\"}}}},{slot:17,item:{id:\"minecraft:pig_spawn_egg\",count:1,components:{\"minecraft:custom_name\":\"钢笔\",\"minecraft:item_model\":\"minecraft:hiro_pen\",\"minecraft:custom_data\":{lock_clue:\"\"}}}},]]",
+              "delay": 2
+            }
+          ],
+          "x": 765.683,
+          "y": 137.333,
+          "width": 89.6273,
+          "height": 30.3333,
+          "rotation": 0.0
+        },
+        {
+          "id": "603ab0fd-4a8e-4766-a1b7-34dfc68585aa",
+          "name": "进入控制室",
+          "commands": [
+            {
+              "id": "f11e4d96-40f8-427f-bb7c-3b56c9645179",
+              "command": "/tp 381 4 -260",
+              "delay": 2
+            }
+          ],
+          "x": 360.0,
+          "y": 30.0,
+          "width": 130.659,
+          "height": 43.9941,
+          "rotation": 0.0
+        },
+        {
+          "id": "9574d4ba-2e83-447c-820d-11393bf4ed67",
+          "name": "夜晚投票",
+          "commands": [
+            {
+              "id": "c09c7112-02d4-4e36-82cc-ade1c13b9685",
+              "command": "/function skip_night:player_check",
+              "delay": 2
+            }
+          ],
+          "x": 75.0,
+          "y": 285.0,
+          "width": 100.0,
+          "height": 20.0,
+          "rotation": 0.0
+        },
+        {
+          "id": "c9708d24-0f78-49b4-9aab-6d7bec78f02f",
+          "name": "时间暂停",
+          "commands": [
+            {
+              "id": "b9a65931-3720-46f7-9df2-e87195b21bb8",
+              "command": "execute as @a[tag=master] run scoreboard players set GlobalTime TimeState 1",
               "delay": 2
             },
             {
-              "id": "62c88afc-14ef-4573-a1b5-837759fce474",
-              "command": "/summon armor_stand ~ ~3 ~10 {ShowArms:1,  CustomNameVisible:0b,CustomName:'{\"text\":\"mcdia_player\"}',Rotation:[90f,0f], NoBasePlate:0b, Small:0b, Invisible:0b, Invulnerable:0b, equipment:{offhand:{id:\"minecraft:writable_book\",count:1,components:{\"minecraft:writable_book_content\":{pages:[{raw:\"-5\\n3\\n-1.0\\n2.0\\n\"},{raw:\"-5\\n3\\n-0.5\\n10\\n10\\n15\"}]}}}}}",
-              "delay": 2
-            }
-          ],
-          "x": 86.339836,
-          "y": 160.33333,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "58564dff-2848-4779-b925-f6e657f31cfc",
-          "name": "调整天数",
-          "commands": [
-            {
-              "id": "64188792-4888-4ed3-b86c-8ff98d9d9bd2",
-              "command": "/time add 1000",
+              "id": "0ac4ddc6-f1ba-4fdc-8bdb-641071bfe704",
+              "command": "execute at @a[tag=master] run title @a title {\"text\":\" ▶ 时间已暂停 \",\"color\":\"red\"}",
               "delay": 2
             },
             {
-              "id": "788159c5-990d-4466-a303-20c08bb9b4ba",
-              "command": "/time add 2000",
+              "id": "bf41ca1c-9978-4c64-9b8d-956bc5bf52ce",
+              "command": "execute as @a[tag=master] at @a run playsound minecraft:block.beacon.deactivate master @a ~ ~ ~ 1 0.5",
+              "delay": 2
+            },
+            {
+              "id": "d139955e-352d-4520-8d50-e8cf45de7395",
+              "command": "execute as @a[tag=master] at @a run playsound minecraft:block.bell.resonate master @a ~ ~ ~ 5 0.8",
+              "delay": 2
+            },
+            {
+              "id": "aba155b4-4c56-46a0-bc71-08e89858dccf",
+              "command": "execute as @a[tag=master] at @a run playsound minecraft:entity.iron_golem.damage master @a ~ ~ ~ 0.8 0.1",
               "delay": 2
             }
           ],
-          "x": 94.05,
-          "y": 30.666668,
-          "width": 85.29063,
-          "height": 41.333336,
+          "x": 74.6138,
+          "y": 110.071,
+          "width": 100.0,
+          "height": 30.0,
           "rotation": 0.0
         },
         {
-          "id": "bd77dd67-f1c2-42ff-8c9e-be5d19d4adab",
-          "name": "New popup",
+          "id": "9bb027e5-e000-40b3-9015-c0da812356c5",
+          "name": "时间流动",
           "commands": [
             {
-              "id": "5bd2072b-fda9-469e-9bc1-12ea97df0f5b",
-              "command": "/say hello",
+              "id": "4d71e63f-d27c-4bb4-af97-d21452e7569e",
+              "command": "execute as @a[tag=master] run scoreboard players set GlobalTime TimeState 0",
+              "delay": 2
+            },
+            {
+              "id": "b5441e43-d6ae-4ac7-9a5c-c57cf4e690e8",
+              "command": "execute at @a[tag=master] run title @a title {\"text\":\" ⏸ 时间开始流动...... \",\"color\":\"gold\"}",
+              "delay": 2
+            },
+            {
+              "id": "19f6e718-5849-4375-ae90-9c3793170e11",
+              "command": "execute as @a[tag=master] at @a run playsound minecraft:block.beacon.activate master @a ~ ~ ~ 1 2",
+              "delay": 2
+            },
+            {
+              "id": "20a5f66f-374e-4906-b7ac-ecddbde33767",
+              "command": "execute as @a[tag=master] at @a run playsound minecraft:block.bell.resonate master @a ~ ~ ~ 5 1.5",
+              "delay": 2
+            },
+            {
+              "id": "f41e5c73-c56d-4186-a55b-cd6361e3aad9",
+              "command": "execute as @a[tag=master] at @a run playsound minecraft:entity.iron_golem.repair master @a ~ ~ ~ 0.5 2",
               "delay": 2
             }
           ],
-          "x": 339.22266,
-          "y": 167.0005,
-          "width": 91.9625,
-          "height": 35.294342,
+          "x": 75.0,
+          "y": 140.0,
+          "width": 100.0,
+          "height": 30.0,
           "rotation": 0.0
         },
         {
-          "id": "c11ce427-a9e7-4d8a-ab91-2a21bfb3b8a6",
-          "name": "New popup",
+          "id": "59a70570-7b4c-49db-b94d-fd9711b79580",
+          "name": "搜查时间",
           "commands": [
             {
-              "id": "1a0e05da-f18c-4a70-9d49-edf8471a8236",
-              "command": "/say hello",
+              "id": "16b6094e-ec92-40d6-b10b-eaed87f46176",
+              "command": "scoreboard players set SearchingTime SearchingTime 12000",
+              "delay": 0
+            },
+            {
+              "id": "f7b3dc11-968c-40e7-b975-74af7ce1a13c",
+              "command": "bossbar set minecraft:searchingtime players @a",
+              "delay": 0
+            },
+            {
+              "id": "fd9cee3b-089b-453c-8ff2-4597521e14cb",
+              "command": "execute if score SearchingTime SearchingTime matches 11998 run title @a title {\"text\":\"🔎👁 搜 查 开 始\",\"color\":blue,\"bold\":true}",
+              "delay": 0
+            },
+            {
+              "id": "ff614a49-608a-4613-ba71-f996bbb6a8eb",
+              "command": "execute as @a at @s run playsound minecraft:item.lodestone_compass.lock master @a ~ ~ ~ 2 1.2",
+              "delay": 2
+            },
+            {
+              "id": "d608b717-c5fc-4e4a-bbeb-486a791b03c3",
+              "command": "execute as @a at @s run playsound minecraft:item.lodestone_compass.lock master @a ~ ~ ~ 2 2",
+              "delay": 2
+            },
+            {
+              "id": "b066a6da-1ba8-4fa4-ab92-baeb75f9f9a9",
+              "command": "execute as @a at @s run playsound minecraft:item.lodestone_compass.lock master @a ~ ~ ~ 2 0.5",
+              "delay": 2
+            },
+            {
+              "id": "b60d9501-9691-4353-93cd-eb1f6df29bb1",
+              "command": "execute as @a at @s run playsound minecraft:item.lodestone_compass.lock master @a ~ ~ ~ 2 0.3",
+              "delay": 2
+            },
+            {
+              "id": "d6fe4ec3-d08b-4b19-b51c-656d03a4a31b",
+              "command": "execute as @a at @s run playsound minecraft:item.lodestone_compass.lock master @a ~ ~ ~ 2 2",
               "delay": 2
             }
           ],
-          "x": 102.0,
-          "y": 122.0,
-          "width": 140.0,
-          "height": 48.0,
+          "x": 75.0,
+          "y": 173.946,
+          "width": 100.0,
+          "height": 30.0,
           "rotation": 0.0
-        },
+        }
+      ]
+    },
+    {
+      "id": "7a78ef69-8dc3-4984-8bd4-63dd9581b5d8",
+      "name": "monvhua指令面板",
+      "popups": [
         {
-          "id": "893d8f90-7d52-4dea-b32e-4badfd6c1f54",
-          "name": "New popup",
+          "id": "0f7cc9ef-fa4d-4d24-8cd6-d6b16e1aac78",
+          "name": "绘画清除",
           "commands": [
             {
-              "id": "1426fadd-2087-447d-a9e2-bbb16217d8fe",
-              "command": "/say hello",
+              "id": "bf4ec81f-9742-4bd0-bafa-1506b37a9e8c",
+              "command": "/monvhua-graffiti_绘画 clear_清除 block_方块 10",
               "delay": 2
             }
           ],
-          "x": 114.0,
-          "y": 134.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "7a751a70-489b-41ff-80fe-7a2f5bc15db6",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "aba53676-0447-41cb-8d49-9992c0e93b07",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 138.0,
-          "y": 158.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "627f5fc0-0d14-4f77-9536-146c03e3d404",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "e15e6b96-474d-4a5f-a957-7d00c275d512",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 150.0,
-          "y": 170.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "09dc0ed4-2a65-43ff-9f0d-f731ba17ac6c",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "e5506813-39a5-47ff-88e0-4437fec8312d",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 162.0,
-          "y": 182.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "15cd728b-b412-4cf3-b303-840b7bbafa63",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "973ac101-414f-4048-9f19-7e7d975c56af",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 269.955,
-          "y": 102.474,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "453c5e4a-a69f-462e-ac18-a5ecd404ea92",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "b9edb49a-b374-47bb-9041-ea4f53f537f0",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 210.0,
-          "y": 230.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "d6cf1e77-94ea-45bb-b35d-ae6e78de3b39",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "83fc05c6-44df-4d41-86d0-0701185200d7",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 222.0,
-          "y": 242.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "0694d54f-f8b4-4adb-9637-d13700b1f3f4",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "0f6cddac-8b61-46af-b53a-c74ce3ff5ede",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 234.0,
-          "y": 254.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "02d55693-afe4-4af9-af12-1c452f70f84a",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "aa7004f3-5d8f-443b-93b0-2bf92dc77e48",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 270.0,
-          "y": 290.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "5e28f7a5-75ea-407a-a54c-6322682398d5",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "d9f887f2-1cc2-4e05-8503-b552e445ebd7",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 294.0,
-          "y": 314.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "f88a79e6-cb0a-410f-9761-6f1f52232060",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "557dfd30-aa47-4663-aadd-f29c009b8197",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 306.0,
-          "y": 326.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "550e9929-c66c-47af-9e9c-c96291ce80c7",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "f9cf65af-591d-4c84-985b-bd5cecbf9f11",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 318.0,
-          "y": 338.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "35f1538d-ae48-4775-b0f8-93a0f3957091",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "4789277e-5d4f-478d-808d-941c67fcb271",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 330.0,
-          "y": 350.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "be5ec734-2f4a-401b-93ee-66eb6ee212e9",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "537ae600-5587-4176-a3c6-73abc484b256",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 354.0,
-          "y": 374.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "410bc3ef-7fdc-4703-ab1e-e41ed3fcefde",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "5586f070-d83c-455a-9809-dd3660caade8",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 366.0,
-          "y": 386.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "beb3a8b1-1286-4e8f-b7f9-35bd916248eb",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "67b9a8f4-1744-49c5-a2f7-9bfcc5c92af7",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 378.0,
-          "y": 398.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "511e2207-ac8a-4779-9e18-50e044318560",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "db1701d2-7e8d-4c6f-a132-edfd6cdbde5b",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 390.0,
-          "y": 410.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "f4d1b566-b759-468d-8588-78f09e0de36d",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "dae13f8d-9051-4adc-9da7-28a2222960b3",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 402.0,
-          "y": 422.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "1718c01e-2ba1-4d59-9f53-07212c2f5fcc",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "e65714e7-ddf3-44f3-8b2a-9e8d07dcf4f6",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 414.0,
-          "y": 434.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "774599c3-df04-4e08-802a-f707cbe6d407",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "0275d7e3-10ec-438d-be8f-6d40b21e3124",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 426.0,
-          "y": 446.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "cee4067b-25ae-4bf7-892b-5781bfebe605",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "6625dc64-fbb2-4ea8-88e0-1c0b52538052",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 438.0,
-          "y": 458.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "0dcb20b6-cc9b-4322-ae98-49d539a8441d",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "0073a289-1259-4310-b6eb-fc64b95abd29",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 450.0,
-          "y": 470.0,
-          "width": 140.0,
-          "height": 48.0,
-          "rotation": 0.0
-        },
-        {
-          "id": "63c10dbd-59ca-4360-8e5f-98741a86ed0f",
-          "name": "New popup",
-          "commands": [
-            {
-              "id": "8b5192ec-28c4-44ae-8e67-db16040c880d",
-              "command": "/say hello",
-              "delay": 2
-            }
-          ],
-          "x": 126.333595,
-          "y": 146.0,
+          "x": 0.0,
+          "y": 30.0,
           "width": 140.0,
           "height": 48.0,
           "rotation": 0.0
         }
       ]
+    }
+  ],
+  "popups": [
+    {
+      "id": "a61c3589-e087-4164-b43e-cbeaa2f8d501",
+      "name": "地雷复原",
+      "commands": [
+        {
+          "id": "9ea76c64-a408-457c-bccf-f4db98764e7b",
+          "command": "/tp -19 24 15",
+          "delay": 2
+        }
+      ],
+      "x": 765.0,
+      "y": 28.5023,
+      "width": 92.2961,
+      "height": 25.6454,
+      "rotation": 0.0
+    },
+    {
+      "id": "db597a65-21f5-4f38-be46-06b43cc4906e",
+      "name": "投票",
+      "commands": [
+        {
+          "id": "77ca47fe-42e4-4620-8e05-d99fd66f70bd",
+          "command": "/function xianxing:start",
+          "delay": 2
+        }
+      ],
+      "x": 75.0,
+      "y": 205.0,
+      "width": 100.0,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "5fcafea9-b98a-4f28-9183-6a587ffc8dfc",
+      "name": "投票结束",
+      "commands": [
+        {
+          "id": "c7e621de-1121-46ce-a69a-9847c275945d",
+          "command": "/function xianxing:end",
+          "delay": 2
+        }
+      ],
+      "x": 75.0,
+      "y": 225.0,
+      "width": 100.0,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "76c54fe6-efd0-43ab-a434-21c7e4b04868",
+      "name": "魔女投票",
+      "commands": [
+        {
+          "id": "cc34fea3-ca57-46bc-962f-5a2a07d844fd",
+          "command": "/function shenpan_vote:start",
+          "delay": 2
+        }
+      ],
+      "x": 75.0,
+      "y": 245.0,
+      "width": 100.0,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "e70aa974-07ee-4c2c-8fcd-12a48982c47c",
+      "name": "魔女投票结束",
+      "commands": [
+        {
+          "id": "d992aa8f-0433-4409-a2b9-7c5ff100e3c2",
+          "command": "/function shenpan_vote:end",
+          "delay": 2
+        }
+      ],
+      "x": 75.0,
+      "y": 265.0,
+      "width": 100.0,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "1d1ef054-d20d-41e6-8e60-fa460aa73493",
+      "name": "开启死回检测（场务决策）",
+      "commands": [
+        {
+          "id": "7143e5a2-1ce5-48ac-9ce6-febd287cf0e6",
+          "command": "/reversal confirm on",
+          "delay": 2
+        }
+      ],
+      "x": 75.0,
+      "y": 305.0,
+      "width": 100.0,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "203f9bf8-e463-4d70-a617-6a419056551d",
+      "name": "关闭死回检测（立即生效）",
+      "commands": [
+        {
+          "id": "c72d5cdd-8d25-40c0-91b3-49d8ab53f1c2",
+          "command": "/reversal confirm off",
+          "delay": 2
+        }
+      ],
+      "x": 75.0,
+      "y": 325.0,
+      "width": 100.0,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "e553f193-0d8b-49eb-b156-c2d6c554c733",
+      "name": "给隐身",
+      "commands": [
+        {
+          "id": "5b952bda-3754-4eb1-be79-5c8c3f94e6db",
+          "command": "/effect give @s minecraft:invisibility infinite 1 true",
+          "delay": 2
+        }
+      ],
+      "x": 75.0,
+      "y": 365.0,
+      "width": 50.0,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "58baf43f-6949-4101-95a0-316336bfa09a",
+      "name": "给隐身（1000s）",
+      "commands": [
+        {
+          "id": "7d0063ee-3d1c-43e8-8665-a5c6a3b92ee9",
+          "command": "/effect give @s minecraft:invisibility 1000 1 true",
+          "delay": 2
+        }
+      ],
+      "x": 125.0,
+      "y": 365.0,
+      "width": 50.0,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "68055bb2-f513-49ed-b961-20296c6f3119",
+      "name": "给夜视（1000s）",
+      "commands": [
+        {
+          "id": "db83a3d0-13a9-4be7-a491-ac2093fee156",
+          "command": "/effect give @s minecraft:night_vision 1000 1 true",
+          "delay": 2
+        }
+      ],
+      "x": 125.0,
+      "y": 345.0,
+      "width": 50.0,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "1e3adc25-53ff-46f6-a53b-33b1ad529495",
+      "name": "清除效果（全部）",
+      "commands": [
+        {
+          "id": "38ac52ca-da94-4889-aea6-6978b5bba2e4",
+          "command": "/effect clear @s",
+          "delay": 2
+        }
+      ],
+      "x": 75.0,
+      "y": 385.0,
+      "width": 100.0,
+      "height": 35.3333,
+      "rotation": 0.0
+    },
+    {
+      "id": "666bc288-aed4-4d6d-b322-728108af144a",
+      "name": "消散",
+      "commands": [
+        {
+          "id": "14482bb4-7bab-4e13-9d5a-762c2fb09741",
+          "command": "/monvhua-dissolve_消散 玩家",
+          "delay": 2
+        }
+      ],
+      "x": 779.4759762790698,
+      "y": 453.25383744186047,
+      "width": 72.93203,
+      "height": 24.626204,
+      "rotation": 0.0
+    },
+    {
+      "id": "f843d830-e9b5-475a-8325-b46b65c0a72a",
+      "name": "给夜视",
+      "commands": [
+        {
+          "id": "36a7e453-a05d-45d6-adb7-3f2987152701",
+          "command": "/effect give @s minecraft:night_vision infinite 1 true",
+          "delay": 2
+        }
+      ],
+      "x": 75.0,
+      "y": 345.0,
+      "width": 50.0,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "e66b432b-f9e4-4a21-a927-bc9336c132be",
+      "name": "魔女岛正门",
+      "commands": [
+        {
+          "id": "240bbf89-eccd-46df-858d-dd794a148bbb",
+          "command": "/tp -24 37 -2",
+          "delay": 2
+        }
+      ],
+      "x": 370.0,
+      "y": 100.0,
+      "width": 110.0,
+      "height": 30.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "0196c012-c761-417c-923e-2f0cc040311e",
+      "name": "重置天数",
+      "commands": [
+        {
+          "id": "350811e9-c8b4-4636-bfda-326afa0c5c00",
+          "command": "/scoreboard players set GlobalTime Days 1",
+          "delay": 2
+        }
+      ],
+      "x": 2.82049418604651,
+      "y": 41.565116279069784,
+      "width": 52.264847,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "010faa92-6ec0-4913-b967-51c2834da51c",
+      "name": "传送审判庭",
+      "commands": [
+        {
+          "id": "080d2366-2fd7-4d16-8358-45c9458df2b8",
+          "command": "/tp @p 71.48 44.00 -87.80",
+          "delay": 2
+        }
+      ],
+      "x": 370.0,
+      "y": 130.0,
+      "width": 110.0,
+      "height": 30.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "54287345-28b2-4876-a700-4711ab376b5a",
+      "name": "审判庭开",
+      "commands": [
+        {
+          "id": "0a4f5b89-7370-4e68-873a-f23eea54ec2b",
+          "command": "fill 70 41 -46 72 41 -46 minecraft:iron_bars[east=true,north=false,south=false,waterlogged=false,west=true]",
+          "delay": 2
+        },
+        {
+          "id": "0b5f3fbb-045e-4c39-a2a4-8f0020b95873",
+          "command": "fill 72 40 -46 70 37 -46 air",
+          "delay": 2
+        }
+      ],
+      "x": 550.0,
+      "y": 30.8844,
+      "width": 80.0,
+      "height": 25.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "a7ff53c2-afec-425b-8ecd-88ebfb010041",
+      "name": "审判庭关",
+      "commands": [
+        {
+          "id": "d6fa0ee4-4703-4a5f-aadf-e691f02ac83a",
+          "command": "fill 72 41 -46 70 41 -46 minecraft:chain[axis=y,waterlogged=false]",
+          "delay": 2
+        },
+        {
+          "id": "dd8bf6c9-488f-45c4-b165-580bda0fc379",
+          "command": "fill 72 40 -46 70 37 -46 minecraft:iron_bars[east=true,north=false,south=false,waterlogged=false,west=true]",
+          "delay": 2
+        }
+      ],
+      "x": 550.0,
+      "y": 59.1622,
+      "width": 80.0,
+      "height": 25.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "09324e74-6291-4b9b-b25a-97f28c31118d",
+      "name": "显示标题",
+      "commands": [
+        {
+          "id": "170aa581-f75c-41c8-baa1-1b003d2051f6",
+          "command": "/setblock -26 -37 69 minecraft:redstone_block",
+          "delay": 2
+        }
+      ],
+      "x": 791.2871027906978,
+      "y": 416.7767441860465,
+      "width": 60.93828,
+      "height": 32.333332,
+      "rotation": 0.0
+    },
+    {
+      "id": "9c9dbbc6-28ba-4cf3-b969-391da4c44bf7",
+      "name": "重置电视机",
+      "commands": [
+        {
+          "id": "4f3edff7-6e05-4a2c-9756-424d01778561",
+          "command": "/kill @e[tag=kuijiajia]",
+          "delay": 2
+        },
+        {
+          "id": "c8924892-954f-46ae-b786-ba65e3724e92",
+          "command": "/summon armor_stand -74.50 48.00 -63.50 {Tags:[\"kuijiajia\"],ShowArms:1,  CustomNameVisible:0b,CustomName:'{\"text\":\"mcdia_player\"}',Rotation:[90f,0f], NoBasePlate:0b, Small:0b, Invisible:0b, Invulnerable:0b, equipment:{offhand:{id:\"minecraft:writable_book\",count:1,components:{\"minecraft:writable_book_content\":{pages:[{raw:\"-5\\n3\\n-1.0\\n2.0\\n\"},{raw:\"-5\\n3\\n-0.5\\n10\\n10\\n15\"}]}}}}}",
+          "delay": 2
+        }
+      ],
+      "x": 775.0,
+      "y": 62.9393,
+      "width": 76.9508,
+      "height": 24.641,
+      "rotation": 0.0
+    },
+    {
+      "id": "eeb51e31-a8ad-4208-a83f-5aaabc4f63b8",
+      "name": "开牢房门",
+      "commands": [
+        {
+          "id": "5ddbad56-d733-43d2-81d8-179391b578c5",
+          "command": "/setblock -70 16 -94 create:creative_motor[facing=east]",
+          "delay": 2
+        },
+        {
+          "id": "b5642205-94e2-4dc3-b5c2-9be69adc5a5c",
+          "command": "/setblock -69 17 -94 minecraft:redstone_block",
+          "delay": 2
+        }
+      ],
+      "x": 216.5125,
+      "y": 64.66667,
+      "width": 82.288284,
+      "height": 37.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "c0ec17c8-b92d-45ad-8d81-92fc06ec5fe6",
+      "name": "关牢房门",
+      "commands": [
+        {
+          "id": "835f1484-3134-4fcf-9e10-55d7effa977f",
+          "command": "/setblock -70 16 -94 create:creative_motor[facing=east]",
+          "delay": 2
+        },
+        {
+          "id": "63cb6f63-1a30-4d04-a222-e9e8c46f6b82",
+          "command": "/setblock -69 17 -94 minecraft:air",
+          "delay": 2
+        }
+      ],
+      "x": 213.50078,
+      "y": 113.333336,
+      "width": 86.291405,
+      "height": 30.666664,
+      "rotation": 0.0
+    },
+    {
+      "id": "3b8775b6-10dd-458b-8569-2a69576cfa3f",
+      "name": "招待所钥匙",
+      "commands": [
+        {
+          "id": "47e3bddb-d8d3-439b-8a52-4d9280a98b7c",
+          "command": "/give @s minecraft:trial_key[minecraft:custom_data={key:1b},minecraft:custom_name={text:\"招待所钥匙\",italic:false}]",
+          "delay": 2
+        }
+      ],
+      "x": 810.0,
+      "y": 255.0,
+      "width": 43.5914,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "0fe27b10-25f8-403b-a779-1b2209dc977b",
+      "name": "地下室钥匙（开启暗道）",
+      "commands": [
+        {
+          "id": "135c8aa9-923c-4ef0-9f43-0b43712a293c",
+          "command": "/give @p minecraft:ominous_trial_key[custom_name={\"text\":\"高级的钥匙\",\"color\":\"#9D00E3\",\"bold\":true,italic:false},lore=[''],minecraft:custom_data={basement_key:1b},minecraft:enchantment_glint_override=true] 1",
+          "delay": 2
+        }
+      ],
+      "x": 810.0,
+      "y": 276.0,
+      "width": 44.5922,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "50571f39-6204-41a5-87bc-f10e44a5a42b",
+      "name": "断掉/锋利的铁栏杆",
+      "commands": [
+        {
+          "id": "38820136-8ac9-4251-9630-0bc040decd7f",
+          "command": "/give @p iron_bars[custom_name=[{\"text\":\"锋利的铁栏杆\",\"italic\":false,\"color\":\"#af1ec2\"}],enchantments={sharpness:10}]",
+          "delay": 2
+        }
+      ],
+      "x": 810.0,
+      "y": 298.0,
+      "width": 48.5953,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "1f24867a-a4e8-444d-8944-b9739a54a230",
+      "name": "隐形展示框",
+      "commands": [
+        {
+          "id": "f50c1e85-6ddc-4c53-8895-afb456408cfc",
+          "command": "/give @s item_frame[entity_data={id:\"minecraft:item_frame\",Invisible:1b}]",
+          "delay": 2
+        }
+      ],
+      "x": 810.0,
+      "y": 320.0,
+      "width": 45.0,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "aa0938b0-3045-4459-b3a8-16f5efc76961",
+      "name": "开门卡（冷冻室）",
+      "commands": [
+        {
+          "id": "53fbe78f-df83-43ac-87a1-9e98be5d97fd",
+          "command": "/give @s paper[minecraft:custom_name=\"开门卡\"]",
+          "delay": 2
+        }
+      ],
+      "x": 810.0,
+      "y": 195.333,
+      "width": 41.9234,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "0dbb7d17-f168-4641-a91e-e51f264fcaf5",
+      "name": "仓库门卡",
+      "commands": [
+        {
+          "id": "4fdcb7be-9f75-406c-afdb-80a8b10835dd",
+          "command": "/give @s paper[minecraft:custom_name=\"某处的门卡\",minecraft:custom_data={card:1b}]",
+          "delay": 2
+        }
+      ],
+      "x": 810.0,
+      "y": 215.0,
+      "width": 39.5883,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "b40f629a-e83f-4130-b994-1e6b1fed1924",
+      "name": "惩罚室钥匙",
+      "commands": [
+        {
+          "id": "b958737f-0ff6-4b7f-964a-dac32d8d2499",
+          "command": "/give @s minecraft:trial_key[minecraft:custom_name=\"惩罚室钥匙\"]",
+          "delay": 2
+        }
+      ],
+      "x": 810.0,
+      "y": 235.667,
+      "width": 40.9227,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "06e18288-72e2-4a6e-a1bd-49fed9895c01",
+      "name": "拿消音枪",
+      "commands": [
+        {
+          "id": "a5115d7c-8b40-4fdd-bf6f-c6c078592846",
+          "command": "/give @p minecraft:carrot_on_a_stick[damage=0,custom_model_data={floats:[2]},item_name='\"装了简易消音器的魔法枪\"',lore=['\"每天补充一发子弹\"'],minecraft:equippable={slot:\"head\"},minecraft:item_model=\"minecraft:nnk_gun\"] 1",
+          "delay": 2
+        }
+      ],
+      "x": 825.0,
+      "y": 172.667,
+      "width": 30.0,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "8dd00b91-5c41-4b75-acd2-40dc8a641424",
+      "name": "拿枪",
+      "commands": [
+        {
+          "id": "cfebd177-9bea-4ea9-b18b-c48e3bea7304",
+          "command": "/give @p minecraft:carrot_on_a_stick[damage=0,custom_model_data={floats:[1]},item_name='\"前人用魔法制成的枪\"',lore=['\"每天补充一发子弹\"'],minecraft:equippable={slot:\"head\"},minecraft:item_model=\"minecraft:nnk_gun\"] 1",
+          "delay": 2
+        }
+      ],
+      "x": 800.0,
+      "y": 173.595,
+      "width": 30.0,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "591a99fa-15bc-418a-823e-1197d11e8ff7",
+      "name": "清除尸体",
+      "commands": [
+        {
+          "id": "e0d01697-74ff-4610-85c8-94c0546f7be7",
+          "command": "execute as @e[type=chest_minecart,tag=body_store,distance=..4] at @s run tp @s ~ -1000 ~",
+          "delay": 2
+        },
+        {
+          "id": "fa561814-1127-4171-91fe-08ee53254c93",
+          "command": "kill @e[type=minecraft:interaction,tag=body_pickup,distance=..4]",
+          "delay": 2
+        },
+        {
+          "id": "f96f6b7a-fa5e-467d-bb15-c55d3843a35e",
+          "command": "kill @e[type=minecraft:item_display,tag=body,distance=..4]",
+          "delay": 2
+        }
+      ],
+      "x": 686.6421055456171,
+      "y": 135.65039355992843,
+      "width": 70.0,
+      "height": 30.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "65699dfb-24fc-4902-a04e-d31b45fe36ac",
+      "name": "跳过一天",
+      "commands": [
+        {
+          "id": "ec7545a6-8c80-4b8a-a314-6286b3e097a2",
+          "command": "/scoreboard players set GlobalTime TimeRun 43200",
+          "delay": 2
+        }
+      ],
+      "x": 93.65314,
+      "y": 38.83333,
+      "width": 73.94844,
+      "height": 26.333334,
+      "rotation": 0.0
+    },
+    {
+      "id": "17c11e9d-26da-400c-a236-7fbbcc17b256",
+      "name": "分发，补发魔女图鉴（固定槽位）",
+      "commands": [
+        {
+          "id": "f6304979-5e27-48e3-94e1-0410e54ab9bb",
+          "command": "/item replace entity @a[tag=player] container.7 with manosaba-ice-expand:clue_bag[minecraft:custom_data={is_magic:1b},minecraft:custom_name=[{text:\"【 \",color:white,bold:false,italic:false},{text:\"图\",color:red,bold:true,italic:false},{text:\"鉴 】\",color:white,bold:false}],manosaba-ice-expand:stored_items=[{slot:0,item:{id:\"minecraft:written_book\",count:1,components:{\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:written_book_content\":{pages:[{raw:\"图鉴用于收录证物。\\n\\n右键图鉴中的证物可以将其清除，打开图鉴后也可以对准证物按下⌈出示⌋。\\n\\n除了直接放入之外，用鼠标拿起证物右键图鉴以将其收录，拿图鉴右键证物也能将其收录。\\n\\n手持图鉴时潜行右键物品展示框也可以快捷收录展示框中的证物。\"}],resolved:1b,title:{raw:\"点我打开使用说明\"},author:\"Ice_in_North\"}}}},{slot:1,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_ema\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#F76EDC\",bold:1b,text:\"樱羽艾玛\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:2,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_hiro\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#871E1E\",bold:1b,text:\"二阶堂希罗\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:3,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_anan\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#3700FF\",bold:1b,text:\"夏目安安\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:4,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_noa\",\"minecraft:custom_name\":{italic:0b,extra:[{color:\"#48FF00\",text:\"崎\"},{color:\"#FF0000\",text:\"诺\"},{color:\"yellow\",text:\"亚\"},{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"aqua\",bold:1b,text:\"城\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:5,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_reiya\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#E5A332\",bold:1b,text:\"莲见蕾雅\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:6,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_miria\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#FFE807\",bold:1b,text:\"佐伯米莉亚\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:7,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_mago\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"dark_purple\",bold:1b,text:\"宝生玛格\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:8,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_nnk\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#2A2A2A\",bold:1b,text:\"黑部奈叶香\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:9,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_yalisa\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#585858\",bold:1b,text:\"紫藤亚里沙\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:10,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_sherry\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#1EBFFF\",bold:1b,text:\"橘雪莉\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:11,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_hanna\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#54C31C\",bold:1b,text:\"远野汉娜\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:12,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_coco\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#FF7400\",bold:1b,text:\"泽渡可可\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:13,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_mll\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#B69ABC\",bold:1b,text:\"冰上梅露露\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:14,item:{id:\"minecraft:porkchop\",count:1,components:{\"minecraft:item_model\":\"body:body_yuki\",\"minecraft:custom_name\":{italic:0b,extra:[{italic:0b,color:\"white\",bold:0b,text:\"的手办\"}],color:\"#9DC5D4\",bold:1b,text:\"月代雪\"},\"minecraft:custom_data\":{lock_clue:\"\"},\"minecraft:consumable\":{consume_seconds:5.0f,has_consume_particles:0b},\"minecraft:equippable\":{slot:\"head\"},\"minecraft:food\":{can_always_eat:1b,nutrition:5,saturation:2.0f}}}},{slot:15,item:{id:\"minecraft:chicken_spawn_egg\",count:1,components:{\"minecraft:custom_name\":'\"典狱长的手办\"',\"minecraft:custom_data\":{lock_clue:\"\"}}}},{slot:16,item:{id:\"minecraft:pig_spawn_egg\",count:1,components:{\"minecraft:item_model\":\"minecraft:scythe\",\"minecraft:custom_name\":'\"看守的手办\"',\"minecraft:custom_data\":{lock_clue:\"\"}}}},{slot:17,item:{id:\"minecraft:pig_spawn_egg\",count:1,components:{\"minecraft:custom_name\":\"钢笔\",\"minecraft:item_model\":\"minecraft:hiro_pen\",\"minecraft:custom_data\":{lock_clue:\"\"}}}},]]",
+          "delay": 2
+        }
+      ],
+      "x": 765.683,
+      "y": 137.333,
+      "width": 89.6273,
+      "height": 30.3333,
+      "rotation": 0.0
+    },
+    {
+      "id": "603ab0fd-4a8e-4766-a1b7-34dfc68585aa",
+      "name": "进入控制室",
+      "commands": [
+        {
+          "id": "f11e4d96-40f8-427f-bb7c-3b56c9645179",
+          "command": "/tp 381 4 -260",
+          "delay": 2
+        }
+      ],
+      "x": 360.0,
+      "y": 30.0,
+      "width": 130.659,
+      "height": 43.9941,
+      "rotation": 0.0
+    },
+    {
+      "id": "9574d4ba-2e83-447c-820d-11393bf4ed67",
+      "name": "夜晚投票",
+      "commands": [
+        {
+          "id": "c09c7112-02d4-4e36-82cc-ade1c13b9685",
+          "command": "/function skip_night:player_check",
+          "delay": 2
+        }
+      ],
+      "x": 75.0,
+      "y": 285.0,
+      "width": 100.0,
+      "height": 20.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "c9708d24-0f78-49b4-9aab-6d7bec78f02f",
+      "name": "时间暂停",
+      "commands": [
+        {
+          "id": "b9a65931-3720-46f7-9df2-e87195b21bb8",
+          "command": "execute as @a[tag=master] run scoreboard players set GlobalTime TimeState 1",
+          "delay": 2
+        },
+        {
+          "id": "0ac4ddc6-f1ba-4fdc-8bdb-641071bfe704",
+          "command": "execute at @a[tag=master] run title @a title {\"text\":\" ▶ 时间已暂停 \",\"color\":\"red\"}",
+          "delay": 2
+        },
+        {
+          "id": "bf41ca1c-9978-4c64-9b8d-956bc5bf52ce",
+          "command": "execute as @a[tag=master] at @a run playsound minecraft:block.beacon.deactivate master @a ~ ~ ~ 1 0.5",
+          "delay": 2
+        },
+        {
+          "id": "d139955e-352d-4520-8d50-e8cf45de7395",
+          "command": "execute as @a[tag=master] at @a run playsound minecraft:block.bell.resonate master @a ~ ~ ~ 5 0.8",
+          "delay": 2
+        },
+        {
+          "id": "aba155b4-4c56-46a0-bc71-08e89858dccf",
+          "command": "execute as @a[tag=master] at @a run playsound minecraft:entity.iron_golem.damage master @a ~ ~ ~ 0.8 0.1",
+          "delay": 2
+        }
+      ],
+      "x": 74.6138,
+      "y": 110.071,
+      "width": 100.0,
+      "height": 30.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "9bb027e5-e000-40b3-9015-c0da812356c5",
+      "name": "时间流动",
+      "commands": [
+        {
+          "id": "4d71e63f-d27c-4bb4-af97-d21452e7569e",
+          "command": "execute as @a[tag=master] run scoreboard players set GlobalTime TimeState 0",
+          "delay": 2
+        },
+        {
+          "id": "b5441e43-d6ae-4ac7-9a5c-c57cf4e690e8",
+          "command": "execute at @a[tag=master] run title @a title {\"text\":\" ⏸ 时间开始流动...... \",\"color\":\"gold\"}",
+          "delay": 2
+        },
+        {
+          "id": "19f6e718-5849-4375-ae90-9c3793170e11",
+          "command": "execute as @a[tag=master] at @a run playsound minecraft:block.beacon.activate master @a ~ ~ ~ 1 2",
+          "delay": 2
+        },
+        {
+          "id": "20a5f66f-374e-4906-b7ac-ecddbde33767",
+          "command": "execute as @a[tag=master] at @a run playsound minecraft:block.bell.resonate master @a ~ ~ ~ 5 1.5",
+          "delay": 2
+        },
+        {
+          "id": "f41e5c73-c56d-4186-a55b-cd6361e3aad9",
+          "command": "execute as @a[tag=master] at @a run playsound minecraft:entity.iron_golem.repair master @a ~ ~ ~ 0.5 2",
+          "delay": 2
+        }
+      ],
+      "x": 75.0,
+      "y": 140.0,
+      "width": 100.0,
+      "height": 30.0,
+      "rotation": 0.0
+    },
+    {
+      "id": "59a70570-7b4c-49db-b94d-fd9711b79580",
+      "name": "搜查时间",
+      "commands": [
+        {
+          "id": "16b6094e-ec92-40d6-b10b-eaed87f46176",
+          "command": "scoreboard players set SearchingTime SearchingTime 12000",
+          "delay": 0
+        },
+        {
+          "id": "f7b3dc11-968c-40e7-b975-74af7ce1a13c",
+          "command": "bossbar set minecraft:searchingtime players @a",
+          "delay": 0
+        },
+        {
+          "id": "fd9cee3b-089b-453c-8ff2-4597521e14cb",
+          "command": "execute if score SearchingTime SearchingTime matches 11998 run title @a title {\"text\":\"🔎👁 搜 查 开 始\",\"color\":blue,\"bold\":true}",
+          "delay": 0
+        },
+        {
+          "id": "ff614a49-608a-4613-ba71-f996bbb6a8eb",
+          "command": "execute as @a at @s run playsound minecraft:item.lodestone_compass.lock master @a ~ ~ ~ 2 1.2",
+          "delay": 2
+        },
+        {
+          "id": "d608b717-c5fc-4e4a-bbeb-486a791b03c3",
+          "command": "execute as @a at @s run playsound minecraft:item.lodestone_compass.lock master @a ~ ~ ~ 2 2",
+          "delay": 2
+        },
+        {
+          "id": "b066a6da-1ba8-4fa4-ab92-baeb75f9f9a9",
+          "command": "execute as @a at @s run playsound minecraft:item.lodestone_compass.lock master @a ~ ~ ~ 2 0.5",
+          "delay": 2
+        },
+        {
+          "id": "b60d9501-9691-4353-93cd-eb1f6df29bb1",
+          "command": "execute as @a at @s run playsound minecraft:item.lodestone_compass.lock master @a ~ ~ ~ 2 0.3",
+          "delay": 2
+        },
+        {
+          "id": "d6fe4ec3-d08b-4b19-b51c-656d03a4a31b",
+          "command": "execute as @a at @s run playsound minecraft:item.lodestone_compass.lock master @a ~ ~ ~ 2 2",
+          "delay": 2
+        }
+      ],
+      "x": 75.0,
+      "y": 173.946,
+      "width": 100.0,
+      "height": 30.0,
+      "rotation": 0.0
     }
   ]
 }

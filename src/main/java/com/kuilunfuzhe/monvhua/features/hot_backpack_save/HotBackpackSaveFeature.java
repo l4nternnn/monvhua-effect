@@ -8,7 +8,13 @@ import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.WitchRole;
 import com.kuilunfuzhe.monvhua.network.hot_backpack_save.HotBackpackPackets;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.LongArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import com.mojang.serialization.JsonOps;
+import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.entity.EquipmentSlot;
@@ -16,6 +22,8 @@ import net.minecraft.entity.effect.StatusEffect;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
@@ -48,6 +56,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 public final class HotBackpackSaveFeature {
     private static final String SPECIAL_SAVE_TAG = "save_backpack";
@@ -104,6 +113,23 @@ public final class HotBackpackSaveFeature {
                 save(server);
             }
         });
+        ServerLivingEntityEvents.ALLOW_DEATH.register((entity, source, damageAmount) -> {
+            if (!(entity instanceof ServerPlayerEntity player) || !hasSpecialSaveTag(player)) {
+                return true;
+            }
+            MinecraftServer server = player.getServer();
+            if (server == null) return true;
+            load(server);
+            Snapshot death = capture(player, "tag-death-save");
+            death.effects.clear();
+            death.health = 1.0F;
+            addSnapshot(player, death);
+            save(server);
+            player.clearStatusEffects();
+            player.setHealth(1.0F);
+            player.sendMessage(Text.literal("已自动保存死亡前状态，已在原地复活。"), true);
+            return false;
+        });
         registerReceivers();
     }
 
@@ -111,6 +137,106 @@ public final class HotBackpackSaveFeature {
         dispatcher.register(CommandManager.literal("monvhua-player-archive-save_玩家存档保存")
                 .requires(source -> source.hasPermissionLevel(2))
                 .executes(context -> saveSpecialPlayersCommand(context.getSource())));
+        dispatcher.register(CommandManager.literal("monvhua-archive")
+                .requires(source -> source.hasPermissionLevel(2))
+                .then(CommandManager.literal("save")
+                        .then(CommandManager.argument("tag", StringArgumentType.word())
+                                .executes(context -> saveTaggedPlayers(context.getSource(), StringArgumentType.getString(context, "tag")))))
+                .then(CommandManager.literal("apply")
+                        .then(CommandManager.argument("tag", StringArgumentType.word())
+                                .executes(context -> applyTaggedPlayers(context.getSource(), StringArgumentType.getString(context, "tag"), null))
+                                .then(CommandManager.argument("timestamp", LongArgumentType.longArg(0))
+                                        .suggests(HotBackpackSaveFeature::suggestBatchTimestamps)
+                                        .executes(context -> applyTaggedPlayers(context.getSource(), StringArgumentType.getString(context, "tag"), LongArgumentType.getLong(context, "timestamp")))))));
+    }
+
+    private static CompletableFuture<Suggestions> suggestBatchTimestamps(CommandContext<ServerCommandSource> context, SuggestionsBuilder builder) {
+        String tag;
+        try {
+            tag = StringArgumentType.getString(context, "tag");
+        } catch (IllegalArgumentException ignored) {
+            return builder.buildFuture();
+        }
+        load(context.getSource().getServer());
+        Set<Long> timestamps = new java.util.TreeSet<>(Comparator.reverseOrder());
+        String reason = "tag-batch:" + tag;
+        for (PlayerRecord record : store.records.values()) {
+            for (Snapshot snapshot : record.history) {
+                if (snapshot != null && reason.equals(snapshot.reason)) {
+                    timestamps.add(snapshot.timestamp);
+                }
+            }
+        }
+        for (Long timestamp : timestamps) {
+            builder.suggest(String.valueOf(timestamp), Text.literal(TIME_FORMAT.format(Instant.ofEpochMilli(timestamp))));
+        }
+        return builder.buildFuture();
+    }
+
+    private static int saveTaggedPlayers(ServerCommandSource source, String tag) {
+        MinecraftServer server = source.getServer();
+        load(server);
+        long timestamp = System.currentTimeMillis();
+        int count = 0;
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            if (!player.getCommandTags().contains(tag)) continue;
+            Snapshot snapshot = capture(player, "tag-batch:" + tag);
+            snapshot.timestamp = timestamp;
+            addSnapshot(player, snapshot);
+            count++;
+        }
+        store.guardedApply.put(tag, false);
+        save(server);
+        int saved = count;
+        source.sendFeedback(() -> Text.literal("已为标签 " + tag + " 保存 " + saved + " 名玩家，批次时间戳：" + timestamp), true);
+        return count;
+    }
+
+    private static int applyTaggedPlayers(ServerCommandSource source, String tag, Long requestedTimestamp) {
+        MinecraftServer server = source.getServer();
+        load(server);
+        boolean explicitTimestamp = requestedTimestamp != null;
+        if (!explicitTimestamp && Boolean.TRUE.equals(store.guardedApply.get(tag))) {
+            source.sendError(Text.literal("该标签的无时间戳覆盖已被保护；请明确输入时间戳，或先重新备份。"));
+            return 0;
+        }
+        long timestamp = explicitTimestamp ? requestedTimestamp : latestBatchTimestamp(tag);
+        if (timestamp < 0) {
+            source.sendError(Text.literal("没有找到标签 " + tag + " 的批次存档。"));
+            return 0;
+        }
+        int applied = 0;
+        int skipped = 0;
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            if (!player.getCommandTags().contains(tag)) continue;
+            Snapshot snapshot = findSnapshot(player.getUuid(), timestamp);
+            if (snapshot == null || !("tag-batch:" + tag).equals(snapshot.reason)) {
+                skipped++;
+                continue;
+            }
+            applySnapshotToOnlinePlayer(player, snapshot, true);
+            applied++;
+        }
+        store.guardedApply.put(tag, !explicitTimestamp);
+        save(server);
+        syncAll(server);
+        int restored = applied;
+        int ignored = skipped;
+        source.sendFeedback(() -> Text.literal("批量恢复完成：应用 " + restored + " 人，忽略无此批次存档的玩家 " + ignored + " 人。"), true);
+        return applied;
+    }
+
+    private static long latestBatchTimestamp(String tag) {
+        long latest = -1L;
+        String reason = "tag-batch:" + tag;
+        for (PlayerRecord record : store.records.values()) {
+            for (Snapshot snapshot : record.history) {
+                if (snapshot != null && reason.equals(snapshot.reason)) {
+                    latest = Math.max(latest, snapshot.timestamp);
+                }
+            }
+        }
+        return latest;
     }
 
     private static int saveSpecialPlayersCommand(ServerCommandSource source) {
@@ -193,6 +319,7 @@ public final class HotBackpackSaveFeature {
             addSnapshot(player, "special-tag-save");
             count++;
         }
+        store.guardedApply.put(SPECIAL_SAVE_TAG, false);
         save(server);
         return count;
     }
@@ -263,6 +390,12 @@ public final class HotBackpackSaveFeature {
         snapshot.totalExperience = player.totalExperience;
         snapshot.selectedSlot = player.getInventory().getSelectedSlot();
         snapshot.gameMode = player.interactionManager.getGameMode().name();
+        snapshot.dimension = player.getWorld().getRegistryKey().getValue().toString();
+        snapshot.x = player.getX();
+        snapshot.y = player.getY();
+        snapshot.z = player.getZ();
+        snapshot.yaw = player.getYaw();
+        snapshot.pitch = player.getPitch();
         return snapshot;
     }
 
@@ -449,6 +582,13 @@ public final class HotBackpackSaveFeature {
         GameMode mode = gameMode(snapshot.gameMode);
         if (mode != null) {
             target.changeGameMode(mode);
+        }
+        Identifier dimension = Identifier.tryParse(snapshot.dimension);
+        if (dimension != null) {
+            var world = target.getServer().getWorld(RegistryKey.of(RegistryKeys.WORLD, dimension));
+            if (world != null) {
+                target.teleport(world, snapshot.x, snapshot.y, snapshot.z, Set.of(), snapshot.yaw, snapshot.pitch, false);
+            }
         }
 
         PlayerRecord targetRecord = store.records.computeIfAbsent(target.getUuid().toString(), ignored -> new PlayerRecord());
@@ -637,11 +777,13 @@ public final class HotBackpackSaveFeature {
         public Map<String, PlayerRecord> records = new LinkedHashMap<>();
         public Map<String, Snapshot> pendingApply = new LinkedHashMap<>();
         public Map<String, Snapshot> undo = new LinkedHashMap<>();
+        public Map<String, Boolean> guardedApply = new LinkedHashMap<>();
 
         Store sanitized() {
             if (records == null) records = new LinkedHashMap<>();
             if (pendingApply == null) pendingApply = new LinkedHashMap<>();
             if (undo == null) undo = new LinkedHashMap<>();
+            if (guardedApply == null) guardedApply = new LinkedHashMap<>();
             for (PlayerRecord record : records.values()) {
                 record.sanitized();
             }
@@ -685,6 +827,12 @@ public final class HotBackpackSaveFeature {
         public int totalExperience;
         public int selectedSlot;
         public String gameMode = "survival";
+        public String dimension = "minecraft:overworld";
+        public double x;
+        public double y;
+        public double z;
+        public float yaw;
+        public float pitch;
 
         Snapshot sanitized() {
             if (items == null) items = new ArrayList<>();

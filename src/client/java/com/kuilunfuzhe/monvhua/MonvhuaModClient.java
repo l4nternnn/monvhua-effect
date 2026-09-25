@@ -247,6 +247,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         // 空手右键生物：抓取实体开始搬运
         UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
             if (player instanceof ClientPlayerEntity clientPlayer &&
+                    clientPlayer.isSneaking() &&
                     clientPlayer.getMainHandStack().isEmpty() && clientPlayer.getOffHandStack().isEmpty()) {
                 if (entity instanceof LivingEntity) {
                     SafeClientNetworking.send(new CarryEntityPayload(entity.getId()));
