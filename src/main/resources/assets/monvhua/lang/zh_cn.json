@@ -168,7 +168,15 @@
   "effect.monvhua.hanna_6": "重度魔女化",
   "effect.monvhua.hanna_7": "准魔女",
   "effect.monvhua.hanna_8": "魔女",
-  "gui.monvhua.emotion_picker": "表情"
+  "gui.monvhua.emotion_picker": "表情",
+  "item.monvhua.chest_link": "箱子映射器",
+  "item.monvhua.chest_link.scan": "已高亮附近箱子",
+  "item.monvhua.chest_link.first_bound": "已绑定第一个箱子",
+  "item.monvhua.chest_link.dimension_mismatch": "两个箱子必须在同一维度",
+  "item.monvhua.chest_link.source_missing": "绑定的箱子不存在或无法加载"
+  ,"item.monvhua.chest_link.cleared": "已清除箱子绑定",
+  "item.monvhua.chest_link.highlight_on": "箱子高亮已开启",
+  "item.monvhua.chest_link.highlight_off": "箱子高亮已关闭"
 
 }
 

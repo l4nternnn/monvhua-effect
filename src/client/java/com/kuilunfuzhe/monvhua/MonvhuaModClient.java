@@ -41,6 +41,9 @@ import com.kuilunfuzhe.monvhua.features.block_hole.BlockHoleClient;
 import com.kuilunfuzhe.monvhua.item.config.SecretConfig;
 import com.kuilunfuzhe.monvhua.item.commandpanel.CommandPanelItems;
 import com.kuilunfuzhe.monvhua.network.ModNetworking;
+import com.kuilunfuzhe.monvhua.network.chestlink.ChestLinkStateS2CPacket;
+import com.kuilunfuzhe.monvhua.network.chestlink.ChestLinkMappingsS2CPacket;
+import com.kuilunfuzhe.monvhua.features.chestlink.ChestLinkClientState;
 import com.kuilunfuzhe.monvhua.network.SafeClientNetworking;
 import com.kuilunfuzhe.monvhua.network.evil_eyes.EvilEyesPackets.AnchorDestroyC2S;
 import com.kuilunfuzhe.monvhua.network.floating.FullWitchTagSyncS2CPacket;
@@ -129,6 +132,8 @@ public class MonvhuaModClient implements ClientModInitializer {
 
         // ===== 1. 网络包接收器注册 =====
         ModNetworking.registerS2CPackets();
+        ClientPlayNetworking.registerGlobalReceiver(ChestLinkStateS2CPacket.ID, (packet, context) -> context.client().execute(() -> ChestLinkClientState.update(packet.active(), packet.dimension(), packet.x(), packet.y(), packet.z())));
+        ClientPlayNetworking.registerGlobalReceiver(ChestLinkMappingsS2CPacket.ID, (packet, context) -> context.client().execute(() -> ChestLinkClientState.applyMappings(packet.replace(), packet.entries())));
         CommandPanelPackets.PanelRosterS2C.register();
         CommandPanelPackets.PanelViewResultS2C.register();
         ClientPlayNetworking.registerGlobalReceiver(com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets.PermissionS2C.ID,

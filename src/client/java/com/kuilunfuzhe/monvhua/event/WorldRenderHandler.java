@@ -12,6 +12,7 @@ import com.kuilunfuzhe.monvhua.features.injured_and_bleeding.InjuredBleedingClie
 import com.kuilunfuzhe.monvhua.features.paint.PaintBucketCarryClientState;
 import com.kuilunfuzhe.monvhua.features.paint.PaintOverlayClient;
 import com.kuilunfuzhe.monvhua.features.paint.PaintToolTargetPreviewRenderer;
+import com.kuilunfuzhe.monvhua.features.chestlink.ChestLinkHighlightRenderer;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.through.ThroughItem;
 import com.kuilunfuzhe.monvhua.renderer.bodypose.BodyPoseWorldPreviewRenderer;
@@ -25,8 +26,8 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 
 /**
- * 世界渲染事件处理器，在实体渲染完成后（AFTER_ENTITIES阶段）绘制自定义HUD元素。
- * 包括背景纹理、轨道、锚点按钮等，仅在玩家持有特定物品时显示。
+ * 涓栫晫娓叉煋浜嬩欢澶勭悊鍣紝鍦ㄥ疄浣撴覆鏌撳畬鎴愬悗锛圓FTER_ENTITIES闃舵锛夌粯鍒惰嚜瀹氫箟HUD鍏冪礌銆?
+ * 鍖呮嫭鑳屾櫙绾圭悊銆佽建閬撱€侀敋鐐规寜閽瓑锛屼粎鍦ㄧ帺瀹舵寔鏈夌壒瀹氱墿鍝佹椂鏄剧ず銆?
  */
 public class WorldRenderHandler {
     public static void register() {
@@ -34,15 +35,15 @@ public class WorldRenderHandler {
             PlayerEntity player = MinecraftClient.getInstance().player;
             if (player != null) {
                 ItemStack mainHand = player.getMainHandStack();
-                // 仅当手持千里眼、凝视法杖或隐秘相关物品时渲染背景纹理和轨道
+                // 浠呭綋鎵嬫寔鍗冮噷鐪笺€佸嚌瑙嗘硶鏉栨垨闅愮鐩稿叧鐗╁搧鏃舵覆鏌撹儗鏅汗鐞嗗拰杞ㄩ亾
                 if (mainHand.getItem() == Evil_Eyes.CLAIRVOYANCE_ITEM || mainHand.getItem() == ModItems.MAGIC_STICK || ThroughItem.isHoldingSecrecy(mainHand)) {
                     // BackTextureRenderer.render(context.matrixStack(), context.consumers(), player, MonvhuaModClient.currentPlayerStage);
                     // OrbitRenderer.render(context.matrixStack(), context.consumers(), player, MonvhuaModClient.currentPlayerStage);
                 }
             }
-            // 锚点按钮始终渲染（不受手持物品限制）
+            // 閿氱偣鎸夐挳濮嬬粓娓叉煋锛堜笉鍙楁墜鎸佺墿鍝侀檺鍒讹級
             AnchorButtonRenderer.render(context.matrixStack(), context.consumers());
-            // 身体姿势编辑器世界3D预览
+            // 韬綋濮垮娍缂栬緫鍣ㄤ笘鐣?D棰勮
             BodyPoseWorldPreviewRenderer.render(context.matrixStack(), context.consumers());
             UiActivityBubbleRenderer.render(context);
             GravityAreaBoundaryRenderer.render(context);
@@ -55,6 +56,7 @@ public class WorldRenderHandler {
             PlayerBindingClient.render(context);
             PaintBucketCarryClientState.render(context);
             AreaSelectRenderer.render(context);
+            ChestLinkHighlightRenderer.render(context);
         });
     }
 }

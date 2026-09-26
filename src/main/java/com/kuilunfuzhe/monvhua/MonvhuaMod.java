@@ -41,6 +41,7 @@ import com.kuilunfuzhe.monvhua.item.ModItemGroups;
 import com.kuilunfuzhe.monvhua.item.area_tip.AreaTipItems;
 import com.kuilunfuzhe.monvhua.item.block_hole.BlockHoleItems;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
+import com.kuilunfuzhe.monvhua.item.chestlink.ChestLinkItems;
 import com.kuilunfuzhe.monvhua.item.commandpanel.CommandPanelItems;
 import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
 import com.kuilunfuzhe.monvhua.item.imitate.ImitateItem;
@@ -677,6 +678,7 @@ public class MonvhuaMod implements ModInitializer {
         com.kuilunfuzhe.monvhua.features.floating.floating.initialize(configManager);
         Gazeguidance.initialize();
         ModItems.initialize();
+        ChestLinkItems.initialize();
         CommandPanelItems.initialize();
         GravityItems.initialize();
         GravityMagic.initialize();

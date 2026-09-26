@@ -52,10 +52,14 @@ import com.kuilunfuzhe.monvhua.network.fantasy.FantasyS2CPacket;
 import com.kuilunfuzhe.monvhua.network.playerlist.PlayerListRestrictS2CPacket;
 import com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets;
 import com.kuilunfuzhe.monvhua.network.commandpanel.PanelStatusS2C;
+import com.kuilunfuzhe.monvhua.network.chestlink.ChestLinkStateS2CPacket;
+import com.kuilunfuzhe.monvhua.network.chestlink.ChestLinkMappingsS2CPacket;
 
 public class ModNetworking {
 
     public static void registerS2CPackets() {
+        ChestLinkStateS2CPacket.register();
+        ChestLinkMappingsS2CPacket.register();
         // Payload codecs are needed on both the sending server and receiving client.
         PanelStatusS2C.register();
         CommandPanelPackets.PermissionS2C.register();
