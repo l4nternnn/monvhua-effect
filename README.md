@@ -96,7 +96,7 @@ ema, cero, nnk, mago, leiya, milya, sherry, yalisa, noa, anan, yuki, mll, coco, 
 | `P` | 打开身体姿态世界预览，仅创造模式可用。 |
 | `J` | 打开动作编辑器，仅创造模式可用。 |
 
-## 命令速查
+## 命令速查（旧版索引）
 
 下表覆盖 `src/main/java/com/kuilunfuzhe/monvhua/command` 中注册的指令。`OP` 表示需要 2 级权限；未标注 `OP` 的指令普通玩家可执行，但多数仍要求执行者是玩家实体。
 
@@ -180,6 +180,102 @@ ema, cero, nnk, mago, leiya, milya, sherry, yalisa, noa, anan, yuki, mll, coco, 
 | 指令 | 权限 | 效果 |
 | --- | --- | --- |
 | `/placemannequin` | 玩家 | 在执行者当前位置生成一个测试模型实体，用于验证模型渲染效果。 |
+
+## 完整指令说明（以当前源码为准）
+
+下面列出服务端和客户端注册的全部指令。带有 `OP` 的指令要求权限等级 2；参数尖括号表示必填参数，方括号表示可选参数。指令名中的中英文下划线后缀是实际注册的别名，可直接使用中文或英文前缀对应的完整 literal。
+
+### 服务端：核心与管理
+
+| 指令 | 权限 | 作用 |
+| --- | --- | --- |
+| `/watch [<target>]` | 玩家 | 观察准星指向的实体，或按名称查找实体并开始观察。无参数时再次执行可停止观察。 |
+| `/watch angle <yaw> <pitch> <distance>` | 玩家 | 设置观察相机偏移；距离限制为 0.5–10。 |
+| `/watch angle <yaw> <pitch> reset` | 玩家 | 重置观察相机偏移。 |
+| `/clairvoyance_千里眼 clearanchors_清除千里眼锚点 [<player\|all>]` | 玩家/OP | 清除自己的、指定玩家的或全部千里眼锚点。 |
+| `/clairvoyance_千里眼 viewmode_观看模式 [<legacy\|modern\|viewport>]` | 玩家 | 查询或切换千里眼观看模式。 |
+| `/clairvoyance_千里眼 viewlogic_显示逻辑 [<six\|single>]` | 玩家 | 查询或切换六视角/单视角显示逻辑。 |
+| `/monvhua-action_动作 reload_重载` | OP | 重新加载 `actions.json` 动作配置。 |
+| `/monvhua-action_动作 list_列表` | OP | 列出动作 ID、名称、类型及启用状态。 |
+| `/monvhua-action_动作 trigger_触发 <id> [<player>]` | OP | 手动触发动作；省略玩家时作用于执行者。 |
+| `/monvhua-action_动作 enable_启用 <id>` / `disable_禁用 <id>` | OP | 启用或禁用指定动作。 |
+| `/monvhua-dissolve_消散 <target> [<durationTicks>]` | OP | 对目标玩家开始消散效果；时长 1–1200 tick，省略时使用配置默认值。 |
+| `/monvhua-dissolve_消散 stop <target>` | OP | 停止目标玩家的消散效果。 |
+| `/restrict_限制 playerlist_玩家列表 <true\|false>` | OP | 全局开启/关闭生存冒险玩家的 Tab 玩家列表限制，并持久化设置。 |
+| `/placemannequin_放置测试模型` | 玩家 | 在执行者位置生成测试模型实体。 |
+
+### 服务端：搬运、重力与摆体
+
+| 指令 | 权限 | 作用 |
+| --- | --- | --- |
+| `/carry-stamina-rate_搬运耐力倍率 [<amount>]` | OP | 查询或设置抱实体每秒 stamina 消耗量（0–100）。 |
+| `/carry-xp-rate_搬运经验倍率 [<amount>]` | OP | 上一指令的兼容别名。 |
+| `/carry-pose_搬运姿势 [princess_公主抱\|drag_拖拽\|toggle_切换]` | 玩家 | 查询、设置或切换当前抱实体姿势。 |
+| `/monvhua-carry-pose-transform_搬运姿势变换 [princess_公主抱\|drag_拖拽] <set_设置\|add_追加> <x> <y> <z> <pitch> <yaw> <roll>` | 玩家 | 设置/追加被抱实体的位移与旋转变换；也可使用 `reset_重置` 或不带动作参数查询。 |
+| `/monvhua-carry-view-transform_搬运视角变换 [princess_公主抱\|drag_拖拽] <set_设置\|add_追加> <x> <y> <z> <pitch> <yaw> <roll>` | 玩家 | 设置/追加被抱玩家视角变换；支持 `reset_重置` 和查询。 |
+| `/monvhua-gravity_重力 logic_逻辑 <force_强制\|surface_表面\|toggle_切换\|show_显示>` | OP | 设置、切换或查看重力逻辑；设置/切换会应用到所有在线玩家。 |
+| `/monvhua-gravity_重力 area_区域 create_创建 <radius> <time>` | OP | 以执行者脚下为中心创建区域重力；半径 1–256，时间为秒数或 `wuxian`。 |
+| `/monvhua-gravity_重力 area_区域 create_创建 <radius> <height> <time>` | OP | 创建指定半径和高度（1–256）的区域重力。 |
+| `/monvhua-gravity_重力 area_区域 clear_清除 <nearest_最近\|all_全部>` | OP | 清除最近一个或当前维度全部区域重力。 |
+| `/monvhua-swing diagnose <beam>` | OP | 只读诊断指定摆体梁位置，不修改方块。 |
+| `/monvhua-swing stats` | OP | 查看附近摆体结构、碰撞盒和缓存统计。 |
+| `/monvhua-swing restore` | OP | 恢复并移除附近最近的摆体结构。 |
+| `/monvhua-swing remove` | OP | 移除附近最近的摆体实体但不恢复方块。 |
+
+### 服务端：身体部件、镜像与绘画
+
+| 指令 | 权限 | 作用 |
+| --- | --- | --- |
+| `/clairvoyance-body-give_肢体获取 <target> <source> <all_全部\|part> [slim_纤细]` | OP | 将来源玩家的全套或指定身体部件给予目标玩家。 |
+| `/clairvoyance-body-give_肢体获取 <target> localskin_内置 <skinName> <all_全部\|part> [slim_纤细]` | OP | 使用内置皮肤生成并给予身体部件。 |
+| `/clairvoyance-body-replace_肢体替换 localskin_内置 <skinName> [slim_纤细]` | OP | 将执行者附近的身体展示实体替换为内置皮肤。 |
+| `/clairvoyance-body-replace_肢体替换 player_玩家 <playerName> [slim_纤细]` | OP | 将附近身体展示实体替换为指定在线玩家皮肤。 |
+| `/clairvoyance-body-replace_肢体替换 split_分离` | OP | 将附近整体身体展示实体拆分为头、躯干和四肢实体。 |
+| `/clairvoyance-body-merge_肢体合并` | OP | 合并执行者附近的身体部件展示实体。 |
+| `/clairvoyance-body-clear-inventory-entities_清除背包实体 [<radius>]` | OP | 清除附近背包中的身体展示实体，默认半径 4，范围 0.5–64。 |
+| `/monvhua-skeletal-pose_骨骼姿态 <pos> <pitch> <yaw> <roll>` | OP | 设置指定骨骼身体方块的姿态，角度范围均为 -180–180。 |
+| `/clairvoyance-mirror_镜像 set_设置 <1\|2> hspos_设定点 <pos>` | OP | 设置镜面槽位的触发点。 |
+| `/clairvoyance-mirror_镜像 set_设置 <1\|2> mappos_映射点 <pos>` | OP | 设置镜面槽位的映射点。 |
+| `/clairvoyance-mirror_镜像 set_设置 <1\|2> radius_半径 <radius>` | OP | 设置镜面触发半径（1–200）。 |
+| `/clairvoyance-mirror_镜像 remove_移除 <1\|2>` / `clear_清除` / `list_列出所有` | OP | 移除指定槽位、清除全部槽位或列出镜面配置。 |
+| `/monvhua-graffiti_绘画 folder` | OP | 创建并显示游戏目录下的 `graffiti/` 导入目录。 |
+| `/monvhua-graffiti_绘画 import <file>` | OP | 按原尺寸异步导入 `graffiti/` 内图片并生成画纸。 |
+| `/monvhua-graffiti_绘画 import_scaled <scale> <file>` | OP | 按缩放比例导入图片；比例 0.05–8.0，最多生成 25×25 张画纸。 |
+| `/monvhua-graffiti_绘画 allow_non_full_blocks_非完整方块绘画 [<on_开启\|off_关闭\|true\|false>]` | OP | 查询或设置是否允许在非完整方块表面绘画。 |
+| `/monvhua-graffiti_绘画 clear grid <radius> [<center>]` | OP | 按方块网格半径清除绘画面（0–2048）。 |
+| `/monvhua-graffiti_绘画 clear block_方块 <radius> [<center>]` | OP | `clear grid` 的中文别名。 |
+| `/monvhua-graffiti_绘画 clear chunk <radius> [<center>]` | OP | 按区块半径清除绘画面（0–128）。 |
+
+### 服务端：命令面板、气泡、故障平面与热背包
+
+| 指令 | 权限 | 作用 |
+| --- | --- | --- |
+| `/commandpanel reload` | OP | 重新加载命令面板配置。 |
+| `/commandpanel sync <targets>` | OP | 将执行者的命令面板配置同步给目标玩家。 |
+| `/monvhua-bubble-size <multiplier>` / `reset` | OP | 设置或重置 UI 气泡尺寸倍率。 |
+| `/monvhua-bubble-style <pixel\|default\|reset>` | OP | 设置 UI 气泡渲染样式。 |
+| `/monvhua glitch create <name> <from> <to>` | OP | 创建故障平面；名称需唯一，平面为单轴且最大 64×64。 |
+| `/monvhua glitch start <name>` / `stop <name>` | OP | 启用或停用故障平面。 |
+| `/monvhua glitch remove <name>` / `list` | OP | 删除或列出当前维度故障平面。 |
+| `/monvhua glitch set <name> density <0..1>` | OP | 设置故障密度。 |
+| `/monvhua glitch set <name> rate <1..20>` | OP | 设置刷新间隔 tick。 |
+| `/monvhua glitch set <name> seed <long>` | OP | 设置随机种子。 |
+| `/monvhua-player-archive-save_玩家存档保存` | OP | 保存带 `save_backpack` 标签的在线玩家存档。 |
+| `/monvhua-archive save <tag>` | OP | 为带指定命令标签的在线玩家创建批次存档。 |
+| `/monvhua-archive apply <tag> [<timestamp>]` | OP | 将指定标签玩家恢复到最近批次，或恢复到明确时间戳批次。 |
+
+### 客户端指令
+
+| 指令 | 作用 |
+| --- | --- |
+| `/monvhua-carry-debug-transform_搬运调试变换` | 输出当前被抱玩家的姿态、相机和矩阵调试信息到日志并复制到剪贴板。 |
+| `/monvhua-carry-pose-transform_搬运姿势变换 ...` | 客户端发送抱姿变换配置请求；支持 `princess_公主抱`、`drag_拖拽`、`set_设置`、`add_追加`、`reset_重置`。 |
+| `/monvhua-carry-view-transform_搬运视角变换 ...` | 客户端发送抱起视角变换配置请求，参数结构同上。 |
+| `/monvhua-textarea-reset_文字区域重置` / `/monvhua-text-reset_文字重置` | 清除客户端文字区域播放次数/状态。 |
+| `/monvhua-swing-render-stats` | 输出摆体渲染统计信息。 |
+| `/clearentitypaint_清除实体画迹 [<targets>]` / `/clearplayerpaint_清除玩家画迹 [<targets>]` | 清除自己或目标玩家的皮肤绘画覆盖；支持玩家名和常用选择器。 |
+
+抱实体本身不是聊天指令：客户端需潜行且双手空着右键生物；再次交互、打开背包或拿起物品会发送放下请求。姿势变换相关服务端命令需要对应的客户端模组才能看到完整渲染效果。
 
 ## 配置与数据
 

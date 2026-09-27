@@ -168,6 +168,15 @@
     },
     "first_color": "#7d2d26",
     "color": "#DDDDDD"
+  },
+
+  "suisui": {
+    "name": "穗",
+    "char_scales": {
+      "1": 2
+    },
+    "first_color": "#00ff9f",
+    "color": "#DDDDDD"
   }
 
 }
