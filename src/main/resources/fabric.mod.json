@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "kairontetsu",
+  "version": "${version}",
+  "name": "kairontetsu",
+  "description": "",
+  "authors": [],
+  "contact": {},
+  "license": "All-Rights-Reserved",
+  "icon": "assets/kairontetsu/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-datagen": [
+      "org.kairontetsu.client.kairontetsuDataGenerator"
+    ],
+    "client": [
+      "org.kairontetsu.client.kairontetsuClient"
+    ],
+    "main": [
+      "org.kairontetsu.kairontetsu"
+    ]
+  },
+  "mixins": [
+    "kairontetsu.mixins.json",
+    {
+      "config": "kairontetsu.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
