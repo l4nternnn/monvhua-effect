@@ -46,3 +46,6 @@ CLAUDE.md
 魔女化文案/
 .codemoss/
 docs/
+
+# archify diagram scratch (published output lives in architecture/)
+.archify/
