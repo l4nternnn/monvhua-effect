@@ -11,13 +11,16 @@
   "environment": "*",
   "entrypoints": {
     "fabric-datagen": [
-      "org.kairontetsu.client.kairontetsuDataGenerator"
+      "org.kairontetsu.client.KairontetsuDataGenerator"
     ],
     "client": [
-      "org.kairontetsu.client.kairontetsuClient"
+      "org.kairontetsu.client.KairontetsuClient"
+    ],
+    "server": [
+      "org.kairontetsu.server.KairontetsuServer"
     ],
     "main": [
-      "org.kairontetsu.kairontetsu"
+      "org.kairontetsu.Kairontetsu"
     ]
   },
   "mixins": [
@@ -25,6 +28,10 @@
     {
       "config": "kairontetsu.client.mixins.json",
       "environment": "client"
+    },
+    {
+      "config": "kairontetsu.server.mixins.json",
+      "environment": "server"
     }
   ],
   "depends": {

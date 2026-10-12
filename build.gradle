@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.18-SNAPSHOT'
+    id 'net.fabricmc.fabric-loom-remap' version '1.17.21'
     id 'maven-publish'
 }
 
@@ -10,6 +10,13 @@ base {
     archivesName = project.archives_base_name
 }
 
+sourceSets {
+    server {
+        compileClasspath += main.compileClasspath + main.output
+        runtimeClasspath += main.runtimeClasspath + main.output
+    }
+}
+
 loom {
     splitEnvironmentSourceSets()
 
@@ -17,6 +24,7 @@ loom {
         "kairontetsu" {
             sourceSet sourceSets.main
             sourceSet sourceSets.client
+            sourceSet sourceSets.server
         }
     }
 }
@@ -81,9 +89,15 @@ java {
 }
 
 jar {
+    from sourceSets.server.output
+
     from("LICENSE") {
         rename { "${it}_${project.archives_base_name}" }
     }
+}
+
+sourcesJar {
+    from sourceSets.server.allSource
 }
 
 // configure the maven publication
