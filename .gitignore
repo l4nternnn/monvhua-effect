@@ -49,3 +49,14 @@ docs/
 
 # archify diagram scratch (published output lives in architecture/)
 .archify/
+
+# local dev residue / caches (anchored to the repository root)
+/.codex-tmp/
+/.gradle-local/
+/icyllis/
+/py_test/
+/com/
+/net/
+/config/
+/logs/
+/latest.log
