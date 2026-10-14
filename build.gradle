@@ -196,3 +196,13 @@ publishing {
 		// retrieving dependencies.
 	}
 }
+
+// Pure clock regression: no client, server, world, or Minecraft bootstrap required.
+tasks.register('dayNightRegression', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.kuilunfuzhe.monvhua.features.daynight.DayNightControllerTest'
+}
+tasks.named('check') {
+    dependsOn tasks.named('dayNightRegression')
+}

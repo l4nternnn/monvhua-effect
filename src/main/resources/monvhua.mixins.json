@@ -4,6 +4,7 @@
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
 		"ExampleMixin",
+		"DayNightServerWorldMixin",
 		"EntityGravityMixin",
 		"FallDamageMixin",
 		"InvertedBlockShapeMixin",

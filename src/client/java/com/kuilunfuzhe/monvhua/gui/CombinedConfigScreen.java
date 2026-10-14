@@ -476,6 +476,10 @@ public final class CombinedConfigScreen {
             avatarConfig.setOnClickListener(v -> UiActivityBubbleAvatarConfigScreen.open(
                     MinecraftClient.getInstance().currentScreen));
             rightPanel.addView(avatarConfig, blockParams());
+            Button dayNightConfig = button(getContext(), "昼夜时长设置");
+            dayNightConfig.setOnClickListener(v -> com.kuilunfuzhe.monvhua.features.daynight.DayNightConfigScreen.open(
+                    MinecraftClient.getInstance().currentScreen));
+            rightPanel.addView(dayNightConfig, blockParams());
             rebuilding = false;
         }
 

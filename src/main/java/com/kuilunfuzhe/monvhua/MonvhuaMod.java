@@ -177,6 +177,7 @@ public class MonvhuaMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        com.kuilunfuzhe.monvhua.features.daynight.DayNightFeature.initialize();
         // ===== 1. 注册 112 个 DisplayOnlyEffect 实例 =====
         int count = 0;
         for (WitchRole role : WitchRole.values()) {
