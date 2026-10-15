@@ -9,6 +9,11 @@ import org.spongepowered.asm.mixin.injection.ModifyArg;
 /** Only replaces the daylight increment; world age and scheduled events stay vanilla. */
 @Mixin(ServerWorld.class)
 public abstract class DayNightServerWorldMixin {
+    @ModifyArg(method = "tick", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/server/world/ServerWorld;setTimeOfDay(J)V"), index = 0)
+    private long monvhua$sleepTime(long proposed) {
+        return DayNightFeature.sleepTime((ServerWorld) (Object) this, proposed);
+    }
     @ModifyArg(method = "tickTime", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/server/world/ServerWorld;setTimeOfDay(J)V"), index = 0)
     private long monvhua$dayNightTime(long vanilla) {

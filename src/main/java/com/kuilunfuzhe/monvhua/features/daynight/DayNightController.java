@@ -1,40 +1,43 @@
 package com.kuilunfuzhe.monvhua.features.daynight;
 
-/** Pure integer integrator. One server tick is 11000 units of elapsed time.
- * Both solar spans divide 11000, so re-anchoring and boundary carry are exact. */
+/** Exact rational cycle-time. The anchor's span (<=24000) is the fixed denominator.
+ * Adding whole server ticks never changes it, even across arbitrary segment boundaries.
+ * Worst-case intermediate arithmetic remains below 10^15 for the validated configuration. */
 public final class DayNightController {
-    private static final int[] START = {0, 1000, 12000, 13000};
-    private static final int[] SPAN = {1000, 11000, 1000, 11000};
-    private static final long UNIT = 11000;
-    public int phase;
-    public long progress;
-    public long expected = Long.MIN_VALUE;
+    public long elapsed;
+    public int denominator=1;
+    public long expected=Long.MIN_VALUE;
 
-    public void anchor(long time, DayNightConfig config) {
-        int solar = (int) Math.floorMod(time, 24000L);
-        phase = solar < 1000 ? 0 : solar < 12000 ? 1 : solar < 13000 ? 2 : 3;
-        progress = (solar - START[phase]) * (UNIT / SPAN[phase]) * config.seconds(phase) * 20L;
-        expected = time;
-    }
-
-    public long advance(long time, DayNightConfig config) {
-        if (time != expected || phase < 0 || phase > 3 || progress < 0
-                || progress >= duration(config)) anchor(time, config);
-        long dayBase = time - Math.floorMod(time, 24000L);
-        long remaining = UNIT;
-        while (remaining > 0) {
-            long used = Math.min(remaining, duration(config) - progress);
-            progress += used;
-            remaining -= used;
-            if (progress == duration(config)) {
-                progress = 0;
-                phase = (phase + 1) % 4;
-                if (phase == 0) dayBase += 24000;
+    public void anchor(long time,DayNightConfig config) {
+        int offset=(int)Math.floorMod(time-config.segments().getFirst().start(),24000L);
+        long ticksBefore=0;int solarBefore=0;
+        for(DayNightSegment s:config.segments()) {
+            if(offset<solarBefore+s.span()) {
+                denominator=s.span();
+                elapsed=ticksBefore*denominator+(offset-solarBefore)*s.seconds()*20L;
+                expected=time;return;
             }
+            ticksBefore+=s.seconds()*20L;solarBefore+=s.span();
         }
-        expected = dayBase + START[phase] + progress * SPAN[phase] / duration(config);
-        return expected;
+        throw new IllegalArgumentException("Invalid solar coverage");
     }
-
-    private long duration(DayNightConfig config) { return config.seconds(phase) * 20L * UNIT; }
+    public long advance(long time,DayNightConfig config) {
+        if(time!=expected||denominator<1||denominator>24000||elapsed<0||elapsed>=config.totalTicks()*denominator)
+            anchor(time,config);
+        long cycle=config.totalTicks()*denominator;
+        elapsed+=denominator;
+        long wrapped=elapsed/cycle; elapsed%=cycle;
+        int origin=config.segments().getFirst().start();
+        long base=time-Math.floorMod(time-origin,24000L)+wrapped*24000L;
+        long ticksBefore=0;int solarBefore=0;
+        for(DayNightSegment s:config.segments()) {
+            long duration=s.seconds()*20L;
+            if(elapsed<(ticksBefore+duration)*denominator) {
+                expected=base+solarBefore+(elapsed-ticksBefore*denominator)*s.span()/(duration*denominator);
+                return expected;
+            }
+            ticksBefore+=duration;solarBefore+=s.span();
+        }
+        throw new IllegalStateException("Invalid cycle position");
+    }
 }

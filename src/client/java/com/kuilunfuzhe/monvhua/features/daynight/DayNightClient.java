@@ -10,8 +10,8 @@ public final class DayNightClient {
         ClientPlayNetworking.registerGlobalReceiver(DayNightPackets.State.ID, (packet, context) ->
                 context.client().execute(() -> {
                     var connection = context.client().getNetworkHandler();
-                    DayNightClientState.update(packet.config());
-                    if (!packet.message().isEmpty()) Core.postOnUiThread(() -> {
+                    DayNightClientState.update(packet);
+                    if (Core.getUiHandlerAsync() != null) Core.postOnUiThread(() -> {
                         if (MinecraftClient.getInstance().getNetworkHandler() == connection)
                             DayNightConfigScreen.receive(packet);
                     });
