@@ -68,6 +68,20 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix3x2fStack;
 import org.joml.Matrix4f;
+import org.joml.Matrix3x2f;
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.viewport.PoseViewportFrame;
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.viewport.PoseViewportRenderState;
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.viewport.ProjectedRingDrag;
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.viewport.GizmoPick;
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.viewport.GizmoFrame;
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.viewport.GizmoGeometry;
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.viewport.BonePoseFrame;
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.viewport.DragPointer;
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.viewport.ProjectedPlaneDrag;
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.viewport.DragAdjustment;
+import com.kuilunfuzhe.monvhua.mixin.BodyPoseDrawContextAccessor;
+import net.minecraft.client.gui.ScreenRect;
+import net.minecraft.client.render.OverlayTexture;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
@@ -88,7 +102,6 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private static final float ROTATION_STEP_DEGREES = 5.0F;
     private static final float PREVIEW_CHEST_PIVOT_Y = 8.0F;
-    private static final float PREVIEW_Y_PIVOT = 1.601F;
     private static final float MODEL_PART_UNITS_PER_GRID = 16.0F;
     private static final float MODEL_OFFSET_MIN = -10.0F;
     private static final float MODEL_OFFSET_MAX = 10.0F;
@@ -103,9 +116,6 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final float DEFAULT_PREVIEW_ZOOM = 0.65F;
     private static final float PREVIEW_SCALE_FACTOR = 0.36F;
     private static final float PREVIEW_CAMERA_DISTANCE = 24.0F;
-    private static final float PREVIEW_NEAR_DEPTH = 3.0F;
-    private static final float PREVIEW_MIN_PERSPECTIVE_SCALE = 0.38F;
-    private static final float PREVIEW_MAX_PERSPECTIVE_SCALE = 2.25F;
     private static final float PREVIEW_ITEM_MIN_PERSPECTIVE_SCALE = 0.55F;
     private static final float PREVIEW_ITEM_MAX_PERSPECTIVE_SCALE = 1.85F;
     private static final double REEDIT_TARGET_DISTANCE = 8.0D;
@@ -115,7 +125,6 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final String[] POSE_PART_ORDER = {
             "head", "torso", "left_arm", "right_arm", "left_leg", "right_leg"
     };
-    private static final float PREVIEW_PITCH_BOUNDS_EXTRA_SCALE = 3.2F;
     private static final float PREVIEW_ZOOM_MIN = 0.08F;
     private static final float PREVIEW_ZOOM_MAX = 10.0F;
     private static final float PREVIEW_ZOOM_STEP = 0.16F;
@@ -124,14 +133,14 @@ public class BodyPoseEditorFragment extends Fragment {
     private static final long TRANSFORM_REPEAT_DELAY_MS = 320L;
     private static final long TRANSFORM_REPEAT_INTERVAL_MS = 65L;
     private static final long WORLD_PREVIEW_KEY_DEBOUNCE_MS = 200L;
-    private static final float MOVE_AXIS_LENGTH = 4.0F / 3.0F;
+    private static final float MOVE_AXIS_LENGTH = GizmoGeometry.AXIS_LENGTH;
     private static final float MOVE_AXIS_HIT_RADIUS = 10.0F;
-    private static final float ROTATION_RING_RADIUS = 2.45F / 3.0F;
+    private static final float ROTATION_RING_RADIUS = GizmoGeometry.RING_RADIUS;
     private static final float ROTATION_RING_HIT_RADIUS = 10.0F;
-    private static final int ROTATION_RING_SEGMENTS = 48;
+    private static final int ROTATION_RING_SEGMENTS = GizmoGeometry.RING_SEGMENTS;
     private static final float SCREEN_GIZMO_AXIS_PIXELS = 72.0F;
     private static final float SCREEN_GIZMO_RING_RADIUS_PIXELS = 54.0F;
-    private static final float SCREEN_GIZMO_HIT_RADIUS_PIXELS = 28.0F;
+    private static final float SCREEN_GIZMO_HIT_RADIUS_PIXELS = 8.0F;
     private static final int GROUND_GRID_SIZE = 21;
     private static final float GROUND_GRID_HALF_SIZE = GROUND_GRID_SIZE * 0.5F;
     private static final float GROUND_GRID_CELL = 1.0F;
@@ -252,17 +261,92 @@ public class BodyPoseEditorFragment extends Fragment {
     // 鼠标交互
     private MoveAxis hoveredMoveAxis = MoveAxis.NONE;
     private MoveAxis draggingMoveAxis = MoveAxis.NONE;
+    private volatile GizmoFrame<ScreenPoint> previewGizmoFrame;
+    private volatile GizmoFrame<ScreenPoint> worldGizmoFrame;
+    private DragPointer dragPointer;
+    private String dragTargetKey;
+    private View dragOwner;
+    private int draggingPlane = -1;
+    private int hoveredPlane = -1;
+    private ProjectedPlaneDrag planeDrag;
+    private DragAdjustment planeAdjustmentV;
+    private final Vector3f planeStartOffset = new Vector3f();
+    private Matrix4f planeOffsetTransform;
+    private BonePoseFrame dragBoneFrame;
+    private final Vector3f dragBoneOffset = new Vector3f();
+    private final Vector3f dragBoneEuler = new Vector3f();
+    private final Vector3f dragBonePreviousEuler = new Vector3f();
+    private float dragBoneUnitScale = 16;
+
+    private BonePoseFrame selectedBoneFrame() {
+        if (!usesSelectedPartGizmoTarget() || poseEditMode != PoseEditMode.TRUE_SKELETAL) return null;
+        List<String> targets = getTrueSkeletalRotationTargets(selectedPart);
+        if (targets.size() != 1) return null;
+        return BodyPoseSkeletalPreviewRenderer.getBonePoseFrame(targets.getFirst(),
+                getWorldSkeletalBoneRotations(), getWorldSkeletalBoneOffsets(), getWorldSkeletalBoneScales());
+    }
+    private static final ScreenPoint INVALID_GIZMO_POINT = new ScreenPoint(Float.NaN, Float.NaN);
+
+    private String gizmoTargetKey() {
+        return selectedPart + ":" + selectedEditorItemIndex + ":" + poseEditMode + ":"
+                + worldPreviewMode + ":" + previewSurfaceWidth + ":" + previewSurfaceHeight
+                + ":" + orthographicPreview + ":" + previewGuiScale;
+    }
+
+    private GizmoFrame<ScreenPoint> displayedGizmoFrame(boolean world) {
+        GizmoFrame<ScreenPoint> frame = world ? worldGizmoFrame : previewGizmoFrame;
+        return frame != null && frame.matches(gizmoTargetKey(), isRotationGizmoMode()) ? frame : null;
+    }
+
+    private ScreenPoint displayedGizmoCenter(boolean world) {
+        var frame = displayedGizmoFrame(world);
+        return frame == null ? INVALID_GIZMO_POINT : frame.center();
+    }
+
+    private ScreenPoint displayedMoveEnd(boolean world, MoveAxis axis) {
+        var frame = displayedGizmoFrame(world);
+        return frame == null || axis == MoveAxis.NONE ? INVALID_GIZMO_POINT : frame.end(axis.ordinal() - 1);
+    }
+
+    private void capturePreviewGizmoFrame() {
+        BonePoseFrame bone = selectedBoneFrame();
+        if (bone != null) {
+            Matrix4f transform = skeletalSceneTransform().translate(bone.pivot()).rotate(bone.orientation());
+            previewGizmoFrame = new GizmoFrame<>(gizmoTargetKey(), isRotationGizmoMode(), (x, y, z) -> {
+                Vector3f p = transform.transformPosition(new Vector3f(x, y, z));
+                return projectPreviewPoint(p.x, p.y, p.z);
+            }, bone);
+            return;
+        }
+        Vector3f c = new Vector3f(currentGizmoCenter);
+        previewGizmoFrame = new GizmoFrame<>(gizmoTargetKey(), isRotationGizmoMode(),
+                (x, y, z) -> projectGizmoPoint(c.x + x, c.y + y, c.z + z));
+    }
+
+    /** The world renderer consumes exactly the transform used to capture its input frame. */
+    public static Matrix4f captureWorldGizmoTransform() {
+        BodyPoseEditorFragment inst = activeInstance;
+        if (inst == null) return new Matrix4f();
+        Matrix4f transform = inst.worldPlacementTransformMatrix(true, false)
+                .translate(inst.resolveWorldPlacementGizmoCenterLocal());
+        BonePoseFrame bone = inst.selectedBoneFrame();
+        if (bone != null) {
+            transform = inst.worldPlacementTransformMatrix(true, false)
+                    .translate(bone.pivot().mul(wholeBodyScale)).rotate(bone.orientation());
+        }
+        Matrix4f capturedTransform = transform;
+        inst.worldGizmoFrame = new GizmoFrame<>(inst.gizmoTargetKey(), inst.isRotationGizmoMode(),
+                (x, y, z) -> inst.projectWorldGizmoOffset(capturedTransform.transformPosition(new Vector3f(x, y, z))), bone);
+        return transform;
+    }
     private RotationAxis hoveredRotationAxis = RotationAxis.NONE;
     private RotationAxis draggingRotationAxis = RotationAxis.NONE;
     private boolean rotationGizmoMode;
-    private boolean ctrlGizmoToggleKeyDown;
-    private boolean ctrlShortcutUsed;
     private boolean draggingPreview;
     private boolean draggingRightPreview;
     private boolean previewTransformDirty;
     private boolean worldPlacementTransformDirty;
     private PaintOverlayClient.ScreenPanAnchor worldPlacementPanAnchor;
-    private boolean skipNextCtrlPollToggle;
     private volatile boolean previewInvalidationQueued;
     private int activePreviewButton;
     private View repeatingTransformView;
@@ -290,6 +374,8 @@ public class BodyPoseEditorFragment extends Fragment {
     private static PlayerEntityModel worldPreviewModelSlim;
 
     // 渲染尺寸缓存（由 onDraw 更新�?
+    private volatile PoseViewportFrame viewportFrame;
+    private boolean orthographicPreview;
     private float previewScale;
     private float previewCenterX;
     private float previewCenterY;
@@ -312,6 +398,10 @@ public class BodyPoseEditorFragment extends Fragment {
     private float dragStartAxisScreenX;
     private float dragStartAxisScreenY;
     private float dragStartAxisScreenLength;
+    private BodyPosePresetStore.EditorStateData dragStartState;
+    private ProjectedRingDrag rotationDrag;
+    private float dragStartRotation;
+    private DragAdjustment dragAdjustment;
 
     // UI 引用
     private LinearLayout skinButtonsContainer;
@@ -340,6 +430,9 @@ public class BodyPoseEditorFragment extends Fragment {
     private Button resetAllPoseButton;
     private Button resetTransformButton;
     private Button showWholeButton;
+    private Button moveToolButton;
+    private Button rotateToolButton;
+    private Button projectionToolButton;
     private Button coordToggleButton;
     private Button coordMovableButton;
     private Button worldPreviewToggleButton;
@@ -864,42 +957,37 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private boolean handleEditorKey(View source, int keyCode, KeyEvent event) {
-        if (keyCode == GLFW.GLFW_KEY_LEFT_CONTROL || keyCode == GLFW.GLFW_KEY_RIGHT_CONTROL) {
-            if (event.getAction() == KeyEvent.ACTION_UP) {
-                if (!ctrlShortcutUsed && ctrlGizmoToggleKeyDown) {
-                    toggleGizmoMode(true);
-                }
-                ctrlGizmoToggleKeyDown = false;
-                ctrlShortcutUsed = false;
-                skipNextCtrlPollToggle = false;
-                return true;
-            }
-            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-                ctrlGizmoToggleKeyDown = true;
-                ctrlShortcutUsed = false;
-                skipNextCtrlPollToggle = true;
-                return true;
-            }
-            return false;
-        }
-        boolean textInput = source instanceof EditText;
+        boolean textInput = source instanceof EditText || (rootView != null && rootView.findFocus() instanceof EditText);
+        if (textInput) return false;
         boolean worldPlacementKeySink = isWorldPlacementOverlayActive()
                 && !textInput
                 && keyCode != GLFW.GLFW_KEY_ESCAPE;
         if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() != 0) {
             return worldPlacementKeySink;
         }
+        if (hasActiveGizmoStep()) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) cancelGizmoStep();
+            return true;
+        }
         if (isCtrlDown()) {
             if (keyCode == GLFW.GLFW_KEY_Z) {
-                ctrlShortcutUsed = true;
-                undoPoseHistory();
+                if (isShiftDown()) redoPoseHistory(); else undoPoseHistory();
                 return true;
             }
             if (keyCode == GLFW.GLFW_KEY_Y) {
-                ctrlShortcutUsed = true;
                 redoPoseHistory();
                 return true;
             }
+        }
+        if (!isCtrlDown() && (keyCode == GLFW.GLFW_KEY_W || keyCode == GLFW.GLFW_KEY_E)) {
+            setGizmoTool(keyCode == GLFW.GLFW_KEY_E);
+            return true;
+        }
+        if (!isWorldPlacementOverlayActive() && keyCode == GLFW.GLFW_KEY_O) {
+            orthographicPreview = !orthographicPreview;
+            refreshViewportTools();
+            invalidatePreview();
+            return true;
         }
         if (keyCode == KeyEvent.KEY_P) {
             toggleWorldPreviewMode();
@@ -946,6 +1034,9 @@ public class BodyPoseEditorFragment extends Fragment {
     @Override
     public void onPause() {
         super.onPause();
+        if (hasActiveGizmoStep()) cancelGizmoStep();
+        previewGizmoFrame = null;
+        worldGizmoFrame = null;
         saveCurrentPageState();
         stopWorldPlacementViewControls(MinecraftClient.getInstance());
         worldPreviewEnabled = false;
@@ -955,6 +1046,7 @@ public class BodyPoseEditorFragment extends Fragment {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        if (hasActiveGizmoStep()) cancelGizmoStep();
         saveCurrentPageState();
         dismissPoseHistoryWindows();
         stopRepeatingTransform();
@@ -2192,6 +2284,31 @@ public class BodyPoseEditorFragment extends Fragment {
 
         panel.addView(ctrlBar, blockParams());
 
+        LinearLayout toolBar = new LinearLayout(ctx);
+        toolBar.setOrientation(LinearLayout.HORIZONTAL);
+        Button moveTool = createStyledButton(ctx);
+        moveToolButton = moveTool;
+        moveTool.setText("移动 W");
+        moveTool.setOnClickListener(v -> setGizmoTool(false));
+        toolBar.addView(moveTool, new LinearLayout.LayoutParams(0, -2, 1f));
+        Button rotateTool = createStyledButton(ctx);
+        rotateToolButton = rotateTool;
+        rotateTool.setText("旋转 E");
+        rotateTool.setOnClickListener(v -> setGizmoTool(true));
+        toolBar.addView(rotateTool, new LinearLayout.LayoutParams(0, -2, 1f));
+        Button projectionTool = createStyledButton(ctx);
+        projectionToolButton = projectionTool;
+        projectionTool.setText("正交/透视 O");
+        projectionTool.setOnClickListener(v -> {
+            if (hasActiveGizmoStep()) return;
+            orthographicPreview = !orthographicPreview;
+            refreshViewportTools();
+            invalidatePreview();
+        });
+        toolBar.addView(projectionTool, new LinearLayout.LayoutParams(0, -2, 1f));
+        panel.addView(toolBar, blockParams());
+        refreshViewportTools();
+
         installPreviewControlHandlers();
 
         // 关闭按钮
@@ -3203,6 +3320,8 @@ public class BodyPoseEditorFragment extends Fragment {
     private class PreviewRenderer implements MinecraftSurfaceView.Renderer {
         @Override
         public void onSurfaceChanged(int w, int h) {
+            previewGizmoFrame = null;
+            worldGizmoFrame = null;
             previewSurfaceWidth = w;
             previewSurfaceHeight = h;
         }
@@ -3222,15 +3341,16 @@ public class BodyPoseEditorFragment extends Fragment {
             previewAreaBottom = h - pad;
             int pWidth = previewAreaRight - previewAreaLeft;
             int pHeight = previewAreaBottom - previewAreaTop;
+            if (pWidth <= 0 || pHeight <= 0) return;
 
             if (isWorldPlacementOverlayActive()) {
                 previewScale = getPreviewBaseScale(pWidth, pHeight) * previewZoom;
                 previewCenterX = (previewAreaLeft + previewAreaRight) * 0.5F + previewPanX;
                 previewCenterY = (previewAreaTop + previewAreaBottom) * 0.5F + previewPanY;
-                updateGizmoModeToggleKey();
                 updateGizmoCenter();
-                updateHoveredPreviewGizmo(mouseX - previewScreenLeft, mouseY - previewScreenTop);
-                renderModelTransformGizmos(dCtx);
+                // The world renderer owns this gizmo. A second UI projection would
+                // display different geometry from the world input listener.
+                previewGizmoFrame = null;
                 return;
             }
 
@@ -3247,32 +3367,36 @@ public class BodyPoseEditorFragment extends Fragment {
             previewScale = getPreviewBaseScale(pWidth, pHeight) * previewZoom;
             previewCenterX = (previewAreaLeft + previewAreaRight) * 0.5F + previewPanX;
             previewCenterY = (previewAreaTop + previewAreaBottom) * 0.5F + previewPanY;
-            updateGizmoModeToggleKey();
+            viewportFrame = new PoseViewportFrame(previewAreaLeft, previewAreaTop, pWidth, pHeight,
+                    previewScale, previewPanX, previewPanY, previewPitch, previewYaw, previewRoll,
+                    PREVIEW_CAMERA_DISTANCE, orthographicPreview);
             updateGizmoCenter();
+            capturePreviewGizmoFrame();
 
             // 更新 hover 状�?
             float localMouseX = mouseX - previewScreenLeft;
             float localMouseY = mouseY - previewScreenTop;
             updateHoveredPreviewGizmo(localMouseX, localMouseY);
 
-            // 地面网格
-            if (showCoordinateAxes) {
-                renderPreviewGroundGrid(dCtx);
-            }
-
-            // 偏移读数
-            renderModelOffsetReadout(dCtx);
-
-            // 玩家模型
-            renderPlayerPreview(dCtx);
-
-            if (shouldShowPreviewTransformGizmo()) {
-                renderModelTransformGizmos(dCtx);
+            dCtx.enableScissor(previewAreaLeft, previewAreaTop, previewAreaRight, previewAreaBottom);
+            try {
+                if (showCoordinateAxes) renderPreviewGroundGrid(dCtx);
+                renderPlayerPreview(dCtx);
+                if (shouldShowPreviewTransformGizmo()) renderModelTransformGizmos(dCtx);
+                renderModelOffsetReadout(dCtx);
+            } finally {
+                dCtx.disableScissor();
             }
         }
     }
 
     private void updateHoveredPreviewGizmo(float localMouseX, float localMouseY) {
+        hoveredPlane = draggingPlane >= 0 ? draggingPlane : findPlane(false, localMouseX, localMouseY);
+        if (hoveredPlane >= 0 && !hasActiveGizmoStep()) {
+            hoveredMoveAxis = MoveAxis.NONE;
+            hoveredRotationAxis = RotationAxis.NONE;
+            return;
+        }
         if (!shouldShowPreviewTransformGizmo()) {
             hoveredMoveAxis = MoveAxis.NONE;
             hoveredRotationAxis = RotationAxis.NONE;
@@ -3335,6 +3459,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private boolean handlePreviewScroll(MotionEvent event) {
+        if (hasActiveGizmoStep()) return true;
         float scroll = getScrollAmount(event);
         if (Math.abs(scroll) < 0.001F) return false;
         float x = toPreviewGuiCoord(event.getX());
@@ -3360,6 +3485,7 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private boolean handleWorldPlacementGenericMotion(View view, MotionEvent event) {
         if (event.getActionMasked() != MotionEvent.ACTION_SCROLL) return false;
+        if (hasActiveGizmoStep()) return true;
         float scroll = getScrollAmount(event);
         if (Math.abs(scroll) < 0.001F || hasActiveGizmoStep()) return false;
         float x = toWorldPlacementGuiCoord(event.getX());
@@ -3403,6 +3529,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void clearGizmoHoverState() {
+        hoveredPlane = -1;
         hoveredMoveAxis = MoveAxis.NONE;
         hoveredRotationAxis = RotationAxis.NONE;
     }
@@ -3414,6 +3541,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void toggleGizmoMode(boolean invalidate) {
+        if (hasActiveGizmoStep()) return;
         rotationGizmoMode = !rotationGizmoMode;
         hoveredMoveAxis = MoveAxis.NONE;
         hoveredRotationAxis = RotationAxis.NONE;
@@ -3428,15 +3556,6 @@ public class BodyPoseEditorFragment extends Fragment {
         }
     }
 
-    private void updateGizmoModeToggleKey() {
-        boolean down = isCtrlDown();
-        if (!down) {
-            ctrlGizmoToggleKeyDown = false;
-            ctrlShortcutUsed = false;
-            skipNextCtrlPollToggle = false;
-        }
-    }
-
     private static boolean isCtrlDown() {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.getWindow() == null) {
@@ -3445,6 +3564,25 @@ public class BodyPoseEditorFragment extends Fragment {
         long handle = client.getWindow().getHandle();
         return GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_LEFT_CONTROL) == GLFW.GLFW_PRESS
                 || GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_RIGHT_CONTROL) == GLFW.GLFW_PRESS;
+    }
+
+    private static boolean isShiftDown() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getWindow() == null) return false;
+        long window = client.getWindow().getHandle();
+        return GLFW.glfwGetKey(window, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(window, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
+    }
+
+    private void setGizmoTool(boolean rotate) {
+        if (!hasActiveGizmoStep() && rotationGizmoMode != rotate) toggleGizmoMode(true);
+        refreshViewportTools();
+    }
+
+    private void refreshViewportTools() {
+        if (moveToolButton != null) moveToolButton.setTextColor(rotationGizmoMode ? 0xFFD4D9E1 : 0xFFFFD36A);
+        if (rotateToolButton != null) rotateToolButton.setTextColor(rotationGizmoMode ? 0xFFFFD36A : 0xFFD4D9E1);
+        if (projectionToolButton != null) projectionToolButton.setText(orthographicPreview ? "正交 O" : "透视 O");
     }
 
     private boolean usesSelectedPartGizmoTarget() {
@@ -3476,6 +3614,7 @@ public class BodyPoseEditorFragment extends Fragment {
             return;
         }
         captureGizmoDragStart(mouseX, mouseY);
+        captureRotationPlane(axis, mouseX, mouseY, false);
         draggingRotationAxis = axis;
         draggingMoveAxis = MoveAxis.NONE;
         draggingPreview = false;
@@ -3483,6 +3622,23 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void captureGizmoDragStart(float mouseX, float mouseY) {
+        var displayed = displayedGizmoFrame(isWorldPlacementOverlayActive());
+        dragBoneFrame = displayed == null ? null : displayed.bone();
+        if (dragBoneFrame != null) {
+            dragBoneOffset.set(getSelectedPoseOffset(MoveAxis.X), getSelectedPoseOffset(MoveAxis.Y), getSelectedPoseOffset(MoveAxis.Z));
+            dragBoneEuler.set(getSelectedPoseValue(Axis.PITCH), getSelectedPoseValue(Axis.YAW), getSelectedPoseValue(Axis.ROLL));
+            dragBonePreviousEuler.set(dragBoneEuler);
+            dragBoneUnitScale = MODEL_PART_UNITS_PER_GRID / (isWorldPlacementOverlayActive() ? wholeBodyScale : 1);
+        }
+        dragPointer = new DragPointer(mouseX, mouseY, 3);
+        dragTargetKey = gizmoTargetKey();
+        dragOwner = isWorldPlacementOverlayActive() ? worldPlacementTouchView : surfaceView;
+        if (dragOwner != null && dragOwner.getParent() != null) {
+            dragOwner.getParent().requestDisallowInterceptTouchEvent(true);
+        }
+        dragStartState = captureEditorState("drag");
+        dragAdjustment = new DragAdjustment(isCtrlDown());
+        previewTransformDirty = false;
         updateGizmoCenter();
         dragStartGizmoCenter.set(currentGizmoCenter);
         dragStartMouseX = mouseX;
@@ -3490,6 +3646,20 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void clearActiveGizmoDrag() {
+        dragBoneFrame = null;
+        if (dragPointer != null) dragPointer.end();
+        dragPointer = null;
+        dragTargetKey = null;
+        if (dragOwner != null && dragOwner.getParent() != null) {
+            dragOwner.getParent().requestDisallowInterceptTouchEvent(false);
+        }
+        dragOwner = null;
+        draggingPlane = -1;
+        planeDrag = null;
+        planeAdjustmentV = null;
+        dragStartState = null;
+        dragAdjustment = null;
+        rotationDrag = null;
         draggingMoveAxis = MoveAxis.NONE;
         draggingRotationAxis = RotationAxis.NONE;
         dragStartMoveOffsetVector.set(0.0F, 0.0F, 0.0F);
@@ -3500,16 +3670,8 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void captureMoveAxisScreenVector(MoveAxis axis) {
-        ScreenPoint center = projectGizmoPoint(dragStartGizmoCenter.x, dragStartGizmoCenter.y, dragStartGizmoCenter.z);
-        ScreenPoint end = switch (axis) {
-            case X -> projectGizmoPoint(dragStartGizmoCenter.x + MOVE_AXIS_LENGTH,
-                    dragStartGizmoCenter.y, dragStartGizmoCenter.z);
-            case Y -> projectGizmoPoint(dragStartGizmoCenter.x,
-                    dragStartGizmoCenter.y + MOVE_AXIS_LENGTH, dragStartGizmoCenter.z);
-            case Z -> projectGizmoPoint(dragStartGizmoCenter.x,
-                    dragStartGizmoCenter.y, dragStartGizmoCenter.z + MOVE_AXIS_LENGTH);
-            default -> center;
-        };
+        ScreenPoint center = displayedGizmoCenter(false);
+        ScreenPoint end = displayedMoveEnd(false, axis);
         dragStartAxisScreenX = end.x - center.x;
         dragStartAxisScreenY = end.y - center.y;
         dragStartAxisScreenLength = (float) Math.sqrt(
@@ -3519,7 +3681,7 @@ public class BodyPoseEditorFragment extends Fragment {
     private Vector3f resolveGizmoCenter() {
         if (usesSelectedPartGizmoTarget()) {
             if (poseEditMode == PoseEditMode.TRUE_SKELETAL) {
-                Vector3f center = BodyPoseSkeletalPreviewRenderer.getPoseTargetRenderPosition(selectedPart,
+                Vector3f center = BodyPoseSkeletalPreviewRenderer.getPoseTargetPivotPosition(selectedPart,
                         getWorldSkeletalBoneRotations(), getWorldSkeletalBoneOffsets(), getWorldSkeletalBoneScales());
                 if (center != null) {
                     return center;
@@ -3540,7 +3702,8 @@ public class BodyPoseEditorFragment extends Fragment {
 
     private Vector3f resolveWorldPlacementGizmoCenterLocal() {
         if (usesSelectedPartGizmoTarget()) {
-            return resolveGizmoCenter();
+            Vector3f center = resolveGizmoCenter();
+            return poseEditMode == PoseEditMode.TRUE_SKELETAL ? center.mul(wholeBodyScale) : center;
         }
         if (hasSelectedItemModel()) {
             return new Vector3f(
@@ -3552,6 +3715,22 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private Vector3f getStaticPartGizmoCenter(String part) {
+        if (!isWorldPlacementOverlayActive()) {
+            PlayerEntityModel model = getPreviewModel();
+            if (model != null) {
+                preparePreviewModel(model);
+                ModelPart target = switch (part) {
+                    case "head" -> model.head;
+                    case "torso" -> model.body;
+                    case "left_arm" -> model.leftArm;
+                    case "right_arm" -> model.rightArm;
+                    case "left_leg" -> model.leftLeg;
+                    case "right_leg" -> model.rightLeg;
+                    default -> model.getRootPart();
+                };
+                return new Vector3f(target.originX, target.originY, target.originZ).div(16.0F);
+            }
+        }
         Vector3f center = switch (part) {
             case "head" -> new Vector3f(0.0F, 1.0F, 0.0F);
             case "torso" -> new Vector3f(0.0F, 0.25F, 0.0F);
@@ -3567,6 +3746,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void clearGizmoInteractionState() {
+        if (hasActiveGizmoStep()) cancelGizmoStep();
         hoveredMoveAxis = MoveAxis.NONE;
         hoveredRotationAxis = RotationAxis.NONE;
         clearActiveGizmoDrag();
@@ -3577,16 +3757,154 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void cancelGizmoStep() {
+        BodyPosePresetStore.EditorStateData start = dragStartState;
+        if (start != null) applyEditorState(start);
         hoveredMoveAxis = MoveAxis.NONE;
         hoveredRotationAxis = RotationAxis.NONE;
         clearActiveGizmoDrag();
+        draggingPreview = false;
+        draggingRightPreview = false;
+        activePreviewButton = 0;
         previewTransformDirty = false;
+        if (start != null) {
+            saveCurrentPageState();
+            refreshNumericValueBindings();
+            lastLivePlacedBodyPoseUpdateMs = 0;
+            lastLocalPlacedBodyPoseRefreshMs = 0;
+            updatePlacedBodyPoseLive();
+        }
+        updateGizmoCenter();
         invalidatePreview();
     }
 
     private boolean hasActiveGizmoStep() {
-        return draggingMoveAxis != MoveAxis.NONE
+        return draggingPlane >= 0 || draggingMoveAxis != MoveAxis.NONE
                 || draggingRotationAxis != RotationAxis.NONE;
+    }
+
+    private ProjectedPlaneDrag createPlaneDrag(boolean world, int plane, double x, double y) {
+        var frame = displayedGizmoFrame(world);
+        if (frame == null) return null;
+        boolean ortho = !world && orthographicPreview;
+        return new ProjectedPlaneDrag(ringPoint(frame.center(), ortho),
+                ringPoint(frame.ring(plane, 0), ortho),
+                ringPoint(frame.ring(plane, ROTATION_RING_SEGMENTS / 4), ortho), x, y);
+    }
+
+    private int findPlane(boolean world, double x, double y) {
+        if (isRotationGizmoMode() || (!world && !shouldShowPreviewTransformGizmo())) return -1;
+        if (!world && !isInsidePreviewArea((float) x, (float) y)) return -1;
+        var frame = displayedGizmoFrame(world);
+        if (frame == null) return -1;
+        int best = -1;
+        double bestDepth = Double.POSITIVE_INFINITY;
+        for (int plane = 0; plane < 3; plane++) {
+            double[] xs = new double[4], ys = new double[4];
+            double depth = 0;
+            for (int i = 0; i < 4; i++) {
+                ScreenPoint p = frame.plane(plane, i);
+                xs[i] = p.x;
+                ys[i] = p.y;
+                depth += p.depth;
+            }
+            if (!GizmoPick.insideQuad(x, y, xs, ys)) continue;
+            ProjectedPlaneDrag constraint = createPlaneDrag(world, plane, x, y);
+            if (constraint == null || !constraint.usable()) continue;
+            if (best == -1 || depth < bestDepth - 0.001 || (Math.abs(depth - bestDepth) < 0.001 && plane == hoveredPlane)) {
+                best = plane;
+                bestDepth = depth;
+            }
+        }
+        return best;
+    }
+
+    private boolean beginPlaneDrag(boolean world, float x, float y) {
+        int plane = findPlane(world, x, y);
+        if (plane < 0) return false;
+        ProjectedPlaneDrag constraint = createPlaneDrag(world, plane, x, y);
+        if (constraint == null || !constraint.usable()) return false;
+        captureGizmoDragStart(x, y);
+        planeDrag = constraint;
+        draggingPlane = plane;
+        planeAdjustmentV = new DragAdjustment(isCtrlDown());
+        planeStartOffset.set(usesSelectedPartGizmoTarget() ? getSelectedPoseOffset(MoveAxis.X) : getActiveOffsetX(),
+                usesSelectedPartGizmoTarget() ? getSelectedPoseOffset(MoveAxis.Y) : getActiveOffsetY(),
+                usesSelectedPartGizmoTarget() ? getSelectedPoseOffset(MoveAxis.Z) : getActiveOffsetZ());
+        planeOffsetTransform = new Matrix4f();
+        if (world && shouldDragWholeBodyOffsetAlongWorldPlacementAxis()) {
+            boolean skeletal = isTrueSkeletalPoseMode();
+            planeOffsetTransform.rotateX((float) Math.toRadians(skeletal ? -modelPitch : modelPitch))
+                    .rotateY((float) Math.toRadians(skeletal ? modelYaw : -modelYaw))
+                    .rotateZ((float) Math.toRadians(skeletal ? -modelRoll : modelRoll));
+        }
+        draggingMoveAxis = MoveAxis.NONE;
+        draggingRotationAxis = RotationAxis.NONE;
+        draggingPreview = false;
+        draggingRightPreview = false;
+        return true;
+    }
+
+    private void dragPlane(double x, double y) {
+        var pointer = dragPointerPosition(x, y);
+        if (pointer == null || planeDrag == null) return;
+        var delta = planeDrag.delta(pointer.x(), pointer.y());
+        if (delta == null) return;
+        double unit = ROTATION_RING_RADIUS;
+        if (dragBoneFrame != null) {
+            unit *= dragBoneUnitScale;
+        } else if (usesSelectedPartGizmoTarget() && poseEditMode == PoseEditMode.TRUE_SKELETAL) {
+            unit = trueSkeletalModelOffset(ROTATION_RING_RADIUS);
+        }
+        float u = (float) dragAdjustment.update(delta.u() * unit, isShiftDown(), isCtrlDown(), 0.25);
+        float v = (float) planeAdjustmentV.update(delta.v() * unit, isShiftDown(), isCtrlDown(), 0.25);
+        Vector3f offset = switch (draggingPlane) {
+            case 0 -> new Vector3f(0, u, v);
+            case 1 -> new Vector3f(u, 0, v);
+            default -> new Vector3f(u, v, 0);
+        };
+        if (dragBoneFrame != null) {
+            applyBoneOffset(offset);
+            return;
+        }
+        offset.mul(getMoveAxisDragSign(MoveAxis.X), getMoveAxisDragSign(MoveAxis.Y), getMoveAxisDragSign(MoveAxis.Z));
+        planeOffsetTransform.transformDirection(offset);
+        for (MoveAxis axis : new MoveAxis[]{MoveAxis.X, MoveAxis.Y, MoveAxis.Z}) {
+            int component = axis.ordinal() - 1;
+            float before = usesSelectedPartGizmoTarget() ? getSelectedPoseOffset(axis) : getActiveOffset(axis);
+            float target = planeStartOffset.get(component) + offset.get(component);
+            if (usesSelectedPartGizmoTarget()) setSelectedPoseOffset(axis, target);
+            else setActiveOffset(axis, target);
+            float after = usesSelectedPartGizmoTarget() ? getSelectedPoseOffset(axis) : getActiveOffset(axis);
+            previewTransformDirty |= Math.abs(after - before) > 0.0001F;
+        }
+    }
+
+    private DragPointer.Point dragPointerPosition(double x, double y) {
+        if (dragPointer == null) return null;
+        if (!Objects.equals(dragTargetKey, gizmoTargetKey())) {
+            cancelGizmoStep();
+            return null;
+        }
+        return dragPointer.update(x, y);
+    }
+
+    private void applyBoneOffset(Vector3f localDelta) {
+        Vector3f target = dragBoneFrame.offsetDelta(localDelta).add(dragBoneOffset);
+        if (!target.isFinite()) return;
+        for (MoveAxis axis : new MoveAxis[]{MoveAxis.X, MoveAxis.Y, MoveAxis.Z}) {
+            float before = getSelectedPoseOffset(axis);
+            setSelectedPoseOffset(axis, target.get(axis.ordinal() - 1));
+            previewTransformDirty |= Math.abs(getSelectedPoseOffset(axis) - before) > 0.0001F;
+        }
+    }
+
+    private boolean applyBoneAxisOffset(MoveAxis axis, float units) {
+        if (dragBoneFrame == null) return false;
+        float amount = (float) dragAdjustment.update(units * dragBoneUnitScale, isShiftDown(), isCtrlDown(), 0.25);
+        Vector3f delta = new Vector3f();
+        delta.setComponent(axis.ordinal() - 1, amount);
+        applyBoneOffset(delta);
+        return true;
     }
 
     // ══════════════════════════════════════════════════════�?
@@ -3689,7 +4007,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private ScreenPoint screenGizmoCenter() {
-        return projectWorldPlacementGizmoPoint(0.0F, 0.0F, 0.0F, false);
+        return displayedGizmoCenter(true);
     }
 
     private float screenGizmoCenterX() {
@@ -3701,20 +4019,13 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private ScreenPoint screenMoveAxisEnd(MoveAxis axis) {
-        return switch (axis) {
-            case X -> projectWorldPlacementGizmoPoint(MOVE_AXIS_LENGTH, 0.0F, 0.0F, true);
-            case Y -> projectWorldPlacementGizmoPoint(0.0F, MOVE_AXIS_LENGTH, 0.0F, true);
-            case Z -> projectWorldPlacementGizmoPoint(0.0F, 0.0F, MOVE_AXIS_LENGTH, true);
-            default -> screenGizmoCenter();
-        };
+        return displayedMoveEnd(true, axis);
     }
 
     private ScreenPoint screenRotationRingPoint(RotationAxis axis, int segment) {
-        float angle = (float) (Math.PI * 2.0D * segment / ROTATION_RING_SEGMENTS);
-        Vector3f local = worldPlacementRotationRingLocalPoint(axis, angle);
-        return axis == RotationAxis.NONE
-                ? screenGizmoCenter()
-                : projectWorldPlacementGizmoPoint(local.x, local.y, local.z, true);
+        var frame = displayedGizmoFrame(true);
+        return frame == null || axis == RotationAxis.NONE ? INVALID_GIZMO_POINT
+                : frame.ring(axis.ordinal() - 1, segment);
     }
 
     private Vector3f worldPlacementRotationRingLocalPoint(RotationAxis axis, float angle) {
@@ -3730,23 +4041,32 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private ScreenPoint projectWorldPlacementGizmoPoint(float x, float y, float z, boolean rotateWithModel) {
+        return projectWorldGizmoOffset(worldPlacementGizmoLocalToWorldOffset(x, y, z, rotateWithModel));
+    }
+
+    private ScreenPoint projectWorldGizmoOffset(Vector3f local) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.player == null || client.getWindow() == null) {
-            return fallbackWorldPlacementScreenPoint();
+            return INVALID_GIZMO_POINT;
         }
         updateWorldPlacementScreenOrigin();
-        Vector3f local = worldPlacementGizmoLocalToWorldOffset(x, y, z, rotateWithModel);
-        Vec3d projected = client.gameRenderer.project(worldPlacementBase(client).add(local.x, local.y, local.z));
+        Vec3d worldPoint = worldPlacementBase(client).add(local.x, local.y, local.z);
+        Vec3d relative = worldPoint.subtract(client.gameRenderer.getCamera().getPos());
+        Vector3f cameraPoint = new Vector3f((float) relative.x, (float) relative.y, (float) relative.z)
+                .rotate(new Quaternionf(client.gameRenderer.getCamera().getRotation()).conjugate());
+        float depth = -cameraPoint.z;
+        if (!Float.isFinite(depth) || depth <= 0.05F) return new ScreenPoint(Float.NaN, Float.NaN);
+        Vec3d projected = client.gameRenderer.project(worldPoint);
         if (projected == null
                 || !Double.isFinite(projected.x)
                 || !Double.isFinite(projected.y)) {
-            return fallbackWorldPlacementScreenPoint();
+            return INVALID_GIZMO_POINT;
         }
         double width = Math.max(1, client.getWindow().getScaledWidth());
         double height = Math.max(1, client.getWindow().getScaledHeight());
         return new ScreenPoint(
                 (float) (((projected.x + 1.0D) * 0.5D * width) - previewScreenLeft),
-                (float) (((1.0D - projected.y) * 0.5D * height) - previewScreenTop));
+                (float) (((1.0D - projected.y) * 0.5D * height) - previewScreenTop), 1.0F, depth);
     }
 
     private Vec3d worldPlacementBase(MinecraftClient client) {
@@ -3760,9 +4080,18 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private Vector3f worldPlacementGizmoLocalToWorldOffset(float x, float y, float z, boolean rotateWithModel) {
+        BonePoseFrame bone = selectedBoneFrame();
+        if (bone != null) {
+            Matrix4f transform = worldPlacementTransformMatrix(true, false)
+                    .translate(bone.pivot().mul(wholeBodyScale));
+            if (rotateWithModel) transform.rotate(bone.orientation());
+            return transform.transformPosition(new Vector3f(x, y, z));
+        }
         Vector3f center = resolveWorldPlacementGizmoCenterLocal();
-        return worldPlacementTransformMatrix(true, false)
-                .transformPosition(center.x + x, center.y + y, center.z + z, new Vector3f());
+        Vector3f pivot = worldPlacementTransformMatrix(true, false).transformPosition(center);
+        Vector3f direction = worldPlacementTransformMatrix(rotateWithModel, false)
+                .transformDirection(new Vector3f(x, y, z));
+        return pivot.add(direction);
     }
 
     private Matrix4f worldPlacementTransformMatrix(boolean rotateWithModel, boolean includeScale) {
@@ -3871,23 +4200,32 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private MoveAxis findScreenMoveAxis(double px, double py) {
-        double bestDist = SCREEN_GIZMO_HIT_RADIUS_PIXELS;
+        double bestDist = Double.POSITIVE_INFINITY;
         MoveAxis best = MoveAxis.NONE;
         ScreenPoint center = screenGizmoCenter();
+        if (!isFinitePoint(center) || Math.hypot(px - center.x, py - center.y) < 8) return best;
         for (MoveAxis axis : new MoveAxis[]{MoveAxis.X, MoveAxis.Y, MoveAxis.Z}) {
             if (!isScreenMoveAxisVisible(axis)) {
                 continue;
             }
-            double dist = distanceToSegment(px, py, center, screenMoveAxisEnd(axis));
-            if (dist <= bestDist) {
+            ScreenPoint end = screenMoveAxisEnd(axis);
+            if (!GizmoPick.usableAxis(end.x - center.x, end.y - center.y)) continue;
+            double dist = distanceToSegment(px, py, center, end);
+            if (dist <= SCREEN_GIZMO_HIT_RADIUS_PIXELS && GizmoPick.prefer(dist, bestDist,
+                    axis == hoveredMoveAxis, best == hoveredMoveAxis)) {
                 bestDist = dist;
                 best = axis;
             }
         }
+        // The legacy world visibility check is a coarse body box, not a mesh occlusion test.
+        // Preserve its fallback until the world renderer shares exact picking geometry.
         if (best == MoveAxis.NONE) {
             for (MoveAxis axis : new MoveAxis[]{MoveAxis.X, MoveAxis.Y, MoveAxis.Z}) {
-                double dist = distanceToSegment(px, py, center, screenMoveAxisEnd(axis));
-                if (dist <= bestDist) {
+                ScreenPoint end = screenMoveAxisEnd(axis);
+                if (!GizmoPick.usableAxis(end.x - center.x, end.y - center.y)) continue;
+                double dist = distanceToSegment(px, py, center, end);
+                if (dist <= SCREEN_GIZMO_HIT_RADIUS_PIXELS && GizmoPick.prefer(dist, bestDist,
+                        axis == hoveredMoveAxis, best == hoveredMoveAxis)) {
                     bestDist = dist;
                     best = axis;
                 }
@@ -3897,11 +4235,12 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private RotationAxis findScreenRotationRing(double px, double py) {
-        double bestDist = SCREEN_GIZMO_HIT_RADIUS_PIXELS;
+        double bestDist = Double.POSITIVE_INFINITY;
         RotationAxis best = RotationAxis.NONE;
         for (RotationAxis axis : new RotationAxis[]{RotationAxis.PITCH, RotationAxis.YAW, RotationAxis.ROLL}) {
             double dist = distanceToScreenRotationRing(px, py, axis);
-            if (dist <= bestDist) {
+            if (dist <= SCREEN_GIZMO_HIT_RADIUS_PIXELS && GizmoPick.prefer(dist, bestDist,
+                    axis == hoveredRotationAxis, best == hoveredRotationAxis)) {
                 bestDist = dist;
                 best = axis;
             }
@@ -3912,66 +4251,28 @@ public class BodyPoseEditorFragment extends Fragment {
     private double distanceToScreenRotationRing(double px, double py, RotationAxis axis) {
         double best = Double.MAX_VALUE;
         ScreenPoint previous = screenRotationRingPoint(axis, 0);
-        boolean hadVisibleSegment = false;
+        double fallback = Double.MAX_VALUE;
+        boolean visible = false;
         for (int i = 1; i <= ROTATION_RING_SEGMENTS; i++) {
             ScreenPoint current = screenRotationRingPoint(axis, i);
+            double distance = distanceToSegment(px, py, previous, current);
+            fallback = Math.min(fallback, distance);
             if (isScreenRotationRingSegmentVisible(axis, i)) {
-                hadVisibleSegment = true;
-                best = Math.min(best, distanceToSegment(px, py, previous, current));
+                visible = true;
+                best = Math.min(best, distance);
             }
             previous = current;
         }
-        if (!hadVisibleSegment) {
-            previous = screenRotationRingPoint(axis, 0);
-            for (int i = 1; i <= ROTATION_RING_SEGMENTS; i++) {
-                ScreenPoint current = screenRotationRingPoint(axis, i);
-                best = Math.min(best, distanceToSegment(px, py, previous, current));
-                previous = current;
-            }
-        }
-        return best;
-    }
-
-    private RotationDragBasis screenRotationDragBasis(RotationAxis axis, double px, double py) {
-        RotationDragBasis basis = nearestScreenRotationDragBasis(axis, px, py, true);
-        return basis != null ? basis : nearestScreenRotationDragBasis(axis, px, py, false);
-    }
-
-    private RotationDragBasis nearestScreenRotationDragBasis(RotationAxis axis, double px, double py,
-                                                             boolean visibleOnly) {
-        double best = Double.MAX_VALUE;
-        ScreenPoint bestStart = null;
-        ScreenPoint bestEnd = null;
-        ScreenPoint previous = screenRotationRingPoint(axis, 0);
-        for (int i = 1; i <= ROTATION_RING_SEGMENTS; i++) {
-            ScreenPoint current = screenRotationRingPoint(axis, i);
-            if (!visibleOnly || isScreenRotationRingSegmentVisible(axis, i)) {
-                double distance = distanceToSegment(px, py, previous, current);
-                if (distance < best) {
-                    best = distance;
-                    bestStart = previous;
-                    bestEnd = current;
-                }
-            }
-            previous = current;
-        }
-        if (bestStart == null || bestEnd == null) {
-            return null;
-        }
-        double tangentX = bestEnd.x - bestStart.x;
-        double tangentY = bestEnd.y - bestStart.y;
-        double segmentLength = Math.sqrt(tangentX * tangentX + tangentY * tangentY);
-        if (segmentLength < 0.001D) {
-            return null;
-        }
-        double radiansPerSegment = Math.PI * 2.0D / ROTATION_RING_SEGMENTS;
-        return new RotationDragBasis(
-                (float) (tangentX / segmentLength),
-                (float) (tangentY / segmentLength),
-                (float) (segmentLength / radiansPerSegment));
+        return visible ? best : fallback;
     }
 
     private void updateHoveredScreenGizmo(float x, float y) {
+        hoveredPlane = draggingPlane >= 0 ? draggingPlane : findPlane(true, x, y);
+        if (hoveredPlane >= 0 && !hasActiveGizmoStep()) {
+            hoveredMoveAxis = MoveAxis.NONE;
+            hoveredRotationAxis = RotationAxis.NONE;
+            return;
+        }
         if (isRotationGizmoMode()) {
             hoveredMoveAxis = MoveAxis.NONE;
             hoveredRotationAxis = draggingRotationAxis != RotationAxis.NONE
@@ -3989,8 +4290,11 @@ public class BodyPoseEditorFragment extends Fragment {
         if (axis == MoveAxis.NONE) {
             return;
         }
-        dragStartMouseX = mouseX;
-        dragStartMouseY = mouseY;
+        captureGizmoDragStart(mouseX, mouseY);
+        ScreenPoint center = screenGizmoCenter();
+        ScreenPoint end = screenMoveAxisEnd(axis);
+        dragStartAxisScreenX = end.x - center.x;
+        dragStartAxisScreenY = end.y - center.y;
         dragStartMoveOffset = usesSelectedPartGizmoTarget()
                 ? getSelectedPoseOffset(axis)
                 : getActiveOffset(axis);
@@ -4005,8 +4309,8 @@ public class BodyPoseEditorFragment extends Fragment {
         if (axis == RotationAxis.NONE) {
             return;
         }
-        dragStartMouseX = mouseX;
-        dragStartMouseY = mouseY;
+        captureGizmoDragStart(mouseX, mouseY);
+        captureRotationPlane(axis, mouseX, mouseY, true);
         draggingRotationAxis = axis;
         draggingMoveAxis = MoveAxis.NONE;
         draggingPreview = false;
@@ -4014,20 +4318,24 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void dragScreenGizmoOffset(MoveAxis axis, double mouseX, double mouseY) {
-        ScreenPoint center = screenGizmoCenter();
-        ScreenPoint end = screenMoveAxisEnd(axis);
-        double axisX = end.x - center.x;
-        double axisY = end.y - center.y;
+        var pointer = dragPointerPosition(mouseX, mouseY);
+        if (pointer == null) return;
+        mouseX = pointer.x();
+        mouseY = pointer.y();
+        double axisX = dragStartAxisScreenX;
+        double axisY = dragStartAxisScreenY;
         double axisLengthSq = axisX * axisX + axisY * axisY;
-        if (axisLengthSq < 0.001D) {
+        if (!GizmoPick.usableAxis(axisX, axisY)) {
             return;
         }
         double deltaX = mouseX - dragStartMouseX;
         double deltaY = mouseY - dragStartMouseY;
         float deltaUnits = (float) ((deltaX * axisX + deltaY * axisY) / axisLengthSq * MOVE_AXIS_LENGTH);
+        if (applyBoneAxisOffset(axis, deltaUnits)) return;
         if (usesSelectedPartGizmoTarget() && poseEditMode == PoseEditMode.TRUE_SKELETAL) {
             deltaUnits = trueSkeletalModelOffset(deltaUnits);
         }
+        if (dragAdjustment != null) deltaUnits = (float) dragAdjustment.update(deltaUnits, isShiftDown(), isCtrlDown(), 0.25);
         if (shouldDragWholeBodyOffsetAlongWorldPlacementAxis()) {
             float previousX = getActiveOffsetX();
             float previousY = getActiveOffsetY();
@@ -4082,39 +4390,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void dragScreenGizmoRotation(RotationAxis axis, double mouseX, double mouseY, double deltaX, double deltaY) {
-        if (axis == RotationAxis.NONE) {
-            return;
-        }
-        RotationDragBasis basis = screenRotationDragBasis(axis, mouseX - deltaX, mouseY - deltaY);
-        float degrees;
-        if (basis != null) {
-            double tangentDelta = deltaX * basis.tangentX + deltaY * basis.tangentY;
-            degrees = -normalizeDegrees((float) Math.toDegrees(tangentDelta / basis.pixelsPerRadian));
-        } else {
-            ScreenPoint center = screenGizmoCenter();
-            double previousAngle = Math.atan2(mouseY - deltaY - center.y, mouseX - deltaX - center.x);
-            double currentAngle = Math.atan2(mouseY - center.y, mouseX - center.x);
-            degrees = -normalizeDegrees((float) Math.toDegrees(currentAngle - previousAngle));
-        }
-        degrees *= getRotationAxisDragSign(axis);
-        if (usesSelectedPartGizmoTarget()) {
-            switch (axis) {
-                case PITCH -> setSelectedPoseValue(Axis.PITCH, getSelectedPoseValue(Axis.PITCH) - degrees);
-                case YAW -> setSelectedPoseValue(Axis.YAW, getSelectedPoseValue(Axis.YAW) + degrees);
-                case ROLL -> setSelectedPoseValue(Axis.ROLL, getSelectedPoseValue(Axis.ROLL) - degrees);
-                default -> {
-                }
-            }
-        } else {
-            switch (axis) {
-                case PITCH -> setActiveRotation(Axis.PITCH, getActiveRotation(Axis.PITCH) - degrees);
-                case YAW -> setActiveRotation(Axis.YAW, getActiveRotation(Axis.YAW) + degrees);
-                case ROLL -> setActiveRotation(Axis.ROLL, getActiveRotation(Axis.ROLL) - degrees);
-                default -> {
-                }
-            }
-        }
-        previewTransformDirty = true;
+        dragGizmoRotation(axis, mouseX, mouseY, deltaX, deltaY);
     }
 
     private class WorldPlacementTouchListener implements View.OnTouchListener {
@@ -4135,9 +4411,7 @@ public class BodyPoseEditorFragment extends Fragment {
                     lastX = x;
                     lastY = y;
                     activeButton = getWorldPlacementButton(event, action);
-                    previewTransformDirty = false;
                     worldPlacementPanAnchor = null;
-                    clearActiveGizmoDrag();
                     if (worldPlacementTouchView != null) {
                         worldPlacementTouchView.requestFocus();
                     }
@@ -4153,6 +4427,7 @@ public class BodyPoseEditorFragment extends Fragment {
                         return true;
                     }
                     if (activeButton == MotionEvent.BUTTON_PRIMARY) {
+                        if (hasActiveGizmoStep() || displayedGizmoFrame(true) == null) return true;
                         if (isRotationGizmoMode()) {
                             RotationAxis rotationAxis = findScreenRotationRing(x, y);
                             if (rotationAxis != RotationAxis.NONE) {
@@ -4160,6 +4435,7 @@ public class BodyPoseEditorFragment extends Fragment {
                                 return true;
                             }
                         } else {
+                            if (beginPlaneDrag(true, x, y)) return true;
                             MoveAxis moveAxis = findScreenMoveAxis(x, y);
                             if (moveAxis != MoveAxis.NONE) {
                                 beginScreenMoveGizmoDrag(moveAxis, x, y);
@@ -4187,6 +4463,8 @@ public class BodyPoseEditorFragment extends Fragment {
                     }
                     if (primaryDown && draggingRotationAxis != RotationAxis.NONE) {
                         dragScreenGizmoRotation(draggingRotationAxis, x, y, dX, dY);
+                    } else if (primaryDown && draggingPlane >= 0) {
+                        dragPlane(x, y);
                     } else if (primaryDown && draggingMoveAxis != MoveAxis.NONE) {
                         dragScreenGizmoOffset(draggingMoveAxis, x, y);
                     } else if (primaryDown && draggingPreview) {
@@ -4209,14 +4487,23 @@ public class BodyPoseEditorFragment extends Fragment {
                     invalidatePreview();
                     return true;
                 }
-                case MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_OUTSIDE,
-                        MotionEvent.ACTION_HOVER_EXIT, MotionEvent.ACTION_BUTTON_RELEASE -> {
+                case MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_OUTSIDE -> {
+                    cancelGizmoStep();
+                    activeButton = 0;
+                    worldPlacementPanAnchor = null;
+                    return true;
+                }
+                case MotionEvent.ACTION_HOVER_EXIT -> {
+                    clearGizmoHoverState();
+                    return true;
+                }
+                case MotionEvent.ACTION_UP, MotionEvent.ACTION_BUTTON_RELEASE -> {
                     boolean changed = previewTransformDirty;
-                    boolean movedAxis = draggingMoveAxis != MoveAxis.NONE;
+                    boolean movedAxis = draggingPlane >= 0 || draggingMoveAxis != MoveAxis.NONE;
                     boolean rotatedAxis = draggingRotationAxis != RotationAxis.NONE;
                     draggingPreview = false;
                     draggingRightPreview = false;
-                    if (draggingMoveAxis != MoveAxis.NONE || draggingRotationAxis != RotationAxis.NONE) {
+                    if (hasActiveGizmoStep()) {
                         clearActiveGizmoDrag();
                     }
                     if (changed) {
@@ -4314,6 +4601,8 @@ public class BodyPoseEditorFragment extends Fragment {
                     }
 
                     if (activePreviewButton == MotionEvent.BUTTON_PRIMARY) {
+                        if (hasActiveGizmoStep()) return true;
+                        if (shouldShowPreviewTransformGizmo() && displayedGizmoFrame(false) == null) return true;
                         if (isRotationGizmoMode()) {
                             RotationAxis rotationAxis = findRotationRing(x, y);
                             if (rotationAxis != RotationAxis.NONE) {
@@ -4321,6 +4610,7 @@ public class BodyPoseEditorFragment extends Fragment {
                                 return true;
                             }
                         } else {
+                            if (beginPlaneDrag(false, x, y)) return true;
                             MoveAxis moveAxis = findMoveAxis(x, y);
                             if (moveAxis != MoveAxis.NONE) {
                                 beginMoveGizmoDrag(moveAxis, x, y);
@@ -4349,6 +4639,8 @@ public class BodyPoseEditorFragment extends Fragment {
 
                     if (primaryDown && draggingRotationAxis != RotationAxis.NONE) {
                         dragGizmoRotation(draggingRotationAxis, x, y, dX, dY);
+                    } else if (primaryDown && draggingPlane >= 0) {
+                        dragPlane(x, y);
                     } else if (primaryDown && draggingMoveAxis != MoveAxis.NONE) {
                         dragGizmoOffset(draggingMoveAxis, x, y);
                     } else if (primaryDown && draggingPreview) {
@@ -4376,14 +4668,21 @@ public class BodyPoseEditorFragment extends Fragment {
                     invalidatePreview();
                     return true;
                 }
-                case MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_OUTSIDE,
-                        MotionEvent.ACTION_HOVER_EXIT, MotionEvent.ACTION_BUTTON_RELEASE -> {
+                case MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_OUTSIDE -> {
+                    cancelGizmoStep();
+                    return true;
+                }
+                case MotionEvent.ACTION_HOVER_EXIT -> {
+                    clearGizmoHoverState();
+                    return true;
+                }
+                case MotionEvent.ACTION_UP, MotionEvent.ACTION_BUTTON_RELEASE -> {
                     boolean changed = previewTransformDirty;
-                    boolean movedAxis = draggingMoveAxis != MoveAxis.NONE;
+                    boolean movedAxis = draggingPlane >= 0 || draggingMoveAxis != MoveAxis.NONE;
                     boolean rotatedAxis = draggingRotationAxis != RotationAxis.NONE;
                     draggingPreview = false;
                     draggingRightPreview = false;
-                    if (draggingMoveAxis != MoveAxis.NONE || draggingRotationAxis != RotationAxis.NONE) {
+                    if (hasActiveGizmoStep()) {
                         clearActiveGizmoDrag();
                     }
                     if (changed) {
@@ -4426,35 +4725,65 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void renderPlayerPreview(DrawContext context) {
+        PoseViewportFrame frame = viewportFrame;
         PlayerEntityModel model = getPreviewModel();
-        if (model == null) return;
-
-        if (!isTrueSkeletalPoseMode()) {
-            preparePreviewModel(model);
-        }
-        float scale = previewScale > 0.0F
-                ? previewScale
-                : getPreviewBaseScale(previewAreaRight - previewAreaLeft, previewAreaBottom - previewAreaTop) * previewZoom;
-        ScreenPoint modelCenter = projectPreviewPoint(modelOffsetX, modelOffsetY, modelOffsetZ);
-        float renderScale = scale * modelCenter.scale;
-        int modelWidth = Math.max(previewAreaRight - previewAreaLeft, Math.round(renderScale * 5.2F));
-        float pitchSin = Math.abs((float) Math.sin(Math.toRadians(previewPitch)));
-        int modelHeight = Math.max(previewAreaBottom - previewAreaTop, Math.round(renderScale * 5.8F))
-                + Math.round(renderScale * PREVIEW_PITCH_BOUNDS_EXTRA_SCALE * pitchSin);
-        int x1 = Math.round(modelCenter.x - modelWidth * 0.5F);
-        int x2 = x1 + modelWidth;
-        int y2 = Math.round(modelCenter.y + renderScale * PREVIEW_Y_PIVOT);
-        int y1 = y2 - modelHeight;
+        if (frame == null || model == null) return;
         Identifier texture = getPreviewTexture();
-
-        context.enableScissor(previewAreaLeft, previewAreaTop, previewAreaRight, previewAreaBottom);
-        try {
-            context.addPlayerSkin(model, texture, renderScale, previewPitch, -previewYaw, PREVIEW_Y_PIVOT,
-                    previewScreenLeft + x1, previewScreenTop + y1,
-                    previewScreenLeft + x2, previewScreenTop + y2);
-        } finally {
-            context.disableScissor();
+        float ox = modelOffsetX, oy = modelOffsetY, oz = modelOffsetZ;
+        PoseViewportRenderState.Scene scene;
+        if (isTrueSkeletalPoseMode()) {
+            Map<String, float[]> rotations = copyPoseVectors(getWorldSkeletalBoneRotations());
+            Map<String, float[]> offsets = copyPoseVectors(getWorldSkeletalBoneOffsets());
+            Map<String, Float> scales = Map.copyOf(getWorldSkeletalBoneScales());
+            Set<String> visible = Set.copyOf(getWorldVisibleSkeletalParts());
+            Set<String> hidden = Set.copyOf(getWorldHiddenSkeletalMeshes());
+            boolean slim = slimModel;
+            Matrix4f transform = skeletalSceneTransform();
+            scene = (matrices, consumers) -> {
+                matrices.multiplyPositionMatrix(transform);
+                matrices.peek().getNormalMatrix().set(matrices.peek().getPositionMatrix()).invert().transpose();
+                BodyPoseSkeletalPreviewRenderer.renderEditorPose(matrices, consumers, texture,
+                        rotations, offsets, scales, visible, slim, hidden);
+            };
+        } else {
+            preparePreviewModel(model);
+            var parts = List.copyOf(model.getRootPart().traverse());
+            var transforms = parts.stream().map(ModelPart::getTransform).toList();
+            boolean[] visible = new boolean[parts.size()], hidden = new boolean[parts.size()];
+            for (int i = 0; i < parts.size(); i++) {
+                visible[i] = parts.get(i).visible;
+                hidden[i] = parts.get(i).hidden;
+            }
+            scene = (matrices, consumers) -> {
+                for (int i = 0; i < parts.size(); i++) {
+                    parts.get(i).setTransform(transforms.get(i));
+                    parts.get(i).visible = visible[i];
+                    parts.get(i).hidden = hidden[i];
+                }
+                matrices.translate(ox, oy, oz);
+                model.render(matrices, consumers.getBuffer(model.getLayer(texture)), 15728880, OverlayTexture.DEFAULT_UV);
+            };
         }
+        Matrix3x2f uiPose = new Matrix3x2f(context.getMatrices());
+        ScreenRect clip = new ScreenRect(previewAreaLeft, previewAreaTop,
+                previewAreaRight - previewAreaLeft, previewAreaBottom - previewAreaTop).transformEachVertex(uiPose);
+        ((BodyPoseDrawContextAccessor) context).monvhua$getPoseGuiState().addSpecialElement(
+                new PoseViewportRenderState(previewAreaLeft, previewAreaTop, previewAreaRight, previewAreaBottom,
+                        uiPose, clip, frame, scene));
+    }
+
+    private static Map<String, float[]> copyPoseVectors(Map<String, float[]> source) {
+        Map<String, float[]> copy = new HashMap<>();
+        source.forEach((key, value) -> copy.put(key, value.clone()));
+        return Map.copyOf(copy);
+    }
+
+    private static Matrix4f skeletalSceneTransform() {
+        return new Matrix4f().translation(modelOffsetX, modelOffsetY, modelOffsetZ)
+                .rotateX((float) Math.toRadians(modelPitch))
+                .rotateY((float) Math.toRadians(-modelYaw))
+                .rotateZ((float) Math.toRadians(modelRoll))
+                .scale(wholeBodyScale, -wholeBodyScale, wholeBodyScale);
     }
 
     private void renderPreviewGroundGrid(DrawContext context) {
@@ -4819,26 +5148,66 @@ public class BodyPoseEditorFragment extends Fragment {
             renderRotationRing(context, RotationAxis.YAW, 0xD046E646);
             renderRotationRing(context, RotationAxis.ROLL, 0xD05A6EFF);
         } else {
+            renderMovePlanes(context);
             renderMoveAxis(context, MoveAxis.X, 0xF5FF3232);
             renderMoveAxis(context, MoveAxis.Y, 0xF532DC32);
             renderMoveAxis(context, MoveAxis.Z, 0xF53C50FF);
         }
 
-        ScreenPoint center = projectGizmoPoint(currentGizmoCenter.x, currentGizmoCenter.y, currentGizmoCenter.z);
+        ScreenPoint center = displayedGizmoCenter(false);
         drawHandle(context, center, 3, 0xFFFFFFFF);
     }
 
+    private void renderMovePlanes(DrawContext context) {
+        var frame = displayedGizmoFrame(false);
+        if (frame == null) return;
+        int[] colors = {0x88FF4646, 0x8846E646, 0x885A6EFF};
+        for (int plane = 0; plane < 3; plane++) {
+            ScreenPoint[] p = new ScreenPoint[4];
+            boolean valid = true;
+            float minY = Float.POSITIVE_INFINITY, maxY = Float.NEGATIVE_INFINITY;
+            for (int i = 0; i < 4; i++) {
+                p[i] = frame.plane(plane, i);
+                valid &= isFinitePoint(p[i]);
+                minY = Math.min(minY, p[i].y);
+                maxY = Math.max(maxY, p[i].y);
+            }
+            if (!valid) continue;
+            var constraint = createPlaneDrag(false, plane, p[0].x, p[0].y);
+            boolean usable = constraint != null && constraint.usable();
+            boolean highlighted = draggingPlane == plane || (draggingPlane < 0 && hoveredPlane == plane);
+            int color = !usable ? 0x335E6672 : highlighted ? 0xBBFFE46A : colors[plane];
+            // Fill the actual projected quad, never its axis-aligned bounding rectangle.
+            for (int y = Math.max(previewAreaTop, (int) Math.floor(minY));
+                    y < Math.min(previewAreaBottom, (int) Math.ceil(maxY)); y++) {
+                float left = Float.POSITIVE_INFINITY, right = Float.NEGATIVE_INFINITY;
+                float scanY = y + 0.5F;
+                for (int i = 0; i < 4; i++) {
+                    ScreenPoint a = p[i], b = p[(i + 1) % 4];
+                    if ((a.y <= scanY && b.y > scanY) || (b.y <= scanY && a.y > scanY)) {
+                        float x = a.x + (scanY - a.y) * (b.x - a.x) / (b.y - a.y);
+                        left = Math.min(left, x);
+                        right = Math.max(right, x);
+                    }
+                }
+                if (Float.isFinite(left) && Float.isFinite(right)) {
+                    context.fill(Math.max(previewAreaLeft, (int) Math.ceil(left)), y,
+                            Math.min(previewAreaRight, (int) Math.ceil(right)), y + 1, color);
+                }
+            }
+            for (int i = 0; i < 4; i++) drawProjectedLine(context, p[i], p[(i + 1) % 4], color | 0xFF000000);
+        }
+        if (hoveredPlane >= 0 || draggingPlane >= 0) {
+            int plane = draggingPlane >= 0 ? draggingPlane : hoveredPlane;
+            String label = new String[]{"YZ 平面", "XZ 平面", "XY 平面"}[plane];
+            context.drawTextWithShadow(MinecraftClient.getInstance().textRenderer, label,
+                    previewAreaLeft + 8, previewAreaTop + 32, 0xFFFFD36A);
+        }
+    }
+
     private void renderMoveAxis(DrawContext context, MoveAxis axis, int color) {
-        float ox = currentGizmoCenter.x;
-        float oy = currentGizmoCenter.y;
-        float oz = currentGizmoCenter.z;
-        ScreenPoint center = projectGizmoPoint(ox, oy, oz);
-        ScreenPoint end = switch (axis) {
-            case X -> projectGizmoPoint(ox + MOVE_AXIS_LENGTH, oy, oz);
-            case Y -> projectGizmoPoint(ox, oy + MOVE_AXIS_LENGTH, oz);
-            case Z -> projectGizmoPoint(ox, oy, oz + MOVE_AXIS_LENGTH);
-            default -> center;
-        };
+        ScreenPoint center = displayedGizmoCenter(false);
+        ScreenPoint end = displayedMoveEnd(false, axis);
 
         boolean highlighted = axis == draggingMoveAxis
                 || (draggingMoveAxis == MoveAxis.NONE && axis == hoveredMoveAxis);
@@ -4867,6 +5236,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private static void drawProjectedLineOffset(DrawContext context, ScreenPoint start, ScreenPoint end, int color, float offset) {
+        if (!isFinitePoint(start) || !isFinitePoint(end)) return;
         double dx = end.x - start.x;
         double dy = end.y - start.y;
         double length = Math.sqrt(dx * dx + dy * dy);
@@ -4880,6 +5250,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private static void drawHandle(DrawContext context, ScreenPoint point, int radius, int color) {
+        if (!isFinitePoint(point)) return;
         int x = Math.round(point.x);
         int y = Math.round(point.y);
         context.fill(x - radius, y - radius, x + radius + 1, y + radius + 1, color);
@@ -4887,6 +5258,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private static void drawProjectedLine(DrawContext context, ScreenPoint start, ScreenPoint end, int color) {
+        if (!isFinitePoint(start) || !isFinitePoint(end)) return;
         double dx = end.x - start.x;
         double dy = end.y - start.y;
         double length = Math.sqrt(dx * dx + dy * dy);
@@ -4921,62 +5293,21 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private ScreenPoint projectTrueSkeletalEditorPoint(float x, float y, float z) {
-        float scale = wholeBodyScale;
-        float scaledX = x * scale;
-        float scaledY = -y * scale;
-        float scaledZ = z * scale;
-
-        float rollRad = (float) Math.toRadians(modelRoll);
-        float rollCos = (float) Math.cos(rollRad);
-        float rollSin = (float) Math.sin(rollRad);
-        float rollX = scaledX * rollCos - scaledY * rollSin;
-        float rollY = scaledX * rollSin + scaledY * rollCos;
-        float rollZ = scaledZ;
-
-        float yawRad = (float) Math.toRadians(-modelYaw);
-        float yawCos = (float) Math.cos(yawRad);
-        float yawSin = (float) Math.sin(yawRad);
-        float yawX = rollX * yawCos + rollZ * yawSin;
-        float yawZ = rollZ * yawCos - rollX * yawSin;
-        float yawY = rollY;
-
-        float pitchRad = (float) Math.toRadians(modelPitch);
-        float pitchCos = (float) Math.cos(pitchRad);
-        float pitchSin = (float) Math.sin(pitchRad);
-        float pitchY = yawY * pitchCos - yawZ * pitchSin;
-        float pitchZ = yawZ * pitchCos + yawY * pitchSin;
-        float pitchX = yawX;
-
-        return projectPreviewPoint(
-                modelOffsetX + pitchX,
-                modelOffsetY + pitchY,
-                modelOffsetZ + pitchZ);
+        Vector3f point = skeletalSceneTransform().transformPosition(new Vector3f(x, y, z));
+        return projectPreviewPoint(point.x, point.y, point.z);
     }
 
     private ScreenPoint projectWholeModelPoint(float x, float y, float z) {
-        float yawRad = (float) Math.toRadians(-modelYaw);
-        float yawCos = (float) Math.cos(yawRad);
-        float yawSin = (float) Math.sin(yawRad);
-        float yawX = x * yawCos + z * yawSin;
-        float yawZ = z * yawCos - x * yawSin;
-
-        float pitchRad = (float) Math.toRadians(modelPitch);
-        float pitchCos = (float) Math.cos(pitchRad);
-        float pitchSin = (float) Math.sin(pitchRad);
-        float pitchY = y * pitchCos - yawZ * pitchSin;
-        float pitchZ = yawZ * pitchCos + y * pitchSin;
-        float pitchX = yawX;
-
-        float rollRad = (float) Math.toRadians(modelRoll);
-        float rollCos = (float) Math.cos(rollRad);
-        float rollSin = (float) Math.sin(rollRad);
-        float rollX = pitchX * rollCos - pitchY * rollSin;
-        float rollY = pitchX * rollSin + pitchY * rollCos;
-
-        return projectPreviewPoint(modelOffsetX + rollX, modelOffsetY + rollY, modelOffsetZ + pitchZ);
+        Vector3f point = new Matrix4f().translation(modelOffsetX, modelOffsetY, modelOffsetZ)
+                .rotateZ((float) Math.toRadians(modelRoll)).rotateY((float) Math.toRadians(-modelYaw))
+                .rotateX((float) Math.toRadians(modelPitch)).scale(wholeBodyScale)
+                .transformPosition(new Vector3f(x, y, z));
+        return projectPreviewPoint(point.x, point.y, point.z);
     }
 
     private ScreenPoint projectModelPoint(float x, float y, float z) {
+        // Whole-object offsets are stored in scene coordinates, not in the object's rotated frame.
+        if (!isRotationGizmoMode()) return projectPreviewPoint(x, y, z);
         float offsetX = getActiveOffsetX();
         float offsetY = getActiveOffsetY();
         float offsetZ = getActiveOffsetZ();
@@ -5008,33 +5339,10 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private ScreenPoint projectPreviewPoint(float x, float y, float z) {
-        float yawRad = (float) Math.toRadians(-previewYaw);
-        float yawCos = (float) Math.cos(yawRad);
-        float yawSin = (float) Math.sin(yawRad);
-        float yawX = x * yawCos + z * yawSin;
-        float yawZ = z * yawCos - x * yawSin;
-
-        float pitchRad = (float) Math.toRadians(previewPitch);
-        float pitchCos = (float) Math.cos(pitchRad);
-        float pitchSin = (float) Math.sin(pitchRad);
-        float pitchY = y * pitchCos - yawZ * pitchSin;
-        float pitchZ = yawZ * pitchCos + y * pitchSin;
-        float pitchX = yawX;
-
-        float rollRad = (float) Math.toRadians(previewRoll);
-        float rollCos = (float) Math.cos(rollRad);
-        float rollSin = (float) Math.sin(rollRad);
-        float rollX = pitchX * rollCos - pitchY * rollSin;
-        float rollY = pitchX * rollSin + pitchY * rollCos;
-        float depth = Math.max(PREVIEW_NEAR_DEPTH, PREVIEW_CAMERA_DISTANCE - pitchZ);
-        float perspectiveScale = clampPreview(PREVIEW_CAMERA_DISTANCE / depth,
-                PREVIEW_MIN_PERSPECTIVE_SCALE, PREVIEW_MAX_PERSPECTIVE_SCALE);
-
-        return new ScreenPoint(
-                previewCenterX + rollX * previewScale * perspectiveScale,
-                previewCenterY + rollY * previewScale * perspectiveScale,
-                perspectiveScale,
-                depth);
+        PoseViewportFrame frame = viewportFrame;
+        if (frame == null) return new ScreenPoint(Float.NaN, Float.NaN);
+        PoseViewportFrame.Projected point = frame.project(x, y, z);
+        return new ScreenPoint(point.x(), point.y(), point.scale(), point.depth());
     }
 
     // ══════════════════════════════════════════════════════�?
@@ -5050,34 +5358,36 @@ public class BodyPoseEditorFragment extends Fragment {
     private MoveAxis findMoveAxis(double px, double py) {
         if (!shouldShowPreviewTransformGizmo()) return MoveAxis.NONE;
         if (!isInsidePreviewArea((float) px, (float) py)) return MoveAxis.NONE;
-        float ox = currentGizmoCenter.x;
-        float oy = currentGizmoCenter.y;
-        float oz = currentGizmoCenter.z;
-        ScreenPoint center = projectGizmoPoint(ox, oy, oz);
-        double bestDist = MOVE_AXIS_HIT_RADIUS;
+        ScreenPoint center = displayedGizmoCenter(false);
+        if (!isFinitePoint(center) || Math.hypot(px - center.x, py - center.y) < 8) return MoveAxis.NONE;
+        double bestDist = Double.POSITIVE_INFINITY;
         MoveAxis best = MoveAxis.NONE;
-
-        double d = distanceToSegment(px, py, center, projectGizmoPoint(ox + MOVE_AXIS_LENGTH, oy, oz));
-        if (d <= bestDist) { bestDist = d; best = MoveAxis.X; }
-        d = distanceToSegment(px, py, center, projectGizmoPoint(ox, oy + MOVE_AXIS_LENGTH, oz));
-        if (d <= bestDist) { bestDist = d; best = MoveAxis.Y; }
-        d = distanceToSegment(px, py, center, projectGizmoPoint(ox, oy, oz + MOVE_AXIS_LENGTH));
-        if (d <= bestDist) { best = MoveAxis.Z; }
+        for (MoveAxis axis : new MoveAxis[]{MoveAxis.X, MoveAxis.Y, MoveAxis.Z}) {
+            ScreenPoint end = displayedMoveEnd(false, axis);
+            if (!GizmoPick.usableAxis(end.x - center.x, end.y - center.y)) continue;
+            double d = distanceToSegment(px, py, center, end);
+            if (d <= MOVE_AXIS_HIT_RADIUS && GizmoPick.prefer(d, bestDist,
+                    axis == hoveredMoveAxis, best == hoveredMoveAxis)) {
+                bestDist = d;
+                best = axis;
+            }
+        }
         return best;
     }
 
     private RotationAxis findRotationRing(double px, double py) {
         if (!shouldShowPreviewTransformGizmo()) return RotationAxis.NONE;
         if (!isInsidePreviewArea((float) px, (float) py)) return RotationAxis.NONE;
-        double bestDist = ROTATION_RING_HIT_RADIUS;
+        double bestDist = Double.POSITIVE_INFINITY;
         RotationAxis best = RotationAxis.NONE;
-
-        double d = distanceToRotationRing(px, py, RotationAxis.PITCH);
-        if (d <= bestDist) { bestDist = d; best = RotationAxis.PITCH; }
-        d = distanceToRotationRing(px, py, RotationAxis.YAW);
-        if (d <= bestDist) { bestDist = d; best = RotationAxis.YAW; }
-        d = distanceToRotationRing(px, py, RotationAxis.ROLL);
-        if (d <= bestDist) { best = RotationAxis.ROLL; }
+        for (RotationAxis axis : new RotationAxis[]{RotationAxis.PITCH, RotationAxis.YAW, RotationAxis.ROLL}) {
+            double d = distanceToRotationRing(px, py, axis);
+            if (d <= ROTATION_RING_HIT_RADIUS && GizmoPick.prefer(d, bestDist,
+                    axis == hoveredRotationAxis, best == hoveredRotationAxis)) {
+                bestDist = d;
+                best = axis;
+            }
+        }
         return best;
     }
 
@@ -5093,36 +5403,33 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private ScreenPoint projectRotationRingPoint(RotationAxis axis, int segment) {
-        float angle = (float) (Math.PI * 2.0 * segment / ROTATION_RING_SEGMENTS);
-        float cos = (float) Math.cos(angle) * ROTATION_RING_RADIUS;
-        float sin = (float) Math.sin(angle) * ROTATION_RING_RADIUS;
-        float ox = currentGizmoCenter.x;
-        float oy = currentGizmoCenter.y;
-        float oz = currentGizmoCenter.z;
-        return switch (axis) {
-            case PITCH -> projectGizmoPoint(ox, oy + cos, oz + sin);
-            case YAW -> projectGizmoPoint(ox + cos, oy, oz + sin);
-            case ROLL -> projectGizmoPoint(ox + cos, oy + sin, oz);
-            default -> projectGizmoPoint(ox, oy, oz);
-        };
+        var frame = displayedGizmoFrame(false);
+        return frame == null || axis == RotationAxis.NONE ? INVALID_GIZMO_POINT
+                : frame.ring(axis.ordinal() - 1, segment);
     }
 
     private void dragGizmoOffset(MoveAxis axis, double mouseX, double mouseY) {
+        var pointer = dragPointerPosition(mouseX, mouseY);
+        if (pointer == null) return;
+        mouseX = pointer.x();
+        mouseY = pointer.y();
         if (axis == MoveAxis.NONE) {
             return;
         }
         double axisLength = dragStartAxisScreenLength;
-        if (axisLength < 0.001D) {
+        if (!GizmoPick.usableAxis(dragStartAxisScreenX, dragStartAxisScreenY)) {
             return;
         }
         double deltaX = mouseX - dragStartMouseX;
         double deltaY = mouseY - dragStartMouseY;
         float deltaUnits = (float) ((deltaX * dragStartAxisScreenX + deltaY * dragStartAxisScreenY)
                 / (axisLength * axisLength) * MOVE_AXIS_LENGTH);
+        if (applyBoneAxisOffset(axis, deltaUnits)) return;
         deltaUnits *= getMoveAxisDragSign(axis);
         if (usesSelectedPartGizmoTarget() && poseEditMode == PoseEditMode.TRUE_SKELETAL) {
             deltaUnits = trueSkeletalModelOffset(deltaUnits);
         }
+        if (dragAdjustment != null) deltaUnits = (float) dragAdjustment.update(deltaUnits, isShiftDown(), isCtrlDown(), 0.25);
         float previous = usesSelectedPartGizmoTarget()
                 ? getSelectedPoseOffset(axis)
                 : getActiveOffset(axis);
@@ -5141,47 +5448,79 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private void dragGizmoRotation(RotationAxis axis, double mouseX, double mouseY, double deltaX, double deltaY) {
-        if (axis == RotationAxis.NONE) {
+        if (axis == RotationAxis.NONE || rotationDrag == null) return;
+        var pointer = dragPointerPosition(mouseX, mouseY);
+        if (pointer == null) return;
+        mouseX = pointer.x();
+        mouseY = pointer.y();
+        float degrees = (float) Math.toDegrees(rotationDrag.radians(mouseX, mouseY));
+        if (!Float.isFinite(degrees)) return;
+        if (axis == RotationAxis.YAW) degrees = -degrees;
+        if (dragBoneFrame != null) {
+            degrees = (float) dragAdjustment.update(degrees, isShiftDown(), isCtrlDown(), 5);
+            Vector3f target = dragBoneFrame.rotatedEditor(dragBoneEuler, axis.ordinal() - 1, degrees, dragBonePreviousEuler);
+            if (!target.isFinite()) return;
+            dragBonePreviousEuler.set(target);
+            target.set(normalizeDegrees(target.x), normalizeDegrees(target.y), normalizeDegrees(target.z));
+            PartPose pose = getActivePoseMap().computeIfAbsent(selectedPart, k -> new PartPose());
+            previewTransformDirty |= Math.abs(pose.pitch - target.x) > 0.0001F
+                    || Math.abs(pose.yaw - target.y) > 0.0001F || Math.abs(pose.roll - target.z) > 0.0001F;
+            // Wrap rather than clamp pitch so persistence preserves the equivalent rotation.
+            pose.pitch = target.x;
+            pose.yaw = target.y;
+            pose.roll = target.z;
             return;
         }
-        ScreenPoint center = projectGizmoPoint(dragStartGizmoCenter.x, dragStartGizmoCenter.y, dragStartGizmoCenter.z);
-        double previousAngle = Math.atan2(mouseY - deltaY - center.y, mouseX - deltaX - center.x);
-        double currentAngle = Math.atan2(mouseY - center.y, mouseX - center.x);
-        float degrees = -normalizeDegrees((float) Math.toDegrees(currentAngle - previousAngle));
-        degrees *= getRotationAxisDragSign(axis);
-        if (usesSelectedPartGizmoTarget()) {
-            switch (axis) {
-                case PITCH -> setSelectedPoseValue(Axis.PITCH, getSelectedPoseValue(Axis.PITCH) - degrees);
-                case YAW -> setSelectedPoseValue(Axis.YAW, getSelectedPoseValue(Axis.YAW) + degrees);
-                case ROLL -> setSelectedPoseValue(Axis.ROLL, getSelectedPoseValue(Axis.ROLL) - degrees);
-                default -> {
-                }
+        // Whole-body yaw uses the opposite sign in the legacy renderer.
+        if (!usesSelectedPartGizmoTarget() && axis == RotationAxis.YAW) degrees = -degrees;
+        if (dragAdjustment != null) degrees = (float) dragAdjustment.update(degrees, isShiftDown(), isCtrlDown(), 5);
+        Axis property = Axis.valueOf(axis.name());
+        float previous = usesSelectedPartGizmoTarget() ? getSelectedPoseValue(property) : getActiveRotation(property);
+        float value = dragStartRotation + degrees;
+        if (usesSelectedPartGizmoTarget()) setSelectedPoseValue(property, value);
+        else setActiveRotation(property, value);
+        float next = usesSelectedPartGizmoTarget() ? getSelectedPoseValue(property) : getActiveRotation(property);
+        previewTransformDirty |= Math.abs(next - previous) > 0.0001F;
+    }
+
+    private void captureRotationPlane(RotationAxis axis, float mouseX, float mouseY, boolean world) {
+        ScreenPoint center = displayedGizmoCenter(world);
+        ScreenPoint u = world ? screenRotationRingPoint(axis, 0) : projectRotationRingPoint(axis, 0);
+        ScreenPoint v = world ? screenRotationRingPoint(axis, ROTATION_RING_SEGMENTS / 4)
+                : projectRotationRingPoint(axis, ROTATION_RING_SEGMENTS / 4);
+        double best = Double.POSITIVE_INFINITY;
+        double tx = 1, ty = 0, pixelsPerRadian = 40;
+        ScreenPoint previous = u;
+        for (int i = 1; i <= ROTATION_RING_SEGMENTS; i++) {
+            ScreenPoint current = world ? screenRotationRingPoint(axis, i) : projectRotationRingPoint(axis, i);
+            double distance = distanceToSegment(mouseX, mouseY, previous, current);
+            double length = Math.hypot(current.x - previous.x, current.y - previous.y);
+            if (distance < best && length > 0.5) {
+                best = distance;
+                tx = (current.x - previous.x) / length;
+                ty = (current.y - previous.y) / length;
+                pixelsPerRadian = length * ROTATION_RING_SEGMENTS / (2 * Math.PI);
             }
-        } else {
-            switch (axis) {
-                case PITCH -> setActiveRotation(Axis.PITCH, getActiveRotation(Axis.PITCH) - degrees);
-                case YAW -> setActiveRotation(Axis.YAW, getActiveRotation(Axis.YAW) + degrees);
-                case ROLL -> setActiveRotation(Axis.ROLL, getActiveRotation(Axis.ROLL) - degrees);
-                default -> {
-                }
-            }
+            previous = current;
         }
-        previewTransformDirty = true;
+        boolean ortho = !world && orthographicPreview;
+        rotationDrag = new ProjectedRingDrag(ringPoint(center, ortho), ringPoint(u, ortho), ringPoint(v, ortho),
+                mouseX, mouseY, tx, ty, pixelsPerRadian);
+        Axis property = Axis.valueOf(axis.name());
+        dragStartRotation = usesSelectedPartGizmoTarget() ? getSelectedPoseValue(property) : getActiveRotation(property);
+    }
+
+    private static ProjectedRingDrag.Point ringPoint(ScreenPoint point, boolean orthographic) {
+        return new ProjectedRingDrag.Point(point.x, point.y, orthographic ? 1 : point.depth);
     }
 
     private float getMoveAxisDragSign(MoveAxis axis) {
+        if (!usesSelectedPartGizmoTarget()) return 1.0F;
         if (poseEditMode == PoseEditMode.TRUE_SKELETAL && usesSelectedPartGizmoTarget()) {
             return 1.0F;
         }
         return switch (axis) {
             case Y, Z -> -1.0F;
-            default -> 1.0F;
-        };
-    }
-
-    private static float getRotationAxisDragSign(RotationAxis axis) {
-        return switch (axis) {
-            case YAW, ROLL -> -1.0F;
             default -> 1.0F;
         };
     }
@@ -5199,18 +5538,7 @@ public class BodyPoseEditorFragment extends Fragment {
     }
 
     private static double distanceToSegment(double px, double py, ScreenPoint s, ScreenPoint e) {
-        double lineX = e.x - s.x;
-        double lineY = e.y - s.y;
-        double lenSq = lineX * lineX + lineY * lineY;
-        if (lenSq < 0.001) {
-            double dx = px - s.x, dy = py - s.y;
-            return Math.sqrt(dx * dx + dy * dy);
-        }
-        double t = ((px - s.x) * lineX + (py - s.y) * lineY) / lenSq;
-        t = Math.max(0.0, Math.min(1.0, t));
-        double cx = s.x + t * lineX, cy = s.y + t * lineY;
-        double dx = px - cx, dy = py - cy;
-        return Math.sqrt(dx * dx + dy * dy);
+        return GizmoPick.distanceToSegment(px, py, s.x, s.y, e.x, e.y);
     }
 
     private float getPreviewPixelsPerGrid() {
@@ -6010,6 +6338,10 @@ public class BodyPoseEditorFragment extends Fragment {
 
     public static boolean isWorldPlacementOverlayActive() {
         return worldPreviewMode == PreviewMode.FIXED && activeInstance != null;
+    }
+
+    private static boolean isFinitePoint(ScreenPoint point) {
+        return Float.isFinite(point.x) && Float.isFinite(point.y);
     }
 
     public static int getWorldPlacementChatOffset() {
@@ -7162,7 +7494,17 @@ public class BodyPoseEditorFragment extends Fragment {
     private record ReeditTarget(int entityId, ItemStack stack, Vec3d pos) {
     }
 
-    private record RotationDragBasis(float tangentX, float tangentY, float pixelsPerRadian) {
+    public static int getStaticHighlightedPlane() {
+        BodyPoseEditorFragment inst = activeInstance;
+        return inst == null ? -1 : inst.draggingPlane >= 0 ? inst.draggingPlane : inst.hoveredPlane;
+    }
+
+    public static boolean isWorldGizmoPlaneUsable(int plane) {
+        BodyPoseEditorFragment inst = activeInstance;
+        if (inst == null) return false;
+        ScreenPoint center = inst.screenGizmoCenter();
+        var constraint = inst.createPlaneDrag(true, plane, center.x, center.y);
+        return constraint != null && constraint.usable();
     }
 
     private static final class ScreenPoint {

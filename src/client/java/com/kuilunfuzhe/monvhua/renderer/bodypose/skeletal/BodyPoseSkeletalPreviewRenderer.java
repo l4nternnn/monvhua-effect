@@ -97,6 +97,15 @@ public final class BodyPoseSkeletalPreviewRenderer {
         }
     }
 
+    /** Snapshot-based GUI entry point, with the same material policy as renderEditorPreview. */
+    public static boolean renderEditorPose(MatrixStack matrices, VertexConsumerProvider vertexConsumers, Identifier texture,
+                                          Map<String, float[]> rotations, Map<String, float[]> offsets,
+                                          Map<String, Float> scales, Set<String> visibleParts, boolean slim,
+                                          Set<String> hiddenMeshes) {
+        return render(matrices, vertexConsumers, texture, 15728880, rotations, offsets, scales,
+                visibleParts, slim, true, null, false, hiddenMeshes, null);
+    }
+
     public static boolean render(MatrixStack matrices, VertexConsumerProvider vertexConsumers, Identifier texture,
                                  int light, Map<String, float[]> rotations, Map<String, Float> scales,
                                  Set<String> visibleParts) {
@@ -584,6 +593,38 @@ public final class BodyPoseSkeletalPreviewRenderer {
             case "eyelid_right" -> Set.of("eyelid_right", "eyelid_cover_right");
             default -> Set.of(normalized);
         };
+    }
+
+    public static com.kuilunfuzhe.monvhua.gui.body.bodypose.viewport.BonePoseFrame getBonePoseFrame(
+            String target, Map<String, float[]> rotations, Map<String, float[]> offsets, Map<String, Float> scales) {
+        SkeletalModel model = getModel();
+        if (model == null) return null;
+        Bone bone = model.bonesByName.get(target);
+        if (bone == null) return null;
+        model.updatePose(rotations, offsets, scales);
+        java.util.ArrayList<Bone> chain = new java.util.ArrayList<>();
+        for (Bone current = bone; current != null; current = current.parent) chain.add(current);
+        Quaternionf orientation = new Quaternionf();
+        for (int i = chain.size() - 1; i >= 0; i--) {
+            Vector3f r = chain.get(i).currentRotation;
+            orientation.mul(createRotation(r.x, r.y, r.z));
+        }
+        return new com.kuilunfuzhe.monvhua.gui.body.bodypose.viewport.BonePoseFrame(
+                toRenderPosition(transformBoneOrigin(model, bone)),
+                bone.parent == null ? new Matrix4f() : bone.parent.currentWorldMatrix,
+                orientation, bone.currentRotation, isModelSpaceOffsetBone(bone.name));
+    }
+
+    /** Returns the animated joint origin; mesh targets retain their geometric center. */
+    public static Vector3f getPoseTargetPivotPosition(String target, Map<String, float[]> rotations,
+                                                     Map<String, float[]> offsets, Map<String, Float> scales) {
+        SkeletalModel model = getModel();
+        if (model == null) return null;
+        Bone bone = model.bonesByName.get(target);
+        if (bone == null) bone = model.bonesByName.get(normalizeMeshName(target));
+        if (bone == null) return getPoseTargetRenderPosition(target, rotations, offsets, scales);
+        model.updatePose(rotations, offsets, scales);
+        return toRenderPosition(transformBoneOrigin(model, bone));
     }
 
     public static Vector3f getPoseTargetRenderPosition(String target,
@@ -1492,16 +1533,8 @@ public final class BodyPoseSkeletalPreviewRenderer {
         }
 
         void updateCurrentMatrix(Matrix4f parentMatrix) {
-            Matrix4f localMatrix = new Matrix4f()
-                    .translate(origin)
-                    .translate(currentOffset)
-                    .rotate(createRotation(currentRotation.x, currentRotation.y, currentRotation.z))
-                    .scale(currentScale);
-            if (parentMatrix != null) {
-                currentWorldMatrix.set(parentMatrix).mul(localMatrix);
-            } else {
-                currentWorldMatrix.set(localMatrix);
-            }
+            currentWorldMatrix.set(com.kuilunfuzhe.monvhua.gui.body.bodypose.viewport.BonePoseFrame.evaluate(
+                    parentMatrix == null ? new Matrix4f() : parentMatrix, origin, currentOffset, currentRotation, currentScale));
             for (Bone child : children) {
                 child.updateCurrentMatrix(currentWorldMatrix);
             }

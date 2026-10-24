@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.renderer.bodypose;
 
 import com.kuilunfuzhe.monvhua.gui.body.bodypose.BodyPoseEditorFragment;
+import com.kuilunfuzhe.monvhua.gui.body.bodypose.viewport.GizmoGeometry;
 import com.kuilunfuzhe.monvhua.renderer.bodypose.skeletal.BodyPoseSkeletalPreviewRenderer;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.*;
@@ -21,7 +22,7 @@ import org.joml.Vector3f;
 public class BodyPoseWorldPreviewRenderer {
 
 	private static final Identifier WHITE_TEXTURE = Identifier.ofVanilla("textures/block/white_concrete.png");
-	private static final float AXIS_LENGTH = 4.0F / 3.0F;
+	private static final float AXIS_LENGTH = GizmoGeometry.AXIS_LENGTH;
 	private static final int GROUND_GRID_SIZE = 21;
 	private static final float GROUND_GRID_HALF_SIZE = GROUND_GRID_SIZE * 0.5F;
 	private static final float GROUND_GRID_CELL = 1.0F;
@@ -31,9 +32,9 @@ public class BodyPoseWorldPreviewRenderer {
 	private static final int ARROW_SEGMENTS = 16;
 	private static final float AXIS_SHAFT_RADIUS = 0.012F;
 	private static final float GIZMO_CENTER_RADIUS = 0.035F;
-	private static final float ROTATION_RING_RADIUS = 2.45F / 3.0F;
+	private static final float ROTATION_RING_RADIUS = GizmoGeometry.RING_RADIUS;
 	private static final float ROTATION_RING_TUBE_RADIUS = 0.0085F;
-	private static final int ROTATION_RING_SEGMENTS = 72;
+	private static final int ROTATION_RING_SEGMENTS = GizmoGeometry.RING_SEGMENTS;
 	private static final int ROTATION_RING_TUBE_SEGMENTS = 12;
 	public static void render(MatrixStack matrices, VertexConsumerProvider consumers) {
 		MinecraftClient client = MinecraftClient.getInstance();
@@ -75,6 +76,7 @@ public class BodyPoseWorldPreviewRenderer {
 		double dx = worldPos.x - cameraPos.x;
 		double dy = worldPos.y - cameraPos.y;
 		double dz = worldPos.z - cameraPos.z;
+		Matrix4f gizmoTransform = BodyPoseEditorFragment.captureWorldGizmoTransform();
 
 		VertexConsumer lineVc = vertexConsumers.getBuffer(RenderLayer.getLines());
 		VertexConsumer solidVc = vertexConsumers.getBuffer(RenderLayer.getEntityCutoutNoCull(WHITE_TEXTURE));
@@ -106,9 +108,7 @@ public class BodyPoseWorldPreviewRenderer {
 			matrices.push();
 			matrices.translate(dx, dy, dz);
 			applyFixedModeFlip(matrices, fixedMode);
-			applyCombinedBodyBaseTransform(matrices);
-			applyPlacementOffset(matrices, trueSkeletalMode, offsetX, offsetY, offsetZ);
-			applyWorldPlacementGizmoLocalTransform(matrices, trueSkeletalMode, totalPitch, totalYaw, totalRoll);
+			matrices.multiplyPositionMatrix(gizmoTransform);
 			renderMoveAxes(matrices.peek().getPositionMatrix(), lineVc, solidVc, highlightedMove);
 			matrices.pop();
 		}
@@ -118,10 +118,7 @@ public class BodyPoseWorldPreviewRenderer {
 			matrices.push();
 			matrices.translate(dx, dy, dz);
 			applyFixedModeFlip(matrices, fixedMode);
-			applyCombinedBodyBaseTransform(matrices);
-			applyPlacementOffset(matrices, trueSkeletalMode, offsetX, offsetY, offsetZ);
-			// Same rotation order as GUI ModelPart.applyTransform: Z→Y→X
-			applyWorldPlacementGizmoLocalTransform(matrices, trueSkeletalMode, totalPitch, totalYaw, totalRoll);
+			matrices.multiplyPositionMatrix(gizmoTransform);
 			renderRotationRings(matrices.peek().getPositionMatrix(), lineVc, solidVc, highlightedRot);
 			matrices.pop();
 		}
@@ -182,18 +179,14 @@ public class BodyPoseWorldPreviewRenderer {
 				matrices.push();
 				matrices.translate(dx, dy, dz);
 				applyFixedModeFlip(matrices, fixedMode);
-				applyCombinedBodyBaseTransform(matrices);
-				applyPlacementOffset(matrices, trueSkeletalMode, offsetX, offsetY, offsetZ);
-				applyWorldPlacementGizmoLocalTransform(matrices, trueSkeletalMode, totalPitch, totalYaw, totalRoll);
+				matrices.multiplyPositionMatrix(gizmoTransform);
 				renderRotationRings(matrices.peek().getPositionMatrix(), gizmoVc, solidGizmoVc, highlightedRot);
 				matrices.pop();
 			} else {
 				matrices.push();
 				matrices.translate(dx, dy, dz);
 				applyFixedModeFlip(matrices, fixedMode);
-				applyCombinedBodyBaseTransform(matrices);
-				applyPlacementOffset(matrices, trueSkeletalMode, offsetX, offsetY, offsetZ);
-				applyWorldPlacementGizmoLocalTransform(matrices, trueSkeletalMode, totalPitch, totalYaw, totalRoll);
+				matrices.multiplyPositionMatrix(gizmoTransform);
 				renderMoveAxes(matrices.peek().getPositionMatrix(), gizmoVc, solidGizmoVc, highlightedMove);
 				matrices.pop();
 			}
@@ -247,13 +240,6 @@ public class BodyPoseWorldPreviewRenderer {
 		matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(trueSkeletalMode ? -roll : roll));
 	}
 
-	private static void applyWorldPlacementGizmoLocalTransform(MatrixStack matrices,
-			boolean trueSkeletalMode, float pitch, float yaw, float roll) {
-		applyPlacementRotation(matrices, trueSkeletalMode, pitch, yaw, roll);
-		Vector3f center = BodyPoseEditorFragment.getWorldPlacementGizmoCenterLocal();
-		matrices.translate(center.x, center.y, center.z);
-	}
-
 	private static void renderPlayerModelParts(PlayerEntityModel model, MatrixStack matrices,
 			VertexConsumer vertexConsumer, int light) {
 		int overlay = OverlayTexture.DEFAULT_UV;
@@ -278,10 +264,26 @@ public class BodyPoseWorldPreviewRenderer {
 
 	private static void renderMoveAxes(Matrix4f posMatrix, VertexConsumer lineVc,
 			VertexConsumer solidVc, String highlightedAxis) {
+		renderMovePlanes(posMatrix, solidVc);
 		renderMoveAxis(posMatrix, lineVc, solidVc, 1, 0, 0, "x".equals(highlightedAxis), 255, 50, 50);
 		renderMoveAxis(posMatrix, lineVc, solidVc, 0, 1, 0, "y".equals(highlightedAxis), 50, 220, 50);
 		renderMoveAxis(posMatrix, lineVc, solidVc, 0, 0, 1, "z".equals(highlightedAxis), 60, 80, 255);
 		renderSolidSphere(posMatrix, solidVc, 0.0F, 0.0F, 0.0F, GIZMO_CENTER_RADIUS, 245, 245, 245, 255);
+	}
+
+	private static void renderMovePlanes(Matrix4f matrix, VertexConsumer vc) {
+		int[][] colors = {{255, 70, 70}, {70, 230, 70}, {90, 110, 255}};
+		int highlighted = BodyPoseEditorFragment.getStaticHighlightedPlane();
+		for (int plane = 0; plane < 3; plane++) {
+			Vector3f a = GizmoGeometry.planeCorner(plane, 0), b = GizmoGeometry.planeCorner(plane, 1);
+			Vector3f c = GizmoGeometry.planeCorner(plane, 2), d = GizmoGeometry.planeCorner(plane, 3);
+			boolean usable = BodyPoseEditorFragment.isWorldGizmoPlaneUsable(plane);
+			int r = !usable ? 70 : highlighted == plane ? 255 : colors[plane][0];
+			int g = !usable ? 75 : highlighted == plane ? 228 : colors[plane][1];
+			int blue = !usable ? 80 : highlighted == plane ? 106 : colors[plane][2];
+			emitSolidQuad(vc, matrix, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z,
+					r, g, blue, 255, plane == 0 ? 1 : 0, plane == 1 ? 1 : 0, plane == 2 ? 1 : 0);
+		}
 	}
 
 	private static void renderMoveAxis(Matrix4f posMatrix, VertexConsumer lineVc, VertexConsumer solidVc,
@@ -443,13 +445,12 @@ public class BodyPoseWorldPreviewRenderer {
 	}
 
 	private static RingPoint rotationRingTubePoint(int plane, float ringAngle, float tubeAngle) {
-		float ringCos = (float) Math.cos(ringAngle);
-		float ringSin = (float) Math.sin(ringAngle);
+		Vector3f radial = GizmoGeometry.ringPoint(plane, ringAngle, 1.0F);
 		float tubeCos = (float) Math.cos(tubeAngle);
 		float tubeSin = (float) Math.sin(tubeAngle);
-		float radialX = plane == 0 ? 0.0F : ringCos;
-		float radialY = plane == 1 ? 0.0F : (plane == 0 ? ringCos : ringSin);
-		float radialZ = plane == 2 ? 0.0F : ringSin;
+		float radialX = radial.x;
+		float radialY = radial.y;
+		float radialZ = radial.z;
 		float normalX = plane == 0 ? 1.0F : 0.0F;
 		float normalY = plane == 1 ? 1.0F : 0.0F;
 		float normalZ = plane == 2 ? 1.0F : 0.0F;
