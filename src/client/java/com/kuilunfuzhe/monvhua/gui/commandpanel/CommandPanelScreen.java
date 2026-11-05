@@ -5,6 +5,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
+import org.lwjgl.glfw.GLFW;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import com.kuilunfuzhe.monvhua.network.commandpanel.CommandPanelPackets;
 import java.util.*;
@@ -41,6 +42,9 @@ public final class CommandPanelScreen extends Screen {
     private int pageLabelX;
     private int pageLabelWidth;
     private String pageLabel = "";
+    private int pageListOffset;
+    private static final int CONTENT_TOP = 36;
+    private static final int PAGE_ROW_HEIGHT = 24;
     private boolean dirty;
 
     public static void receiveData(long revision, String json) { MinecraftClient c=MinecraftClient.getInstance(); if(c.currentScreen instanceof CommandPanelScreen s) try { s.loadDocument(json); s.revision = Math.max(s.revision, revision); s.captureFileStamp(); s.clearAndInit(); } catch(Exception ignored) {} }
@@ -141,7 +145,7 @@ public final class CommandPanelScreen extends Screen {
             for (Popup popup : popups) {
                 ButtonWidget widget = ButtonWidget.builder(Text.literal(popup.name), b -> {
                     if (!editable) startExecution(popup);
-                }).dimensions((int) Math.round(popup.x * scaleX()), (int) Math.round(popup.y * scaleY()),
+                }).dimensions(screenX(popup.x), screenY(popup.y),
                         Math.max(20, (int) Math.round(popup.width * scaleX())),
                         Math.max(20, (int) Math.round(popup.height * scaleY()))).build();
                 widget.active = true;
@@ -176,6 +180,7 @@ public final class CommandPanelScreen extends Screen {
         addToolbarButton(compactToolbar ? "↻" : "刷新", refreshX, refreshWidth, this::refreshFromDisk);
         toolbarRight = refreshX + refreshWidth;
         pageLabel = activePanel == null ? "" : activePanel.name;
+        pageListOffset = Math.max(0, Math.min(pageListOffset, panels.size() - visiblePageRows()));
     }
 
     private ButtonWidget addToolbarButton(String label, int x, int buttonWidth, Runnable action) {
@@ -231,7 +236,16 @@ public final class CommandPanelScreen extends Screen {
     private void changePanel(int direction) {
         if (panels.size() <= 1 || activePanel == null) return;
         int index = panels.indexOf(activePanel);
-        setActivePanel(panels.get(Math.floorMod(index + direction, panels.size())));
+        jumpToPanel(Math.floorMod(index + direction, panels.size()));
+    }
+
+    private void jumpToPanel(int index) {
+        if (index < 0 || index >= panels.size() || panels.get(index) == activePanel) return;
+        if (dirty) save();
+        operation = Operation.NONE;
+        setActivePanel(panels.get(index));
+        if (index < pageListOffset) pageListOffset = index;
+        if (index >= pageListOffset + visiblePageRows()) pageListOffset = index - visiblePageRows() + 1;
         dirty = true;
         save();
         clearAndInit();
@@ -297,25 +311,66 @@ public final class CommandPanelScreen extends Screen {
         }
     }
 
-    private double scaleX() { return width / (double) Math.max(160, previewWidth); }
-    private double scaleY() { return height / (double) Math.max(120, previewHeight); }
-    private double toConfigX(double screenX) { return screenX / scaleX(); }
-    private double toConfigY(double screenY) { return screenY / scaleY(); }
+    private int sidebarWidth() { return Math.max(48, Math.min(120, width / 5)); }
+    private int contentLeft() { return sidebarWidth() + 4; }
+    private int contentRight() { return width - sidebarWidth() - 4; }
+    private int visiblePageRows() { return Math.max(1, (height - CONTENT_TOP - 28) / PAGE_ROW_HEIGHT); }
+    private boolean inContent(double x, double y) { return x >= contentLeft() && x < contentRight() && y >= CONTENT_TOP && y < height; }
+    private double scaleX() { return Math.max(1, contentRight() - contentLeft()) / (double) Math.max(160, previewWidth); }
+    private double scaleY() { return Math.max(1, height - CONTENT_TOP) / (double) Math.max(120, previewHeight); }
+    private int screenX(double x) { return contentLeft() + (int) Math.round(x * scaleX()); }
+    private int screenY(double y) { return CONTENT_TOP + (int) Math.round(y * scaleY()); }
+    private double toConfigX(double screenX) { return (screenX - contentLeft()) / scaleX(); }
+    private double toConfigY(double screenY) { return (screenY - CONTENT_TOP) / scaleY(); }
+
+    @Override public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (modifiers == 0 && keyCode >= GLFW.GLFW_KEY_1 && keyCode <= GLFW.GLFW_KEY_6) {
+            jumpToPanel(keyCode - GLFW.GLFW_KEY_1);
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
+        if (x < sidebarWidth() && y >= CONTENT_TOP) {
+            pageListOffset = Math.max(0, Math.min(Math.max(0, panels.size() - visiblePageRows()),
+                    pageListOffset - (int) Math.signum(vertical)));
+            return true;
+        }
+        return super.mouseScrolled(x, y, horizontal, vertical);
+    }
 
     @Override public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, width, height, 0xCC101014);
-        super.render(context, mouseX, mouseY, delta);
+        context.fill(0, CONTENT_TOP, sidebarWidth(), height, 0xEE202028);
+        context.fill(width - sidebarWidth(), CONTENT_TOP, width, height, 0xEE202028);
+        context.drawTextWithShadow(textRenderer, "页面  1–6", 6, CONTENT_TOP + 8, 0xFFFFFFFF);
+        for (int row = 0; row < visiblePageRows() && row + pageListOffset < panels.size(); row++) {
+            int index = row + pageListOffset;
+            int y = CONTENT_TOP + 26 + row * PAGE_ROW_HEIGHT;
+            Panel panel = panels.get(index);
+            boolean hover = mouseX >= 4 && mouseX < sidebarWidth() - 4 && mouseY >= y && mouseY < y + 22;
+            context.fill(4, y, sidebarWidth() - 4, y + 22,
+                    panel == activePanel ? 0xFF42648B : hover ? 0xFF383844 : 0xFF292932);
+            context.drawTextWithShadow(textRenderer, textRenderer.trimToWidth((index + 1) + ". " + panel.name,
+                    sidebarWidth() - 16), 8, y + 7, 0xFFFFFFFF);
+        }
+        context.enableScissor(contentLeft(), CONTENT_TOP, contentRight(), height);
+        for (ButtonWidget widget : popupButtons.values()) widget.render(context,
+                inContent(mouseX, mouseY) ? mouseX : -1, inContent(mouseX, mouseY) ? mouseY : -1, delta);
         String visiblePageLabel = textRenderer.trimToWidth(pageLabel, Math.max(0, pageLabelWidth - 4));
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(visiblePageLabel),
-                pageLabelX + pageLabelWidth / 2, 14, 0xFFFFFFFF);
         for (Popup popup : popups) {
-            int x = (int) Math.round(popup.x * scaleX()), y = (int) Math.round(popup.y * scaleY());
+            int x = screenX(popup.x), y = screenY(popup.y);
             int w = (int) Math.round(popup.width * scaleX()), h = (int) Math.round(popup.height * scaleY());
             if (popup == selected && editable) {
                 context.fill(x + w - 4, y + h - 4, x + w + 4, y + h + 4, 0xFFFFFFFF);
                 context.fill(x + w / 2 - 4, y - 24, x + w / 2 + 4, y - 16, 0xFFFFFFFF);
             }
         }
+        context.disableScissor();
+        for (ButtonWidget widget : toolbarButtons) widget.render(context, mouseX, mouseY, delta);
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(visiblePageLabel),
+                pageLabelX + pageLabelWidth / 2, 14, 0xFFFFFFFF);
     }
 
     @Override public boolean shouldPause() { return false; }
@@ -335,6 +390,11 @@ public final class CommandPanelScreen extends Screen {
     }
 
     @Override public boolean mouseClicked(double x, double y, int button) {
+        if (x < sidebarWidth() && y >= CONTENT_TOP) {
+            int row = (int) ((y - CONTENT_TOP - 26) / PAGE_ROW_HEIGHT);
+            if (button == 0 && y >= CONTENT_TOP + 26 && row < visiblePageRows()) jumpToPanel(pageListOffset + row);
+            return true;
+        }
         if (button == 1) { Popup p = hit(x, y); if (p != null) { select(p); client.setScreen(new CommandPopupEditScreen(this, p)); return true; } }
         if (button == 0 && x >= 8 && x <= toolbarRight && y >= 8 && y <= 28) {
             for (ButtonWidget toolbarButton : toolbarButtons) {
@@ -344,6 +404,7 @@ public final class CommandPanelScreen extends Screen {
                 }
             }
         }
+        if (!inContent(x, y)) return false;
         if (!editable && super.mouseClicked(x, y, button)) return true;
         if (!editable) return false;
         if (button != 0) return super.mouseClicked(x, y, button);
@@ -379,9 +440,9 @@ public final class CommandPanelScreen extends Screen {
         super.removed();
     }
 
-    private Popup hit(double x, double y) { double configX = toConfigX(x), configY = toConfigY(y); for (int i = popups.size() - 1; i >= 0; i--) { Popup p = popups.get(i); if (configX >= p.x && configX <= p.x + p.width && configY >= p.y && configY <= p.y + p.height) return p; } return null; }
+    private Popup hit(double x, double y) { if (!inContent(x, y)) return null; double configX = toConfigX(x), configY = toConfigY(y); for (int i = popups.size() - 1; i >= 0; i--) { Popup p = popups.get(i); if (configX >= p.x && configX <= p.x + p.width && configY >= p.y && configY <= p.y + p.height) return p; } return null; }
     private void select(Popup popup) { selected = popup; popups.remove(popup); popups.add(popup); }
-    private void syncWidget(Popup popup) { ButtonWidget w = popupButtons.get(popup); if (w != null) { w.setX((int)Math.round(popup.x * scaleX())); w.setY((int)Math.round(popup.y * scaleY())); w.setWidth(Math.max(20,(int)Math.round(popup.width * scaleX()))); w.setHeight(Math.max(20,(int)Math.round(popup.height * scaleY()))); w.setMessage(Text.literal(popup.name)); } }
+    private void syncWidget(Popup popup) { ButtonWidget w = popupButtons.get(popup); if (w != null) { w.setX(screenX(popup.x)); w.setY(screenY(popup.y)); w.setWidth(Math.max(20,(int)Math.round(popup.width * scaleX()))); w.setHeight(Math.max(20,(int)Math.round(popup.height * scaleY()))); w.setMessage(Text.literal(popup.name)); } }
     private void startExecution(Popup popup) {
         commandQueue.clear();
         for (CommandLine line : popup.commands) {
