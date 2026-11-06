@@ -22,6 +22,14 @@ public record BloodPatch(String id, BlockPos pos, Direction face, float u, float
     public Vec3d down() { return PaintSurface.point(pos, face, 0, 1, 1, 0).subtract(PaintSurface.point(pos, face, 0, 0, 1, 0)); }
     public boolean covers(double x, double y) {
         double dx = x - u, dy = y - v;
+        if (kind == 3) {
+            double angle = (seed & 65535L) / 65535.0 * Math.PI * 2 - Math.PI;
+            double along = dx * Math.cos(angle) + dy * Math.sin(angle);
+            double across = -dx * Math.sin(angle) + dy * Math.cos(angle);
+            double width = radius * .42;
+            boolean outline = along * along / (radius * radius) + across * across / (width * width) <= 1;
+            return outline && (along < -radius * .2 || along > radius * .05);
+        }
         double squared = dx * dx + dy * dy, outer = radius * radius;
         if (squared > outer) return false;
         if (squared < outer * .76 * .76) return true;

@@ -21,7 +21,9 @@ public final class BloodInspection {
         if (covering.stream().map(BloodTraceStore.Entry::event).distinct().count() > 1)
             return List.of("多处痕迹重叠，形态与方向难以判断");
         var chosen = covering.getFirst();
+        if (chosen.patch().kind() == 3) return List.of("此处存在带血鞋印", "说明有人接触过血液，不能仅凭鞋印确认身份");
         if (chosen.patch().kind() == 1) return List.of("此处存在积聚血迹，边缘呈不规则扩展", "仅凭血泊无法确定死亡地点或精确停留时间");
+        if (chosen.patch().kind() == 2) return List.of("此处存在断续滴落状血迹", "痕迹可能来自受伤者或被搬运的尸体，单独不能确定搬运者");
         // Only infer an axis from nearby, coplanar, observable dots. No hidden attack vector is exposed.
         List<Vec3d> points = new ArrayList<>();
         for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) for (int z = -1; z <= 1; z++) {

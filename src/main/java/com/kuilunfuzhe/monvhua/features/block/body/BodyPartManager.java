@@ -2,6 +2,8 @@ package com.kuilunfuzhe.monvhua.features.block.body;
 
 import com.kuilunfuzhe.monvhua.command.GiveBodyPartCommand;
 import com.kuilunfuzhe.monvhua.features.forensics.Forensics;
+import com.kuilunfuzhe.monvhua.features.forensics.CorpseCarryService;
+import com.kuilunfuzhe.monvhua.features.forensics.ForensicConfig;
 import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalBodyPart;
 import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalBodyPartBlockEntity;
 import com.kuilunfuzhe.monvhua.features.hold_hands.HoldHandsManager;
@@ -195,6 +197,7 @@ public class BodyPartManager {
 			UUID displayUuid = INTERACTION_TO_DISPLAY.get(interaction.getUuid());
 			if (displayUuid == null) return ActionResult.PASS;
 			Entity targetDisplay = world.getEntity(displayUuid);
+            if (targetDisplay instanceof ItemDisplayEntity carried && CorpseCarryService.isCarried(carried)) return ActionResult.SUCCESS;
             // The carry gesture opens the forensic wheel; do not also pick up the item.
             if (com.kuilunfuzhe.monvhua.features.forensics.ForensicConfig.current.enabled
                     && targetDisplay instanceof ItemDisplayEntity body && Forensics.hasBinding(body.getItemStack())
@@ -206,6 +209,11 @@ public class BodyPartManager {
 				if (targetDisplay instanceof ItemDisplayEntity display) {
 					ItemStack stack = display.getItemStack().copy();
 					if (!Forensics.valid((ServerWorld) world, stack, display.getUuid().toString())) return ActionResult.FAIL;
+                    if (Forensics.hasBinding(stack) && ForensicConfig.current.enabled && ForensicConfig.current.transfer.enabled
+                            && ForensicConfig.current.transfer.carryEnabled && !ForensicConfig.current.transfer.allowEvidenceItemPickup && !player.hasPermissionLevel(2)) {
+                        player.sendMessage(Text.literal("请空出双手，通过遗体轮盘抱起遗体"), true);
+                        return ActionResult.FAIL;
+                    }
 					if (Forensics.hasBinding(stack)) Forensics.transition((ServerWorld) world, stack, "item");
 					DefaultedList<ItemStack> inv = BODY_PART_DISPLAY_INVENTORIES.get(displayUuid);
 					if (inv != null) {
@@ -494,6 +502,7 @@ public class BodyPartManager {
 
 		String evidenceId = Forensics.binding(foundParts.get("torso").getItemStack()).getString("id", "");
         for (ItemDisplayEntity found : foundParts.values()) {
+            if (CorpseCarryService.isCarried(found)) return 0;
             if (!Forensics.binding(found.getItemStack()).getString("id", "").equals(evidenceId)
                     || !Forensics.valid(world, found.getItemStack(), found.getUuid().toString())) {
                 player.sendMessage(Text.literal("不能合并不同来源或失效的尸体部位"), true);
@@ -549,6 +558,7 @@ public class BodyPartManager {
 		})) {
 			Vec3d pos = display.getPos();
 			ItemStack combinedStack = display.getItemStack();
+			if (CorpseCarryService.isCarried(display)) continue;
 			if (!Forensics.valid(world, combinedStack, display.getUuid().toString())) continue;
 			NbtCompound evidence = Forensics.binding(combinedStack);
 			ProfileComponent profile = combinedStack.get(DataComponentTypes.PROFILE);

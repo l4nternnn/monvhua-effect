@@ -21,6 +21,10 @@ import java.util.*;
 
 public final class BloodTraceService {
     private static final Set<ItemDisplayEntity> SOURCES = Collections.newSetFromMap(new IdentityHashMap<>());
+    private static final Set<UUID> CARRIED = new HashSet<>();
+    private static final Map<UUID, Vec3d> LAST_DRIP = new HashMap<>();
+    private static final Map<UUID, Long> LAST_DRIP_TIME = new HashMap<>();
+    private static final Map<UUID, Double> DRIP_DISTANCE = new HashMap<>();
     private static long lastError;
     private static long lastCapacityWarning;
     private static int validationCursor;
@@ -36,7 +40,7 @@ public final class BloodTraceService {
         BloodTracePackets.register();
         ServerEntityEvents.ENTITY_LOAD.register((entity, world) -> { if (entity instanceof ItemDisplayEntity display) track(display); });
         ServerEntityEvents.ENTITY_UNLOAD.register((entity, world) -> { if (entity instanceof ItemDisplayEntity display) SOURCES.remove(display); });
-        ServerLifecycleEvents.SERVER_STOPPED.register(server -> { SOURCES.clear(); validationCursor = 0; lastError = 0; lastCapacityWarning = 0; });
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> { SOURCES.clear(); CARRIED.clear(); LAST_DRIP.clear(); validationCursor = 0; lastError = 0; lastCapacityWarning = 0; });
         ServerTickEvents.END_SERVER_TICK.register(server -> safe(() -> {
             if (BloodRules.generating() && server.getTicks() % 10 == 0) {
                 for (ItemDisplayEntity display : List.copyOf(SOURCES)) {
@@ -71,6 +75,60 @@ public final class BloodTraceService {
         source.sendFeedback(() -> Text.literal((preview ? "将清除" : "已清除") + count + " 个血迹补丁"), false); return count;
     }
     public static void track(ItemDisplayEntity display) { if (Forensics.hasBinding(display.getItemStack())) SOURCES.add(display); }
+    public static void beginCarry(ItemDisplayEntity display, ServerPlayerEntity carrier) {
+        CARRIED.add(display.getUuid());
+        LAST_DRIP.put(display.getUuid(), display.getPos());
+        LAST_DRIP_TIME.put(display.getUuid(), now(display.getWorld().getServer()));
+        DRIP_DISTANCE.put(display.getUuid(), 0.0);
+        SOURCES.remove(display);
+        BloodTransferService.contact(display, carrier);
+    }
+    public static void endCarry(ItemDisplayEntity display, ServerPlayerEntity carrier) {
+        CARRIED.remove(display.getUuid()); LAST_DRIP.remove(display.getUuid());
+        LAST_DRIP_TIME.remove(display.getUuid()); DRIP_DISTANCE.remove(display.getUuid());
+        track(display);
+    }
+    public static void moved(ItemDisplayEntity display, Vec3d previous, Vec3d current, ServerPlayerEntity carrier) {
+        if (!CARRIED.contains(display.getUuid())) return;
+        var config = ForensicConfig.current.transfer; long time = now(carrier.getServer());
+        double distance = DRIP_DISTANCE.getOrDefault(display.getUuid(), 0.0) + previous.distanceTo(current);
+        DRIP_DISTANCE.put(display.getUuid(), distance);
+        long elapsed = time - LAST_DRIP_TIME.getOrDefault(display.getUuid(), time);
+        if (time % 100 == 0) BloodTransferService.contact(display, carrier);
+        if (!config.enabled || !config.corpseDrips || time % config.sampleTicks != 0 || elapsed < config.dripMinTicks) return;
+        if (distance < config.dripDistance && elapsed < config.stationaryDripTicks) return;
+        // Attempt time is consumed even without a valid surface. Never replay missed drops later.
+        LAST_DRIP_TIME.put(display.getUuid(), time); DRIP_DISTANCE.put(display.getUuid(), 0.0);
+        safe(() -> drip(display, current, carrier));
+    }
+    private static void drip(ItemDisplayEntity display, Vec3d current, ServerPlayerEntity carrier) {
+        if (!(display.getWorld() instanceof ServerWorld world) || carrier == null || !BloodRules.generating()) return;
+        if (!Forensics.valid(world, display.getItemStack(), display.getUuid().toString())) return;
+        NbtCompound binding = Forensics.binding(display.getItemStack());
+        String id = binding.getString("id", ""), part = binding.getString("part", "all");
+        NbtCompound corpse = ForensicStore.get(world.getServer()).corpse(id), ledger = corpse.getCompoundOrEmpty("blood");
+        if (!BloodRules.active(ledger, now(world.getServer())) || BloodRules.remaining(ledger, part) <= 0) return;
+        var landing = BloodSurfaceProjection.cast(world, current.add(0, .15, 0), current.add(0, -ForensicConfig.current.transfer.maxDropDistance, 0), display);
+        if (landing == null || landing.getSide() != Direction.UP) return;
+        int amount = Math.min(1, BloodRules.remaining(ledger, part));
+        BloodPatch patch = BloodSurfaceProjection.impact(landing, .045f, new Random().nextLong());
+        NbtCompound sites = ledger.getCompoundOrEmpty("drip_sites");
+        String key = world.getRegistryKey().getValue() + "/" + part + "/" + patch.pos().asLong() + "/" + (int)(patch.u() * 4) + "/" + (int)(patch.v() * 4);
+        if (!sites.contains(key) && sites.getKeys().size() >= 256) return;
+        NbtCompound site = sites.getCompoundOrEmpty(key); int used = site.getInt("used", 0);
+        if (used >= 4) return;
+        String event = site.getString("event", UUID.randomUUID().toString());
+        if (!site.contains("patch")) site.put("patch", patch.write());
+        BloodPatch original = BloodPatch.read(site.getCompoundOrEmpty("patch"));
+        BloodPatch drop = new BloodPatch(original.id(), original.pos(), original.face(), original.u(), original.v(), .045f + used * .01f, 2, original.seed(), used + 1);
+        if (submit(world, new BloodTraceStore.Entry(drop, id, event, world.getBlockState(patch.pos()).toString(), false))) {
+            BloodRules.consume(ledger, part, amount);
+            BloodTransferService.deposit(world.getServer(), event, corpse.getString("id", "mixed"), amount);
+            site.putString("event", event); site.putInt("used", used + 1); sites.put(key, site); ledger.put("drip_sites", sites);
+            ForensicStore.get(world.getServer()).markDirty();
+            LAST_DRIP.put(display.getUuid(), current);
+        }
+    }
     public static void validate(ServerWorld world, BlockPos pos) {
         if (!world.isChunkLoaded(pos)) return;
         var store = BloodTraceStore.get(world);
@@ -120,6 +178,16 @@ public final class BloodTraceService {
         hit.putString("direction_precision", "approximate");
         int cost = BloodRules.impactCost(hit.getFloat("amount", 0), factor, ledger.getInt("impact_remaining", 0));
         if (cost == 0) return;
+        if (melee && attacker instanceof ServerPlayerEntity actor && BloodTransferService.generating() && ForensicConfig.current.transfer.weaponStains) {
+            AttackContexts.Attack context = AttackContexts.current(actor.getUuid());
+            net.minecraft.item.ItemStack weapon = context != null ? context.original() : actor.getWeaponStack();
+            String holder = weapon.isEmpty() ? BloodTransferService.holder(actor, "hands") : BloodTransferService.prepareWeapon(actor, weapon);
+            var transfer = BloodTransferStore.get(victim.getServer());
+            if (!holder.isEmpty() && transfer.visible(holder) < 16 && transfer.add(holder, life.getString("id", "mixed"), 1,
+                    time + ForensicConfig.current.transfer.wetTicks, time)) {
+                ledger.putInt("impact_remaining", ledger.getInt("impact_remaining", 0) - 1); cost--;
+            }
+        }
         ServerWorld world = (ServerWorld) victim.getWorld(); long seed = new Random().nextLong(); Random random = new Random(seed);
         hit.putLong("blood_seed", seed); hit.putInt("blood_rule_version", 1);
         String event = hit.getString("id", ""); int landed = 0;
@@ -131,7 +199,11 @@ public final class BloodTraceService {
             BloodPatch patch = BloodSurfaceProjection.impact(landing, .035f + cost * .003f, random.nextLong());
             if (submit(world, new BloodTraceStore.Entry(patch, life.getString("id", ""), event, world.getBlockState(patch.pos()).toString(), true))) landed++;
         }
-        if (landed > 0) ledger.putInt("impact_remaining", Math.max(0, ledger.getInt("impact_remaining", 0) - Math.min(cost, landed * 3)));
+        if (landed > 0) {
+            int used = Math.min(cost, landed * 3);
+            ledger.putInt("impact_remaining", Math.max(0, ledger.getInt("impact_remaining", 0) - used));
+            BloodTransferService.deposit(world.getServer(), event, life.getString("id", "mixed"), used);
+        }
         forensic.markDirty();
     }
     public static void death(ServerPlayerEntity player, String corpse) {
@@ -143,6 +215,7 @@ public final class BloodTraceService {
         });
     }
     private static void pool(ItemDisplayEntity display) {
+        if (CARRIED.contains(display.getUuid()) || CorpseCarryService.isCarried(display)) return;
         if (!(display.getWorld() instanceof ServerWorld world) || world.getEntity(display.getUuid()) != display
                 || !world.isChunkLoaded(display.getBlockPos()) || !Forensics.valid(world, display.getItemStack(), display.getUuid().toString())) return;
         NbtCompound binding = Forensics.binding(display.getItemStack());
@@ -178,7 +251,10 @@ public final class BloodTraceService {
             BloodPatch patch = new BloodPatch(patchId, pos, Direction.UP, u, v, radius, 1, site.getLong("seed", 0), revision);
             wrote |= submit(world, new BloodTraceStore.Entry(patch, id, site.getString("event", ""), world.getBlockState(pos).toString(), false));
         }
-        if (wrote) { BloodRules.consume(ledger, part, cost); site.putInt("used", used + cost); site.putInt("revision", revision); }
+        if (wrote) {
+            BloodRules.consume(ledger, part, cost); site.putInt("used", used + cost); site.putInt("revision", revision);
+            BloodTransferService.deposit(world.getServer(), site.getString("event", ""), corpse.getString("id", "mixed"), cost);
+        }
         sites.put(siteKey, site); ledger.put("sites", sites); forensic.markDirty();
     }
 }

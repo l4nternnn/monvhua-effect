@@ -35,6 +35,8 @@ public final class Forensics {
         ResourceManagerHelper.get(ResourceType.SERVER_DATA).registerReloadListener(new WeaponProfiles());
         ForensicPackets.register();
         BloodTraceService.initialize();
+        CorpseCarryService.initialize();
+        com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTransferService.initialize();
         ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, player, alive) -> {
             if (!alive) ForensicStore.get(player.getServer()).newLife(player.getUuid());
         });
@@ -295,6 +297,12 @@ public final class Forensics {
             lines.add((lines.isEmpty() ? "最高伤害：" : "伤害记录 " + (lines.size() + 1) + "：") + line);
         }
         if (lines.isEmpty()) lines.add("该部位未记录到可定位伤情；不代表完全没有损伤");
+        if (com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTransferService.enabled()) {
+            String slot = switch (part) { case "torso" -> "torso"; case "left_arm", "right_arm" -> "hands";
+                case "left_leg" -> "left_sole"; case "right_leg" -> "right_sole"; default -> ""; };
+            if (!slot.isEmpty() && com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTransferStore.get(player.getServer())
+                    .visible(corpse.getString("id", "") + "/" + slot) > 0) lines.add("该区域另有接触形成的血液沾染，不能仅凭沾染确认身份");
+        }
         return lines;
     }
     public static String kindLabel(String kind) {

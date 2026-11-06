@@ -16,6 +16,9 @@ import net.minecraft.screen.slot.Slot;
 public class BodyPartScreenHandler extends ScreenHandler {
     /** 当前绑定的物品栏（服务端为BlockEntity，客户端为SimpleInventory） */
     private final Inventory inventory;
+    public boolean views(net.minecraft.util.collection.DefaultedList<ItemStack> contents) {
+        return inventory instanceof com.kuilunfuzhe.monvhua.util.ImplementedInventory source && source.getItems() == contents;
+    }
     /** 自定义X轴偏移量，用于整体调整界面水平位置 */
     int diy_x = 20;
     /** 自定义Y轴偏移量，用于整体调整界面垂直位置 */

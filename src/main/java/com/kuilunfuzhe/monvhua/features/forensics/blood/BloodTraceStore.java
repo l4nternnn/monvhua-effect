@@ -18,7 +18,7 @@ public final class BloodTraceStore extends PersistentState {
     private final Map<BlockPos, Set<String>> blocks = new HashMap<>();
     public BloodTraceStore() {}
     private BloodTraceStore(NbtCompound root) {
-        if (root.getInt("version", 1) != 1) throw new IllegalStateException("Unsupported blood trace version");
+        if (root.getInt("version", 1) < 1 || root.getInt("version", 1) > 2) throw new IllegalStateException("Unsupported blood trace version");
         for (NbtElement element : root.getListOrEmpty("patches")) if (element instanceof NbtCompound n) {
             BloodPatch patch = BloodPatch.read(n);
             if (!patch.id().isEmpty() && Float.isFinite(patch.radius()) && patch.radius() > 0 && patch.radius() <= .85f
@@ -28,7 +28,7 @@ public final class BloodTraceStore extends PersistentState {
         }
     }
     private NbtCompound write() {
-        NbtCompound root = new NbtCompound(); root.putInt("version", 1); NbtList list = new NbtList();
+        NbtCompound root = new NbtCompound(); root.putInt("version", 2); NbtList list = new NbtList();
         for (Entry entry : entries.values()) {
             NbtCompound n = entry.patch.write(); n.putString("source", entry.source); n.putString("event", entry.event);
             n.putString("support", entry.support); n.putBoolean("directional", entry.directional); list.add(n);

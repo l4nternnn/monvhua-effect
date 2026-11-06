@@ -106,6 +106,7 @@ public class CarryEvents {
 
 		ServerPlayNetworking.registerGlobalReceiver(CarryEntityPayload.ID, (payload, context) -> {
 			ServerPlayerEntity carrier = context.player();
+			if (com.kuilunfuzhe.monvhua.features.forensics.CorpseCarryService.isCarrying(carrier.getUuid())) return;
 			if (!carrier.isSneaking()) return;
 			if (!carrier.getMainHandStack().isEmpty() || !carrier.getOffHandStack().isEmpty()) return;
 			if (!carrier.isCreative() && !carrier.getCommandTags().contains("kebao")) {
@@ -115,6 +116,7 @@ public class CarryEvents {
 			ServerWorld world = (ServerWorld) carrier.getWorld();
 			Entity target = world.getEntityById(payload.entityId());
 			if (target == null) return;
+			if (com.kuilunfuzhe.monvhua.features.forensics.CorpseCarryService.isCarrying(target.getUuid())) return;
 
 			// 检查冷却
 			Long cooldownEnd = CarryManager.CARRIED_COOLDOWN.get(target);

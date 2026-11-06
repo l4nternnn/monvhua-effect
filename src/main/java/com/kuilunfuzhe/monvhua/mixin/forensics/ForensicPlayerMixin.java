@@ -21,6 +21,7 @@ public abstract class ForensicPlayerMixin {
     private void monvhua$attack(Entity target, Operation<Void> original) {
         PlayerEntity player = (PlayerEntity) (Object) this;
         if (player.getWorld().isClient) { original.call(target); return; }
+        if (CorpseCarryService.isCarrying(player.getUuid())) return;
         AttackContexts.push(player);
         try { original.call(target); } finally { AttackContexts.pop(); }
     }

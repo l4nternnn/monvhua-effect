@@ -9,9 +9,17 @@ import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
+import net.minecraft.entity.Entity;
 import java.util.*;
 
 public final class ForensicPackets {
+    public record CarryRequest(int target, boolean release) implements CustomPayload {
+        public static final Id<CarryRequest> ID = new Id<>(Identifier.of("monvhua", "forensic_carry"));
+        public static final PacketCodec<RegistryByteBuf, CarryRequest> CODEC = PacketCodec.of(CarryRequest::write, CarryRequest::new);
+        private CarryRequest(RegistryByteBuf buf) { this(buf.readVarInt(), buf.readBoolean()); }
+        private void write(RegistryByteBuf buf) { buf.writeVarInt(target); buf.writeBoolean(release); }
+        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    }
     public record Request(int target, String part, boolean cycle, int requestId) implements CustomPayload {
         public static final Id<Request> ID = new Id<>(Identifier.of("monvhua", "forensic_request"));
         public static final PacketCodec<RegistryByteBuf, Request> CODEC = PacketCodec.of(Request::write, Request::new);
@@ -32,6 +40,7 @@ public final class ForensicPackets {
     }
     private static final Map<UUID, Integer> LAST_REQUEST = new HashMap<>();
     public static void register() {
+        PayloadTypeRegistry.playC2S().register(CarryRequest.ID, CarryRequest.CODEC);
         PayloadTypeRegistry.playC2S().register(Request.ID, Request.CODEC);
         PayloadTypeRegistry.playS2C().register(Result.ID, Result.CODEC);
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> LAST_REQUEST.remove(handler.player.getUuid()));
@@ -47,9 +56,20 @@ public final class ForensicPackets {
             if (packet.cycle) {
                 if (ForensicConfig.current.enabled && player.isAlive() && !player.isSpectator()) player.sendMessage(Text.literal(WeaponProfiles.cycle(player.getMainHandStack())), true);
             } else {
-                var lines = Forensics.inspect(player, packet.target, packet.part);
+                java.util.List<String> lines;
+                if (packet.part.equals("__stains")) {
+                    Entity target = packet.target == -1 ? player : player.getWorld().getEntityById(packet.target);
+                    lines = target instanceof net.minecraft.server.network.ServerPlayerEntity other
+                            ? com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTransferService.inspect(player, other) : List.of();
+                } else lines = Forensics.inspect(player, packet.target, packet.part);
                 ServerPlayNetworking.send(player, new Result(packet.target, packet.part, packet.requestId, lines));
             }
+        }));
+        ServerPlayNetworking.registerGlobalReceiver(CarryRequest.ID, (packet, context) -> context.server().execute(() -> {
+            var player = context.player();
+            if (!ForensicConfig.current.enabled || !player.isAlive() || player.isSpectator()) return;
+            var message = com.kuilunfuzhe.monvhua.features.forensics.CorpseCarryService.handle(player, packet.target(), packet.release());
+            if (message != null) player.sendMessage(Text.literal(message), true);
         }));
     }
 }
