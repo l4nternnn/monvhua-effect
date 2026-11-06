@@ -1,6 +1,7 @@
 package com.kuilunfuzhe.monvhua.features.block.body;
 
 import com.kuilunfuzhe.monvhua.command.GiveBodyPartCommand;
+import com.kuilunfuzhe.monvhua.features.forensics.Forensics;
 import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalBodyPart;
 import com.kuilunfuzhe.monvhua.features.block.body_skeletal.SkeletalBodyPartBlockEntity;
 import com.kuilunfuzhe.monvhua.features.hold_hands.HoldHandsManager;
@@ -94,6 +95,7 @@ public class BodyPartManager {
 		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
 			if (entity instanceof ServerPlayerEntity player) {
 				if (!player.getCommandTags().contains("dead_body") && !player.getCommandTags().contains("dead_part")) return;
+				if (com.kuilunfuzhe.monvhua.features.forensics.ForensicConfig.current.enabled && !Forensics.beginDeath(player, source)) return;
 				ServerWorld world = (ServerWorld) player.getWorld();
 				BlockPos deathPos = player.getBlockPos();
 				ProfileComponent profile = new ProfileComponent(player.getGameProfile());
@@ -152,6 +154,7 @@ public class BodyPartManager {
 								deathPos.getZ() + 0.5 + offsetsZ[i]
 							);
 							world.spawnEntity(display);
+							Forensics.attachDeath(player, display, new String[]{"head", "torso", "left_arm", "right_arm", "left_leg", "right_leg"}[i]);
 
 							InteractionEntity interaction = new InteractionEntity(EntityType.INTERACTION, world);
 							interaction.setPosition(display.getPos());
@@ -160,6 +163,7 @@ public class BodyPartManager {
 							world.spawnEntity(interaction);
 							INTERACTION_TO_DISPLAY.put(interaction.getUuid(), display.getUuid());
 							DISPLAY_TO_INTERACTION.put(display.getUuid(), interaction.getUuid());
+							Forensics.link(display, interaction);
 							if (i == 1) {
 								DefaultedList<ItemStack> hotbarInv = DefaultedList.ofSize(9, ItemStack.EMPTY);
 								for (int j = 0; j < 9; j++) {
@@ -176,9 +180,9 @@ public class BodyPartManager {
 						hotbarInv.set(j, player.getInventory().getStack(j));
 					}
 					if (detectedLocalSkin != null) {
-						createCombinedDisplay(world, pos, detectedLocalSkin, hotbarInv, null);
+						Forensics.attachDeath(player, createCombinedDisplayWithResult(world, pos, detectedLocalSkin, hotbarInv, null), "all");
 					} else {
-						createCombinedDisplay(world, pos, playerName, hotbarInv, profile);
+						Forensics.attachDeath(player, createCombinedDisplayWithResult(world, pos, playerName, hotbarInv, profile), "all");
 					}
 				}
 			}
@@ -191,10 +195,18 @@ public class BodyPartManager {
 			UUID displayUuid = INTERACTION_TO_DISPLAY.get(interaction.getUuid());
 			if (displayUuid == null) return ActionResult.PASS;
 			Entity targetDisplay = world.getEntity(displayUuid);
+            // The carry gesture opens the forensic wheel; do not also pick up the item.
+            if (com.kuilunfuzhe.monvhua.features.forensics.ForensicConfig.current.enabled
+                    && targetDisplay instanceof ItemDisplayEntity body && Forensics.hasBinding(body.getItemStack())
+                    && player.isSneaking() && player.getMainHandStack().isEmpty() && player.getOffHandStack().isEmpty()) {
+                return ActionResult.SUCCESS;
+            }
 
 			if (player.isSneaking()) {
 				if (targetDisplay instanceof ItemDisplayEntity display) {
 					ItemStack stack = display.getItemStack().copy();
+					if (!Forensics.valid((ServerWorld) world, stack, display.getUuid().toString())) return ActionResult.FAIL;
+					if (Forensics.hasBinding(stack)) Forensics.transition((ServerWorld) world, stack, "item");
 					DefaultedList<ItemStack> inv = BODY_PART_DISPLAY_INVENTORIES.get(displayUuid);
 					if (inv != null) {
 						NbtList itemsList = new NbtList();
@@ -244,7 +256,7 @@ public class BodyPartManager {
 							return inv;
 						}
 						@Override
-						public void markDirty() {}
+						public void markDirty() { if (targetDisplay instanceof ItemDisplayEntity body) Forensics.persistInventory(body); }
 					});
 				}
 			});
@@ -263,6 +275,7 @@ public class BodyPartManager {
 				return ActionResult.SUCCESS;
 			}
 			if (!BODY_PART_DISPLAY_ITEMS.contains(stack.getItem())) return ActionResult.PASS;
+			if (!Forensics.valid((ServerWorld) world, stack, "item")) return ActionResult.FAIL;
 			if (player.isSneaking()) return ActionResult.PASS;
 			BlockPos placePos = player.getBlockPos();
 			ItemDisplayEntity display = EntityType.ITEM_DISPLAY.create(world, SpawnReason.TRIGGERED);
@@ -288,15 +301,17 @@ public class BodyPartManager {
 				}
 				display.setItemStack(placeStack);
 				display.setPosition(placePos.getX() + 0.5, placePos.getY() + 0.3, placePos.getZ() + 0.5);
-				world.spawnEntity(display);
+				if (!world.spawnEntity(display)) { BODY_PART_DISPLAY_INVENTORIES.remove(display.getUuid()); return ActionResult.FAIL; }
 				InteractionEntity interaction = new InteractionEntity(EntityType.INTERACTION, world);
 				interaction.setPosition(display.getPos());
 				interaction.setInteractionWidth(0.75f);
 				interaction.setInteractionHeight(0.75f);
-				world.spawnEntity(interaction);
+				if (!world.spawnEntity(interaction)) { Forensics.discardPair((ServerWorld) world, display); return ActionResult.FAIL; }
+				Forensics.claim(display);
 				INTERACTION_TO_DISPLAY.put(interaction.getUuid(), display.getUuid());
 				DISPLAY_TO_INTERACTION.put(display.getUuid(), interaction.getUuid());
-				if (!player.isCreative()) {
+				Forensics.link(display, interaction);
+				if (!player.isCreative() || Forensics.hasBinding(stack)) {
 					stack.decrement(1);
 					if (stack.isEmpty()) {
 						player.getInventory().removeOne(stack);
@@ -317,6 +332,7 @@ public class BodyPartManager {
 				return ActionResult.SUCCESS;
 			}
 			if (!BODY_PART_DISPLAY_ITEMS.contains(stack.getItem())) return ActionResult.PASS;
+			if (!Forensics.valid((ServerWorld) world, stack, "item")) return ActionResult.FAIL;
 			BlockPos placePos = hitResult.getBlockPos().offset(hitResult.getSide());
 			ItemDisplayEntity display = EntityType.ITEM_DISPLAY.create(world, SpawnReason.TRIGGERED);
 			if (display != null) {
@@ -341,15 +357,17 @@ public class BodyPartManager {
 				}
 				display.setItemStack(placeStack);
 				display.setPosition(placePos.getX() + 0.5, placePos.getY(), placePos.getZ() + 0.5);
-				world.spawnEntity(display);
+				if (!world.spawnEntity(display)) { BODY_PART_DISPLAY_INVENTORIES.remove(display.getUuid()); return ActionResult.FAIL; }
 				InteractionEntity interaction = new InteractionEntity(EntityType.INTERACTION, world);
 				interaction.setPosition(display.getPos());
 				interaction.setInteractionWidth(0.75f);
 				interaction.setInteractionHeight(0.75f);
-				world.spawnEntity(interaction);
+				if (!world.spawnEntity(interaction)) { Forensics.discardPair((ServerWorld) world, display); return ActionResult.FAIL; }
+				Forensics.claim(display);
 				INTERACTION_TO_DISPLAY.put(interaction.getUuid(), display.getUuid());
 				DISPLAY_TO_INTERACTION.put(display.getUuid(), interaction.getUuid());
-				if (!player.isCreative()) {
+				Forensics.link(display, interaction);
+				if (!player.isCreative() || Forensics.hasBinding(stack)) {
 					stack.decrement(1);
 					if (stack.isEmpty()) {
 						player.getInventory().removeOne(stack);
@@ -409,6 +427,7 @@ public class BodyPartManager {
 	}
 
 	public static void placeCombinedBody(World world, BlockPos pos, ItemStack stack, ServerPlayerEntity player) {
+		if (!Forensics.valid((ServerWorld) world, stack, "item")) return;
 		ProfileComponent profile = stack.get(DataComponentTypes.PROFILE);
 		String localSkin = null;
 		DefaultedList<ItemStack> savedInv = null;
@@ -431,10 +450,16 @@ public class BodyPartManager {
 			}
 		}
 
-		createCombinedDisplay((ServerWorld) world, Vec3d.of(pos).add(0.5, 0.2, 0.5),
+		ItemDisplayEntity placed = createCombinedDisplayWithResult((ServerWorld) world, Vec3d.of(pos).add(0.5, 0.2, 0.5),
 			localSkin != null ? localSkin : "ema", savedInv, profile);
+		if (placed == null) return;
+		if (Forensics.hasBinding(stack)) {
+			ItemStack visual = stack.copy();
+			visual.setCount(1);
+			placed.setItemStack(visual); Forensics.claim(placed);
+		}
 
-		if (!player.isCreative()) {
+		if (!player.isCreative() || Forensics.hasBinding(stack)) {
 			stack.decrement(1);
 			if (stack.isEmpty()) {
 				player.getInventory().removeOne(stack);
@@ -467,6 +492,14 @@ public class BodyPartManager {
 			return 0;
 		}
 
+		String evidenceId = Forensics.binding(foundParts.get("torso").getItemStack()).getString("id", "");
+        for (ItemDisplayEntity found : foundParts.values()) {
+            if (!Forensics.binding(found.getItemStack()).getString("id", "").equals(evidenceId)
+                    || !Forensics.valid(world, found.getItemStack(), found.getUuid().toString())) {
+                player.sendMessage(Text.literal("不能合并不同来源或失效的尸体部位"), true);
+                return 0;
+            }
+        }
 		ItemDisplayEntity torsoDisplay = foundParts.get("torso");
 		Vec3d mergePos = torsoDisplay.getPos();
 
@@ -480,7 +513,10 @@ public class BodyPartManager {
 		if (torsoInv == null) torsoInv = DefaultedList.ofSize(9, ItemStack.EMPTY);
 		ProfileComponent profile = torsoStack.get(DataComponentTypes.PROFILE);
 
+		ItemDisplayEntity merged = createCombinedDisplayWithResult(world, mergePos, skinName, torsoInv, profile);
+		if (merged == null) return 0;
 		for (ItemDisplayEntity display : foundParts.values()) {
+			if (Forensics.hasBinding(display.getItemStack())) Forensics.retire(world, display.getItemStack());
 			UUID displayUuid = display.getUuid();
 			UUID interactionUuid = DISPLAY_TO_INTERACTION.get(displayUuid);
 			if (interactionUuid != null) {
@@ -493,7 +529,10 @@ public class BodyPartManager {
 			display.remove(Entity.RemovalReason.DISCARDED);
 		}
 
-		createCombinedDisplay(world, mergePos.add(0, 0.0, 0), skinName, torsoInv, profile);
+        if (merged != null && !evidenceId.isEmpty()) {
+            NbtCompound binding = new NbtCompound(); binding.putString("id", evidenceId); binding.putString("part", "all");
+            ItemStack visual = merged.getItemStack().copy(); Forensics.setBinding(visual, binding); merged.setItemStack(visual); Forensics.claim(merged);
+        }
 		player.sendMessage(Text.literal("§a成功合并肢体！"), false);
 		return 1;
 	}
@@ -510,6 +549,8 @@ public class BodyPartManager {
 		})) {
 			Vec3d pos = display.getPos();
 			ItemStack combinedStack = display.getItemStack();
+			if (!Forensics.valid(world, combinedStack, display.getUuid().toString())) continue;
+			NbtCompound evidence = Forensics.binding(combinedStack);
 			ProfileComponent profile = combinedStack.get(DataComponentTypes.PROFILE);
 			String localSkin = null;
 			DefaultedList<ItemStack> savedInv = null;
@@ -534,15 +575,7 @@ public class BodyPartManager {
 			DefaultedList<ItemStack> mapInv = BODY_PART_DISPLAY_INVENTORIES.get(display.getUuid());
 			if (mapInv != null) savedInv = mapInv;
 
-			UUID interactionUuid = DISPLAY_TO_INTERACTION.get(display.getUuid());
-			if (interactionUuid != null) {
-				Entity interaction = world.getEntity(interactionUuid);
-				if (interaction != null) interaction.remove(Entity.RemovalReason.DISCARDED);
-				INTERACTION_TO_DISPLAY.remove(interactionUuid);
-				DISPLAY_TO_INTERACTION.remove(display.getUuid());
-			}
-			BODY_PART_DISPLAY_INVENTORIES.remove(display.getUuid());
-			display.remove(Entity.RemovalReason.DISCARDED);
+			List<ItemDisplayEntity> stagedParts = new ArrayList<>();
 
 			Item[] partItems = new Item[]{
 				Assembly_ModItems.HEAD_ITEM, Assembly_ModItems.TORSO_ITEM,
@@ -568,23 +601,46 @@ public class BodyPartManager {
 
 				ItemDisplayEntity partDisplay = EntityType.ITEM_DISPLAY.create(world, SpawnReason.TRIGGERED);
 				if (partDisplay != null) {
-					partDisplay.setItemStack(stack);
+					if (!evidence.getString("id", "").isEmpty()) {
+                        NbtCompound partBinding = evidence.copy();
+                        partBinding.putString("part", new String[]{"head", "torso", "left_arm", "right_arm", "left_leg", "right_leg"}[i]);
+                        Forensics.setBinding(stack, partBinding);
+                    }
+                    partDisplay.setItemStack(stack);
 					setLeftRotation(partDisplay, PART_ROTATIONS[i]);
 					partDisplay.setPosition(pos.x + offsetsX[i], pos.y + offsetsY[i], pos.z + offsetsZ[i]);
-					world.spawnEntity(partDisplay);
+					if (!world.spawnEntity(partDisplay)) continue;
+					stagedParts.add(partDisplay);
 
 					InteractionEntity interaction = new InteractionEntity(EntityType.INTERACTION, world);
 					interaction.setPosition(partDisplay.getPos());
 					interaction.setInteractionWidth(0.75f);
 					interaction.setInteractionHeight(0.75f);
-					world.spawnEntity(interaction);
+					if (!world.spawnEntity(interaction)) { stagedParts.remove(partDisplay); partDisplay.discard(); continue; }
 					INTERACTION_TO_DISPLAY.put(interaction.getUuid(), partDisplay.getUuid());
 					DISPLAY_TO_INTERACTION.put(partDisplay.getUuid(), interaction.getUuid());
+					Forensics.link(partDisplay, interaction);
 					if (i == 1 && savedInv != null) {
 						BODY_PART_DISPLAY_INVENTORIES.put(partDisplay.getUuid(), savedInv);
 					}
 				}
 			}
+            if (stagedParts.size() != 6) {
+                for (ItemDisplayEntity staged : stagedParts) Forensics.discardPair(world, staged);
+                continue;
+            }
+            if (Forensics.hasBinding(combinedStack)) Forensics.retire(world, combinedStack);
+            for (ItemDisplayEntity staged : stagedParts) Forensics.claim(staged);
+			UUID interactionUuid = DISPLAY_TO_INTERACTION.get(display.getUuid());
+			if (interactionUuid != null) {
+				Entity interaction = world.getEntity(interactionUuid);
+				if (interaction != null) interaction.remove(Entity.RemovalReason.DISCARDED);
+				INTERACTION_TO_DISPLAY.remove(interactionUuid);
+				DISPLAY_TO_INTERACTION.remove(display.getUuid());
+			}
+			BODY_PART_DISPLAY_INVENTORIES.remove(display.getUuid());
+			display.remove(Entity.RemovalReason.DISCARDED);
+
 			count++;
 		}
 		return count;
@@ -601,6 +657,7 @@ public class BodyPartManager {
 			if (displayUuid == null) {
 				continue;
 			}
+			if (world.getEntity(displayUuid) instanceof ItemDisplayEntity body && Forensics.hasBinding(body.getItemStack())) continue;
 			boolean hasBackpack = BODY_PART_DISPLAY_INVENTORIES.containsKey(displayUuid);
 			boolean missingDisplay = world.getEntity(displayUuid) == null;
 			if (!hasBackpack && !missingDisplay) {
@@ -672,7 +729,11 @@ public class BodyPartManager {
 	}
 
 	public static void createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile) {
-		createCombinedDisplay(world, pos, skinName, torsoInv, profile, false, null, null, true,
+        createCombinedDisplayWithResult(world, pos, skinName, torsoInv, profile);
+    }
+
+    private static ItemDisplayEntity createCombinedDisplayWithResult(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile) {
+		return createCombinedDisplay(world, pos, skinName, torsoInv, profile, false, null, null, true,
 				0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, true);
 	}
 
@@ -838,15 +899,15 @@ public class BodyPartManager {
 		player.sendMessage(Text.literal("Placed " + placed + " pose editor item model(s)"), true);
 	}
 
-	private static void createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile,
+	private static ItemDisplayEntity createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile,
 			boolean slim, float[] poseValues, float[] bendValues, boolean lyingDown,
 			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale,
 			boolean interactionEnabled) {
-		createCombinedDisplay(world, pos, skinName, torsoInv, profile, slim, poseValues, bendValues, lyingDown,
+		return createCombinedDisplay(world, pos, skinName, torsoInv, profile, slim, poseValues, bendValues, lyingDown,
 				offsetX, offsetY, offsetZ, rotationPitch, rotationYaw, rotationRoll, modelScale, interactionEnabled, null);
 	}
 
-	private static void createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile,
+	private static ItemDisplayEntity createCombinedDisplay(ServerWorld world, Vec3d pos, String skinName, DefaultedList<ItemStack> torsoInv, ProfileComponent profile,
 			boolean slim, float[] poseValues, float[] bendValues, boolean lyingDown,
 			float offsetX, float offsetY, float offsetZ, float rotationPitch, float rotationYaw, float rotationRoll, float modelScale,
 			boolean interactionEnabled, List<PlaceTrueSkeletalBodyC2SPacket.BonePose> trueSkeletalBones) {
@@ -888,21 +949,23 @@ public class BodyPartManager {
 			if (lyingDown) {
 				setLeftRotation(display, new Quaternionf().rotateX((float) Math.toRadians(90)));
 			}
-			world.spawnEntity(display);
+			if (!world.spawnEntity(display)) return null;
 
 			if (interactionEnabled) {
 				InteractionEntity interaction = new InteractionEntity(EntityType.INTERACTION, world);
 				interaction.setPosition(pos.x, lyingDown ? pos.y - 0.3 : pos.y - 1.5, pos.z);
 				interaction.setInteractionWidth(0.9f);
 				interaction.setInteractionHeight(lyingDown ? 0.8f : 1.8f);
-				world.spawnEntity(interaction);
+				if (!world.spawnEntity(interaction)) { display.discard(); return null; }
 				INTERACTION_TO_DISPLAY.put(interaction.getUuid(), display.getUuid());
 				DISPLAY_TO_INTERACTION.put(display.getUuid(), interaction.getUuid());
+				Forensics.link(display, interaction);
 				if (torsoInv != null) {
 					BODY_PART_DISPLAY_INVENTORIES.put(display.getUuid(), torsoInv);
 				}
 			}
 		}
+		return display;
 	}
 
 	private static Vec3d getHorizontalForward(ServerPlayerEntity player) {

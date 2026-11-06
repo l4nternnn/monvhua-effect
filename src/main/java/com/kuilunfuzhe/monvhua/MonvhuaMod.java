@@ -749,6 +749,7 @@ public class MonvhuaMod implements ModInitializer {
         // ===== 9. 功能事件注册 =====
         CarryEvents.register();
         ViewingModeBlocker.register();
+        com.kuilunfuzhe.monvhua.features.forensics.Forensics.initialize();
         BodyPartManager.registerEvents();
 
         // ===== 10. 打开他人背包 =====

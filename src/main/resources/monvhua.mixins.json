@@ -3,6 +3,8 @@
 	"package": "com.kuilunfuzhe.monvhua.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
+        "forensics.ForensicPlayerMixin",
+        "forensics.ForensicProjectileMixin",
 		"ExampleMixin",
 		"DayNightServerWorldMixin",
 		"EntityGravityMixin",

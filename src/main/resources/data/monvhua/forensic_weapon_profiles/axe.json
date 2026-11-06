@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "priority": 0,
+  "match": { "tag": "minecraft:axes" },
+  "default_mode": "slash",
+  "modes": {
+    "slash": { "delivery": "melee", "components": [{ "kind": "cut", "weight": 1.0 }] },
+    "pommel": { "delivery": "melee", "components": [{ "kind": "blunt", "weight": 1.0 }] }
+  }
+}
