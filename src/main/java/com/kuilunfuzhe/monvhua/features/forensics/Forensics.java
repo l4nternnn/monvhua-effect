@@ -2,6 +2,7 @@ package com.kuilunfuzhe.monvhua.features.forensics;
 
 import com.kuilunfuzhe.monvhua.features.block.body.BodyPartManager;
 import com.kuilunfuzhe.monvhua.network.forensics.ForensicPackets;
+import com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTraceService;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
@@ -33,6 +34,7 @@ public final class Forensics {
         ForensicConfig.load();
         ResourceManagerHelper.get(ResourceType.SERVER_DATA).registerReloadListener(new WeaponProfiles());
         ForensicPackets.register();
+        BloodTraceService.initialize();
         ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, player, alive) -> {
             if (!alive) ForensicStore.get(player.getServer()).newLife(player.getUuid());
         });
@@ -116,6 +118,7 @@ public final class Forensics {
         hit.putString("precision", "unknown");
         // Only direct physical attacks have a meaningful attacker-relative direction.
         if (melee || direct instanceof ProjectileEntity) locate(player, attacker, direct, hit);
+        BloodTraceService.hit(player, attacker, direct, melee, selection, hit);
         ForensicStore.get(player.getServer()).append(player.getUuid(), hit);
     }
 
@@ -178,8 +181,9 @@ public final class Forensics {
                         candidate.putBoolean("death_trigger", true);
             }
         }
-        store.freeze(player.getUuid(), player.getName().getString(), player.getWorld().getRegistryKey().getValue().toString(),
+        String corpseId = store.freeze(player.getUuid(), player.getName().getString(), player.getWorld().getRegistryKey().getValue().toString(),
                 player.getWorld().getTime(), player.getX(), player.getY(), player.getZ(), source.getName());
+        BloodTraceService.death(player, corpseId);
         life.putBoolean("spawn_started", true); store.markDirty();
         return true;
     }
@@ -244,6 +248,7 @@ public final class Forensics {
         if (!(display.getWorld() instanceof ServerWorld world) || !hasBinding(display.getItemStack())) return;
         transition(world, display.getItemStack(), display.getUuid().toString());
         display.setItemStack(display.getItemStack().copy());
+        BloodTraceService.track(display);
     }
     public static void transition(ServerWorld world, ItemStack stack, String location) {
         NbtCompound b = binding(stack);

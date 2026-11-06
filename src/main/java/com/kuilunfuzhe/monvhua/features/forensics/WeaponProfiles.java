@@ -18,7 +18,15 @@ import java.util.*;
 public final class WeaponProfiles implements SimpleSynchronousResourceReloadListener {
     public static final String KEY = "monvhua:forensics";
     public record Component(String kind, double weight) {}
-    public record Mode(String delivery, List<Component> components) {}
+    public record Mode(String delivery, List<Component> components, boolean externalBleeding, double bleedingFactor) {
+        public Mode(String delivery, List<Component> components) {
+            this(delivery, components, defaultBleeding(components) > 0, defaultBleeding(components));
+        }
+        private static double defaultBleeding(List<Component> components) {
+            return components.stream().filter(c -> c.kind().equals("cut") || c.kind().equals("puncture"))
+                    .mapToDouble(Component::weight).sum();
+        }
+    }
     public record Profile(String id, int priority, Set<String> items, String tag, String defaultMode,
                           Map<String, Mode> modes) {}
     public record Selection(String profile, String mode, Mode definition) {}
@@ -68,7 +76,11 @@ public final class WeaponProfiles implements SimpleSynchronousResourceReloadList
                 components.add(new Component(kind, weight));
             }
             if (components.size() > 8 || Math.abs(total - 1) > 0.00001) throw new IllegalArgumentException("Component weights must sum to 1: " + id);
-            modes.put(entry.getKey(), new Mode(delivery, List.copyOf(components)));
+            double factor = value.has("bleeding_factor") ? value.get("bleeding_factor").getAsDouble()
+                    : value.has("external_bleeding") && value.get("external_bleeding").getAsBoolean() ? 1 : Mode.defaultBleeding(components);
+            if (!Double.isFinite(factor) || factor < 0 || factor > 4) throw new IllegalArgumentException("Invalid bleeding factor: " + id);
+            boolean bleeding = value.has("external_bleeding") ? value.get("external_bleeding").getAsBoolean() : factor > 0;
+            modes.put(entry.getKey(), new Mode(delivery, List.copyOf(components), bleeding, factor));
         }
         String defaultMode = json.get("default_mode").getAsString();
         if (!modes.containsKey(defaultMode) || modes.size() > 16) throw new IllegalArgumentException("Invalid default/modes: " + id);

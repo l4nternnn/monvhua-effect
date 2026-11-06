@@ -5,6 +5,7 @@
 	"mixins": [
         "forensics.ForensicPlayerMixin",
         "forensics.ForensicProjectileMixin",
+        "forensics.BloodWorldChangeMixin",
 		"ExampleMixin",
 		"DayNightServerWorldMixin",
 		"EntityGravityMixin",

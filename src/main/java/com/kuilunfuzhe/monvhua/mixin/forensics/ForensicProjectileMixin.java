@@ -16,6 +16,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ProjectileEntity.class)
 public abstract class ForensicProjectileMixin implements ProjectileEvidence {
     @Unique private NbtCompound monvhua$evidence = new NbtCompound();
+    @Unique private net.minecraft.util.math.Vec3d monvhua$collisionVelocity;
+    @Inject(method = "onCollision", at = @At("HEAD"))
+    private void monvhua$beforeCollision(net.minecraft.util.hit.HitResult hit, CallbackInfo ci) {
+        monvhua$collisionVelocity = ((ProjectileEntity) (Object) this).getVelocity();
+    }
+    @Inject(method = "onCollision", at = @At("RETURN"))
+    private void monvhua$afterCollision(net.minecraft.util.hit.HitResult hit, CallbackInfo ci) { monvhua$collisionVelocity = null; }
+    @Override public net.minecraft.util.math.Vec3d monvhua$impactVelocity() {
+        return monvhua$collisionVelocity == null ? ((ProjectileEntity) (Object) this).getVelocity() : monvhua$collisionVelocity;
+    }
     @Inject(method = "tick", at = @At("HEAD"))
     private void monvhua$capture(CallbackInfo ci) { monvhua$getEvidence(); }
     @Override public NbtCompound monvhua$getEvidence() {
@@ -34,6 +44,8 @@ public abstract class ForensicProjectileMixin implements ProjectileEvidence {
                     NbtCompound c = new NbtCompound(); c.putString("kind", component.kind()); c.putDouble("weight", component.weight()); list.add(c);
                 }
                 monvhua$evidence.put("components", list);
+                monvhua$evidence.putBoolean("external_bleeding", selected.definition().externalBleeding());
+                monvhua$evidence.putDouble("bleeding_factor", selected.definition().bleedingFactor());
             }
         }
         return monvhua$evidence;

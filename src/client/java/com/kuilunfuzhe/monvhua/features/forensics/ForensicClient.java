@@ -26,6 +26,7 @@ public final class ForensicClient {
     private static int openRequest = -1;
     private static int openTarget = -1;
     public static void initialize() {
+        com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTraceClient.initialize();
         KeyBinding inspect = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.forensic_inspect", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, "category.monvhua"));
         KeyBinding mode = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.forensic_mode", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, "category.monvhua"));
         // Same gesture as carrying a living entity: sneak + empty hands + use entity.
@@ -38,7 +39,11 @@ public final class ForensicClient {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (mode.wasPressed()) if (client.player != null && client.currentScreen == null && ClientPlayNetworking.canSend(ForensicPackets.Request.ID))
                 ClientPlayNetworking.send(new ForensicPackets.Request(-1, "", true, ++sequence));
-            while (inspect.wasPressed()) if (client.crosshairTarget instanceof EntityHitResult hit) requestOpen(hit.getEntity());
+            while (inspect.wasPressed()) {
+                if (client.crosshairTarget instanceof EntityHitResult hit && requestOpen(hit.getEntity())) continue;
+                if (client.player != null && client.currentScreen == null && ClientPlayNetworking.canSend(com.kuilunfuzhe.monvhua.network.forensics.BloodTracePackets.Inspect.ID))
+                    ClientPlayNetworking.send(new com.kuilunfuzhe.monvhua.network.forensics.BloodTracePackets.Inspect());
+            }
         });
         ClientPlayNetworking.registerGlobalReceiver(ForensicPackets.Result.ID, (packet, context) -> context.client().execute(() -> {
             var client = context.client();
