@@ -8,19 +8,48 @@ import org.joml.Vector4f;
 /** Independent orbit camera. World axes stay intact; the same projection drives the callouts. */
 public final class EvidenceViewportFrame {
     private final Matrix4f projection, view, combined;
-    private final Vector3f eye;
+    private final Vector3f eye, center;
+    private final org.joml.Quaternionf orientation;
+    private final float unitsPerPixel;
     private final int left, top, width, height;
     public EvidenceViewportFrame(int left,int top,int width,int height,Box bounds,float yaw,float pitch) {
+        this(left,top,width,height,bounds,yaw,pitch,null,1);
+    }
+    public EvidenceViewportFrame(int left,int top,int width,int height,Box bounds,float yaw,float pitch,Vector3f target,float zoom) {
+        this(left,top,width,height,bounds,orientation(yaw,pitch),target,zoom);
+    }
+    public static org.joml.Quaternionf orientation(float yaw,float pitch) {
+        return new org.joml.Quaternionf().rotateY((float)Math.toRadians(yaw)).rotateX((float)Math.toRadians(-pitch));
+    }
+    /** Local camera axes: visible front surfaces follow the screen-space mouse delta. */
+    public static org.joml.Quaternionf drag(org.joml.Quaternionf current,float dx,float dy) {
+        return new org.joml.Quaternionf(current)
+                .rotateY((float)Math.toRadians(-dx*.5f))
+                .rotateX((float)Math.toRadians(-dy*.5f)).normalize();
+    }
+    /** Positive angles turn the displayed scene clockwise, around the viewing axis. */
+    public static org.joml.Quaternionf roll(org.joml.Quaternionf current,float degrees) {
+        return new org.joml.Quaternionf(current).rotateZ((float)Math.toRadians(degrees)).normalize();
+    }
+    public EvidenceViewportFrame(int left,int top,int width,int height,Box bounds,org.joml.Quaternionf orientation,Vector3f target,float zoom) {
         this.left=left;this.top=top;this.width=Math.max(1,width);this.height=Math.max(1,height);
-        Vector3f center=new Vector3f((float)((bounds.minX+bounds.maxX)/2),(float)((bounds.minY+bounds.maxY)/2),(float)((bounds.minZ+bounds.maxZ)/2));
+        this.orientation=new org.joml.Quaternionf(orientation);
+        center=new Vector3f((float)((bounds.minX+bounds.maxX)/2),(float)((bounds.minY+bounds.maxY)/2),(float)((bounds.minZ+bounds.maxZ)/2));
+        if(target!=null)center.set(target);
         float radius=(float)Math.max(.1,Math.sqrt(bounds.getLengthX()*bounds.getLengthX()+bounds.getLengthY()*bounds.getLengthY()+bounds.getLengthZ()*bounds.getLengthZ())/2);
         float aspect=(float)this.width/this.height, half=(float)Math.toRadians(20);
         float distance=radius/(float)Math.sin(Math.min(half,Math.atan(Math.tan(half)*aspect)))*1.12f;
-        float y=(float)Math.toRadians(yaw),p=(float)Math.toRadians(pitch);
-        eye=new Vector3f((float)(Math.sin(y)*Math.cos(p)),(float)Math.sin(p),(float)(Math.cos(y)*Math.cos(p))).mul(distance).add(center);
-        view=new Matrix4f().lookAt(eye,center,new Vector3f(0,1,0));
-        projection=new Matrix4f().perspective(half*2,aspect,Math.max(.001f,distance-radius*1.5f),distance+radius*2);
+        distance*=Math.max(.025f,Math.min(4,zoom));
+        unitsPerPixel=2*distance*(float)Math.tan(half)/this.height;
+        eye=orientation.transform(new Vector3f(0,0,distance)).add(center);
+        Vector3f up=orientation.transform(new Vector3f(0,1,0));
+        view=new Matrix4f().lookAt(eye,center,up);
+        projection=new Matrix4f().perspective(half*2,aspect,.005f,distance+radius*4);
         combined=new Matrix4f(projection).mul(view);
+    }
+    /** Translate the camera opposite the drag, so the scene follows the pointer at target depth. */
+    public Vector3f pannedTarget(float dx,float dy) {
+        return orientation.transform(new Vector3f(-dx*unitsPerPixel,dy*unitsPerPixel,0)).add(center);
     }
     public Matrix4f projection(){return new Matrix4f(projection);}
     public Matrix4f view(){return new Matrix4f(view);}

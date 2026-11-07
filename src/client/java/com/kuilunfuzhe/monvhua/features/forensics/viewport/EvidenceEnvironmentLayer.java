@@ -8,5 +8,6 @@ import net.minecraft.util.math.Box;
 public interface EvidenceEnvironmentLayer {
     long revision();
     Box bounds();
+    default boolean occludes(net.minecraft.util.math.Vec3d from, net.minecraft.util.math.Vec3d to) { return false; }
     void render(MatrixStack matrices, VertexConsumerProvider.Immediate consumers);
 }

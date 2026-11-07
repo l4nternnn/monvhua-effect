@@ -14,7 +14,7 @@ import org.joml.Matrix3f;
 import org.joml.Vector3f;
 import java.util.List;
 
-/** Read-only scene: no world entities, no animation ticks and no automatic focus yet. */
+/** Read-only scene with shared geometry for rendering, callouts and focus targets. */
 public final class EvidenceScene {
     private final CombinedBodySpecialModelRenderer renderer;
     private final ItemStack appearance;
@@ -23,7 +23,8 @@ public final class EvidenceScene {
     private final boolean fallback;
     private final EvidenceEnvironmentLayer environment;
     private String selectedWound="";
-    public EvidenceScene(NbtCompound observation,NbtList wounds){this(observation,wounds,null);}
+    private boolean showEnvironment=true;
+    public EvidenceScene(NbtCompound observation,NbtList wounds){this(observation,wounds,EvidenceBlocks.read(observation.getCompoundOrEmpty("environment")));}
     public EvidenceScene(NbtCompound observation,NbtList wounds,EvidenceEnvironmentLayer environment){
         this.environment=environment;
         renderer=new CombinedBodySpecialModelRenderer(MinecraftClient.getInstance().getLoadedEntityModels());
@@ -38,11 +39,13 @@ public final class EvidenceScene {
         if(!fallback&&list.size()==16){for(int i=0;i<16;i++)m[i]=list.getFloat(i).orElse(0f);Matrix4f supplied=new Matrix4f().set(m);if(supplied.isFinite()&&Math.abs(supplied.determinant())>1e-10)root.set(supplied);}
     }
     public boolean fallback(){return fallback;}
-    /** Future autofocus controller consumes this selection; currently selection never moves the camera. */
+    /** Selection identity remains separate from the screen camera controller. */
     public void requestFocus(String woundId){selectedWound=woundId;}
     public String selectedWound(){return selectedWound;}
     /** Reserved scene layer. A later snapshot adapter can supply blocks without changing camera coordinates. */
-    public boolean hasEnvironment(){return environment!=null;}
+    public boolean hasEnvironment(){return environment!=null&&!fallback;}
+    public void toggleEnvironment(){showEnvironment=!showEnvironment;}
+    public boolean showsEnvironment(){return hasEnvironment()&&showEnvironment;}
 
     public Prepared prepare(){
         var data=renderer.getData(appearance);
@@ -53,23 +56,24 @@ public final class EvidenceScene {
             Box b=surface.box();Vector3f p=surface.transform().transformPosition(new Vector3f((float)((i&1)==0?b.minX:b.maxX),(float)((i&2)==0?b.minY:b.maxY),(float)((i&4)==0?b.minZ:b.maxZ)));
             Box point=new Box(p.x,p.y,p.z,p.x,p.y,p.z);bounds=bounds==null?point:bounds.union(point);
         }
-        if(environment!=null)bounds=bounds.union(environment.bounds());
+        var activeEnvironment=showsEnvironment()?environment:null;
+        if(activeEnvironment!=null)bounds=bounds.union(activeEnvironment.bounds());
         var captured=data;
-        return new Prepared(bounds.expand(.04),surfaces,(matrices,consumers)->{
-            if(environment!=null)environment.render(matrices,consumers);
+        return new Prepared(bounds.expand(.04),surfaces,activeEnvironment,(matrices,consumers)->{
+            if(activeEnvironment!=null)activeEnvironment.render(matrices,consumers);
             matrices.push();matrices.multiplyPositionMatrix(root);
             matrices.peek().getNormalMatrix().mul(new Matrix3f(root).invert().transpose());
             renderer.renderEvidence(matrices,consumers,captured);matrices.pop();
         });
     }
-    public record Prepared(Box bounds,List<CombinedBodySpecialModelRenderer.EvidenceSurface> surfaces,EvidenceViewportRenderState.Scene render){
-        public Anchor anchor(NbtCompound wound,EvidenceViewportFrame frame){
+    public record Prepared(Box bounds,List<CombinedBodySpecialModelRenderer.EvidenceSurface> surfaces,EvidenceEnvironmentLayer environment,EvidenceViewportRenderState.Scene render){
+        public Target target(NbtCompound wound){
             String name=wound.getString("surface","");
             var surface=surfaces.stream().filter(s->s.name().equals(name)).findFirst().orElse(null);
-            if(surface==null)return new Anchor(null,"伤口位置未记录");
-            Direction face;try{face=Direction.valueOf(wound.getString("face",""));}catch(IllegalArgumentException e){return new Anchor(null,"伤口位置未记录");}
+            if(surface==null)return null;
+            Direction face;try{face=Direction.valueOf(wound.getString("face",""));}catch(IllegalArgumentException e){return null;}
             double u=wound.getDouble("u",Double.NaN),v=wound.getDouble("v",Double.NaN);
-            if(!Double.isFinite(u)||!Double.isFinite(v)||u<0||u>1||v<0||v>1)return new Anchor(null,"伤口位置未记录");
+            if(!Double.isFinite(u)||!Double.isFinite(v)||u<0||u>1||v<0||v>1)return null;
             Box b=surface.box();float x=(float)(b.minX+u*b.getLengthX()),y=(float)(b.minY+v*b.getLengthY()),z=(float)(b.minZ+u*b.getLengthZ());
             switch(face){case UP,DOWN->{y=(float)(face==Direction.UP?b.minY:b.maxY);z=(float)(b.minZ+v*b.getLengthZ());}case NORTH,SOUTH->z=(float)(face==Direction.NORTH?b.minZ:b.maxZ);case WEST,EAST->x=(float)(face==Direction.WEST?b.minX:b.maxX);}
             Vector3f normal=new Vector3f(face.getOffsetX(),face.getOffsetY(),face.getOffsetZ());
@@ -77,14 +81,24 @@ public final class EvidenceScene {
             Vector3f local=new Vector3f(x,y,z).fma(.035f,normal);
             Vector3f world=surface.transform().transformPosition(local);
             new Matrix3f(surface.transform()).invert().transpose().transform(normal).normalize();
+            float scale=surface.transform().getScale(new Vector3f()).length()/(float)Math.sqrt(3);
+            float extent=wound.getString("kinds","").contains("cut")?.55f:.4f;
+            return new Target(world,normal,Math.max(.02f,extent*scale));
+        }
+        public Anchor anchor(NbtCompound wound,EvidenceViewportFrame frame){
+            Target target=target(wound);
+            if(target==null)return new Anchor(null,"伤口位置未记录");
+            Vector3f world=target.position(),normal=target.normal();
             if(normal.dot(frame.eye().sub(world))<=0)return new Anchor(null,"伤口在背面，请用箭头转动视角");
             for(var other:surfaces){
                 Matrix4f inverse=new Matrix4f(other.transform()).invert();
                 Vector3f from=inverse.transformPosition(frame.eye()),to=inverse.transformPosition(new Vector3f(world));
                 if(other.box().raycast(new Vec3d(from.x,from.y,from.z),new Vec3d(to.x,to.y,to.z)).isPresent())return new Anchor(null,"伤口被身体遮挡，请转动视角");
             }
+            if(environment!=null&&environment.occludes(new Vec3d(frame.eye().x,frame.eye().y,frame.eye().z),new Vec3d(world.x,world.y,world.z)))return new Anchor(null,"伤口被方块遮挡，可切换仅遗体");
             var point=frame.project(world);return new Anchor(point,point==null?"伤口位于视口外":"");
         }
     }
+    public record Target(Vector3f position,Vector3f normal,float extent){}
     public record Anchor(EvidenceViewportFrame.Point point,String message){}
 }

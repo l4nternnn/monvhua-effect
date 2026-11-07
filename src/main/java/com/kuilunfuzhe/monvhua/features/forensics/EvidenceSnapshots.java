@@ -41,6 +41,7 @@ public final class EvidenceSnapshots {
         NbtList matrix = new NbtList(); for (float f : root.get(new float[16])) matrix.add(NbtFloat.of(f));
         snapshot.put("root",matrix);
         snapshot.putBoolean("partial", !Forensics.binding(display.getItemStack()).getString("part","all").equals("all"));
+        snapshot.put("environment",EvidenceBlockSnapshot.capture((net.minecraft.server.world.ServerWorld)display.getWorld(),display.getPos()));
         store.observe(viewer.getUuid(),id,snapshot);
     }
 
