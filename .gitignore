@@ -61,3 +61,4 @@ docs/
 /logs/
 /latest.log
 /md/
+/.gradle-home/

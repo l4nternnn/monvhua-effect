@@ -60,6 +60,8 @@ public final class Forensics {
             if (entity instanceof ItemDisplayEntity display) persistInventory(display);
         });
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(server -> {
+            for (ServerWorld w : server.getWorlds()) for (UUID id : List.copyOf(BodyPartManager.DISPLAY_TO_INTERACTION.keySet()))
+                if (w.getEntity(id) instanceof ItemDisplayEntity body) CorpseGeometrySync.update(body);
             if (server.getTicks() % 20 != 0) return;
             for (ServerWorld world : server.getWorlds()) for (UUID id : List.copyOf(BodyPartManager.BODY_PART_DISPLAY_INVENTORIES.keySet()))
                 if (world.getEntity(id) instanceof ItemDisplayEntity display && hasBinding(display.getItemStack())) persistInventory(display);
@@ -83,6 +85,7 @@ public final class Forensics {
         hit.putString("dimension", player.getWorld().getRegistryKey().getValue().toString());
         hit.putDouble("x", player.getX()); hit.putDouble("y", player.getY()); hit.putDouble("z", player.getZ());
         hit.putFloat("amount", amount);
+        hit.putString("severity", woundSeverity(amount));
         hit.putBoolean("potentially_lethal", amount >= player.getHealth());
         hit.putString("source", source.getTypeRegistryEntry().getKey().map(k -> k.getValue().toString()).orElse("unknown"));
         Entity attacker = source.getAttacker();
@@ -155,15 +158,13 @@ public final class Forensics {
         } else if (attacker != null) {
             from = attacker.getEyePos(); to = from.add(attacker.getRotationVec(1).multiply(6));
         } else return;
-        var point = victim.getBoundingBox().raycast(from, to);
-        if (point.isEmpty()) return;
-        Vec3d p = point.get().subtract(victim.getPos());
-        double height = p.y / victim.getHeight();
-        double yaw = Math.toRadians(victim.bodyYaw);
-        double right = p.x * -Math.cos(yaw) + p.z * -Math.sin(yaw);
-        String part = BodyHitGeometry.part(height, right / victim.getWidth());
-        hit.putString("part", part); hit.putString("precision", "approximate");
-        hit.putDouble("local_right", right); hit.putDouble("local_y", p.y);
+        NbtCompound surface = WoundGeometry.hit(WoundGeometry.local(from, victim.getPos(), victim.bodyYaw, victim.getScale()),
+                WoundGeometry.local(to, victim.getPos(), victim.bodyYaw, victim.getScale()));
+        if (surface.isEmpty()) return;
+        hit.putString("part", surface.getString("part", "unknown"));
+        hit.putString("precision", "approximate");
+        hit.put("wound_surface", surface);
+
     }
 
     public static boolean beginDeath(ServerPlayerEntity player, DamageSource source) {
@@ -198,13 +199,39 @@ public final class Forensics {
         NbtCompound root = stack.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT).copyNbt();
         root.put(BINDING, binding.copy()); stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
     }
+    private static String woundSeverity(float amount) {
+        return amount < ForensicConfig.current.moderateThreshold ? "mild"
+                : amount < ForensicConfig.current.severeThreshold ? "moderate" : "severe";
+    }
+
+    /** Keep visual evidence independent of editable paint and corpse binding changes. */
+    public static void copyWoundVisuals(ItemStack from, ItemStack to) {
+        NbtCompound source = from.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT).copyNbt();
+        NbtCompound target = to.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT).copyNbt();
+        for (String key : new String[]{"corpse_wounds", "corpse_scale"})
+            if (source.contains(key)) target.put(key, source.get(key).copy());
+        to.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(target));
+    }
     public static void attachDeath(ServerPlayerEntity player, ItemDisplayEntity display, String part) {
         if (display == null || !enabled(player)) return;
         String id = ForensicStore.get(player.getServer()).life(player.getUuid()).getString("corpse", "");
         if (id.isEmpty()) return;
         NbtCompound binding = new NbtCompound(); binding.putString("id", id); binding.putString("part", part);
-        ItemStack stack = display.getItemStack().copy(); setBinding(stack, binding); display.setItemStack(stack);
+        ItemStack stack = display.getItemStack().copy(); setBinding(stack, binding);
+        NbtCompound root = stack.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT).copyNbt();
+        root.putFloat("corpse_scale", player.getScale());
+        NbtList wounds = new NbtList();
+        for (NbtElement element : ForensicStore.get(player.getServer()).corpse(id).getListOrEmpty("hits")) {
+            if (!(element instanceof NbtCompound h) || !h.contains("wound_surface")) continue;
+            NbtCompound visual = h.getCompoundOrEmpty("wound_surface").copy();
+            visual.putString("kinds", h.getString("kinds", "unknown"));
+            visual.putString("severity", h.getString("severity", woundSeverity(h.getFloat("amount", 0))));
+            wounds.add(visual);
+        }
+        root.put("corpse_wounds", wounds);
+        stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root)); display.setItemStack(stack);
         claim(display);
+        CorpseGeometrySync.update(display);
     }
     /** Called after every display/interaction creation, also makes legacy links reloadable. */
     public static void link(ItemDisplayEntity display, InteractionEntity interaction) {
@@ -296,6 +323,9 @@ public final class Forensics {
             if (h.getBoolean("death_trigger", false)) line += "；疑似主要致命损伤";
             lines.add((lines.isEmpty() ? "最高伤害：" : "伤害记录 " + (lines.size() + 1) + "：") + line);
         }
+        List<NbtCompound> collected = InspectionRecords.strongest(corpse.getListOrEmpty(corpse.contains("inspection_hits") ? "inspection_hits" : "hits"), part, 3);
+        ForensicStore.get(player.getServer()).collect(player.getUuid(), b.getString("id", ""), part, collected);
+        EvidenceSnapshots.observe(player, display, part);
         if (lines.isEmpty()) lines.add("该部位未记录到可定位伤情；不代表完全没有损伤");
         if (com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTransferService.enabled()) {
             String slot = switch (part) { case "torso" -> "torso"; case "left_arm", "right_arm" -> "hands";
@@ -304,6 +334,27 @@ public final class Forensics {
                     .visible(corpse.getString("id", "") + "/" + slot) > 0) lines.add("该区域另有接触形成的血液沾染，不能仅凭沾染确认身份");
         }
         return lines;
+    }
+
+    /** Read-only summary projection. Collection permissions can be tightened later without changing the UI packet. */
+    public static List<String> summary(ServerPlayerEntity player, String requestedCorpse, String part) {
+        if (!ForensicConfig.current.enabled || !player.isAlive() || player.isSpectator()) return List.of();
+        List<String> lines = new ArrayList<>();
+        for (NbtCompound corpse : ForensicStore.get(player.getServer()).corpseSnapshots()) {
+            String id = corpse.getString("corpse_id", "");
+            if (!requestedCorpse.isEmpty() && !requestedCorpse.equals(id)) continue;
+            String name = corpse.getString("name", "未知身份");
+            List<NbtCompound> hits = ForensicStore.get(player.getServer()).collected(player.getUuid(), id, part);
+            if (hits.isEmpty()) continue;
+            lines.add("§e" + name + " §7[" + id.substring(0, Math.min(8, id.length())) + "]");
+            for (NbtCompound hit : hits) {
+                String kinds = hit.getString("kinds", "unknown");
+                lines.add("  " + kindLabel(kinds.split("\\+")[0]) + " / "
+                        + hit.getFloat("amount", 0) + " / " + hit.getString("direction", "不明")
+                        + (hit.getBoolean("death_trigger", false) ? " / 疑似致命" : ""));
+            }
+        }
+        return lines.isEmpty() ? List.of("暂无已收集的该部位线索") : lines;
     }
     public static String kindLabel(String kind) {
         return switch (kind) { case "cut" -> "切割伤"; case "puncture" -> "刺入伤"; case "blunt" -> "钝击伤"; case "burn" -> "烧伤"; case "other" -> "其他损伤（外伤特征不明）"; default -> "类型不明的损伤"; };

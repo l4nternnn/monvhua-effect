@@ -122,7 +122,7 @@ public class ForensicRegressionTest {
         assertEquals(-1, CorpseWheelGeometry.sector(0, 0, 30, 100));
         assertEquals(-1, CorpseWheelGeometry.sector(101, 0, 30, 100));
         assertEquals(0, CorpseWheelGeometry.sector(0, -70, 30, 100));
-        for (int i = 0; i < 7; i++) {
+        for (int i = 0; i < 6; i++) {
             double angle = -Math.PI / 2 + i * CorpseWheelGeometry.STEP;
             assertEquals(i, CorpseWheelGeometry.sector(Math.cos(angle) * 70, Math.sin(angle) * 70, 30, 100));
         }

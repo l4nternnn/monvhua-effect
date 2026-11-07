@@ -7,6 +7,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.PersistentState;
 import net.minecraft.world.PersistentStateType;
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Server-only evidence. Items carry references, never this document. */
 public final class ForensicStore extends PersistentState {
@@ -60,6 +62,41 @@ public final class ForensicStore extends PersistentState {
         markDirty();
     }
     public NbtCompound corpse(String id) { return section("corpses").getCompoundOrEmpty(id); }
+    public void collect(UUID viewer, String corpseId, String part, List<NbtCompound> records) {
+        NbtCompound viewers = section("collections");
+        NbtCompound viewerRoot = viewers.getCompoundOrEmpty(viewer.toString());
+        NbtCompound corpseRoot = viewerRoot.getCompoundOrEmpty(corpseId);
+        NbtList list = new NbtList();
+        for (NbtCompound record : records) list.add(record.copy());
+        corpseRoot.put(part, list); viewerRoot.put(corpseId, corpseRoot); viewers.put(viewer.toString(), viewerRoot); markDirty();
+    }
+    public List<NbtCompound> collected(UUID viewer, String corpseId, String part) {
+        NbtList list = section("collections").getCompoundOrEmpty(viewer.toString())
+                .getCompoundOrEmpty(corpseId).getListOrEmpty(part);
+        List<NbtCompound> result = new ArrayList<>();
+        for (NbtElement element : list) if (element instanceof NbtCompound record) result.add(record.copy());
+        return result;
+    }
+    public void observe(UUID viewer, String corpseId, NbtCompound snapshot) {
+        NbtCompound viewers = section("observations"), entries = viewers.getCompoundOrEmpty(viewer.toString());
+        entries.put(corpseId, snapshot.copy()); viewers.put(viewer.toString(), entries); markDirty();
+    }
+    public java.util.Set<String> collectedCaseIds(UUID viewer) {
+        return java.util.Set.copyOf(section("collections").getCompoundOrEmpty(viewer.toString()).getKeys());
+    }
+    public NbtCompound observations(UUID viewer) {
+        return section("observations").getCompoundOrEmpty(viewer.toString()).copy();
+    }
+    public List<NbtCompound> corpseSnapshots() {
+        List<NbtCompound> result = new ArrayList<>();
+        NbtCompound corpses = section("corpses");
+        for (String id : corpses.getKeys()) {
+            NbtCompound snapshot = corpses.getCompoundOrEmpty(id).copy();
+            snapshot.putString("corpse_id", id);
+            result.add(snapshot);
+        }
+        return result;
+    }
     public boolean isCarrier(String id, String part, String token, String location) {
         NbtCompound slot = corpse(id).getCompoundOrEmpty("carriers").getCompoundOrEmpty(part);
         return !token.isEmpty() && !slot.isEmpty() && slot.getString("token", "").equals(token)

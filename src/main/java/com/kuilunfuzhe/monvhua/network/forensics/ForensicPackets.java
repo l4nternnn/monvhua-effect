@@ -38,11 +38,27 @@ public final class ForensicPackets {
         private void write(RegistryByteBuf buf) { buf.writeVarInt(target); buf.writeString(part, 32); buf.writeVarInt(requestId); buf.writeVarInt(lines.size()); for (String line : lines) buf.writeString(line, 512); }
         @Override public Id<? extends CustomPayload> getId() { return ID; }
     }
+    public record SummaryRequest(String corpse, String part, int requestId) implements CustomPayload {
+        public static final Id<SummaryRequest> ID = new Id<>(Identifier.of("monvhua", "forensic_summary_request"));
+        public static final PacketCodec<RegistryByteBuf, SummaryRequest> CODEC = PacketCodec.of(SummaryRequest::write, SummaryRequest::new);
+        private SummaryRequest(RegistryByteBuf buf) { this(buf.readString(64), buf.readString(32), buf.readVarInt()); }
+        private void write(RegistryByteBuf buf) { buf.writeString(corpse, 64); buf.writeString(part, 32); buf.writeVarInt(requestId); }
+        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    }
+    public record SummaryResult(String corpse, String part, int requestId, net.minecraft.nbt.NbtCompound snapshot) implements CustomPayload {
+        public static final Id<SummaryResult> ID = new Id<>(Identifier.of("monvhua", "forensic_summary_result"));
+        public static final PacketCodec<RegistryByteBuf, SummaryResult> CODEC = PacketCodec.of(SummaryResult::write, SummaryResult::new);
+        private SummaryResult(RegistryByteBuf buf) { this(buf.readString(64), buf.readString(32), buf.readVarInt(), Objects.requireNonNull(buf.readNbt())); }
+        private void write(RegistryByteBuf buf) { buf.writeString(corpse,64); buf.writeString(part,32); buf.writeVarInt(requestId); buf.writeNbt(snapshot); }
+        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    }
     private static final Map<UUID, Integer> LAST_REQUEST = new HashMap<>();
     public static void register() {
         PayloadTypeRegistry.playC2S().register(CarryRequest.ID, CarryRequest.CODEC);
         PayloadTypeRegistry.playC2S().register(Request.ID, Request.CODEC);
         PayloadTypeRegistry.playS2C().register(Result.ID, Result.CODEC);
+        PayloadTypeRegistry.playC2S().register(SummaryRequest.ID, SummaryRequest.CODEC);
+        PayloadTypeRegistry.playS2C().register(SummaryResult.ID, SummaryResult.CODEC);
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> LAST_REQUEST.remove(handler.player.getUuid()));
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> LAST_REQUEST.clear());
         ServerPlayNetworking.registerGlobalReceiver(Request.ID, (packet, context) -> context.server().execute(() -> {
@@ -64,6 +80,19 @@ public final class ForensicPackets {
                 } else lines = Forensics.inspect(player, packet.target, packet.part);
                 ServerPlayNetworking.send(player, new Result(packet.target, packet.part, packet.requestId, lines));
             }
+        }));
+        ServerPlayNetworking.registerGlobalReceiver(SummaryRequest.ID, (packet, context) -> context.server().execute(() -> {
+            var player = context.player();
+            if (!ForensicConfig.current.enabled || !player.isAlive() || player.isSpectator()) return;
+            String part = Forensics.PARTS.contains(packet.part()) ? packet.part() : "torso";
+            int now = context.server().getTicks();
+            Integer last = LAST_REQUEST.put(player.getUuid(), now);
+            if (last != null && now - last < 2) {
+                var busy = new net.minecraft.nbt.NbtCompound(); busy.putString("message", "请求过于频繁，请重新选择");
+                ServerPlayNetworking.send(player, new SummaryResult(packet.corpse(), part, packet.requestId(), busy)); return;
+            }
+            ServerPlayNetworking.send(player, new SummaryResult(packet.corpse(), part, packet.requestId(),
+                    EvidenceSnapshots.summary(player, packet.corpse())));
         }));
         ServerPlayNetworking.registerGlobalReceiver(CarryRequest.ID, (packet, context) -> context.server().execute(() -> {
             var player = context.player();

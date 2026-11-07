@@ -121,6 +121,7 @@ public abstract class BodyPartSpecialModelRenderer implements SpecialModelRender
         SkinTextures textures = MinecraftClient.getInstance().getSkinProvider()
                 .getSkinTextures(resolved.gameProfile(), null);
         if (textures == null) return null;
+        armModel = textures.model() == SkinTextures.Model.SLIM ? "slim" : "default";
 
         if (customData != null) {
             String model = customData.copyNbt().getString("arm_model").orElse("");

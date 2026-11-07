@@ -4,6 +4,8 @@
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
         "forensics.ForensicPlayerMixin",
+        "forensics.CorpseInteractionMixin",
+        "forensics.CorpseDisplayAccessor",
         "forensics.ForensicProjectileMixin",
         "forensics.BloodWorldChangeMixin",
         "forensics.BloodProcessingMixin",

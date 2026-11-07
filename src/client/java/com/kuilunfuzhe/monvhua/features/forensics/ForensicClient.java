@@ -29,7 +29,7 @@ public final class ForensicClient {
         com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTraceClient.initialize();
         KeyBinding inspect = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.forensic_inspect", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, "category.monvhua"));
         KeyBinding mode = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.forensic_mode", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, "category.monvhua"));
-        KeyBinding release = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.forensic_release", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, "category.monvhua"));
+        KeyBinding summary = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.forensic_summary", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, "category.monvhua"));
         // Same gesture as carrying a living entity: sneak + empty hands + use entity.
         UseEntityCallback.EVENT.register((player, world, hand, entity, hit) -> {
             if (world.isClient && hand == Hand.MAIN_HAND && player.isSneaking()
@@ -38,8 +38,10 @@ public final class ForensicClient {
             return ActionResult.PASS;
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            while (release.wasPressed()) if (client.player != null && client.currentScreen == null && ClientPlayNetworking.canSend(ForensicPackets.CarryRequest.ID))
-                ClientPlayNetworking.send(new ForensicPackets.CarryRequest(-1, true));
+            while (summary.wasPressed()) {
+                if (client.player != null && client.currentScreen == null && ClientPlayNetworking.canSend(ForensicPackets.SummaryRequest.ID))
+                    client.setScreen(new EvidenceSummaryScreen());
+            }
             while (mode.wasPressed()) if (client.player != null && client.currentScreen == null && ClientPlayNetworking.canSend(ForensicPackets.Request.ID))
                 ClientPlayNetworking.send(new ForensicPackets.Request(-1, "", true, ++sequence));
             while (inspect.wasPressed()) {
@@ -56,6 +58,7 @@ public final class ForensicClient {
                     ClientPlayNetworking.send(new com.kuilunfuzhe.monvhua.network.forensics.BloodTracePackets.Inspect());
             }
         });
+        ClientPlayNetworking.registerGlobalReceiver(ForensicPackets.SummaryResult.ID, (packet, context) -> context.client().execute(() -> EvidenceSummaryScreen.receive(packet)));
         ClientPlayNetworking.registerGlobalReceiver(ForensicPackets.Result.ID, (packet, context) -> context.client().execute(() -> {
             var client = context.client();
             if (packet.part().equals("__stains")) {
@@ -106,7 +109,8 @@ public final class ForensicClient {
                     .dimensions(16, height - 30, 80, 20).build());
             back.visible = detail;
             addDrawableChild(ButtonWidget.builder(Text.literal("放下遗体"), button -> {
-                if (ClientPlayNetworking.canSend(ForensicPackets.CarryRequest.ID)) ClientPlayNetworking.send(new ForensicPackets.CarryRequest(-1, true));
+                if (ClientPlayNetworking.canSend(ForensicPackets.CarryRequest.ID))
+                    ClientPlayNetworking.send(new ForensicPackets.CarryRequest(-1, true));
                 close();
             }).dimensions(width / 2 - 40, height - 30, 80, 20).build());
             addDrawableChild(ButtonWidget.builder(Text.literal("关闭"), button -> close()).dimensions(width - 80, height - 30, 65, 20).build());
@@ -163,7 +167,7 @@ public final class ForensicClient {
             for (int i = 0; i < LABELS.length; i++) {
                 double angle = -Math.PI / 2 + i * CorpseWheelGeometry.STEP;
                 int x = cx + (int) (Math.cos(angle) * r * .70), y = cy + (int) (Math.sin(angle) * r * .70);
-                context.drawCenteredTextWithShadow(textRenderer, Text.literal(LABELS[i]), x, y - 5, i == 0 ? 0xFF8E96A4 : 0xFFF1E7D6);
+                context.drawCenteredTextWithShadow(textRenderer, Text.literal(LABELS[i]), x, y - 5, 0xFFF1E7D6);
             }
             context.drawCenteredTextWithShadow(textRenderer, Text.literal("检查"), cx, cy - 4, 0xFFE6C18A);
             String hint = hover == 0 ? "抱起遗体 · 保持空手并确认安全位置" : "选择部位 · 最多查看三条最高伤害记录";

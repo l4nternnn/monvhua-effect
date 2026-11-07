@@ -1,6 +1,7 @@
 {
   "key.monvhua.forensic_inspect": "Inspect corpse injuries",
   "key.monvhua.forensic_mode": "Cycle weapon attack mode",
+  "key.monvhua.forensic_summary": "Open evidence summary",
   "key.monvhua.forensic_release": "Put down carried corpse",
   "item.monvhua.through": "|Magic: Through|",
   "item.monvhua.block_hole": "|Magic: Block Hole|",

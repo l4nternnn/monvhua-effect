@@ -54,6 +54,31 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         this.slimModel = new PlayerEntityModel(entityModels.getModelPart(ModModelLayers.COMBINED_BODY_SLIM), true);
     }
 
+    /** Shared scene entry: callers supply the scene root, without item/GUI transforms. */
+    public void renderEvidence(MatrixStack matrices, VertexConsumerProvider consumers, Data data) {
+        renderModel(matrices, consumers, data.layer(), 15728880, OverlayTexture.DEFAULT_UV, data);
+    }
+
+    public record EvidenceSurface(String name, net.minecraft.util.math.Box box, Matrix4f transform) {}
+
+    /** Exact ordinary-model transforms, also used for preview bounds and wound picking. */
+    public java.util.List<EvidenceSurface> evidenceSurfaces(Data data, Matrix4f root) {
+        boolean slim = "slim".equals(data.armModel());
+        PlayerEntityModel active = slim ? slimModel : model;
+        resetModel(active); applyPoseData(active, data.customData());
+        var result = new java.util.ArrayList<EvidenceSurface>();
+        for (var surface : com.kuilunfuzhe.monvhua.features.forensics.WoundGeometry.SURFACES) {
+            var target = surfaceTarget(active,slim,surface.name());
+            MatrixStack stack = new MatrixStack(); stack.multiplyPositionMatrix(root);
+            applyPlacementTransform(stack,data.customData()); active.getRootPart().applyTransform(stack);
+            for (ModelPart part : target.path()) part.applyTransform(stack);
+            var b=target.cuboid();
+            result.add(new EvidenceSurface(surface.name(),new net.minecraft.util.math.Box(b.x()/16,b.y()/16,b.z()/16,
+                    (b.x()+b.width())/16,(b.y()+b.height())/16,(b.z()+b.depth())/16),new Matrix4f(stack.peek().getPositionMatrix())));
+        }
+        return java.util.List.copyOf(result);
+    }
+
     /**
      * 渲染全身组合模型：
      * 先保存并隐藏所有6个outer层（hat/jacket/双sleeve/双pants）以绘制身体本体，
@@ -136,6 +161,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         matrices.pop();
 
         renderModelPaint(matrices, vertexConsumers, activeModel, slim, data.texture(), data.customData(), light);
+        renderWounds(matrices, vertexConsumers, activeModel, slim, data.customData(), light);
 
         matrices.pop();
     }
@@ -254,6 +280,47 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
     /** 体素渲染回调接口：执行体素渲染并返回是否成功 */
     private interface VoxelRenderCall {
         boolean render(MatrixStack matrices, VertexConsumer vertexConsumer);
+    }
+
+    /** Independent wound layer: painting/eraser never edits this data. */
+    private void renderWounds(MatrixStack matrices, VertexConsumerProvider consumers, PlayerEntityModel model,
+                              boolean slim, NbtCompound data, int light) {
+        if (data == null) return;
+        VertexConsumer vertices = consumers.getBuffer(PaintRenderLayers.paintOverlay());
+        for (var element : data.getListOrEmpty("corpse_wounds")) {
+            if (!(element instanceof NbtCompound wound)) continue;
+            SurfaceTarget target = surfaceTarget(model, slim, wound.getString("surface", ""));
+            if (target == null) continue;
+            Direction face;
+            try { face = Direction.valueOf(wound.getString("face", "")); } catch (IllegalArgumentException e) { continue; }
+            double u = wound.getDouble("u", .5), v = wound.getDouble("v", .5);
+            if (!Double.isFinite(u) || !Double.isFinite(v) || u < 0 || u > 1 || v < 0 || v > 1) continue;
+            Cuboid box = target.cuboid();
+            double faceWidth = face.getAxis() == Direction.Axis.X ? box.depth() : box.width();
+            double faceHeight = face.getAxis() == Direction.Axis.Y ? box.depth() : box.height();
+            matrices.push(); model.getRootPart().applyTransform(matrices);
+            for (ModelPart part : target.path()) if (part != null) part.applyTransform(matrices);
+            for (String kind : wound.getString("kinds", "").split("\\+")) {
+                int seed = java.util.Objects.hash(wound.getString("surface", ""), face.name(), u, v, kind);
+                var stamp = com.kuilunfuzhe.monvhua.features.forensics.WoundAppearance.create(kind, seed, wound.getString("severity", "moderate"));
+                if (stamp == null) continue;
+                // Uniform pixel density keeps circular shapes and gradient detail consistent across body faces.
+                int gridWidth = (int)Math.ceil(faceWidth * 8), gridHeight = (int)Math.ceil(faceHeight * 8);
+                int minX = Math.max(0, (int)Math.floor((u - stamp.radius() / faceWidth) * gridWidth));
+                int maxX = Math.min(gridWidth - 1, (int)Math.ceil((u + stamp.radius() / faceWidth) * gridWidth));
+                int minY = Math.max(0, (int)Math.floor((v - stamp.radius() / faceHeight) * gridHeight));
+                int maxY = Math.min(gridHeight - 1, (int)Math.ceil((v + stamp.radius() / faceHeight) * gridHeight));
+                for (int y = minY; y <= maxY; y++)
+                    for (int x = minX; x <= maxX; x++) {
+                        double dx = ((x + .5) / gridWidth - u) * faceWidth;
+                        double dy = ((y + .5) / gridHeight - v) * faceHeight;
+                        int color = stamp.color(dx, dy);
+                        if ((color >>> 24) != 0) appendPaintPixel(vertices, matrices.peek().getPositionMatrix(), target.cuboid(), face,
+                                OUTER_LAYER_PAINT_OFFSET + .001f, x, y, gridWidth, gridHeight, color, light);
+                    }
+            }
+            matrices.pop();
+        }
     }
 
     private void renderModelPaint(MatrixStack matrices, VertexConsumerProvider vertexConsumers, PlayerEntityModel model,
@@ -858,7 +925,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(data.getFloat("pose_model_pitch", 0.0F)));
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-data.getFloat("pose_model_yaw", 0.0F)));
         matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(data.getFloat("pose_model_roll", 0.0F)));
-        float scale = Math.max(0.1F, data.getFloat("pose_model_scale", 1.0F));
+        float scale = Math.max(0.1F, data.getFloat("pose_model_scale", 1.0F)) * data.getFloat("corpse_scale", 1.0F);
         matrices.scale(scale, scale, scale);
     }
 
@@ -873,7 +940,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-data.getFloat("pose_model_pitch", 0.0F)));
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(data.getFloat("pose_model_yaw", 0.0F)));
         matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(-data.getFloat("pose_model_roll", 0.0F)));
-        float scale = Math.max(0.1F, data.getFloat("pose_model_scale", 1.0F));
+        float scale = Math.max(0.1F, data.getFloat("pose_model_scale", 1.0F)) * data.getFloat("corpse_scale", 1.0F);
         matrices.scale(scale, scale, scale);
     }
 

@@ -540,7 +540,7 @@ public class BodyPartManager {
 
         if (merged != null && !evidenceId.isEmpty()) {
             NbtCompound binding = new NbtCompound(); binding.putString("id", evidenceId); binding.putString("part", "all");
-            ItemStack visual = merged.getItemStack().copy(); Forensics.setBinding(visual, binding); merged.setItemStack(visual); Forensics.claim(merged);
+            ItemStack visual = merged.getItemStack().copy(); Forensics.copyWoundVisuals(torsoStack, visual); Forensics.setBinding(visual, binding); merged.setItemStack(visual); Forensics.claim(merged);
         }
 		player.sendMessage(Text.literal("§a成功合并肢体！"), false);
 		return 1;
@@ -615,6 +615,7 @@ public class BodyPartManager {
                         NbtCompound partBinding = evidence.copy();
                         partBinding.putString("part", new String[]{"head", "torso", "left_arm", "right_arm", "left_leg", "right_leg"}[i]);
                         Forensics.setBinding(stack, partBinding);
+                        Forensics.copyWoundVisuals(combinedStack, stack);
                     }
                     partDisplay.setItemStack(stack);
 					setLeftRotation(partDisplay, PART_ROTATIONS[i]);

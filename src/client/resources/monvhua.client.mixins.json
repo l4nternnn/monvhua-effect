@@ -21,6 +21,7 @@
 		"PlayerSkinGuiElementRendererMixin",
 		"BodyPoseDrawContextAccessor",
 		"BodyPoseGuiRendererMixin",
+    "EvidenceGuiRendererMixin",
 		"SoundManagerMixin",
 		"SwingCrosshairTargetMixin",
 		"gravity.GravityCameraMixin",
