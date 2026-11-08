@@ -17,22 +17,26 @@ public final class CorpseGeometrySync {
   var n=display.getItemStack().getOrDefault(DataComponentTypes.CUSTOM_DATA,NbtComponent.DEFAULT).copyNbt();
   // Nonstandard skeletal poses need a skeleton adapter, not an invented box.
   if(n.getString("body_pose_mode","").equals("true_skeletal"))return;
-  Matrix4f m=new Matrix4f().rotateY((float)Math.toRadians(-display.getYaw())).rotateX((float)Math.toRadians(display.getPitch()))
-   .mul(CorpseDisplayAccessor.monvhua$transform(display.getDataTracker()).getMatrix()).rotateY((float)Math.PI).translate(-.5f,-.5f,-.5f)
-   .translate(.5f,0,.5f).rotateY((float)Math.PI).scale(-1,-1,1)
-   .translate(n.getFloat("pose_model_offset_x",0),n.getFloat("pose_model_offset_y",0),n.getFloat("pose_model_offset_z",0))
-   .rotateX((float)Math.toRadians(n.getFloat("pose_model_pitch",0))).rotateY((float)Math.toRadians(-n.getFloat("pose_model_yaw",0)))
-   .rotateZ((float)Math.toRadians(n.getFloat("pose_model_roll",0))).scale(Math.max(.1f,n.getFloat("pose_model_scale",1))*n.getFloat("corpse_scale",1));
+  Matrix4f m=placement(display,n);
   Box bounds = bounds(m, n);
   if (bounds == null) return;
   interaction.setPosition(display.getPos());
   ((CorpseBounds)interaction).monvhua$bounds(bounds);
  }
 
+ public static Matrix4f placement(ItemDisplayEntity display,net.minecraft.nbt.NbtCompound n) {
+  return new Matrix4f().rotateY((float)Math.toRadians(-display.getYaw())).rotateX((float)Math.toRadians(display.getPitch()))
+   .mul(CorpseDisplayAccessor.monvhua$transform(display.getDataTracker()).getMatrix()).rotateY((float)Math.PI).translate(-.5f,-.5f,-.5f)
+   .translate(.5f,0,.5f).rotateY((float)Math.PI).scale(-1,-1,1)
+   .translate(n.getFloat("pose_model_offset_x",0),n.getFloat("pose_model_offset_y",0),n.getFloat("pose_model_offset_z",0))
+   .rotateX((float)Math.toRadians(n.getFloat("pose_model_pitch",0))).rotateY((float)Math.toRadians(-n.getFloat("pose_model_yaw",0)))
+   .rotateZ((float)Math.toRadians(n.getFloat("pose_model_roll",0))).scale(Math.max(.1f,n.getFloat("pose_model_scale",1))*n.getFloat("corpse_scale",1));
+ }
+
  /** Union of posed surfaces, in display-relative coordinates. Null rejects malformed transforms. */
  public static Box bounds(Matrix4f placement, net.minecraft.nbt.NbtCompound data) {
   float minX=Float.POSITIVE_INFINITY,minY=minX,minZ=minX,maxX=Float.NEGATIVE_INFINITY,maxY=maxX,maxZ=maxX;
-  for (var surface : WoundGeometry.SURFACES) {
+  for (var surface : WoundGeometry.surfaces(data)) {
    var b=surface.box();
    Matrix4f posed=new Matrix4f(placement).mul(CorpseSurfacePose.transform(surface,data));
    for(int i=0;i<8;i++) {

@@ -14,6 +14,15 @@ public final class WoundGeometry {
         s("left_arm_upper","left_arm",4,0,-2,8,6,2), s("left_arm_lower","left_arm",4,6,-2,8,12,2),
         s("right_leg_upper","right_leg",-3.9,12,-2,.1,18,2), s("right_leg_lower","right_leg",-3.9,18,-2,.1,24,2),
         s("left_leg_upper","left_leg",-.1,12,-2,3.9,18,2), s("left_leg_lower","left_leg",-.1,18,-2,3.9,24,2));
+    /** Actual neutral split-mesh geometry for a new rigid slim corpse. Legacy geometry is unchanged. */
+    public static List<Surface> surfaces(NbtCompound data) {
+        if(!CorpsePoseRecord.read(data).map(p->p.armModel().equals("slim")).orElse(false))return SURFACES;
+        return SURFACES.stream().map(s->{
+            if(!s.part().endsWith("arm"))return s;
+            Box b=s.box(); boolean left=s.part().startsWith("left");
+            return new Surface(s.name(),s.part(),new Box(left?4:-7,b.minY+.5,-2,left?7:-4,b.maxY+.5,2));
+        }).toList();
+    }
     private static Surface s(String name,String part,double a,double b,double c,double d,double e,double f) { return new Surface(name,part,new Box(a,b,c,d,e,f)); }
     public static NbtCompound hit(Vec3d from, Vec3d to) {
         Surface best=null; Vec3d point=null; double distance=Double.MAX_VALUE;

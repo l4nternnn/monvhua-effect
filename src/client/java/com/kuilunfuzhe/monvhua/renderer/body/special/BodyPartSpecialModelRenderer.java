@@ -69,6 +69,10 @@ public abstract class BodyPartSpecialModelRenderer implements SpecialModelRender
     public void render(@Nullable Data data, ItemDisplayContext displayContext, MatrixStack matrices,
                        VertexConsumerProvider vertexConsumers, int light, int overlay, boolean leftHanded) {
         Data actualData = data != null ? data : this.defaultData;
+        if(displayContext!=ItemDisplayContext.NONE && actualData.customData()!=null && actualData.customData().contains("corpse_pose")) {
+            var fallback=actualData.customData().copy();fallback.remove("corpse_pose");
+            actualData=new Data(actualData.layer(),actualData.texture(),actualData.armModel(),fallback);
+        }
         RenderLayer renderLayer = actualData.layer();
 
         matrices.push();
@@ -100,6 +104,18 @@ public abstract class BodyPartSpecialModelRenderer implements SpecialModelRender
     @Nullable
     @Override
     public Data getData(ItemStack stack) {
+        var pose=com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.read(com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.data(stack));
+        if(pose.isPresent()) {
+            var n=com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.data(stack);
+            String shape=pose.get().armModel();
+            Identifier texture=Identifier.ofVanilla("textures/entity/player/"+(shape.equals("slim")?"slim/alex.png":"wide/steve.png"));
+            if(n.contains("local_skin")) texture=Identifier.of("monvhua","textures/local_skin/"+n.getString("local_skin","")+".png");
+            else if(stack.get(DataComponentTypes.PROFILE)!=null) {
+                var profile=stack.get(DataComponentTypes.PROFILE).resolve();
+                if(profile!=null) {var skin=MinecraftClient.getInstance().getSkinProvider().getSkinTextures(profile.gameProfile(),null);if(skin!=null)texture=skin.texture();}
+            }
+            return new Data(RenderLayer.getEntityCutoutNoCull(texture),texture,shape,n);
+        }
         String armModel = "default";
 
         // 优先检查NBT中的local_skin字段——内置皮肤路径
@@ -115,7 +131,14 @@ public abstract class BodyPartSpecialModelRenderer implements SpecialModelRender
         }
 
         ProfileComponent profile = stack.get(DataComponentTypes.PROFILE);
-        if (profile == null) return null;
+        if (profile == null) {
+            if(customData!=null && customData.copyNbt().contains("arm_model")) {
+                var n=customData.copyNbt();String shape=n.getString("arm_model","slim");
+                Identifier texture=Identifier.ofVanilla("textures/entity/player/"+(shape.equals("slim")?"slim/alex.png":"wide/steve.png"));
+                return new Data(RenderLayer.getEntityCutoutNoCull(texture),texture,shape,n);
+            }
+            return null;
+        }
         ProfileComponent resolved = profile.resolve();
         if (resolved == null) return null;
         SkinTextures textures = MinecraftClient.getInstance().getSkinProvider()

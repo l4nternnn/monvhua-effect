@@ -1,0 +1,74 @@
+package com.kuilunfuzhe.monvhua.features.forensics;
+
+import net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.math.*;
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
+import java.util.*;
+
+/** Server geometry uses the same neutral mesh boxes and rigid transforms as rendering. */
+public final class CorpsePoseGeometry {
+    private CorpsePoseGeometry() {}
+    public record Surface(String name,String part,Box box,Matrix4f matrix) {}
+    public record Hit(String part,String surface,Vec3d position) {}
+    public static List<Surface> surfaces(ItemDisplayEntity display,NbtCompound data) {
+        Matrix4f root=CorpseGeometrySync.placement(display,data);
+        return WoundGeometry.surfaces(data).stream().map(s->new Surface(s.name(),s.part(),
+                new Box(s.box().minX/16,s.box().minY/16,s.box().minZ/16,s.box().maxX/16,s.box().maxY/16,s.box().maxZ/16),
+                new Matrix4f(root).mul(CorpseSurfacePose.transform(s,data)))).toList();
+    }
+    public static List<Vec3d> corners(Surface s) {
+        List<Vec3d> points=new ArrayList<>();Box b=s.box();
+        for(int i=0;i<8;i++) {
+            Vector3f p=s.matrix().transformPosition(new Vector3f((float)((i&1)==0?b.minX:b.maxX),
+                    (float)((i&2)==0?b.minY:b.maxY),(float)((i&4)==0?b.minZ:b.maxZ)));
+            points.add(new Vec3d(p.x,p.y,p.z));
+        }
+        return points;
+    }
+    public static Box bounds(Surface s) {
+        Box b=null;for(Vec3d p:corners(s)){Box point=new Box(p,p);b=b==null?point:b.union(point);}return b;
+    }
+    /** Conservative per-segment AABBs; 0.03 is the accepted solver contact tolerance. */
+    public static boolean clear(ServerWorld world,ItemDisplayEntity display,NbtCompound data,Vec3d anchor) {
+        for(var s:surfaces(display,data)) {
+            Box b=bounds(s).offset(anchor).contract(.03);
+            for(int x=MathHelper.floor(b.minX)>>4;x<=MathHelper.floor(b.maxX)>>4;x++)
+                for(int z=MathHelper.floor(b.minZ)>>4;z<=MathHelper.floor(b.maxZ)>>4;z++)
+                    if(!world.isChunkLoaded(new BlockPos(x<<4,MathHelper.floor(anchor.y),z<<4)))return false;
+            if(world.getBlockCollisions(display,b).iterator().hasNext())return false;
+        }
+        return true;
+    }
+    public static boolean supported(ServerWorld world,ItemDisplayEntity display,NbtCompound data,Vec3d anchor) {
+        for(var s:surfaces(display,data)) for(Vec3d p:corners(s)) {
+            p=p.add(anchor);
+            var hit=world.raycast(new net.minecraft.world.RaycastContext(p.add(0,.04,0),p.add(0,-.06,0),
+                    net.minecraft.world.RaycastContext.ShapeType.COLLIDER,net.minecraft.world.RaycastContext.FluidHandling.NONE,display));
+            if(hit.getType()==net.minecraft.util.hit.HitResult.Type.BLOCK&&hit.getSide()==Direction.UP)return true;
+        }
+        return false;
+    }
+    /** One torso proxy for existing pool/drip rules; this is not per-wound bleeding. */
+    public static Vec3d bloodOrigin(ItemDisplayEntity display) {
+        var data=CorpsePoseRecord.data(display.getItemStack());
+        if(CorpsePoseRecord.read(data).isEmpty())return display.getPos();
+        var surface=surfaces(display,data).stream().filter(s->s.part().equals("torso")).findFirst().orElseThrow();
+        return transform(surface.matrix(),new Vec3d(0,6f/16,0)).add(display.getPos());
+    }
+    public static Hit pick(ItemDisplayEntity display,Vec3d from,Vec3d to) {
+        Hit best=null;double distance=Double.POSITIVE_INFINITY;
+        for(var s:surfaces(display,CorpsePoseRecord.data(display.getItemStack()))) {
+            Matrix4f inverse=new Matrix4f(s.matrix()).invert();
+            Vec3d a=transform(inverse,from.subtract(display.getPos())),b=transform(inverse,to.subtract(display.getPos()));
+            var hit=s.box().raycast(a,b);
+            if(hit.isEmpty())continue;
+            Vec3d world=transform(s.matrix(),hit.get()).add(display.getPos());double d=world.squaredDistanceTo(from);
+            if(d<distance){distance=d;best=new Hit(s.part(),s.name(),world);}
+        }
+        return best;
+    }
+    private static Vec3d transform(Matrix4f m,Vec3d p){var v=m.transformPosition(new Vector3f((float)p.x,(float)p.y,(float)p.z));return new Vec3d(v.x,v.y,v.z);}
+}

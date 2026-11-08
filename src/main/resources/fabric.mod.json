@@ -16,8 +16,13 @@
 		"main": [
 			"com.kuilunfuzhe.monvhua.MonvhuaMod"
 		],
+		"fabric-client-gametest": [
+			"com.kuilunfuzhe.monvhua.features.physics_preview.PhysicsPreviewGameTest"
+		],
 		"client": [
-			"com.kuilunfuzhe.monvhua.MonvhuaModClient"
+			"com.kuilunfuzhe.monvhua.MonvhuaModClient",
+			"com.kuilunfuzhe.monvhua.features.physics_preview.PhysicsPreviewClient",
+			"com.kuilunfuzhe.monvhua.features.physics_preview.CorpsePhysicsClient"
 		]
 	},
 	"mixins": [

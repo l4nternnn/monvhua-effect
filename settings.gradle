@@ -11,3 +11,6 @@ pluginManagement {
 
 // Should match your modid
 rootProject.name = 'monvhua'
+// Plain Java only: never put a Mojang-mapped Minecraft development jar on Yarn's classpath.
+include 'physicsCore'
+project(':physicsCore').projectDir = file('../simplephysics-template-1.21.8/core')

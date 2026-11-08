@@ -95,6 +95,10 @@ def extractAxiomClientApi = tasks.register("extractAxiomClientApi", Copy) {
 def axiomClientApiCompileOnly = files(axiomClientApiJar).builtBy(extractAxiomClientApi)
 
 dependencies {
+    compileOnly project(':physicsCore')
+    if (providers.gradleProperty('physicsCoreRuntime').getOrElse('true') == 'true')
+        runtimeOnly project(':physicsCore')
+
 	// To change the versions see the gradle.properties file
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
@@ -205,4 +209,24 @@ tasks.register('dayNightRegression', JavaExec) {
 }
 tasks.named('check') {
     dependsOn tasks.named('dayNightRegression')
+}
+
+
+// Isolated client-only preview verification; never packages or increments the mod version.
+loom.runs.client {
+    vmArg "-Dsimplephysics.native.path=${providers.gradleProperty('physicsNative').getOrElse(file('../simplephysics-template-1.21.8/build/reference/Windows64ReleaseSp_bulletjme.dll').absolutePath)}"
+
+    def previewDir = providers.gradleProperty('physicsPreviewRunDir').getOrElse('')
+    if (!previewDir.isBlank()) runDir previewDir
+    if (providers.gradleProperty('physicsCorpseDebug').getOrElse('false') == 'true')
+        vmArg '-Dmonvhua.physicsCorpseDebug=true'
+    if (providers.gradleProperty('physicsMissingCoreGameTest').getOrElse('false') == 'true')
+        vmArg '-Dmonvhua.physicsMissingCoreGameTest=true'
+    if (providers.gradleProperty('physicsAutomaticGameTest').getOrElse('false') == 'true')
+        vmArg '-Dmonvhua.physicsAutomaticGameTest=true'
+    if (providers.gradleProperty('physicsPreviewGameTest').getOrElse('false') == 'true')
+        vmArg '-Dfabric.client.gametest=true'
+}
+tasks.named('runClient', JavaExec) {
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
 }

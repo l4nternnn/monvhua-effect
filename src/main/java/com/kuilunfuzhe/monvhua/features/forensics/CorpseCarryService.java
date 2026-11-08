@@ -33,7 +33,7 @@ public final class CorpseCarryService {
     private CorpseCarryService() {}
 
     private record Session(UUID carrier, UUID display, UUID interaction, String corpse, String part,
-                           Vec3d lastSafe, String dimension) {}
+                           Vec3d lastSafe, String dimension, long poseRevision) {}
 
     public static void initialize() {
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents.ENTITY_LOAD.register((entity, world) -> {
@@ -92,6 +92,7 @@ public final class CorpseCarryService {
         if (!(display.getWorld() instanceof ServerWorld world) || !Forensics.valid(world, display.getItemStack(), display.getUuid().toString())) return "遗体载体已失效";
         UUID linked = BodyPartManager.DISPLAY_TO_INTERACTION.get(display.getUuid());
         if (linked == null || !(world.getEntity(linked) instanceof InteractionEntity)) return "遗体交互载体尚未加载，请稍后重试";
+        if(com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.pending(display))return "姿态正在生成，请稍候再搬运";
         if (isCarried(display) || BY_CARRIER.values().stream().anyMatch(s -> s.display.equals(display.getUuid()))) return "遗体正在被搬运";
         if (!player.getMainHandStack().isEmpty() || !player.getOffHandStack().isEmpty()) return "需要空出双手";
         if (player.squaredDistanceTo(display) > ForensicConfig.current.inspectionDistance * ForensicConfig.current.inspectionDistance) return "离遗体太远";
@@ -99,14 +100,14 @@ public final class CorpseCarryService {
                 net.minecraft.world.RaycastContext.ShapeType.COLLIDER, net.minecraft.world.RaycastContext.FluidHandling.NONE, player)).getType()
                 != net.minecraft.util.hit.HitResult.Type.MISS) return "遗体被遮挡";
         // The ground anchor can be inside the visual body's floor clearance. Validate the raised destination instead.
-        if (!safeTarget(world, player, desired(player))) return "当前位置没有足够空间搬起遗体";
+        if (!safeTarget(world, player, display, desired(player))) return "当前位置没有足够空间搬起遗体";
         for (ServerPlayerEntity viewer : world.getPlayers())
             if (viewer.currentScreenHandler instanceof com.kuilunfuzhe.monvhua.screen.BodyPartScreenHandler screen
                     && screen.views(BodyPartManager.BODY_PART_DISPLAY_INVENTORIES.get(display.getUuid()))) viewer.closeHandledScreen();
         var binding = Forensics.binding(display.getItemStack());
         Session session = new Session(player.getUuid(), display.getUuid(),
                 BodyPartManager.DISPLAY_TO_INTERACTION.get(display.getUuid()), binding.getString("id", ""),
-                binding.getString("part", "all"), display.getPos(), world.getRegistryKey().getValue().toString());
+                binding.getString("part", "all"), display.getPos(), world.getRegistryKey().getValue().toString(), CorpsePoseRecord.data(display.getItemStack()).getLong("corpse_pose_revision",0));
         BY_CARRIER.put(player.getUuid(), session); BY_DISPLAY.put(display.getUuid(), player.getUuid());
         saveRecovery(player.getServer(), session);
         BloodTraceService.beginCarry(display, player);
@@ -144,9 +145,9 @@ public final class CorpseCarryService {
         Vec3d previous = display.getPos();
         Vec3d delta = desired.subtract(previous);
         if (delta.lengthSquared() > MAX_STEP * MAX_STEP) desired = previous.add(delta.normalize().multiply(MAX_STEP));
-        if (!safeTarget(world, player, desired)) return;
+        if (!safeTarget(world, player, display, desired)) return;
         // Substeps prevent a narrow obstacle being skipped between two clear endpoints.
-        for (double t = .2; t < 1; t += .2) if (!safeTarget(world, player, previous.lerp(desired, t))) return;
+        for (double t = .2; t < 1; t += .2) if (!safeTarget(world, player, display, previous.lerp(desired, t))) return;
         UUID interactionId = session.interaction;
         if (interactionId != null && world.getEntity(interactionId) instanceof InteractionEntity interaction)
             interaction.setPosition(desired.add(interaction.getPos().subtract(previous)));
@@ -155,8 +156,14 @@ public final class CorpseCarryService {
         var landing = com.kuilunfuzhe.monvhua.features.forensics.blood.BloodSurfaceProjection.cast(world, desired, desired.add(0, -3, 0), display);
         if (landing != null && landing.getSide() == net.minecraft.util.math.Direction.UP) {
             Vec3d ground = landing.getPos().add(0, .05, 0);
-            if (safeTarget(world, player, ground)) {
-                Session next = new Session(session.carrier, session.display, session.interaction, session.corpse, session.part, ground, session.dimension);
+            if(CorpsePoseRecord.present(display.getItemStack())) {
+                var data=CorpsePoseRecord.data(display.getItemStack());
+                double bottom=CorpsePoseGeometry.surfaces(display,data).stream().mapToDouble(s->CorpsePoseGeometry.bounds(s).minY).min().orElse(0);
+                ground=landing.getPos().add(0,.01-bottom,0);
+                if(!CorpsePoseGeometry.supported(world,display,data,ground))return;
+            }
+            if (safeTarget(world, player, display, ground)) {
+                Session next = new Session(session.carrier, session.display, session.interaction, session.corpse, session.part, ground, session.dimension, session.poseRevision);
                 BY_CARRIER.put(player.getUuid(), next); saveRecovery(world.getServer(), next);
             }
         }
@@ -167,10 +174,18 @@ public final class CorpseCarryService {
         return player.getPos().add(-Math.sin(yaw) * FORWARD, HEIGHT, Math.cos(yaw) * FORWARD);
     }
 
-    private static boolean safeTarget(ServerWorld world, ServerPlayerEntity carrier, Vec3d pos) {
+    private static boolean safeTarget(ServerWorld world, ServerPlayerEntity carrier, ItemDisplayEntity display, Vec3d pos) {
+        if(CorpsePoseRecord.present(display.getItemStack())) {
+            var data=CorpsePoseRecord.data(display.getItemStack());
+            return CorpsePoseRecord.read(data).isPresent()&&CorpsePoseGeometry.clear(world,display,data,pos);
+        }
         Box box = new Box(pos.x - .75, pos.y + .01, pos.z - .75, pos.x + .75, pos.y + .55, pos.z + .75);
         return world.isChunkLoaded(net.minecraft.util.math.BlockPos.ofFloored(pos))
                 && !world.getBlockCollisions(carrier, box).iterator().hasNext();
+    }
+
+    private static boolean supported(ItemDisplayEntity display,Vec3d pos) {
+        return !CorpsePoseRecord.present(display.getItemStack()) || CorpsePoseGeometry.supported((ServerWorld)display.getWorld(),display,CorpsePoseRecord.data(display.getItemStack()),pos);
     }
 
     private static void release(MinecraftServer server, Session session, Vec3d preferred, boolean recovery) {
@@ -179,7 +194,8 @@ public final class CorpseCarryService {
         Entity entity = world == null ? null : world.getEntity(session.display);
         if (entity instanceof ItemDisplayEntity display) {
             Vec3d pos = preferred;
-            if (!safeTarget(world, player, pos)) {
+            if (CorpsePoseRecord.data(display.getItemStack()).getLong("corpse_pose_revision",0)!=session.poseRevision
+                    || !safeTarget(world, player, display, pos) || !supported(display,pos)) {
                 saveRecovery(server, session); PENDING.put(display.getUuid(), display);
                 BY_CARRIER.remove(session.carrier); BY_DISPLAY.remove(session.display);
                 BloodTraceService.endCarry(display, player);
@@ -199,6 +215,7 @@ public final class CorpseCarryService {
 
     private static void saveRecovery(MinecraftServer server, Session s) {
         NbtCompound n = new NbtCompound(); n.putString("display", s.display.toString()); n.putString("dimension", s.dimension);
+        n.putLong("pose_revision",s.poseRevision);
         n.putDouble("x", s.lastSafe.x); n.putDouble("y", s.lastSafe.y); n.putDouble("z", s.lastSafe.z);
         ForensicStore.get(server).corpse(s.corpse).put("carry_recovery_" + s.part, n); ForensicStore.get(server).markDirty();
     }
@@ -208,8 +225,9 @@ public final class CorpseCarryService {
         var corpse = fs.corpse(b.getString("id", "")); String key = "carry_recovery_" + b.getString("part", "all");
         var n = corpse.getCompoundOrEmpty(key);
         if (!n.getString("display", "").equals(display.getUuid().toString())) { PENDING.remove(display.getUuid()); return; }
+        if(n.getLong("pose_revision",0)!=CorpsePoseRecord.data(display.getItemStack()).getLong("corpse_pose_revision",0))return;
         Vec3d pos = new Vec3d(n.getDouble("x", display.getX()), n.getDouble("y", display.getY()), n.getDouble("z", display.getZ()));
-        if (!safeTarget(world, null, pos)) return;
+        if (!safeTarget(world, null, display, pos) || !supported(display,pos)) return;
         UUID interactionId = BodyPartManager.DISPLAY_TO_INTERACTION.get(display.getUuid());
         if (interactionId == null || !(world.getEntity(interactionId) instanceof InteractionEntity interaction)) return;
         interaction.setPosition(pos.add(interaction.getPos().subtract(display.getPos())));

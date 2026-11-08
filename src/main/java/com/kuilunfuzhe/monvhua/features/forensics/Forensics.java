@@ -36,6 +36,8 @@ public final class Forensics {
         ForensicPackets.register();
         BloodTraceService.initialize();
         CorpseCarryService.initialize();
+        CorpsePoseCommands.initialize();
+        com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.initialize();
         com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTransferService.initialize();
         ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, player, alive) -> {
             if (!alive) ForensicStore.get(player.getServer()).newLife(player.getUuid());
@@ -208,6 +210,12 @@ public final class Forensics {
     public static void copyWoundVisuals(ItemStack from, ItemStack to) {
         NbtCompound source = from.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT).copyNbt();
         NbtCompound target = to.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT).copyNbt();
+        if(source.contains(CorpsePoseRecord.KEY)) {
+            if(!net.minecraft.util.Identifier.of("monvhua","combined_body").equals(to.get(DataComponentTypes.ITEM_MODEL)))
+                throw new IllegalArgumentException("Cannot copy full rigid pose to a partial body");
+            var pose=CorpsePoseRecord.read(source).orElseThrow(()->new IllegalArgumentException("Invalid rigid pose"));
+            target.put(CorpsePoseRecord.KEY,pose.encode());target.putLong("corpse_pose_revision",source.getLong("corpse_pose_revision",pose.revision()));
+        }
         for (String key : new String[]{"corpse_wounds", "corpse_scale"})
             if (source.contains(key)) target.put(key, source.get(key).copy());
         to.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(target));
@@ -232,6 +240,7 @@ public final class Forensics {
         stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root)); display.setItemStack(stack);
         claim(display);
         CorpseGeometrySync.update(display);
+        com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.onDeath(player,display,part);
     }
     /** Called after every display/interaction creation, also makes legacy links reloadable. */
     public static void link(ItemDisplayEntity display, InteractionEntity interaction) {
@@ -300,7 +309,15 @@ public final class Forensics {
             entity = id == null ? null : world.getEntity(id);
         }
         if (!(entity instanceof ItemDisplayEntity display)) return List.of();
+        if(com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.pending(display))return List.of("姿态正在生成，请稍候再搜查");
         Vec3d target = display.getPos();
+        if(CorpsePoseRecord.present(display.getItemStack())) {
+            if(CorpsePoseRecord.read(CorpsePoseRecord.data(display.getItemStack())).isEmpty())return List.of("姿态版本不可用，请管理员检查");
+            var hit=CorpsePoseGeometry.pick(display,player.getEyePos(),player.getEyePos().add(player.getRotationVec(1).multiply(ForensicConfig.current.inspectionDistance)));
+            if(hit==null)return List.of("请瞄准实际尸体表面");
+            if(!part.equals("__open")&&!part.equals(hit.part()))return List.of("请瞄准所选身体部位再搜查");
+            target=hit.position();
+        }
         if (player.getEyePos().squaredDistanceTo(target) > ForensicConfig.current.inspectionDistance * ForensicConfig.current.inspectionDistance) return List.of();
         if (world.raycast(new RaycastContext(player.getEyePos(), target, RaycastContext.ShapeType.COLLIDER,
                 RaycastContext.FluidHandling.NONE, player)).getType() != HitResult.Type.MISS) return List.of();

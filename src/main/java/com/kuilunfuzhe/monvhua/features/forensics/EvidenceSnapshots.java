@@ -14,6 +14,7 @@ import java.util.*;
 public final class EvidenceSnapshots {
     private EvidenceSnapshots() {}
     public static void observe(ServerPlayerEntity viewer, ItemDisplayEntity display, String inspectedPart) {
+        if(com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.pending(display))return;
         String id = Forensics.binding(display.getItemStack()).getString("id", "");
         if (id.isEmpty()) return;
         var store = ForensicStore.get(viewer.getServer());
@@ -53,6 +54,7 @@ public final class EvidenceSnapshots {
 
     public static NbtCompound visualOnly(NbtCompound source) {
         NbtCompound result = new NbtCompound();
+        CorpsePoseRecord.read(source).ifPresent(p->result.put(CorpsePoseRecord.KEY,p.encode()));
         for (String key : List.of("local_skin","arm_model","corpse_scale","body_pose_mode"))
             if (source.contains(key)) result.put(key,source.get(key).copy());
         for (String part : List.of("head","torso","left_arm","right_arm","left_leg","right_leg","model"))

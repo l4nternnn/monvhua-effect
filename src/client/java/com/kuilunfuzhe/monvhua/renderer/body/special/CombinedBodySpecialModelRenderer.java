@@ -59,10 +59,65 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         renderModel(matrices, consumers, data.layer(), 15728880, OverlayTexture.DEFAULT_UV, data);
     }
 
+    /** Client-only rigid preview. The caller owns this renderer instance; old pose/NBT paths are untouched. */
+    public void renderPhysicsPreview(MatrixStack matrices, VertexConsumerProvider consumers, Data data,
+                                     Map<String, Matrix4f> transforms) {
+        renderRigid(matrices,consumers,data,transforms,15728880,OverlayTexture.DEFAULT_UV);
+    }
+
+    private void renderRigid(MatrixStack matrices, VertexConsumerProvider consumers, Data data,
+                             Map<String,Matrix4f> transforms,int light,int overlay) {
+        boolean slim="slim".equals(data.armModel());
+        PlayerEntityModel active=slim?slimModel:model;
+        resetModel(active); applyPoseData(active,new NbtCompound());
+        Map<String,ModelPart> parts=Map.of("head",active.head,"torso",active.body,"left_arm",active.leftArm,
+                "right_arm",active.rightArm,"left_leg",active.leftLeg,"right_leg",active.rightLeg);
+        for(String id:transforms.keySet()) {
+            matrices.push();
+            try {
+                Matrix4f transform=transforms.get(id);
+                matrices.multiplyPositionMatrix(transform);
+                matrices.peek().getNormalMatrix().mul(new org.joml.Matrix3f(transform).invert().transpose());
+                parts.get(id).render(matrices,consumers.getBuffer(data.layer()),light,overlay);
+                NbtCompound marks=physicsMarks(data.customData(),id);
+                renderModelPaint(matrices,consumers,active,slim,data.texture(),marks,light);
+                renderWounds(matrices,consumers,active,slim,marks,light);
+            } finally {matrices.pop();}
+        }
+    }
+
+    public java.util.List<EvidenceSurface> physicsPreviewSurfaces(Map<String,Matrix4f> transforms, Data data) {
+        Data neutral=new Data(data.layer(),data.texture(),data.armModel(),new NbtCompound());
+        return evidenceSurfaces(neutral,new Matrix4f()).stream().map(surface ->
+                new EvidenceSurface(surface.name(),surface.box(),new Matrix4f(transforms.get(physicsPart(surface.name()))).mul(surface.transform()))).toList();
+    }
+
+    private static String physicsPart(String surface) {
+        OuterSurfaceKey outer=OuterSurfaceKey.parse(surface);
+        String base=outer==null?surface:outer.baseSurface();
+        if(base.endsWith("_outer"))base=base.substring(0,base.length()-6);
+        for(var s:com.kuilunfuzhe.monvhua.features.forensics.WoundGeometry.SURFACES) if(s.name().equals(base))return s.part();
+        return "";
+    }
+
+    private static NbtCompound physicsMarks(NbtCompound source,String id) {
+        NbtCompound result=new NbtCompound();
+        if(source==null)return result;
+        for(String key:java.util.List.of(ModelPaintData.MODEL_PAINT_KEY,"corpse_wounds")) {
+            NbtList filtered=new NbtList();
+            for(var entry:source.getListOrEmpty(key)) if(entry instanceof NbtCompound mark && physicsPart(mark.getString("surface","")).equals(id))filtered.add(mark.copy());
+            result.put(key,filtered);
+        }
+        return result;
+    }
+
     public record EvidenceSurface(String name, net.minecraft.util.math.Box box, Matrix4f transform) {}
 
     /** Exact ordinary-model transforms, also used for preview bounds and wound picking. */
     public java.util.List<EvidenceSurface> evidenceSurfaces(Data data, Matrix4f root) {
+        var rigid=com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.read(data.customData());
+        if(rigid.isPresent()) return physicsPreviewSurfaces(rigid.get().modelMatrices(),data).stream().map(s ->
+                new EvidenceSurface(s.name(),s.box(),new Matrix4f(root).mul(s.transform()))).toList();
         boolean slim = "slim".equals(data.armModel());
         PlayerEntityModel active = slim ? slimModel : model;
         resetModel(active); applyPoseData(active, data.customData());
@@ -87,6 +142,8 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
     @Override
     protected void renderModel(MatrixStack matrices, VertexConsumerProvider vertexConsumers,
                                RenderLayer renderLayer, int light, int overlay, Data data) {
+        var rigid=com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.read(data.customData());
+        if(rigid.isPresent()) {renderRigid(matrices,vertexConsumers,data,rigid.get().modelMatrices(),light,overlay);return;}
         if (renderTrueSkeletalModel(matrices, vertexConsumers, renderLayer, light, data)) {
             return;
         }

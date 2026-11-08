@@ -10,6 +10,8 @@ public final class CorpseSurfacePose {
     private CorpseSurfacePose() {}
 
     public static Matrix4f transform(WoundGeometry.Surface surface, NbtCompound data) {
+        var rigid=CorpsePoseRecord.read(data);
+        if(rigid.isPresent()) return rigid.get().modelMatrices().get(surface.part());
         String part = surface.part();
         boolean arm = part.endsWith("arm"), leg = part.endsWith("leg");
         boolean left = part.startsWith("left");

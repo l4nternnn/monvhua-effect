@@ -197,6 +197,14 @@ public class BodyPartManager {
 			UUID displayUuid = INTERACTION_TO_DISPLAY.get(interaction.getUuid());
 			if (displayUuid == null) return ActionResult.PASS;
 			Entity targetDisplay = world.getEntity(displayUuid);
+            if(targetDisplay instanceof ItemDisplayEntity pending && com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.pending(pending)) {
+                player.sendMessage(Text.literal("姿态正在生成，请稍候"),true);return ActionResult.FAIL;
+            }
+            if(player.isSneaking() && targetDisplay instanceof ItemDisplayEntity posed
+                    && com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.present(posed.getItemStack())
+                    && !(player.getMainHandStack().isEmpty()&&player.getOffHandStack().isEmpty())) {
+                player.sendMessage(Text.literal("物理姿态尸体请通过空手轮盘搬运，暂不支持物品拾取"),true);return ActionResult.FAIL;
+            }
             if (targetDisplay instanceof ItemDisplayEntity carried && CorpseCarryService.isCarried(carried)) return ActionResult.SUCCESS;
             // The carry gesture opens the forensic wheel; do not also pick up the item.
             if (com.kuilunfuzhe.monvhua.features.forensics.ForensicConfig.current.enabled
@@ -209,6 +217,9 @@ public class BodyPartManager {
 				if (targetDisplay instanceof ItemDisplayEntity display) {
 					ItemStack stack = display.getItemStack().copy();
 					if (!Forensics.valid((ServerWorld) world, stack, display.getUuid().toString())) return ActionResult.FAIL;
+                    if(com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.present(stack)) {
+                        player.sendMessage(Text.literal("物理姿态尸体暂不支持物品拾取，请使用搬运"),true);return ActionResult.FAIL;
+                    }
                     if (Forensics.hasBinding(stack) && ForensicConfig.current.enabled && ForensicConfig.current.transfer.enabled
                             && ForensicConfig.current.transfer.carryEnabled && !ForensicConfig.current.transfer.allowEvidenceItemPickup && !player.hasPermissionLevel(2)) {
                         player.sendMessage(Text.literal("请空出双手，通过遗体轮盘抱起遗体"), true);
@@ -435,6 +446,9 @@ public class BodyPartManager {
 	}
 
 	public static void placeCombinedBody(World world, BlockPos pos, ItemStack stack, ServerPlayerEntity player) {
+        if(com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.present(stack)) {
+            player.sendMessage(Text.literal("物理姿态物品暂不支持旧放置流程"),true);return;
+        }
 		if (!Forensics.valid((ServerWorld) world, stack, "item")) return;
 		ProfileComponent profile = stack.get(DataComponentTypes.PROFILE);
 		String localSkin = null;
@@ -502,6 +516,9 @@ public class BodyPartManager {
 
 		String evidenceId = Forensics.binding(foundParts.get("torso").getItemStack()).getString("id", "");
         for (ItemDisplayEntity found : foundParts.values()) {
+            if ((com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.present(found.getItemStack()) || com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.pending(found))) {
+                player.sendMessage(Text.literal("物理姿态尸体暂不支持合并"),true);return 0;
+            }
             if (CorpseCarryService.isCarried(found)) return 0;
             if (!Forensics.binding(found.getItemStack()).getString("id", "").equals(evidenceId)
                     || !Forensics.valid(world, found.getItemStack(), found.getUuid().toString())) {
@@ -558,7 +575,10 @@ public class BodyPartManager {
 		})) {
 			Vec3d pos = display.getPos();
 			ItemStack combinedStack = display.getItemStack();
-			if (CorpseCarryService.isCarried(display)) continue;
+			if ((com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.present(display.getItemStack()) || com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.pending(display))) {
+                player.sendMessage(Text.literal("物理姿态尸体暂不支持拆分"),true);continue;
+            }
+            if (CorpseCarryService.isCarried(display)) continue;
 			if (!Forensics.valid(world, combinedStack, display.getUuid().toString())) continue;
 			NbtCompound evidence = Forensics.binding(combinedStack);
 			ProfileComponent profile = combinedStack.get(DataComponentTypes.PROFILE);
@@ -997,6 +1017,10 @@ public class BodyPartManager {
 			player.sendMessage(Text.literal("Target body model was not found"), true);
 			return false;
 		}
+        if((com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.present(display.getItemStack()) || com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.pending(display))) {
+            player.sendMessage(Text.literal("物理姿态尸体不可混用旧姿态编辑，请先由管理员清除物理姿态"),true);return false;
+        }
+
 		ItemStack stack = display.getItemStack().copy();
 		if (!Identifier.of("monvhua", "combined_body").equals(stack.get(DataComponentTypes.ITEM_MODEL))) {
 			player.sendMessage(Text.literal("Target is not a combined body model"), true);

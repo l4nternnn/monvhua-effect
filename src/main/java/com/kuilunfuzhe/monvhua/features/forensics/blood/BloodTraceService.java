@@ -99,7 +99,7 @@ public final class BloodTraceService {
         if (distance < config.dripDistance && elapsed < config.stationaryDripTicks) return;
         // Attempt time is consumed even without a valid surface. Never replay missed drops later.
         LAST_DRIP_TIME.put(display.getUuid(), time); DRIP_DISTANCE.put(display.getUuid(), 0.0);
-        safe(() -> drip(display, current, carrier));
+        safe(() -> drip(display, com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseGeometry.bloodOrigin(display), carrier));
     }
     private static void drip(ItemDisplayEntity display, Vec3d current, ServerPlayerEntity carrier) {
         if (!(display.getWorld() instanceof ServerWorld world) || carrier == null || !BloodRules.generating()) return;
@@ -215,6 +215,7 @@ public final class BloodTraceService {
         });
     }
     private static void pool(ItemDisplayEntity display) {
+        if(com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.pending(display))return;
         if (CARRIED.contains(display.getUuid()) || CorpseCarryService.isCarried(display)) return;
         if (!(display.getWorld() instanceof ServerWorld world) || world.getEntity(display.getUuid()) != display
                 || !world.isChunkLoaded(display.getBlockPos()) || !Forensics.valid(world, display.getItemStack(), display.getUuid().toString())) return;
@@ -225,7 +226,8 @@ public final class BloodTraceService {
         if (!BloodRules.active(ledger, now(world.getServer())) || BloodRules.remaining(ledger, part) <= 0) { SOURCES.remove(display); return; }
         // A complete carrier takes precedence; a staged split cannot spend the same shares.
         if (!part.equals("all") && !corpse.getCompoundOrEmpty("carriers").getCompoundOrEmpty("all").isEmpty()) return;
-        var landing = BloodSurfaceProjection.cast(world, display.getPos().add(0, .05, 0), display.getPos().add(0, -1.25, 0), display);
+        var origin=com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseGeometry.bloodOrigin(display);
+        var landing = BloodSurfaceProjection.cast(world, origin.add(0, .05, 0), origin.add(0, -1.25, 0), display);
         if (landing == null || landing.getSide() != Direction.UP) return;
         BlockPos anchor = landing.getBlockPos();
         String siteKey = world.getRegistryKey().getValue() + "/" + part + "/" + anchor.asLong();
