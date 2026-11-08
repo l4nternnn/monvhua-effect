@@ -1,0 +1,6 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "monvhua:item/corpse_physics_controller"
+  }
+}

@@ -224,6 +224,8 @@ loom.runs.client {
         vmArg '-Dmonvhua.physicsMissingCoreGameTest=true'
     if (providers.gradleProperty('physicsAutomaticGameTest').getOrElse('false') == 'true')
         vmArg '-Dmonvhua.physicsAutomaticGameTest=true'
+    if (providers.gradleProperty('physicsHistoryGameTest').getOrElse('false') == 'true')
+        vmArg '-Dmonvhua.physicsHistoryGameTest=true'
     if (providers.gradleProperty('physicsPreviewGameTest').getOrElse('false') == 'true')
         vmArg '-Dfabric.client.gametest=true'
 }

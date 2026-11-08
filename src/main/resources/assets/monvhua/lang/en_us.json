@@ -1,4 +1,5 @@
 {
+  "item.monvhua.corpse_physics_controller": "Corpse Physics Controller",
   "key.monvhua.forensic_inspect": "Inspect corpse injuries",
   "key.monvhua.forensic_mode": "Cycle weapon attack mode",
   "key.monvhua.forensic_summary": "Open evidence summary",

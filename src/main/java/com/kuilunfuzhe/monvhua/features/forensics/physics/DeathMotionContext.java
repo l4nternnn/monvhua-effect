@@ -39,7 +39,7 @@ public final class DeathMotionContext {
     public static synchronized CorpseInitialMotionResolver.Motion consume(ServerPlayerEntity player,String corpse) {
         var v=FROZEN.remove(corpse);
         if(v!=null&&v.server==player.getServer()&&v.player.equals(player.getUuid())&&v.tick==player.getServer().getTicks())return v.motion;
-        return CorpseInitialMotionResolver.resolve(player.bodyYaw,0,0,0,0,"unknown","unknown","missing_death_context");
+        return CorpseInitialMotionResolver.resolve(player.bodyYaw,0,0,0,0,"unknown","unknown","missing_death_context",CorpseProfileManager.current());
     }
     public static synchronized void expire(MinecraftServer server) {FROZEN.values().removeIf(v->v.server==server&&v.tick<server.getTicks());}
     public static synchronized void clear(MinecraftServer server) {FROZEN.values().removeIf(v->v.server==server);}
@@ -59,6 +59,6 @@ public final class DeathMotionContext {
         }else if(melee){dx=p.getX()-attacker.getX();dz=p.getZ()-attacker.getZ();kind="melee";quality="source_position";fallback="";}
         var baseline=beforeDamage?p.getVelocity():net.minecraft.util.math.Vec3d.ZERO;
         if(!beforeDamage&&fallback.isEmpty())fallback="baseline_unavailable";
-        return CorpseInitialMotionResolver.resolve(p.bodyYaw,dx,dz,baseline.x,baseline.z,kind,quality,fallback);
+        return CorpseInitialMotionResolver.resolve(p.bodyYaw,dx,dz,baseline.x,baseline.z,kind,quality,fallback,CorpseProfileManager.current());
     }
 }

@@ -1,4 +1,5 @@
 ﻿{
+  "item.monvhua.corpse_physics_controller": "物理姿态控制器",
   "key.monvhua.forensic_inspect": "检查尸体伤情",
   "key.monvhua.forensic_mode": "切换武器攻击模式",
   "key.monvhua.forensic_summary": "打开线索总结",

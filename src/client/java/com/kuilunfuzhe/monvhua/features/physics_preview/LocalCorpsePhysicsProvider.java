@@ -3,6 +3,7 @@ package com.kuilunfuzhe.monvhua.features.physics_preview;
 import com.klfz.simplephysics.api.*;
 import com.klfz.simplephysics.backend.PhysicsService;
 import com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsBridge;
+import com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsProfiles;
 import java.util.LinkedHashMap;
 import java.util.concurrent.CompletableFuture;
 
@@ -13,6 +14,7 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
     public LocalCorpsePhysicsProvider(){
         // Resolve the new class before attaching: old optional cores fail closed.
         if(RagdollInitialMotion.class.getRecordComponents().length!=6)throw new LinkageError("Unsupported motion core");
+        if(RagdollRequest.class.getRecordComponents().length!=8||!solver(CorpsePhysicsProfiles.F5).equals(RagdollSolverProfile.F5))throw new LinkageError("Unsupported profile core/baseline");
         service.initialize();
     }
     public int apiVersion(){return API_VERSION;}
@@ -44,8 +46,25 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
             else {lastNativeNanos=r.elapsedNanos();future.complete(document(r.finalPose(),definition,r.outcome().name(),r.torsoTiltDegrees(),r.reason()));}
         });
         return new Session() {
+            private java.util.List<RagdollResult.Frame> sampledNative=java.util.List.of();
+            private java.util.List<PhysicsPoseDocument> sampledDocuments=java.util.List.of();
+            public boolean supportsHistory(){try{nativeSession.getClass().getMethod("history").getReturnType().getMethod("sampleSteps");return true;}catch(NoSuchMethodException e){return false;}}
+            public int historyHz(){return 12;}
+            public java.util.List<Integer> historySteps(){return nativeSession.history().sampleSteps();}
+            public void setPaused(boolean value){nativeSession.setPaused(value);}
+            public boolean paused(){return nativeSession.isPaused();}
+            public int firstFrame(){return nativeSession.history().first();}
+            public int lastFrame(){return nativeSession.history().last();}
+            public PhysicsPoseDocument frame(int step){var f=nativeSession.history().frame(step);return f==null?null:document(f,definition,"SIMULATING",0,"history frame");}
+            public void historySeconds(int seconds){nativeSession.history().resize(seconds);}
+            public void clearHistory(){nativeSession.history().clear();}
             public void advanceTo(int step){nativeSession.advanceTo(step);}
-            public java.util.List<PhysicsPoseDocument> frames(){return nativeSession.recentFrames().stream().map(f->document(f,definition,"SIMULATING",0,"live frame")).toList();}
+            public synchronized java.util.List<PhysicsPoseDocument> frames(){
+                var batch=nativeSession.recentFrames();if(batch==sampledNative)return sampledDocuments;
+                var previous=new java.util.HashMap<Integer,PhysicsPoseDocument>();for(var d:sampledDocuments)previous.put(d.step(),d);
+                sampledDocuments=batch.stream().map(f->previous.containsKey(f.step())?previous.get(f.step()):document(f,definition,"SIMULATING",0,"live frame")).toList();
+                sampledNative=batch;return sampledDocuments;
+            }
             public CompletableFuture<PhysicsPoseDocument> completion(){return future;}
             public void close(){nativeSession.close();}
         };
@@ -58,7 +77,8 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
     private static RagdollRequest input(Request request,RagdollDefinition definition,TerrainSnapshotData terrain) {
         var anchor=new RagdollDefinition.V3(0,0,0);var m=request.motion();
         return m==null?new RagdollRequest(definition,terrain,anchor,request.yaw(),INITIAL_LEAN_DEGREES,request.speed()):
-            RagdollRequest.explicit(definition,terrain,anchor,RagdollInitialMotion.directed(request.yaw(),m.tilt(),m.dx(),m.dz(),new RagdollDefinition.V3(m.vx(),0,m.vz()),m.angularSpeed()));
+            RagdollRequest.explicit(definition,terrain,anchor,RagdollInitialMotion.directed(request.yaw(),m.tilt(),m.dx(),m.dz(),new RagdollDefinition.V3(m.vx(),0,m.vz()),m.angularSpeed())).withProfile(solver(request.profile()));
     }
+    private static RagdollSolverProfile solver(CorpsePhysicsProfiles.Profile p){var s=p.solver();return new RagdollSolverProfile(p.id(),s.iterations(),s.linearDamping(),s.angularDamping(),s.friction(),s.rollingFriction(),s.spinningFriction());}
     public void close(){service.close();}
 }

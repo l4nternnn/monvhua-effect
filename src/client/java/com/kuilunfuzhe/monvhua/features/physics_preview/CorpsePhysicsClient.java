@@ -12,6 +12,7 @@ public final class CorpsePhysicsClient implements ClientModInitializer {
     public void onInitializeClient() {
         LiveCorpseRenderer.initialize();
         ClientTickEvents.END_CLIENT_TICK.register(client->{
+            CorpseControllerClient.tick(client);
             var server=client.world==null?null:client.getServer();
             if(owner==server)return;
             CorpsePhysicsCoordinator.detach();owner=server;
