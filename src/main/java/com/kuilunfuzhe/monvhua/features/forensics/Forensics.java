@@ -80,6 +80,7 @@ public final class Forensics {
 
     public static void record(ServerPlayerEntity player, DamageSource source, float amount) {
         if (!enabled(player) || !(amount > 0) || !Float.isFinite(amount)) return;
+        com.kuilunfuzhe.monvhua.features.forensics.physics.DeathMotionContext.accepted(player,source);
         if (player.getHealth() > 0) ForensicStore.get(player.getServer()).ensureLivingLife(player.getUuid());
         NbtCompound hit = new NbtCompound();
         hit.putString("id", UUID.randomUUID().toString());
@@ -188,6 +189,7 @@ public final class Forensics {
         }
         String corpseId = store.freeze(player.getUuid(), player.getName().getString(), player.getWorld().getRegistryKey().getValue().toString(),
                 player.getWorld().getTime(), player.getX(), player.getY(), player.getZ(), source.getName());
+        com.kuilunfuzhe.monvhua.features.forensics.physics.DeathMotionContext.freeze(player,source,corpseId);
         BloodTraceService.death(player, corpseId);
         life.putBoolean("spawn_started", true); store.markDirty();
         return true;

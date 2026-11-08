@@ -6,6 +6,7 @@
 	"client": [
     "DayNightClientWorldMixin",
 		"ExampleClientMixin",
+        "LiveCorpseRenderMixin",
 		"HideHandMixin",
 		"CameraAccessor",
 		"EntityRenderDispatcherAccessor",

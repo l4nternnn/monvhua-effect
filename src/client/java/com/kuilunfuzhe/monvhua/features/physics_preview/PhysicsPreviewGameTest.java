@@ -68,7 +68,7 @@ public final class PhysicsPreviewGameTest implements FabricClientGameTest {
                 }
             }
             CorpsePoseGameChecks.run(context,world);
-            if(Boolean.getBoolean("monvhua.physicsAutomaticGameTest"))CorpseAutomaticGameChecks.run(context,world);
+            if(Boolean.getBoolean("monvhua.physicsAutomaticGameTest")){CorpseAutomaticGameChecks.run(context,world);DirectionalCorpseGameChecks.run(context,world);}
             if(Boolean.getBoolean("monvhua.physicsMissingCoreGameTest"))CorpseAutomaticGameChecks.missing(context,world);
             // New failed imports must retain the previous valid scene.
             final PhysicsPoseDocument[] prior={null};

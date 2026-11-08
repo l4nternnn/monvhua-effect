@@ -10,6 +10,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 public final class CorpsePhysicsClient implements ClientModInitializer {
     private Object owner;
     public void onInitializeClient() {
+        LiveCorpseRenderer.initialize();
         ClientTickEvents.END_CLIENT_TICK.register(client->{
             var server=client.world==null?null:client.getServer();
             if(owner==server)return;

@@ -29,9 +29,18 @@ final class CorpseAutomaticGameChecks {
         world.getServer().runOnServer(server->{
             var player=server.getPlayerManager().getPlayerList().getFirst();
             var candidates=server.getOverworld().getEntitiesByClass(ItemDisplayEntity.class,player.getBoundingBox().expand(10),
-                    d->d.getCommandTags().contains("monvhua_physics_test")&&CorpsePoseRecord.read(CorpsePoseRecord.data(d.getItemStack())).map(p->p.source().equals("generated")).orElse(false));
-            require(!candidates.isEmpty(),"Native scene did not apply: "+CorpsePhysicsCoordinator.status());id[0]=candidates.getLast().getId();
+                    d->d.getCommandTags().contains("monvhua_physics_test"));
+            require(!candidates.isEmpty(),"Native scene did not start: "+CorpsePhysicsCoordinator.status());id[0]=candidates.getLast().getId();
+            require(CorpsePhysicsCoordinator.pending(candidates.getLast()),"Live solve finished instantly");
+            require(!CorpsePoseRecord.present(candidates.getLast().getItemStack()),"Live pose persisted as SETTLED");
         });
+        world.getServer().runCommand("tick freeze");context.waitTicks(3);
+        int[] frozen={-1};
+        context.runOnClient(client->{var v=CorpsePhysicsCoordinator.liveViews().getFirst();frozen[0]=v.session().frames().getLast().step();});
+        context.waitTicks(8);
+        context.runOnClient(client->{var v=CorpsePhysicsCoordinator.liveViews().getFirst();require(v.session().frames().getLast().step()==frozen[0],"Frozen game advanced native physics");});
+        context.takeScreenshot("physics-live-frozen-start");
+        world.getServer().runCommand("tick unfreeze");
         context.waitFor(client->client.world.getEntityById(id[0]) instanceof ItemDisplayEntity d && CorpsePoseRecord.read(CorpsePoseRecord.data(d.getItemStack())).map(p->p.source().equals("generated")).orElse(false),200);
         context.runOnClient(client->{
             var display=(ItemDisplayEntity)client.world.getEntityById(id[0]);
@@ -55,9 +64,9 @@ final class CorpseAutomaticGameChecks {
             var display=(ItemDisplayEntity)server.getOverworld().getEntityById(id[0]);
             require(CorpsePhysicsCoordinator.submit(display,display.getPos(),0,true,.3f),"Terrain-change setup");
             server.getOverworld().setBlockState(BlockPos.ofFloored(display.getPos().add(2,1,0)),net.minecraft.block.Blocks.STONE.getDefaultState());
-        });context.waitTicks(5);
+        });context.waitTicks(15);
         world.getServer().runOnServer(server->{
-            require(CorpsePhysicsCoordinator.status().contains("现场"),"Terrain change not invalidated: "+CorpsePhysicsCoordinator.status());
+            require(CorpsePhysicsCoordinator.status().contains("地形"),"Terrain change not invalidated: "+CorpsePhysicsCoordinator.status());
             var display=(ItemDisplayEntity)server.getOverworld().getEntityById(id[0]);
             require(CorpsePoseRecord.read(CorpsePoseRecord.data(display.getItemStack())).orElseThrow().revision()==1,"Stale result committed");
             server.getOverworld().setBlockState(BlockPos.ofFloored(display.getPos().add(2,1,0)),net.minecraft.block.Blocks.AIR.getDefaultState());
@@ -78,24 +87,39 @@ final class CorpseAutomaticGameChecks {
         });
         context.waitTicks(10);
         world.getServer().runOnServer(server->{
+            var live=CorpsePhysicsCoordinator.liveViews();require(live.size()==1,"Death live view missing");
+            var view=live.getFirst();var frames=view.session().frames();
+            require(!frames.isEmpty()&&frames.getLast().step()>0&&frames.getLast().step()<150,"Death not advancing in real time");
+            var corpse=(ItemDisplayEntity)server.getOverworld().getEntity(view.display());id[0]=corpse.getId();
+            require(CorpsePhysicsCoordinator.pending(corpse)&&!CorpsePoseRecord.present(corpse.getItemStack()),"Death finalized before falling");
+        });
+        // Dead local players may not receive newly tracked entity data until respawn.
+        // The live view must hold its terminal frame throughout that interval.
+        context.waitFor(client->CorpsePhysicsCoordinator.liveViews().stream().anyMatch(v->v.committedRevision()>0),240);
+        world.getServer().runOnServer(server->{
             var corpses=server.getOverworld().getEntitiesByClass(ItemDisplayEntity.class,new Box(-8,78,-8,8,86,8),
                     d->Forensics.hasBinding(d.getItemStack())&&!d.getCommandTags().contains("monvhua_physics_test"));
             require(corpses.size()==1,"Death did not produce exactly one corpse: "+corpses.size());
             var corpse=corpses.getFirst();
             var pose=CorpsePoseRecord.read(CorpsePoseRecord.data(corpse.getItemStack()));
             require(pose.isPresent()&&pose.get().source().equals("generated"),"Real death did not apply: "+CorpsePhysicsCoordinator.status());
+            var view=CorpsePhysicsCoordinator.liveViews().stream().filter(v->v.display().equals(corpse.getUuid())).findFirst().orElseThrow();
+            require(pose.get().parts().equals(view.session().frames().getLast().poses()),"Stored pose differs from terminal live frame");
             require(Forensics.valid(server.getOverworld(),corpse.getItemStack(),corpse.getUuid().toString()),"Death binding lost");
             require(CorpsePoseGeometry.supported(server.getOverworld(),corpse,CorpsePoseRecord.data(corpse.getItemStack()),corpse.getPos()),"Death pose unsupported");
             id[0]=corpse.getId();
         });
         context.runOnClient(client->client.player.requestRespawn());context.waitTicks(15);
+        context.waitFor(client->client.world.getEntityById(id[0]) instanceof ItemDisplayEntity d&&CorpsePoseRecord.present(d.getItemStack()),200);
+        context.waitFor(client->CorpsePhysicsCoordinator.liveViews().isEmpty(),40);
+        context.runOnClient(client->{require(!LiveCorpseRenderer.hides(client.player),"Respawned player hidden");require(!LiveCorpseRenderer.hides(client.world.getEntityById(id[0])),"Static handoff still hides corpse");});
         world.getServer().runCommand("tp @a 0.5 82 9.5 180 40");context.waitTicks(5);
         context.runOnClient(client->client.options.hudHidden=true);
         try{context.takeScreenshot("physics-automatic-death");}finally{context.runOnClient(client->client.options.hudHidden=false);}
         context.runOnClient(client->client.getNetworkHandler().sendChatCommand("mvcorpse physics auto off"));context.waitTicks(3);
         lifecycle(context,world,id[0]);
         try{java.nio.file.Files.writeString(PhysicsPreviewClient.instance.directory().getParent().resolve("physics-automatic-test.txt"),
-                "PASS: native slim scene, baked model mapping, cancellation, terrain invalidation, real player death, binding, support, respawn.\n");}
+                "PASS: live native slim scene, game-clock freeze, baked model mapping, cancellation, terrain invalidation, real player death during simulation, exact terminal handoff, binding, support, respawn visibility.\n");}
         catch(java.io.IOException e){throw new AssertionError(e);}
     }
     private static void lifecycle(ClientGameTestContext context,TestSingleplayerContext world,int entityId) {
