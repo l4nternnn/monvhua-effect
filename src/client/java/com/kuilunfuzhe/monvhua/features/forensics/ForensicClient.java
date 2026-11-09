@@ -54,6 +54,9 @@ public final class ForensicClient {
                     }
                 }
                 if (client.crosshairTarget instanceof EntityHitResult hit && requestOpen(hit.getEntity())) continue;
+                if(client.player!=null&&client.currentScreen==null&&ClientPlayNetworking.canSend(ForensicPackets.Request.ID)){
+                    openTarget=-1;openRequest=++sequence;ClientPlayNetworking.send(new ForensicPackets.Request(-1,"__open",false,openRequest));
+                }
                 if (client.player != null && client.currentScreen == null && ClientPlayNetworking.canSend(com.kuilunfuzhe.monvhua.network.forensics.BloodTracePackets.Inspect.ID))
                     ClientPlayNetworking.send(new com.kuilunfuzhe.monvhua.network.forensics.BloodTracePackets.Inspect());
             }
@@ -66,15 +69,21 @@ public final class ForensicClient {
                 return;
             }
             if (packet.part().equals("__open")) {
-                if (packet.requestId() == openRequest && packet.target() == openTarget && client.currentScreen == null
-                        && client.crosshairTarget instanceof EntityHitResult hit && hit.getEntity().getId() == openTarget
-                        && packet.lines().equals(List.of("ready"))) client.setScreen(new InspectionScreen(openTarget));
+                if(packet.requestId()==openRequest&&packet.target()==openTarget&&client.currentScreen==null){
+                    if(packet.lines().equals(List.of("release")))client.setScreen(new InspectionScreen(openTarget,"",true,false));
+                    else if(packet.lines().size()==3&&packet.lines().getFirst().equals("ready")
+                            &&client.crosshairTarget instanceof EntityHitResult hit&&hit.getEntity().getId()==openTarget)
+                        client.setScreen(new InspectionScreen(openTarget,packet.lines().get(1),false,packet.lines().get(2).equals("blocked")));
+                    else if(client.player!=null&&!packet.lines().isEmpty())client.player.sendMessage(Text.literal(packet.lines().getFirst()),true);
+                }
                 return;
             }
             if (client.currentScreen instanceof InspectionScreen screen && screen.target == packet.target()
                     && screen.pending == packet.requestId() && screen.part.equals(packet.part())) {
                 screen.lines = packet.lines().isEmpty() ? List.of("无法检查：请靠近尸体并保持视线无遮挡") : packet.lines();
-                screen.scroll = 0;
+                screen.waiting=false;
+                if(client.player!=null)client.player.sendMessage(Text.literal("探查结果："+String.join("；",screen.lines)),false);
+                screen.close();
             }
         }));
     }
@@ -93,101 +102,50 @@ public final class ForensicClient {
         return true;
     }
     private static final class InspectionScreen extends Screen {
-        private static final String[] PARTS = {"carry", "head", "right_arm", "right_leg", "left_leg", "left_arm", "torso"};
-        private static final String[] LABELS = {"抱起遗体", "头部", "右臂", "右腿", "左腿", "左臂", "躯干"};
-        final int target;
-        int pending;
-        String part = "";
-        List<String> lines = List.of();
-        boolean detail;
-        int scroll;
-        int maxScroll;
-        ButtonWidget back;
-        InspectionScreen(int target) { super(Text.literal("遗体检查")); this.target = target; }
-        @Override protected void init() {
-            back = addDrawableChild(ButtonWidget.builder(Text.literal("返回轮盘"), button -> { detail = false; back.visible = false; })
-                    .dimensions(16, height - 30, 80, 20).build());
-            back.visible = detail;
-            addDrawableChild(ButtonWidget.builder(Text.literal("放下遗体"), button -> {
-                if (ClientPlayNetworking.canSend(ForensicPackets.CarryRequest.ID))
-                    ClientPlayNetworking.send(new ForensicPackets.CarryRequest(-1, true));
-                close();
-            }).dimensions(width / 2 - 40, height - 30, 80, 20).build());
-            addDrawableChild(ButtonWidget.builder(Text.literal("关闭"), button -> close()).dimensions(width - 80, height - 30, 65, 20).build());
-        }
-        private int radius() { return Math.max(40, Math.min(110, Math.min(width / 2 - 18, (height - 90) / 2))); }
-        private int centerY() { return 38 + radius(); }
-        @Override public boolean shouldPause() { return false; }
-        @Override public boolean mouseClicked(double x, double y, int button) {
-            if (!detail && button == 0) {
-                int sector = CorpseWheelGeometry.sector(x - width / 2.0, y - centerY(), radius() * .35, radius());
-                if (sector > 0) {
-                    part = PARTS[sector]; detail = true; back.visible = true; scroll = 0;
-                    lines = List.of("正在检查……"); pending = ++sequence;
-                    ClientPlayNetworking.send(new ForensicPackets.Request(target, part, false, pending));
-                    return true;
-                }
-                if (sector == 0) {
-                    if (ClientPlayNetworking.canSend(ForensicPackets.CarryRequest.ID))
-                        ClientPlayNetworking.send(new ForensicPackets.CarryRequest(target, false));
-                    close();
-                    return true;
-                }
+        final int target;final String part;final boolean releaseOnly,blocked;
+        int pending;boolean waiting;List<String> lines=List.of();
+        InspectionScreen(int target,String part,boolean releaseOnly,boolean blocked){super(Text.literal("遗体检查"));this.target=target;this.part=part;this.releaseOnly=releaseOnly;this.blocked=blocked;}
+        private int radius(){return Math.max(32,Math.min(52,height/5));}
+        private int cx(){return Math.max(radius()+8,width/2-radius()-18);}
+        private int cy(){return height/2;}
+        @Override public boolean shouldPause(){return false;}
+        @Override public void renderBackground(DrawContext c,int x,int y,float delta){}
+        private int sector(double x,double y){return InspectionWheelGeometry.sector(x-cx(),y-cy(),radius(),part.equals("torso"),releaseOnly);}
+        @Override public boolean mouseClicked(double x,double y,int button){
+            if(button==1){close();return true;}
+            if(button!=0)return super.mouseClicked(x,y,button);
+            int slot=sector(x,y);if(slot<0)return true;
+            if(releaseOnly){
+                if(ClientPlayNetworking.canSend(ForensicPackets.CarryRequest.ID))ClientPlayNetworking.send(new ForensicPackets.CarryRequest(-1,true));close();return true;
             }
-            return super.mouseClicked(x, y, button);
+            if(slot!=0)return true; // Reserved drag/carry actions never dispatch a movement request.
+            if(!waiting){waiting=true;pending=++sequence;ClientPlayNetworking.send(new ForensicPackets.Request(target,part,false,pending));}
+            return true;
         }
-        @Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
-            if (detail) { scroll = Math.max(0, Math.min(maxScroll, scroll - (int) (vertical * 24))); return true; }
-            return super.mouseScrolled(x, y, horizontal, vertical);
-        }
-        @Override public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-            context.fill(0, 0, width, height, 0xC010141D);
-            context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 12, 0xFFF1E7D6);
-            if (detail) drawDetails(context);
-            else drawWheel(context, mouseX, mouseY);
-            super.render(context, mouseX, mouseY, delta);
-        }
-        private void drawWheel(DrawContext context, int mx, int my) {
-            int r = radius(), cx = width / 2, cy = centerY();
-            int hover = CorpseWheelGeometry.sector(mx - cx, my - cy, r * .35, r);
-            // Scanline spans render the actual annular sectors, using the same hit-test geometry.
-            for (int y = -r; y <= r; y++) {
-                int start = -r, previous = -2;
-                for (int x = -r; x <= r + 1; x++) {
-                    int sector = x > r ? -2 : CorpseWheelGeometry.sector(x, y, r * .35, r);
-                    if (sector != previous) {
-                        if (previous >= 0) {
-                            int color = previous == hover ? 0xEE8A6744 : (previous % 2 == 0 ? 0xE02B3545 : 0xE0232B39);
-                            context.fill(cx + start, cy + y, cx + x, cy + y + 1, color);
-                        }
-                        start = x; previous = sector;
+        @Override public void render(DrawContext c,int mx,int my,float delta){
+            int r=radius(),hover=sector(mx,my);
+            for(int y=-r;y<=r;y++){
+                int start=-r,previous=-1;
+                for(int x=-r;x<=r+1;x++){
+                    int slot=x>r?-1:sector(cx()+x,cy()+y);
+                    if(slot!=previous){
+                        if(previous>=0)c.fill(cx()+start,cy()+y,cx()+x,cy()+y+1,
+                            previous==0?(hover==previous?0xDD786348:0xCC293743):(hover==previous?0xCC4D5056:0xBB30343C));
+                        start=x;previous=slot;
                     }
                 }
             }
-            for (int i = 0; i < LABELS.length; i++) {
-                double angle = -Math.PI / 2 + i * CorpseWheelGeometry.STEP;
-                int x = cx + (int) (Math.cos(angle) * r * .70), y = cy + (int) (Math.sin(angle) * r * .70);
-                context.drawCenteredTextWithShadow(textRenderer, Text.literal(LABELS[i]), x, y - 5, 0xFFF1E7D6);
+            if(releaseOnly)c.drawCenteredTextWithShadow(textRenderer,Text.literal("放下遗体"),cx(),cy()+r/2,0xFFFFD49B);
+            else {
+                c.drawCenteredTextWithShadow(textRenderer,Text.literal(waiting?"检查中…":"检查"+label(part)),cx(),cy()+r/2,0xFFF1E7D6);
+                if(part.equals("torso")){
+                    c.drawCenteredTextWithShadow(textRenderer,Text.literal("拖拽"),cx()-r/3,cy()-r*2/3,0xFF939BA6);
+                    c.drawCenteredTextWithShadow(textRenderer,Text.literal("抱起"),cx()+r/3,cy()-r*2/3,0xFF939BA6);
+                }else c.drawCenteredTextWithShadow(textRenderer,Text.literal("拖拽"),cx(),cy()-r*3/4,0xFF939BA6);
+                if(hover>0)c.drawCenteredTextWithShadow(textRenderer,Text.literal(hover==1&&blocked?"当前持有状态禁止拖拽":"功能预留，暂不可用"),cx(),cy()+r+7,0xFFBDC6CF);
             }
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal("检查"), cx, cy - 4, 0xFFE6C18A);
-            String hint = hover == 0 ? "抱起遗体 · 保持空手并确认安全位置" : "选择部位 · 最多查看三条最高伤害记录";
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(hint), cx, height - 48, 0xFFC4CBD6);
+            // No full-screen background, blur, title or footer buttons.
         }
-        private void drawDetails(DrawContext context) {
-            String label = LABELS[Arrays.asList(PARTS).indexOf(part)];
-            context.drawCenteredTextWithShadow(textRenderer, Text.literal(label + " · 按伤害由高到低"), width / 2, 32, 0xFFE6C18A);
-            int available = Math.max(40, width - 48), y = 58 - scroll;
-            context.enableScissor(16, 52, width - 16, height - 38);
-            for (String line : lines) {
-                var wrapped = textRenderer.wrapLines(Text.literal(line), available - 20);
-                int cardHeight = wrapped.size() * 12 + 20;
-                context.fill(16, y, width - 16, y + cardHeight - 6, 0xE0263040);
-                for (int i = 0; i < wrapped.size(); i++) context.drawTextWithShadow(textRenderer, wrapped.get(i), 26, y + 7 + i * 12, 0xFFE2E7EE);
-                y += cardHeight;
-            }
-            context.disableScissor();
-            maxScroll = Math.max(0, y + scroll - (height - 38));
-            scroll = Math.min(scroll, maxScroll);
-        }
+        private String label(String value){return switch(value){case "head"->"头部";case "torso"->"躯干";case "left_arm"->"左臂";case "right_arm"->"右臂";case "left_leg"->"左腿";case "right_leg"->"右腿";default->"部位";};}
     }
 }

@@ -97,6 +97,9 @@ public final class ForensicPackets {
         ServerPlayNetworking.registerGlobalReceiver(CarryRequest.ID, (packet, context) -> context.server().execute(() -> {
             var player = context.player();
             if (!ForensicConfig.current.enabled || !player.isAlive() || player.isSpectator()) return;
+            if(packet.release()&&com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseGrabController.status(player.getUuid())!=null){
+                com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseGrabController.release(player.getUuid());return;
+            }
             var message = com.kuilunfuzhe.monvhua.features.forensics.CorpseCarryService.handle(player, packet.target(), packet.release());
             if (message != null) player.sendMessage(Text.literal(message), true);
         }));

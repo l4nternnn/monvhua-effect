@@ -304,6 +304,7 @@ public final class Forensics {
 
     public static List<String> inspect(ServerPlayerEntity player, int entityId, String part) {
         if (!ForensicConfig.current.enabled || !player.isAlive() || player.isSpectator() || (!PARTS.contains(part) && !part.equals("__open"))) return List.of();
+        if(part.equals("__open")&&(CorpseCarryService.isCarrying(player.getUuid())||com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseGrabController.status(player.getUuid())!=null))return List.of("release");
         ServerWorld world = (ServerWorld) player.getWorld();
         Entity entity = world.getEntityById(entityId);
         if (entity instanceof InteractionEntity) {
@@ -326,7 +327,17 @@ public final class Forensics {
         ItemStack stack = display.getItemStack();
         if (!hasBinding(stack)) return List.of("无可用伤情记录");
         if (!valid(world, stack, display.getUuid().toString())) return List.of();
-        if (part.equals("__open")) return List.of("ready");
+        if (part.equals("__open")) {
+            String aimed=binding(stack).getString("part","all");
+            if(aimed.equals("all")){
+                var hit=CorpsePoseGeometry.pick(display,player.getEyePos(),player.getEyePos().add(player.getRotationVec(1).multiply(ForensicConfig.current.inspectionDistance)));
+                if(hit==null)return List.of("请瞄准实际尸体表面");aimed=hit.part();
+            }
+            boolean blocked=player.getCommandTags().contains("monvhua:no_corpse_drag")
+                ||player.getMainHandStack().isIn(net.minecraft.registry.tag.TagKey.of(net.minecraft.registry.RegistryKeys.ITEM,net.minecraft.util.Identifier.of("monvhua","prevents_corpse_drag")))
+                ||player.getOffHandStack().isIn(net.minecraft.registry.tag.TagKey.of(net.minecraft.registry.RegistryKeys.ITEM,net.minecraft.util.Identifier.of("monvhua","prevents_corpse_drag")));
+            return List.of("ready",aimed,blocked?"blocked":"allowed");
+        }
         NbtCompound b = binding(stack);
         if (!b.getString("part", "all").equals("all") && !b.getString("part", "").equals(part)) return List.of("此载体不包含所选身体部位");
         NbtCompound corpse = ForensicStore.get(player.getServer()).corpse(b.getString("id", ""));
