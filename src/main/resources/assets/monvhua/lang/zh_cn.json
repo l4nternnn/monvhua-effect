@@ -1,4 +1,8 @@
 ﻿{
+  "key.monvhua.grab_static": "抓取器：双击保存为静态",
+  "key.monvhua.grab_freeze": "抓取器：冻结/解冻",
+  "key.monvhua.grab_range": "抓取器：局部/整体",
+  "item.monvhua.corpse_physics_grabber": "物理抓取器",
   "item.monvhua.corpse_physics_controller": "物理姿态控制器",
   "key.monvhua.forensic_inspect": "检查尸体伤情",
   "key.monvhua.forensic_mode": "切换武器攻击模式",
@@ -54,6 +58,15 @@
   "sound.monvhua.sound_wave": "声音震荡",
   "sound.monvhua.tinnitus": "耳鸣",
 
+  "gui.monvhua.emotion_picker": "表情",
+  "item.monvhua.chest_link": "箱子映射器",
+  "item.monvhua.chest_link.scan": "已高亮附近箱子",
+  "item.monvhua.chest_link.first_bound": "已绑定第一个箱子",
+  "item.monvhua.chest_link.dimension_mismatch": "两个箱子必须在同一维度",
+  "item.monvhua.chest_link.source_missing": "绑定的箱子不存在或无法加载"
+,"item.monvhua.chest_link.cleared": "已清除箱子绑定",
+  "item.monvhua.chest_link.highlight_on": "箱子高亮已开启",
+  "item.monvhua.chest_link.highlight_off": "箱子高亮已关闭",
 
   "command.monvhua.commandpanel.sync.usage": "用法：/commandpanel sync <目标玩家>",
   "command.monvhua.commandpanel.sync.received": "%s 已向你同步命令面板",
@@ -172,16 +185,8 @@
   "effect.monvhua.hanna_5": "高度魔女化",
   "effect.monvhua.hanna_6": "重度魔女化",
   "effect.monvhua.hanna_7": "准魔女",
-  "effect.monvhua.hanna_8": "魔女",
-  "gui.monvhua.emotion_picker": "表情",
-  "item.monvhua.chest_link": "箱子映射器",
-  "item.monvhua.chest_link.scan": "已高亮附近箱子",
-  "item.monvhua.chest_link.first_bound": "已绑定第一个箱子",
-  "item.monvhua.chest_link.dimension_mismatch": "两个箱子必须在同一维度",
-  "item.monvhua.chest_link.source_missing": "绑定的箱子不存在或无法加载"
-  ,"item.monvhua.chest_link.cleared": "已清除箱子绑定",
-  "item.monvhua.chest_link.highlight_on": "箱子高亮已开启",
-  "item.monvhua.chest_link.highlight_off": "箱子高亮已关闭"
+  "effect.monvhua.hanna_8": "魔女"
+
 
 }
 

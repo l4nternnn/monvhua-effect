@@ -69,6 +69,7 @@ public final class PhysicsPreviewGameTest implements FabricClientGameTest {
                 }
             }
             CorpsePoseGameChecks.run(context,world);
+            if(Boolean.getBoolean("monvhua.physicsG6GameTest")){CorpseGrabGameChecks.run(context,world);reloadSave=world.getWorldSave();}
             if(Boolean.getBoolean("monvhua.physicsAutomaticGameTest")){CorpseAutomaticGameChecks.run(context,world);DirectionalCorpseGameChecks.run(context,world);CorpseHistoryGameChecks.run(context,world);}
             else if(Boolean.getBoolean("monvhua.physicsHistoryGameTest"))CorpseHistoryGameChecks.run(context,world);
             if(Boolean.getBoolean("monvhua.physicsMissingCoreGameTest"))CorpseAutomaticGameChecks.missing(context,world);
@@ -90,7 +91,7 @@ public final class PhysicsPreviewGameTest implements FabricClientGameTest {
             context.waitFor(client->preview.diagnosticDocument()!=null,200);
         }
         context.runOnClient(client->PhysicsPreviewChecks.require(preview.diagnosticDocument()==null,"Disconnect retained preview"));
-        if(reloadSave!=null)try(var reopened=reloadSave.open()){if(Boolean.getBoolean("monvhua.physicsG4GameTest"))CorpseRealEventGameChecks.verifyReload(context,reopened);if(Boolean.getBoolean("monvhua.physicsG5GameTest"))CorpseContinuousGameChecks.verifyReload(context,reopened);}
+        if(reloadSave!=null)try(var reopened=reloadSave.open()){if(Boolean.getBoolean("monvhua.physicsG6GameTest"))CorpseGrabGameChecks.verifyReload(context,reopened);if(Boolean.getBoolean("monvhua.physicsG4GameTest"))CorpseRealEventGameChecks.verifyReload(context,reopened);if(Boolean.getBoolean("monvhua.physicsG5GameTest"))CorpseContinuousGameChecks.verifyReload(context,reopened);}
         try{Files.writeString(preview.directory().getParent().resolve("physics-preview-test.txt"),"PASS: seven slim poses + 72 slim/wide single-axis variants + corpse integration, 11 surfaces x six faces, rigid bounds, inverse matrices, invalid imports, 100 reloads, cancellation and disconnect.\n",StandardCharsets.UTF_8);}
         catch(java.io.IOException e){throw new AssertionError(e);}
     }

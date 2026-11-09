@@ -12,7 +12,7 @@ import java.util.*;
 public final class CorpseControllerClient {
     private static boolean attackLatched,requestPending;
     public static void tick(MinecraftClient client){if(!client.options.attackKey.isPressed())attackLatched=false;}
-    public static boolean holding(){var c=MinecraftClient.getInstance();return c.player!=null&&c.player.getMainHandStack().isOf(CorpseHistoryController.ITEM);}
+    public static boolean holding(){var c=MinecraftClient.getInstance();return c.player!=null&&c.player.getMainHandStack().isOf(CorpseHistoryController.History_Cortol_ITEM);}
     public static boolean attack(){
         if(!holding())return false;
         var target=pick();if(target==null)return false;

@@ -17,6 +17,10 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
         if(RagdollRequest.class.getRecordComponents().length!=8||!solver(CorpsePhysicsProfiles.F5).equals(RagdollSolverProfile.F5))throw new LinkageError("Unsupported profile core/baseline");
         if(RagdollDiagnosticDocument.Document.class.getRecordComponents().length!=13)throw new LinkageError("Unsupported diagnostic core");
         if(com.klfz.simplephysics.backend.ContinuousRagdollSession.Snapshot.class.getRecordComponents().length!=7)throw new LinkageError("Unsupported continuous core");
+        try {com.klfz.simplephysics.backend.ContinuousRagdollSession.class.getMethod("control",RagdollControl.class);}
+        catch(NoSuchMethodException e){throw new LinkageError("Unsupported grab core",e);}
+        try{var field=RagdollControl.class.getField("CONTROL_VERSION");if(field.getInt(null)!=2)throw new LinkageError("Unsupported limb slot core");}
+        catch(ReflectiveOperationException e){throw new LinkageError("Unsupported limb slot core",e);}
         service.initialize();
     }
     public int apiVersion(){return API_VERSION;}
@@ -46,13 +50,21 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
         });
         return result;
     }
-    public Session openContinuous(Request request){
+    public Session openContinuous(Request request){return openSeeded(request,null);}
+    public Session openSeeded(Request request,PhysicsPoseDocument pose){
         var definition=request.slim()?RagdollDefinition.slim():RagdollDefinition.standard();
-        var session=service.openContinuous(input(request,definition,terrain(request.terrain())));
+        RagdollResult.Frame seed=pose==null?null:new RagdollResult.Frame(0,definition.parts().stream().map(part->{var p=pose.poses().get(part.id());return new RagdollResult.Pose(part.id(),new BoxTrace.Frame(p.x(),p.y(),p.z(),p.qx(),p.qy(),p.qz(),p.qw()));}).toList());
+        var requestInput=input(request,definition,terrain(request.terrain()));
+        if(seed!=null)requestInput=RagdollRequest.explicit(definition,terrain(request.terrain()),new RagdollDefinition.V3(0,0,0),RagdollInitialMotion.directed(0,0,0,1,new RagdollDefinition.V3(0,0,0),0));
+        var session=service.openContinuous(requestInput,seed);
         return new Session(){
             private final CompletableFuture<PhysicsPoseDocument> completion=session.completion().thenApply(v->null);
             private RagdollResult stableNative;private PhysicsPoseDocument stablePose;
             public boolean continuous(){return true;}
+            public void control(Grab g){session.control(new RagdollControl(g.sequence(),g.part(),new RagdollDefinition.V3(g.lx(),g.ly(),g.lz()),new RagdollDefinition.V3(g.x(),g.y(),g.z()),new RagdollDefinition.V3(g.ax(),g.ay(),g.az()),g.rotating(),g.dynamicPart()));}
+            public long controlSequence(){return session.controlSequence();}
+            public String dynamicPart(){return session.dynamicPart();}
+            public void region(java.util.List<Box> boxes,long revision,float x,float y,float z){session.terrain(LocalCorpsePhysicsProvider.terrain(boxes),revision,new RagdollDefinition.V3(x,y,z));}
             public Metrics metrics(){var r=session.snapshot().stable();return r==null?new Metrics(0,0,0):new Metrics(r.maxAnchorError(),r.maxPenetration(),r.maxLimitError());}
             public synchronized ResidentState residentState(){var s=session.snapshot();if(stableNative!=s.stable()){stableNative=s.stable();stablePose=stableNative==null?null:document(stableNative.finalPose(),definition,"SETTLED",stableNative.torsoTiltDegrees(),stableNative.reason());}return new ResidentState(s.phase().name(),s.tick(),s.generation(),s.terrainRevision(),s.paused(),stablePose,s.failure());}
             public void terrain(java.util.List<Box> boxes,long revision){session.terrain(LocalCorpsePhysicsProvider.terrain(boxes),revision);}

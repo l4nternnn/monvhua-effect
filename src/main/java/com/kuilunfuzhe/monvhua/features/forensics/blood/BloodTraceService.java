@@ -75,6 +75,21 @@ public final class BloodTraceService {
         source.sendFeedback(() -> Text.literal((preview ? "将清除" : "已清除") + count + " 个血迹补丁"), false); return count;
     }
     public static void track(ItemDisplayEntity display) { if (Forensics.hasBinding(display.getItemStack())) SOURCES.add(display); }
+    public static void beginPhysicsMove(ItemDisplayEntity display) {
+        CARRIED.add(display.getUuid());LAST_DRIP.put(display.getUuid(),display.getPos());
+        LAST_DRIP_TIME.put(display.getUuid(),now(display.getWorld().getServer()));DRIP_DISTANCE.put(display.getUuid(),0.0);SOURCES.remove(display);
+    }
+    public static void physicsMoved(ItemDisplayEntity display,Vec3d previous,Vec3d current,ServerPlayerEntity operator){
+        safe(()->{
+            if(!CARRIED.contains(display.getUuid()))return;
+            var config=ForensicConfig.current.transfer;long time=now(operator.getServer());
+            double distance=DRIP_DISTANCE.getOrDefault(display.getUuid(),0.0)+previous.distanceTo(current);DRIP_DISTANCE.put(display.getUuid(),distance);
+            long elapsed=time-LAST_DRIP_TIME.getOrDefault(display.getUuid(),time);
+            if(!config.enabled||!config.corpseDrips||time%config.sampleTicks!=0||elapsed<config.dripMinTicks)return;
+            if(distance<config.dripDistance&&elapsed<config.stationaryDripTicks)return;
+            LAST_DRIP_TIME.put(display.getUuid(),time);DRIP_DISTANCE.put(display.getUuid(),0.0);drip(display,current,operator);
+        });
+    }
     public static void beginCarry(ItemDisplayEntity display, ServerPlayerEntity carrier) {
         CARRIED.add(display.getUuid());
         LAST_DRIP.put(display.getUuid(), display.getPos());

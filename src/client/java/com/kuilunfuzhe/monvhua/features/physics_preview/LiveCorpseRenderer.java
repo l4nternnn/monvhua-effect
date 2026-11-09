@@ -73,7 +73,7 @@ public final class LiveCorpseRenderer {
         if(views.isEmpty())return;
         if(models!=client.getLoadedEntityModels()){models=client.getLoadedEntityModels();renderer=new CombinedBodySpecialModelRenderer(client.getLoadedEntityModels());}
         for(var v:views) {
-            if(!sameWorld(v)||context.camera().getPos().squaredDistanceTo(v.origin())>64*64)continue;
+            if(!sameWorld(v))continue;
             var timed=v.session().published();
             var frames=timed.stream().map(CorpsePhysicsBridge.TimedPose::pose).toList();
             if(frames.isEmpty())continue;

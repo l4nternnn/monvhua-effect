@@ -4,7 +4,7 @@ import com.kuilunfuzhe.monvhua.features.forensics.*;
 import com.kuilunfuzhe.monvhua.features.forensics.physics.*;
 import net.fabricmc.fabric.api.client.gametest.v1.context.*;
 import net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity;
-import net.minecraft.util.math.Vec3d;
+
 import java.util.UUID;
 import static com.kuilunfuzhe.monvhua.features.physics_preview.PhysicsPreviewChecks.require;
 
@@ -20,7 +20,7 @@ final class CorpseHistoryGameChecks {
         UUID[] id={null};
         world.getServer().runOnServer(s->{
             var e=CorpseHistoryController.entries().stream().filter(x->x.active).findFirst().orElseThrow();id[0]=e.id;
-            var p=s.getPlayerManager().getPlayerList().getFirst();p.setStackInHand(net.minecraft.util.Hand.MAIN_HAND,new net.minecraft.item.ItemStack(CorpseHistoryController.ITEM));
+            var p=s.getPlayerManager().getPlayerList().getFirst();p.setStackInHand(net.minecraft.util.Hand.MAIN_HAND,new net.minecraft.item.ItemStack(CorpseHistoryController.History_Cortol_ITEM));
             aim(p,e);
         });
         context.waitTicks(2);

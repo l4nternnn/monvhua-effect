@@ -26,7 +26,7 @@ final class CorpseContinuousGameChecks {
         context.waitTicks(1200); // one minute: initial fall must be gone
         context.runOnClient(c->{var e=CorpseHistoryController.get(id[0]);require(e.last()>3500&&e.first()>e.last()-300&&e.steps().size()<=61,"Sleep history not rolling");});
         var frozen=new long[1];
-        world.getServer().runOnServer(server->{var e=CorpseHistoryController.get(id[0]);var player=server.getPlayerManager().getPlayerList().getFirst();player.setStackInHand(net.minecraft.util.Hand.MAIN_HAND,new net.minecraft.item.ItemStack(CorpseHistoryController.ITEM));aim(player,e);CorpseHistoryController.operate(player,id[0],false);});context.waitTicks(5);
+        world.getServer().runOnServer(server->{var e=CorpseHistoryController.get(id[0]);var player=server.getPlayerManager().getPlayerList().getFirst();player.setStackInHand(net.minecraft.util.Hand.MAIN_HAND,new net.minecraft.item.ItemStack(CorpseHistoryController.History_Cortol_ITEM));aim(player,e);CorpseHistoryController.operate(player,id[0],false);});context.waitTicks(5);
         world.getServer().runOnServer(server->{var player=server.getPlayerManager().getPlayerList().getFirst();aim(player,CorpseHistoryController.get(id[0]));CorpseHistoryController.operate(player,id[0],true);});
         context.runOnClient(c->{var e=CorpseHistoryController.get(id[0]);c.setScreen(new CorpseTimelineScreen(e,c.getServer(),c.player.getUuid()));});context.waitTicks(3);
         context.runOnClient(c->{var e=CorpseHistoryController.get(id[0]);c.currentScreen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_HOME,0,0);require(e.selectedFrame==e.first()&&e.pose()!=null,"Long timeline cannot pick oldest sample");c.currentScreen.close();});context.waitTicks(3);

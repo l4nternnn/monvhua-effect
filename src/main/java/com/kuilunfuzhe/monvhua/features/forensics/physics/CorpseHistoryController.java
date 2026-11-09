@@ -18,7 +18,7 @@ import static net.minecraft.server.command.CommandManager.*;
 /** Integrated-server control authority. No history is written to public corpse data. */
 public final class CorpseHistoryController {
     private static final Identifier ID=Identifier.of("monvhua","corpse_physics_controller");
-    public static final Item ITEM=Registry.register(Registries.ITEM,ID,new Item(new Item.Settings()
+    public static final Item History_Cortol_ITEM =Registry.register(Registries.ITEM,ID,new Item(new Item.Settings()
             .registryKey(RegistryKey.of(RegistryKeys.ITEM,ID)).maxCount(1)));
     private static final int MAX_OBJECTS=16;
     private static final long BUDGET=32L*1024*1024, BYTES_PER_FRAME=4096;
@@ -46,6 +46,7 @@ public final class CorpseHistoryController {
         }
         private void refresh(){expected=display.getItemStack().copy();position=display.getPos();yaw=display.getYaw();pitch=display.getPitch();
             root=new org.joml.Matrix4f(com.kuilunfuzhe.monvhua.mixin.forensics.CorpseDisplayAccessor.monvhua$transform(display.getDataTracker()).getMatrix());}
+        public boolean current(){return valid&&matches();}
         public boolean frozen(){return manual||timeline;}
         public boolean confirmed(){return !active||session!=null&&session.paused();}
         public long first(){var ticks=steps();return ticks.isEmpty()?-1:ticks.getFirst();}
@@ -124,7 +125,7 @@ public final class CorpseHistoryController {
 
     /** Called only on the integrated server, after the client has selected a visible model. */
     public static Entry operate(ServerPlayerEntity player,UUID target,boolean open){
-        if(!player.hasPermissionLevel(2)||!player.getMainHandStack().isOf(ITEM)||!player.getServer().isSingleplayer())throw new IllegalArgumentException("仅管理员持控制器可操作本地尸体");
+        if(!player.hasPermissionLevel(2)||(!player.getMainHandStack().isOf(History_Cortol_ITEM)&&!player.getMainHandStack().isOf(CorpseGrabController.ITEM))||!player.getServer().isSingleplayer())throw new IllegalArgumentException("仅管理员持控制器可操作本地尸体");
         if(!CorpsePhysicsCoordinator.localControl(player.getServer()))throw new IllegalArgumentException("未连接本地物理核心");
         boolean previouslySelected=target==null;
         if(target==null)target=selected.get(player.getUuid());
@@ -145,7 +146,7 @@ public final class CorpseHistoryController {
         boolean visible=previouslySelected&&open?CorpseHistoryPicking.reachable(player,e):CorpseHistoryPicking.hit(player,e)>=0;
         if(!visible)throw new IllegalArgumentException("目标超出距离、被遮挡或未瞄准尸体");
         selected.put(player.getUuid(),e.id);
-        if(open){e.timeline=true;e.viewer=player.getUuid();}
+        if(open){CorpseGrabController.releaseTarget(e.id);e.timeline=true;e.viewer=player.getUuid();}
         else e.manual=!e.manual;
         updatePause(e);return e;
     }

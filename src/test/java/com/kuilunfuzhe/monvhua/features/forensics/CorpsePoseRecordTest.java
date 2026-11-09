@@ -22,6 +22,13 @@ class CorpsePoseRecordTest {
             assertThrows(IllegalArgumentException.class,()->new CorpsePoseRecord(1,"generated","default",parts,"slim_six_v1"));
         }
     }
+    @Test void frozenStaticHasDistinctStateAndRoundTrips() throws Exception {
+        var d=floor();var record=new CorpsePoseRecord(20,"frozen_static","slim",d.poses(),d.definition());
+        var encoded=record.encode();assertEquals("STATIC",encoded.getString("state",""));assertEquals(3,encoded.getInt("version",0));
+        assertEquals(record,CorpsePoseRecord.decode(encoded));
+        var bad=encoded.copy();bad.putString("state","SETTLED");assertThrows(IllegalArgumentException.class,()->CorpsePoseRecord.decode(bad));
+        var legacy=CorpsePoseRecord.imported(d,1,"slim").encode();legacy.putString("state","STATIC");assertThrows(IllegalArgumentException.class,()->CorpsePoseRecord.decode(legacy));
+    }
     private PhysicsPoseDocument floor() throws Exception {
         try(var in=getClass().getResourceAsStream("/assets/monvhua/physics_preview/fixtures/floor.json")) {
             assertNotNull(in);return PhysicsPoseDocument.parse(new String(in.readAllBytes(),StandardCharsets.UTF_8));

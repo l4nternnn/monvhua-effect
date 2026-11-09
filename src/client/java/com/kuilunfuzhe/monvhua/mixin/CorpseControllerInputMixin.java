@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.callback.*;
 public abstract class CorpseControllerInputMixin {
     @Shadow private int itemUseCooldown;
     @Inject(method="doAttack",at=@At("HEAD"),cancellable=true)
-    private void monvhua$corpseAttack(CallbackInfoReturnable<Boolean> cir){if(CorpseControllerClient.attack())cir.setReturnValue(false);}
+    private void monvhua$corpseAttack(CallbackInfoReturnable<Boolean> cir){if(com.kuilunfuzhe.monvhua.features.physics_preview.CorpseGrabClient.holding()||CorpseControllerClient.attack())cir.setReturnValue(false);}
     @Inject(method="doItemUse",at=@At("HEAD"),cancellable=true)
-    private void monvhua$corpseUse(CallbackInfo ci){if(CorpseControllerClient.use()){itemUseCooldown=4;ci.cancel();}}
+    private void monvhua$corpseUse(CallbackInfo ci){if(com.kuilunfuzhe.monvhua.features.physics_preview.CorpseGrabClient.holding()||CorpseControllerClient.use()){itemUseCooldown=4;ci.cancel();}}
 }

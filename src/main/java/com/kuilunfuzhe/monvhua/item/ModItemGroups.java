@@ -1,8 +1,8 @@
 package com.kuilunfuzhe.monvhua.item;
 
 import com.kuilunfuzhe.monvhua.features.evil_eyes.Evil_Eyes;
+import com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseHistoryController;
 import com.kuilunfuzhe.monvhua.item.area_tip.AreaTipItems;
-import com.kuilunfuzhe.monvhua.item.commandpanel.CommandPanelItem;
 import com.kuilunfuzhe.monvhua.item.commandpanel.CommandPanelItems;
 import com.kuilunfuzhe.monvhua.item.gazeguidance.ModItems;
 import com.kuilunfuzhe.monvhua.item.gravity.GravityItems;
@@ -67,6 +67,8 @@ public class ModItemGroups {
                             entries.add(Assembly_ModItems.SKELETAL_RIGHT_ARM_ITEM);
                             entries.add(Assembly_ModItems.SKELETAL_LEFT_LEG_ITEM);
                             entries.add(Assembly_ModItems.SKELETAL_RIGHT_LEG_ITEM);
+                            entries.add(CorpseHistoryController.History_Cortol_ITEM);
+                            entries.add(com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseGrabController.ITEM);
                         })
                         .build()
         );

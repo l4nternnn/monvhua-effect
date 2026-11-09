@@ -20,7 +20,7 @@ public record CorpsePoseRecord(long revision, String source, String armModel,
         parts=Map.copyOf(parts);
         if(!Set.of("standard_six_v1","slim_six_v1").contains(definition)
                 ||definition.equals("slim_six_v1")&&!armModel.equals("slim"))throw new IllegalArgumentException("Unsupported definition/body shape");
-        if(revision<1 || !Set.of("imported_debug","generated").contains(source)
+        if(revision<1 || !Set.of("imported_debug","generated","frozen_static").contains(source)
                 || !Set.of("slim","default").contains(armModel)
                 || !parts.keySet().equals(Set.copyOf(PhysicsPoseDocument.IDS))) throw new IllegalArgumentException("Invalid pose header/parts");
         for(var p:parts.values()) {
@@ -45,8 +45,8 @@ public record CorpsePoseRecord(long revision, String source, String armModel,
     public static boolean present(ItemStack stack) {return data(stack).contains(KEY);}
     public static NbtCompound data(ItemStack stack) {return stack.getOrDefault(DataComponentTypes.CUSTOM_DATA,NbtComponent.DEFAULT).copyNbt();}
     public NbtCompound encode() {
-        NbtCompound n=new NbtCompound();n.putInt("version",definition.equals("standard_six_v1")?1:2);n.putString("definition",definition);
-        n.putString("coordinate_space","corpse_local");n.putString("state","SETTLED");
+        NbtCompound n=new NbtCompound();n.putInt("version",source.equals("frozen_static")?3:definition.equals("standard_six_v1")?1:2);n.putString("definition",definition);
+        n.putString("coordinate_space","corpse_local");n.putString("state",source.equals("frozen_static")?"STATIC":"SETTLED");
         n.putString("source",source);n.putLong("revision",revision);n.putString("arm_model",armModel);
         NbtList list=new NbtList();
         for(String id:PhysicsPoseDocument.IDS) {
@@ -61,9 +61,12 @@ public record CorpsePoseRecord(long revision, String source, String armModel,
         try{return Optional.of(decode(root.getCompoundOrEmpty(KEY)));}catch(IllegalArgumentException e){return Optional.empty();}
     }
     public static CorpsePoseRecord decode(NbtCompound n) {
-        if(!((n.getInt("version",0)==1&&n.getString("definition","").equals("standard_six_v1"))
-                ||(n.getInt("version",0)==2&&n.getString("definition","").equals("slim_six_v1")))
-                ||!n.getString("coordinate_space","").equals("corpse_local")||!n.getString("state","").equals("SETTLED"))
+        boolean frozen=n.getString("source","").equals("frozen_static");
+        boolean version=frozen?n.getInt("version",0)==3:
+                (n.getInt("version",0)==1&&n.getString("definition","").equals("standard_six_v1"))
+                ||(n.getInt("version",0)==2&&n.getString("definition","").equals("slim_six_v1"));
+        if(!version||!n.getString("coordinate_space","").equals("corpse_local")
+                ||!n.getString("state","").equals(frozen?"STATIC":"SETTLED"))
             throw new IllegalArgumentException("Unsupported corpse pose");
         var list=n.getListOrEmpty("parts");if(list.size()!=6)throw new IllegalArgumentException("Expected six parts");
         Map<String,PhysicsPoseDocument.Pose> parts=new LinkedHashMap<>();

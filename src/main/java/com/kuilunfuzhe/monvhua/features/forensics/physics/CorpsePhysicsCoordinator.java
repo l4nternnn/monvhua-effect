@@ -60,7 +60,7 @@ public final class CorpsePhysicsCoordinator {
         owner=server;provider=backend;CorpseProfileManager.start(server);sampleTick=Long.MIN_VALUE;terrainTick=Long.MIN_VALUE;terrainCursor=0;sampled=0;last="已连接本地计算服务";
     }
     public static synchronized void detach() {
-        epoch++;automatic=false;CorpseResidentManager.reset();continuous=defaultContinuous();CorpsePhysicsDiagnostics.clear();CorpseProfileManager.reset();CorpseHistoryController.reset();pausedTicks.clear();
+        epoch++;automatic=false;CorpseGrabController.reset();CorpseResidentManager.reset();continuous=defaultContinuous();CorpsePhysicsDiagnostics.clear();CorpseProfileManager.reset();CorpseHistoryController.reset();pausedTicks.clear();
         for(var job:jobs.values()){job.future.cancel(true);if(job.session!=null)job.session.close();}jobs.clear();views.clear();progressTicks.clear();progressSteps.clear();advanceTicks.clear();
         var old=provider;provider=null;owner=null;if(old!=null)CompletableFuture.runAsync(old::close);
         last="世界已断开；自动生成关闭";
@@ -79,11 +79,11 @@ public final class CorpsePhysicsCoordinator {
     }
     public static String status(){var p=provider;return "单人试验 mode="+(continuous?"CONTINUOUS":"ONE_SHOT")+" "+CorpseResidentManager.status()+" auto="+automatic+" pending="+jobs.size()+" applied="+applied+" fallback="+failed+" cancelled="+cancelled+" | "+(p==null?"无本地后端":p.status())+" | "+last;}
     public static void initialize() {
-        CorpseHistoryController.initialize();
+        CorpseHistoryController.initialize();CorpseGrabController.initialize();
         ServerTickEvents.END_SERVER_TICK.register(server->{
             DeathMotionContext.expire(server);
             if(server!=owner)return;
-            CorpseResidentManager.tick();
+            CorpseGrabController.tick(server);CorpseResidentManager.tick();
             CorpseHistoryController.tick();
             for(var job:List.copyOf(jobs.values())) {
                 long tick=job.world.getTime();
