@@ -19,7 +19,7 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
         if(com.klfz.simplephysics.backend.ContinuousRagdollSession.Snapshot.class.getRecordComponents().length!=7)throw new LinkageError("Unsupported continuous core");
         try {com.klfz.simplephysics.backend.ContinuousRagdollSession.class.getMethod("control",RagdollControl.class);}
         catch(NoSuchMethodException e){throw new LinkageError("Unsupported grab core",e);}
-        try{var field=RagdollControl.class.getField("CONTROL_VERSION");if(field.getInt(null)!=2)throw new LinkageError("Unsupported limb slot core");}
+        try{var field=RagdollControl.class.getField("CONTROL_VERSION");if(field.getInt(null)!=2||RagdollControl.class.getField("SUPPORT_VERSION").getInt(null)!=1)throw new LinkageError("Unsupported limb slot core");}
         catch(ReflectiveOperationException e){throw new LinkageError("Unsupported limb slot core",e);}
         service.initialize();
     }
@@ -61,7 +61,7 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
             private final CompletableFuture<PhysicsPoseDocument> completion=session.completion().thenApply(v->null);
             private RagdollResult stableNative;private PhysicsPoseDocument stablePose;
             public boolean continuous(){return true;}
-            public void control(Grab g){session.control(new RagdollControl(g.sequence(),g.part(),new RagdollDefinition.V3(g.lx(),g.ly(),g.lz()),new RagdollDefinition.V3(g.x(),g.y(),g.z()),new RagdollDefinition.V3(g.ax(),g.ay(),g.az()),g.rotating(),g.dynamicPart()));}
+            public void control(Grab g){session.control(new RagdollControl(g.sequence(),g.part(),new RagdollDefinition.V3(g.lx(),g.ly(),g.lz()),new RagdollDefinition.V3(g.x(),g.y(),g.z()),new RagdollDefinition.V3(g.ax(),g.ay(),g.az()),g.rotating(),g.dynamicPart(),g.support()==null?null:new RagdollControl.Support(g.support().x(),g.support().y(),g.support().z(),g.support().w())));}
             public long controlSequence(){return session.controlSequence();}
             public String dynamicPart(){return session.dynamicPart();}
             public void region(java.util.List<Box> boxes,long revision,float x,float y,float z){session.terrain(LocalCorpsePhysicsProvider.terrain(boxes),revision,new RagdollDefinition.V3(x,y,z));}

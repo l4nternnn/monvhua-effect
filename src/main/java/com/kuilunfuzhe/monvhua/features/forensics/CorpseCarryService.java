@@ -64,13 +64,14 @@ public final class CorpseCarryService {
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> { BY_CARRIER.clear(); BY_DISPLAY.clear(); PENDING.clear(); });
     }
 
-    public static boolean isCarrying(UUID player) { return BY_CARRIER.containsKey(player); }
+    public static boolean isCarrying(UUID player) { return BY_CARRIER.containsKey(player)||com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseTransportController.carrying(player); }
 
     public static boolean isCarried(ItemDisplayEntity display) {
-        return display != null && (BY_DISPLAY.containsKey(display.getUuid()) || PENDING.containsKey(display.getUuid()));
+        return display != null && (BY_DISPLAY.containsKey(display.getUuid()) || PENDING.containsKey(display.getUuid()) || com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseTransportController.held(display.getUuid()));
     }
 
     public static String handle(ServerPlayerEntity player, int targetId, boolean release) {
+        if(com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseTransportController.carrying(player.getUuid())){if(release){com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseTransportController.release(player.getUuid());return "已松开遗体";}return "请先放下遗体";}
         Session current = BY_CARRIER.get(player.getUuid());
         if (release) {
             if (current == null) return "你当前没有抱起遗体";

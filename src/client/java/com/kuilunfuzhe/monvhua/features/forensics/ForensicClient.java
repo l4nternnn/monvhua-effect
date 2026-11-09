@@ -118,7 +118,11 @@ public final class ForensicClient {
             if(releaseOnly){
                 if(ClientPlayNetworking.canSend(ForensicPackets.CarryRequest.ID))ClientPlayNetworking.send(new ForensicPackets.CarryRequest(-1,true));close();return true;
             }
-            if(slot!=0)return true; // Reserved drag/carry actions never dispatch a movement request.
+            if(slot!=0){
+                if((slot==1&&blocked)||part.equals("head"))return true;
+                if(ClientPlayNetworking.canSend(ForensicPackets.CarryRequest.ID))ClientPlayNetworking.send(new ForensicPackets.CarryRequest(target,false,slot==2?"carry":"drag",part));
+                close();return true;
+            }
             if(!waiting){waiting=true;pending=++sequence;ClientPlayNetworking.send(new ForensicPackets.Request(target,part,false,pending));}
             return true;
         }
@@ -142,7 +146,7 @@ public final class ForensicClient {
                     c.drawCenteredTextWithShadow(textRenderer,Text.literal("拖拽"),cx()-r/3,cy()-r*2/3,0xFF939BA6);
                     c.drawCenteredTextWithShadow(textRenderer,Text.literal("抱起"),cx()+r/3,cy()-r*2/3,0xFF939BA6);
                 }else c.drawCenteredTextWithShadow(textRenderer,Text.literal("拖拽"),cx(),cy()-r*3/4,0xFF939BA6);
-                if(hover>0)c.drawCenteredTextWithShadow(textRenderer,Text.literal(hover==1&&blocked?"当前持有状态禁止拖拽":"功能预留，暂不可用"),cx(),cy()+r+7,0xFFBDC6CF);
+                if(hover>0)c.drawCenteredTextWithShadow(textRenderer,Text.literal(hover==1&&blocked?"当前持有状态禁止拖拽":part.equals("head")?"请瞄准四肢拖拽":hover==2?"承托躯干，四肢自然摆动":"拖动所选肢体；躯干自动选择最近四肢"),cx(),cy()+r+7,0xFFBDC6CF);
             }
             // No full-screen background, blur, title or footer buttons.
         }

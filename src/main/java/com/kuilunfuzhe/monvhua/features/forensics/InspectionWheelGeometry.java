@@ -1,6 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.forensics;
 
-/** 0 inspect/release, 1 reserved drag, 2 reserved torso carry; top cap occupies 72 degrees. */
+/** 0 inspect/release, 1 drag, 2 torso carry; top cap occupies 72 degrees. */
 public final class InspectionWheelGeometry {
     private InspectionWheelGeometry() {}
     public static int sector(double x,double y,double radius,boolean torso,boolean release) {

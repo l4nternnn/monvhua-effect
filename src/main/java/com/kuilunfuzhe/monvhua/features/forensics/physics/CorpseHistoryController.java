@@ -79,7 +79,7 @@ public final class CorpseHistoryController {
         private boolean matches(){return !display.isRemoved()&&display.getWorld().getEntityById(display.getId())==display
                 &&position.equals(display.getPos())&&yaw==display.getYaw()&&pitch==display.getPitch()
                 &&root.equals(com.kuilunfuzhe.monvhua.mixin.forensics.CorpseDisplayAccessor.monvhua$transform(display.getDataTracker()).getMatrix(),1e-6f)
-                &&sameItem()&&!CorpseCarryService.isCarried(display);}
+                &&sameItem()&&(!CorpseCarryService.isCarried(display)||CorpseTransportController.owns(display.getUuid(),session));}
     }
     public static void initialize(){ /* forces item registration */ }
     public static List<Entry> entries(){return List.copyOf(entries.values());}
@@ -146,6 +146,7 @@ public final class CorpseHistoryController {
         boolean visible=previouslySelected&&open?CorpseHistoryPicking.reachable(player,e):CorpseHistoryPicking.hit(player,e)>=0;
         if(!visible)throw new IllegalArgumentException("目标超出距离、被遮挡或未瞄准尸体");
         selected.put(player.getUuid(),e.id);
+        CorpseTransportController.releaseTarget(e.id);
         if(open){CorpseGrabController.releaseTarget(e.id);e.timeline=true;e.viewer=player.getUuid();}
         else e.manual=!e.manual;
         updatePause(e);return e;

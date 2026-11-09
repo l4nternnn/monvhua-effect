@@ -13,11 +13,12 @@ import net.minecraft.entity.Entity;
 import java.util.*;
 
 public final class ForensicPackets {
-    public record CarryRequest(int target, boolean release) implements CustomPayload {
+    public record CarryRequest(int target, boolean release,String mode,String part) implements CustomPayload {
+        public CarryRequest(int target,boolean release){this(target,release,"legacy","torso");}
         public static final Id<CarryRequest> ID = new Id<>(Identifier.of("monvhua", "forensic_carry"));
         public static final PacketCodec<RegistryByteBuf, CarryRequest> CODEC = PacketCodec.of(CarryRequest::write, CarryRequest::new);
-        private CarryRequest(RegistryByteBuf buf) { this(buf.readVarInt(), buf.readBoolean()); }
-        private void write(RegistryByteBuf buf) { buf.writeVarInt(target); buf.writeBoolean(release); }
+        private CarryRequest(RegistryByteBuf buf) { this(buf.readVarInt(), buf.readBoolean(),buf.readString(16),buf.readString(32)); }
+        private void write(RegistryByteBuf buf) { buf.writeVarInt(target); buf.writeBoolean(release);buf.writeString(mode,16);buf.writeString(part,32); }
         @Override public Id<? extends CustomPayload> getId() { return ID; }
     }
     public record Request(int target, String part, boolean cycle, int requestId) implements CustomPayload {
@@ -100,7 +101,9 @@ public final class ForensicPackets {
             if(packet.release()&&com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseGrabController.status(player.getUuid())!=null){
                 com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseGrabController.release(player.getUuid());return;
             }
-            var message = com.kuilunfuzhe.monvhua.features.forensics.CorpseCarryService.handle(player, packet.target(), packet.release());
+            var message = !packet.release()&&!packet.mode().equals("legacy")
+                ? com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseTransportController.start(player,packet.target(),packet.mode(),packet.part())
+                : com.kuilunfuzhe.monvhua.features.forensics.CorpseCarryService.handle(player, packet.target(), packet.release());
             if (message != null) player.sendMessage(Text.literal(message), true);
         }));
     }

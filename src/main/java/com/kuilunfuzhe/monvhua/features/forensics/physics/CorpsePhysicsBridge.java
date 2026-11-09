@@ -6,7 +6,7 @@ import java.util.concurrent.CompletableFuture;
 
 /** Optional local provider. No Minecraft or native types cross the worker boundary. */
 public interface CorpsePhysicsBridge extends AutoCloseable {
-    int API_VERSION=7;
+    int API_VERSION=8;
     int ALGORITHM_VERSION=2;
     float INITIAL_LEAN_DEGREES=3;
     float DESTABILIZATION_SPEED=.3f;
@@ -27,7 +27,10 @@ public interface CorpsePhysicsBridge extends AutoCloseable {
     record TimedPose(long tick,PhysicsPoseDocument pose){}
     record ResidentState(String phase,long tick,long generation,long terrainRevision,boolean paused,PhysicsPoseDocument stable,String failure){}
     default Session openContinuous(Request request){throw new UnsupportedOperationException("Continuous core unavailable");}
-    record Grab(long sequence,String part,float lx,float ly,float lz,float x,float y,float z,float ax,float ay,float az,boolean rotating,String dynamicPart) {}
+    record Grab(long sequence,String part,float lx,float ly,float lz,float x,float y,float z,float ax,float ay,float az,boolean rotating,String dynamicPart,Support support) {
+        public Grab(long sequence,String part,float lx,float ly,float lz,float x,float y,float z,float ax,float ay,float az,boolean rotating,String dynamicPart){this(sequence,part,lx,ly,lz,x,y,z,ax,ay,az,rotating,dynamicPart,null);}
+    }
+    record Support(float x,float y,float z,float w) {}
     default Session openSeeded(Request request,PhysicsPoseDocument pose){throw new UnsupportedOperationException("Seeded core unavailable");}
     interface Session extends AutoCloseable {
         default void control(Grab grab){throw new UnsupportedOperationException("Grab core unavailable");}

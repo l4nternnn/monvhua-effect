@@ -187,6 +187,7 @@ public class CarryEvents {
 		// 放下被搬运实体请求
 		ServerPlayNetworking.registerGlobalReceiver(PlaceCarriedEntityPayload.ID, (payload, context) -> {
 			ServerPlayerEntity carrier = context.player();
+            if(com.kuilunfuzhe.monvhua.features.forensics.CorpseCarryService.isCarrying(carrier.getUuid())){com.kuilunfuzhe.monvhua.features.forensics.CorpseCarryService.handle(carrier,-1,true);return;}
 			CarryManager.CarriedEntityData data = CarryManager.CARRIED_ENTITIES.get(carrier);
 			if (data == null) return;
 			Entity carried = data.entity;

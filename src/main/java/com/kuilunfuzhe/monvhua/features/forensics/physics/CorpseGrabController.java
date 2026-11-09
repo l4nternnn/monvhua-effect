@@ -36,7 +36,7 @@ public final class CorpseGrabController {
     public static boolean held(UUID id){return grabs.values().stream().anyMatch(g->g.id.equals(id));}
     public static Status status(UUID player){return status.get(player);}
     public static void reset(){pendingPins.clear();staticConfirmations.clear();for(var id:List.copyOf(grabs.keySet()))release(id);status.clear();}
-    private static void require(ServerPlayerEntity p){if(!p.hasPermissionLevel(2)||!p.getMainHandStack().isOf(ITEM)||!CorpsePhysicsCoordinator.localControl(p.getServer()))throw new IllegalArgumentException("物理抓取工具仅供本地单人管理员使用");}
+    private static void require(ServerPlayerEntity p){if(CorpseTransportController.carrying(p.getUuid()))throw new IllegalArgumentException("请先放下搬运对象");if(!p.hasPermissionLevel(2)||!p.getMainHandStack().isOf(ITEM)||!CorpsePhysicsCoordinator.localControl(p.getServer()))throw new IllegalArgumentException("物理抓取工具仅供本地单人管理员使用");}
     public static Hit pick(net.minecraft.entity.player.PlayerEntity player){
         var from=player.getEyePos();var to=from.add(player.getRotationVec(1).multiply(Math.min(6,player.getEntityInteractionRange())));
         var wall=player.getWorld().raycast(new RaycastContext(from,to,RaycastContext.ShapeType.COLLIDER,RaycastContext.FluidHandling.NONE,player));if(wall.getType()!=HitResult.Type.MISS)to=wall.getPos();
@@ -81,7 +81,7 @@ public final class CorpseGrabController {
         var g=new Grab();g.player=p.getUuid();g.id=e.id;g.display=display;g.part=hit.part();g.local=hit.local();g.distance=hit.distance();g.target=hit.world();g.entry=e;g.partial=partial&&!g.part.equals("torso");g.sequence=e.session.controlSequence();g.lastInput=p.getWorld().getTime();
         g.previousTorso=torso(g);com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTraceService.beginPhysicsMove(display);grabs.put(g.player,g);CorpseResidentManager.manipulated(g.id);send(g,true);publish(g,hit.world(),"已抓取");
     }
-    private static void seed(ServerPlayerEntity p,ItemDisplayEntity d){
+    static void seed(ServerPlayerEntity p,ItemDisplayEntity d){
         if(CorpsePhysicsCoordinator.pending(d)||CorpseResidentManager.contains(d.getUuid())||CorpseCarryService.isCarried(d)||!Forensics.valid(p.getWorld(),d.getItemStack(),d.getUuid().toString())||!Forensics.binding(d.getItemStack()).getString("part","").equals("all"))throw new IllegalArgumentException("尸体暂不可接管");
         var data=CorpsePoseRecord.data(d.getItemStack());
         if(data.getFloat("corpse_scale",1)!=1||data.getString("body_pose_mode","").equals("true_skeletal"))throw new IllegalArgumentException("非标准模型暂不支持抓取");
