@@ -226,6 +226,10 @@ loom.runs.client {
         vmArg '-Dmonvhua.physicsAutomaticGameTest=true'
     if (providers.gradleProperty('physicsHistoryGameTest').getOrElse('false') == 'true')
         vmArg '-Dmonvhua.physicsHistoryGameTest=true'
+    if (providers.gradleProperty('physicsG4GameTest').getOrElse('false') == 'true')
+        vmArg '-Dmonvhua.physicsG4GameTest=true'
+    if (providers.gradleProperty('physicsPlaybackDiagnostics').getOrElse('false') == 'true')
+        vmArg '-Dmonvhua.physicsPlaybackDiagnostics=true'
     if (providers.gradleProperty('physicsPreviewGameTest').getOrElse('false') == 'true')
         vmArg '-Dfabric.client.gametest=true'
 }

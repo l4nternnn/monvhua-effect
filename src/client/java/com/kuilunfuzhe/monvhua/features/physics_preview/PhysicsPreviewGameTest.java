@@ -25,6 +25,7 @@ public final class PhysicsPreviewGameTest implements FabricClientGameTest {
             PhysicsPreviewChecks.invalidInputs(Files.readString(preview.directory().resolve("floor.json")));
             try{PhysicsPreviewFiles.read(preview.directory(),"../floor.json");throw new AssertionError("Traversal accepted");}catch(IllegalArgumentException expected){}
         }catch(java.io.IOException e){throw new AssertionError(e);}
+        net.fabricmc.fabric.api.client.gametest.v1.world.TestWorldSave reloadSave=null;
         try(var world=context.worldBuilder().create()) {
             world.getServer().runOnServer(server->{
                 for(BlockPos pos:BlockPos.iterate(-8,79,-8,8,79,8))server.getOverworld().setBlockState(pos,Blocks.STONE.getDefaultState());
@@ -71,6 +72,7 @@ public final class PhysicsPreviewGameTest implements FabricClientGameTest {
             if(Boolean.getBoolean("monvhua.physicsAutomaticGameTest")){CorpseAutomaticGameChecks.run(context,world);DirectionalCorpseGameChecks.run(context,world);CorpseHistoryGameChecks.run(context,world);}
             else if(Boolean.getBoolean("monvhua.physicsHistoryGameTest"))CorpseHistoryGameChecks.run(context,world);
             if(Boolean.getBoolean("monvhua.physicsMissingCoreGameTest"))CorpseAutomaticGameChecks.missing(context,world);
+            if(Boolean.getBoolean("monvhua.physicsG4GameTest")){CorpseTerrainGameChecks.run(context,world);CorpseRealEventGameChecks.run(context,world);reloadSave=world.getWorldSave();}
             // New failed imports must retain the previous valid scene.
             final PhysicsPoseDocument[] prior={null};
             context.runOnClient(client->{prior[0]=preview.diagnosticDocument();execute("mvphysics preview load missing.json");});
@@ -87,6 +89,7 @@ public final class PhysicsPreviewGameTest implements FabricClientGameTest {
             context.waitFor(client->preview.diagnosticDocument()!=null,200);
         }
         context.runOnClient(client->PhysicsPreviewChecks.require(preview.diagnosticDocument()==null,"Disconnect retained preview"));
+        if(reloadSave!=null)try(var reopened=reloadSave.open()){CorpseRealEventGameChecks.verifyReload(context,reopened);}
         try{Files.writeString(preview.directory().getParent().resolve("physics-preview-test.txt"),"PASS: seven slim poses + 72 slim/wide single-axis variants + corpse integration, 11 surfaces x six faces, rigid bounds, inverse matrices, invalid imports, 100 reloads, cancellation and disconnect.\n",StandardCharsets.UTF_8);}
         catch(java.io.IOException e){throw new AssertionError(e);}
     }

@@ -15,9 +15,19 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
         // Resolve the new class before attaching: old optional cores fail closed.
         if(RagdollInitialMotion.class.getRecordComponents().length!=6)throw new LinkageError("Unsupported motion core");
         if(RagdollRequest.class.getRecordComponents().length!=8||!solver(CorpsePhysicsProfiles.F5).equals(RagdollSolverProfile.F5))throw new LinkageError("Unsupported profile core/baseline");
+        if(RagdollDiagnosticDocument.Document.class.getRecordComponents().length!=13)throw new LinkageError("Unsupported diagnostic core");
         service.initialize();
     }
     public int apiVersion(){return API_VERSION;}
+    public String diagnostic(Request request,PhysicsPoseDocument result,Metrics metrics,String stage,boolean reproduction){
+        var terrain=new TerrainSnapshotData(request.terrain().stream().map(b->new BoxScene.StaticBox(b.x0(),b.y0(),b.z0(),b.x1(),b.y1(),b.z1())).toList());
+        var definition=request.slim()?RagdollDefinition.slim():RagdollDefinition.standard();
+        RagdollResult.Frame frame=result==null?null:new RagdollResult.Frame(result.step(),PhysicsPoseDocument.IDS.stream().map(id->{var p=result.poses().get(id);return new RagdollResult.Pose(id,new BoxTrace.Frame(p.x(),p.y(),p.z(),p.qx(),p.qy(),p.qz(),p.qw()));}).toList());
+        // Keep diagnostic part order identical to the pinned solver definition for exact replay equality.
+        if(frame!=null){var byId=new java.util.HashMap<String,RagdollResult.Pose>();for(var p:frame.parts())byId.put(p.id(),p);frame=new RagdollResult.Frame(frame.step(),definition.parts().stream().map(p->byId.get(p.id())).toList());}
+        var value=new RagdollDiagnosticDocument.Result(result==null?"NO_RESULT":result.outcome(),frame,metrics.anchor(),metrics.penetration(),metrics.limit(),result==null?stage:result.reason());
+        return RagdollDiagnosticDocument.encode(RagdollDiagnosticDocument.capture(input(request,definition,terrain),value,stage,reproduction));
+    }
     public String status(){return service.status()+"; pending="+service.pendingCount()+"; solveElapsedMs="+(lastNativeNanos/1_000_000.0);}
     public CompletableFuture<PhysicsPoseDocument> solve(Request request) {
         var terrain=new TerrainSnapshotData(request.terrain().stream().map(b->new BoxScene.StaticBox(b.x0(),b.y0(),b.z0(),b.x1(),b.y1(),b.z1())).toList());
@@ -46,6 +56,10 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
             else {lastNativeNanos=r.elapsedNanos();future.complete(document(r.finalPose(),definition,r.outcome().name(),r.torsoTiltDegrees(),r.reason()));}
         });
         return new Session() {
+            public Metrics metrics(){
+                if(!nativeSession.completion().isDone()||nativeSession.completion().isCompletedExceptionally())return new Metrics(0,0,0);
+                var r=nativeSession.completion().getNow(null);return r==null?new Metrics(0,0,0):new Metrics(r.maxAnchorError(),r.maxPenetration(),r.maxLimitError());
+            }
             private java.util.List<RagdollResult.Frame> sampledNative=java.util.List.of();
             private java.util.List<PhysicsPoseDocument> sampledDocuments=java.util.List.of();
             public boolean supportsHistory(){try{nativeSession.getClass().getMethod("history").getReturnType().getMethod("sampleSteps");return true;}catch(NoSuchMethodException e){return false;}}

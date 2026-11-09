@@ -6,7 +6,7 @@ import java.util.concurrent.CompletableFuture;
 
 /** Optional local provider. No Minecraft or native types cross the worker boundary. */
 public interface CorpsePhysicsBridge extends AutoCloseable {
-    int API_VERSION=3;
+    int API_VERSION=4;
     int ALGORITHM_VERSION=2;
     float INITIAL_LEAN_DEGREES=3;
     float DESTABILIZATION_SPEED=.3f;
@@ -19,10 +19,13 @@ public interface CorpsePhysicsBridge extends AutoCloseable {
     }
     int apiVersion();
     String status();
+    record Metrics(float anchor,float penetration,float limit){}
+    default String diagnostic(Request request,PhysicsPoseDocument result,Metrics metrics,String stage,boolean reproduction){throw new UnsupportedOperationException("Diagnostic export unsupported");}
     CompletableFuture<PhysicsPoseDocument> solve(Request request);
     /** Null means this provider supports only the legacy batch path. */
     default Session open(Request request) {return null;}
     interface Session extends AutoCloseable {
+        default Metrics metrics(){return new Metrics(0,0,0);}
         default boolean supportsHistory(){return false;}
         default int historyHz(){return 0;}
         default List<Integer> historySteps(){return List.of();}

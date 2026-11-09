@@ -20,7 +20,7 @@ public final class LiveCorpseRenderer {
     private record Playback(CorpsePhysicsBridge.Session session,PhysicsPlaybackClock clock) {}
     private static final Map<UUID,Playback> playback=new HashMap<>();
     public record DiagnosticSample(long nanos,double displayed,int latest,String mode,long waits,long resyncs){}
-    private static final boolean DIAGNOSTICS=Boolean.getBoolean("monvhua.physicsPlaybackDiagnostics")||Boolean.getBoolean("monvhua.physicsAutomaticGameTest")||Boolean.getBoolean("monvhua.physicsHistoryGameTest");
+    private static final boolean DIAGNOSTICS=Boolean.getBoolean("monvhua.physicsPlaybackDiagnostics")||Boolean.getBoolean("monvhua.physicsG4GameTest")||Boolean.getBoolean("monvhua.physicsAutomaticGameTest")||Boolean.getBoolean("monvhua.physicsHistoryGameTest");
     private static final LinkedHashMap<UUID,ArrayDeque<DiagnosticSample>> diagnostics=new LinkedHashMap<>();
     public static List<DiagnosticSample> diagnosticSamples(UUID id){var samples=diagnostics.get(id);return samples==null?List.of():List.copyOf(samples);}
     public static void initialize() {
@@ -57,6 +57,13 @@ public final class LiveCorpseRenderer {
             if(entity instanceof LivingEntity living&&!living.isAlive()&&entity.getUuid().equals(v.victim()))return true;
         }
         return false;
+    }
+    static BodyPartSpecialModelRenderer.Data renderData(CombinedBodySpecialModelRenderer renderer,net.minecraft.item.ItemStack stack,boolean slim){
+        var data=renderer.getData(stack);String shape=slim?"slim":"default";
+        if(data!=null)return new BodyPartSpecialModelRenderer.Data(data.layer(),data.texture(),shape,data.customData());
+        // Profile/skin resolution may still be pending on the first live frame.
+        var texture=net.minecraft.util.Identifier.ofVanilla("textures/entity/player/"+(slim?"slim/alex.png":"wide/steve.png"));
+        return new BodyPartSpecialModelRenderer.Data(net.minecraft.client.render.RenderLayer.getEntityCutoutNoCull(texture),texture,shape,CorpsePoseRecord.data(stack));
     }
     private static void render(WorldRenderContext context) {
         if(context.matrixStack()==null||context.consumers()==null)return;
@@ -99,8 +106,7 @@ public final class LiveCorpseRenderer {
                 if(samples.size()>2048)samples.removeFirst();
                 while(diagnostics.size()>16)diagnostics.remove(diagnostics.keySet().iterator().next());
             }
-            var data=renderer.getData(v.skin());
-            data=new BodyPartSpecialModelRenderer.Data(data.layer(),data.texture(),v.slim()?"slim":"default",data.customData());
+            var data=renderData(renderer,v.skin(),v.slim());
             var stack=context.matrixStack();var camera=context.camera().getPos();stack.push();
             try {stack.translate(v.origin().x-camera.x,v.origin().y-camera.y,v.origin().z-camera.z);
                 renderer.renderPhysicsPreview(stack,context.consumers(),data,StandardBodyPhysicsAdapter.matrices(pose,v.slim()));

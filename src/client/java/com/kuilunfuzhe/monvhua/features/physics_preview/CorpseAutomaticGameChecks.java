@@ -12,6 +12,16 @@ import static com.kuilunfuzhe.monvhua.features.physics_preview.PhysicsPreviewChe
 final class CorpseAutomaticGameChecks {
     static void missing(ClientGameTestContext context,TestSingleplayerContext world) {
         require(CorpsePhysicsCoordinator.status().contains("无本地后端")||CorpsePhysicsCoordinator.status().contains("Unavailable"),"Expected absent/unavailable optional core");
+        world.getServer().runOnServer(server->{
+            boolean[] closed={false};
+            CorpsePhysicsCoordinator.attach(server,new CorpsePhysicsBridge(){
+                public int apiVersion(){return API_VERSION-1;}
+                public String status(){return "old test bridge";}
+                public java.util.concurrent.CompletableFuture<PhysicsPoseDocument> solve(Request request){throw new AssertionError("Old bridge executed");}
+                public void close(){closed[0]=true;}
+            });
+            require(closed[0]&&!CorpsePhysicsCoordinator.localControl(server),"Mismatched bridge was not closed/rejected");
+        });
         context.runOnClient(client->client.getNetworkHandler().sendChatCommand("mvcorpse physics auto on"));context.waitTicks(3);
         world.getServer().runCommand("tag @a add dead_body");world.getServer().runCommand("kill @a");context.waitTicks(5);
         world.getServer().runOnServer(server->{

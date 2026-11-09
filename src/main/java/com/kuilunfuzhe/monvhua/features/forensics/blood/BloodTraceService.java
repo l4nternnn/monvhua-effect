@@ -215,7 +215,7 @@ public final class BloodTraceService {
         });
     }
     private static void pool(ItemDisplayEntity display) {
-        if(com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.pending(display))return;
+        if(com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.simulating(display))return;
         if (CARRIED.contains(display.getUuid()) || CorpseCarryService.isCarried(display)) return;
         if (!(display.getWorld() instanceof ServerWorld world) || world.getEntity(display.getUuid()) != display
                 || !world.isChunkLoaded(display.getBlockPos()) || !Forensics.valid(world, display.getItemStack(), display.getUuid().toString())) return;

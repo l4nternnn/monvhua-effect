@@ -8,6 +8,10 @@ import java.util.*;
 public final class CorpseTerrainSnapshot {
     private CorpseTerrainSnapshot() {}
     public static List<CorpsePhysicsBridge.Box> capture(ServerWorld world,Vec3d origin) {
+        long start=System.nanoTime();
+        try{return captureBoxes(world,origin);}finally{CorpsePhysicsDiagnostics.terrainCapture(System.nanoTime()-start);}
+    }
+    private static List<CorpsePhysicsBridge.Box> captureBoxes(ServerWorld world,Vec3d origin){
         var result=new ArrayList<CorpsePhysicsBridge.Box>();
         for(BlockPos pos:BlockPos.iterate(BlockPos.ofFloored(origin.add(-4,-4,-4)),BlockPos.ofFloored(origin.add(4,6,4)))) {
             if(!world.isChunkLoaded(pos))throw new IllegalArgumentException("采样区域区块尚未加载");

@@ -31,14 +31,16 @@ public final class CorpsePoseGeometry {
     public static Box bounds(Surface s) {
         Box b=null;for(Vec3d p:corners(s)){Box point=new Box(p,p);b=b==null?point:b.union(point);}return b;
     }
-    /** Conservative per-segment AABBs; 0.03 is the accepted solver contact tolerance. */
+    /** AABB broad phase followed by oriented surface/terrain SAT; contact tolerance stays 0.03 blocks. */
     public static boolean clear(ServerWorld world,ItemDisplayEntity display,NbtCompound data,Vec3d anchor) {
         for(var s:surfaces(display,data)) {
-            Box b=bounds(s).offset(anchor).contract(.03);
+            Box b=bounds(s).offset(anchor);
+            var points=corners(s).stream().map(p->p.add(anchor)).toList();
             for(int x=MathHelper.floor(b.minX)>>4;x<=MathHelper.floor(b.maxX)>>4;x++)
                 for(int z=MathHelper.floor(b.minZ)>>4;z<=MathHelper.floor(b.maxZ)>>4;z++)
                     if(!world.isChunkLoaded(new BlockPos(x<<4,MathHelper.floor(anchor.y),z<<4)))return false;
-            if(world.getBlockCollisions(display,b).iterator().hasNext())return false;
+            for(var shape:world.getBlockCollisions(display,b))for(var obstacle:shape.getBoundingBoxes())
+                if(OrientedBoxCollision.overlaps(points,obstacle,.03))return false;
         }
         return true;
     }

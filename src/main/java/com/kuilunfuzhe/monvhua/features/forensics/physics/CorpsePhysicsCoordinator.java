@@ -19,6 +19,7 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.NbtComponent;
 import java.util.*;
+import static com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsDiagnostics.Stage.*;
 import java.util.concurrent.*;
 import static net.minecraft.server.command.CommandManager.*;
 
@@ -37,7 +38,7 @@ public final class CorpsePhysicsCoordinator {
     private static long applied,failed,cancelled;
     private record Job(String context,float inputYaw,float speed,NbtCompound visual,UUID request,ItemDisplayEntity display,ServerWorld world,Vec3d origin,Vec3d oldPosition,
                        float yaw,float pitch,org.joml.Matrix4f root,String token,long revision,long epoch,long started,
-                       List<CorpsePhysicsBridge.Box> snapshot,CompletableFuture<PhysicsPoseDocument> future,boolean slim,CorpsePhysicsBridge.Session session,long startTick,CorpseInitialMotionResolver.Motion motion) {}
+                       List<CorpsePhysicsBridge.Box> snapshot,CompletableFuture<PhysicsPoseDocument> future,boolean slim,CorpsePhysicsBridge.Session session,long startTick,CorpseInitialMotionResolver.Motion motion,CorpsePhysicsBridge.Request input) {}
     /** Immutable publication; the copied item is read only on the client. Never persist live frames. */
     public record LiveView(UUID display,String dimension,Vec3d origin,net.minecraft.item.ItemStack skin,
                            boolean slim,CorpsePhysicsBridge.Session session,UUID victim,long committedRevision) {}
@@ -55,19 +56,21 @@ public final class CorpsePhysicsCoordinator {
         owner=server;provider=backend;CorpseProfileManager.start(server);sampleTick=Long.MIN_VALUE;terrainTick=Long.MIN_VALUE;terrainCursor=0;sampled=0;last="已连接本地计算服务";
     }
     public static synchronized void detach() {
-        epoch++;automatic=false;CorpseProfileManager.reset();CorpseHistoryController.reset();pausedTicks.clear();
+        epoch++;automatic=false;CorpsePhysicsDiagnostics.clear();CorpseProfileManager.reset();CorpseHistoryController.reset();pausedTicks.clear();
         for(var job:jobs.values()){job.future.cancel(true);if(job.session!=null)job.session.close();}jobs.clear();views.clear();progressTicks.clear();progressSteps.clear();advanceTicks.clear();
         var old=provider;provider=null;owner=null;if(old!=null)CompletableFuture.runAsync(old::close);
         last="世界已断开；自动生成关闭";
     }
     public static void unavailable(String reason){last=reason;}
+    public static CorpsePhysicsBridge diagnosticProvider(MinecraftServer server){return server==owner?provider:null;}
+    public static boolean simulating(ItemDisplayEntity display){return display!=null&&jobs.containsKey(display.getUuid());}
     public static boolean pending(ItemDisplayEntity display){return display!=null&&(jobs.containsKey(display.getUuid())||CorpseHistoryController.locked(display.getUuid()));}
     public static boolean localControl(MinecraftServer server){return server==owner&&provider!=null&&server.isSingleplayer();}
     public static boolean validateResume(UUID id){
         var j=jobs.get(id);if(j==null)return false;
         try {if(valid(j)&&j.snapshot.equals(CorpseTerrainSnapshot.capture(j.world,j.origin)))return true;}
         catch(RuntimeException ignored){}
-        cancel(j.display,"恢复前地形/载体校验失败");return false;
+        cancel(j.display,"恢复前地形/载体校验失败",valid(j)?TERRAIN_CHANGED:CARRIER_INVALID);return false;
     }
     public static String status(){var p=provider;return "单人试验 auto="+automatic+" pending="+jobs.size()+" applied="+applied+" fallback="+failed+" cancelled="+cancelled+" | "+(p==null?"无本地后端":p.status())+" | "+last;}
     public static void initialize() {
@@ -78,7 +81,7 @@ public final class CorpsePhysicsCoordinator {
             CorpseHistoryController.tick();
             for(var job:List.copyOf(jobs.values())) {
                 long tick=job.world.getTime();
-                if(!valid(job)||tick-job.startTick-pausedTicks.getOrDefault(job.display.getUuid(),0L)>240) {cancel(job.display,"任务超时或载体失效，已保留旧姿态");continue;}
+                if(!valid(job)||tick-job.startTick-pausedTicks.getOrDefault(job.display.getUuid(),0L)>240) {cancel(job.display,"任务超时或载体失效，已保留旧姿态",valid(job)?HOST_TIMEOUT:CARRIER_INVALID);continue;}
                 if(job.session!=null) {
                     var advanced=advanceTicks.put(job.display.getUuid(),tick);
                     if(advanced!=null&&advanced==tick)continue;
@@ -89,7 +92,7 @@ public final class CorpsePhysicsCoordinator {
                     var frames=job.session.frames();int step=frames.isEmpty()?0:frames.getLast().step();
                     Integer previous=progressSteps.put(job.display.getUuid(),step);
                     if(previous==null||previous!=step)progressTicks.put(job.display.getUuid(),tick);
-                    if(tick-progressTicks.getOrDefault(job.display.getUuid(),tick)>60){cancel(job.display,"原生会话无进度");continue;}
+                    if(tick-progressTicks.getOrDefault(job.display.getUuid(),tick)>60){cancel(job.display,"原生会话无进度",NO_PROGRESS);continue;}
                     job.session.advanceTo(Math.min(300,step+3));
                 }
             }
@@ -99,8 +102,8 @@ public final class CorpsePhysicsCoordinator {
                 // Round-robin validation, at most two captures per game tick.
                 for(int i=0;i<Math.min(2,active.size());i++) {
                     var job=active.get(Math.floorMod(terrainCursor++,active.size()));
-                    try {if(!job.snapshot.equals(CorpseTerrainSnapshot.capture(job.world,job.origin)))cancel(job.display,"模拟期间地形变化");}
-                    catch(RuntimeException e){cancel(job.display,"模拟区域卸载/失效");}
+                    try {if(!job.snapshot.equals(CorpseTerrainSnapshot.capture(job.world,job.origin)))cancel(job.display,"模拟期间地形变化",TERRAIN_CHANGED);}
+                    catch(RuntimeException e){cancel(job.display,"模拟区域卸载/失效",TERRAIN_CHANGED);}
                 }
             }
         });
@@ -136,6 +139,7 @@ public final class CorpsePhysicsCoordinator {
             root.then(motionTest);
             root.then(CorpseHistoryController.commands());
             root.then(CorpseProfileManager.commands());
+            CorpsePhysicsDiagnostics.register(root);
             root.then(literal("cancel").then(argument("target",EntityArgumentType.entity()).executes(c->{
                 var e=EntityArgumentType.getEntity(c,"target");
                 if(e instanceof InteractionEntity){var id=BodyPartManager.INTERACTION_TO_DISPLAY.get(e.getUuid());e=id==null?null:c.getSource().getWorld().getEntity(id);}
@@ -156,12 +160,12 @@ public final class CorpsePhysicsCoordinator {
         if(player.getScale()!=1||player.hasVehicle()||player.isTouchingWater()||player.isGliding()
                 ||player.getPose()!=EntityPose.STANDING&&player.getPose()!=EntityPose.DYING
                 ||!BodyHitGeometry.normalGravity(com.kuilunfuzhe.monvhua.features.gravity.GravityMagic.getSurfaceGravityDirection(player))) {
-            failed++;last="死亡姿态/尺度/重力暂不支持，沿用旧尸体";report(display,"FALLBACK_FINAL",last);return;
+            CorpsePhysicsDiagnostics.rejected(INPUT_REJECTED);failed++;last="死亡姿态/尺度/重力暂不支持，沿用旧尸体";report(display,"FALLBACK_FINAL",last);return;
         }
         // Knockback/teleports may clear onGround before the death callback even while feet
         // still touch the floor. Test actual nearby collision support without moving the body.
         if(!hasNearbySupport(player)) {
-            failed++;last="脚下 0.25 格内无实际支撑，沿用旧尸体";report(display,"FALLBACK_FINAL",last);return;
+            CorpsePhysicsDiagnostics.rejected(INPUT_REJECTED);failed++;last="脚下 0.25 格内无实际支撑，沿用旧尸体";report(display,"FALLBACK_FINAL",last);return;
         }
         // Explicit arm metadata wins. Missing server-side skin metadata uses the documented slim default.
         boolean slim=slimModel(player,display);
@@ -205,11 +209,13 @@ public final class CorpsePhysicsCoordinator {
     }
     private static synchronized boolean submitMotion(ItemDisplayEntity display,Vec3d origin,float yaw,boolean slim,float speed,CorpseInitialMotionResolver.Motion motion) {
         var backend=provider;
-        if(backend==null||display.getWorld().getServer()!=owner||jobs.containsKey(display.getUuid()))return false;
-        if(jobs.size()>=8||views.size()>=8){failed++;last="队列已满，保留原尸体";report(display,"FALLBACK_FINAL",last);return false;}
+        if(backend==null||display.getWorld().getServer()!=owner){CorpsePhysicsDiagnostics.rejected(BACKEND_UNAVAILABLE);return false;}
+        if(jobs.containsKey(display.getUuid())){CorpsePhysicsDiagnostics.rejected(CAPACITY);return false;}
+        if(jobs.size()>=8||views.size()>=8){CorpsePhysicsDiagnostics.rejected(CAPACITY);failed++;last="队列已满，保留原尸体";report(display,"FALLBACK_FINAL",last);return false;}
         var world=(ServerWorld)display.getWorld();long tick=world.getTime();
         if(sampleTick!=tick){sampleTick=tick;sampled=0;}
-        if(++sampled>2){failed++;last="本 tick 采样额度已满，保留原尸体";report(display,"FALLBACK_FINAL",last);return false;}
+        if(++sampled>2){CorpsePhysicsDiagnostics.rejected(CAPACITY);failed++;last="本 tick 采样额度已满，保留原尸体";report(display,"FALLBACK_FINAL",last);return false;}
+        CorpsePhysicsBridge.Request captured=null;CorpsePhysicsBridge.Session opened=null;
         try {
             if(CorpseCarryService.isCarried(display)||!Forensics.valid(world,display.getItemStack(),display.getUuid().toString())
                     ||!Forensics.binding(display.getItemStack()).getString("part","").equals("all"))throw new IllegalArgumentException("载体不可用");
@@ -220,25 +226,28 @@ public final class CorpsePhysicsCoordinator {
             long start=System.nanoTime();var snapshot=CorpseTerrainSnapshot.capture(world,origin);
             var request=new CorpsePhysicsBridge.Request(slim,-MathHelper.wrapDegrees(yaw),speed,snapshot,
                     motion==null?null:new CorpsePhysicsBridge.Motion(motion.vx(),motion.vz(),motion.dx(),motion.dz(),motion.tilt(),motion.profile().motion().angularSpeed()),motion==null?null:motion.profile());
-            var session=backend.open(request);
+            captured=request;
+            var session=backend.open(request);opened=session;
             var future=session==null?backend.solve(request):session.completion();
             var job=new Job(display.getItemDisplayContext().name(),yaw,speed,EvidenceSnapshots.visualOnly(data),UUID.randomUUID(),display,world,origin,display.getPos(),display.getYaw(),display.getPitch(),
                     new org.joml.Matrix4f(com.kuilunfuzhe.monvhua.mixin.forensics.CorpseDisplayAccessor.monvhua$transform(display.getDataTracker()).getMatrix()),
-                    Forensics.binding(display.getItemStack()).getString("token",""),data.getLong("corpse_pose_revision",0),epoch,start,snapshot,future,slim,session,world.getTime(),motion);
+                    Forensics.binding(display.getItemStack()).getString("token",""),data.getLong("corpse_pose_revision",0),epoch,start,snapshot,future,slim,session,world.getTime(),motion,request);
             jobs.put(display.getUuid(),job);last="SIMULATING "+job.request+(motion==null?" legacy":motionDescription(motion));
             report(display,"SIMULATING","request="+job.request+" bodyYaw="+yaw+(motion==null?" legacy":motionDescription(motion)));
             if(session!=null){
                 var view=new LiveView(display.getUuid(),world.getRegistryKey().getValue().toString(),origin,display.getItemStack().copy(),slim,session,null,0);
-                if(!CorpseHistoryController.register(display,view)){cancel(display,"历史内存预算不足");return false;}
+                if(!CorpseHistoryController.register(display,view)){cancel(display,"历史内存预算不足",CAPACITY);return false;}
                 views.put(display.getUuid(),view);
             }
             future.whenComplete((result,error)->world.getServer().execute(()->complete(job,result,error)));
             return true;
-        }catch(RuntimeException|LinkageError e){failed++;last="求解未开始："+e.getMessage();report(display,"FALLBACK_FINAL",last);return false;}
+        }catch(RuntimeException|LinkageError e){if(jobs.containsKey(display.getUuid()))cancel(display,"提交失败",INPUT_REJECTED);else {if(opened!=null)opened.close();CorpsePhysicsDiagnostics.record(e instanceof RejectedExecutionException?CAPACITY:INPUT_REJECTED,captured,null,new CorpsePhysicsBridge.Metrics(0,0,0),0);}failed++;last="求解未开始："+e.getMessage();report(display,"FALLBACK_FINAL",last);return false;}
     }
-    public static void cancel(ItemDisplayEntity display,String reason) {
+    public static void cancel(ItemDisplayEntity display,String reason) {cancel(display,reason,CANCELLED);}
+    private static void cancel(ItemDisplayEntity display,String reason,CorpsePhysicsDiagnostics.Stage stage) {
         CorpseHistoryController.remove(display.getUuid());pausedTicks.remove(display.getUuid());
         var job=jobs.remove(display.getUuid());if(job==null)return;
+        CorpsePhysicsDiagnostics.record(stage,job.input,null,job.session==null?new CorpsePhysicsBridge.Metrics(0,0,0):job.session.metrics(),System.nanoTime()-job.started);
         job.future.cancel(true);if(job.session!=null)job.session.close();views.remove(display.getUuid());advanceTicks.remove(display.getUuid());progressTicks.remove(display.getUuid());progressSteps.remove(display.getUuid());cancelled++;last="FALLBACK_FINAL: "+reason;
         report(display,"CANCELLED",reason);
     }
@@ -256,11 +265,19 @@ public final class CorpsePhysicsCoordinator {
     }
     private static synchronized void complete(Job job,PhysicsPoseDocument result,Throwable error) {
         if(jobs.get(job.display.getUuid())!=job)return;
+        var stage=CARRIER_INVALID;
         try {
-            if(!valid(job)||job.world.getTime()-job.startTick-pausedTicks.getOrDefault(job.display.getUuid(),0L)>240)throw new IllegalArgumentException("请求已失效/超时");
+            if(!valid(job))throw new IllegalArgumentException("请求已失效");
+            stage=HOST_TIMEOUT;
+            if(job.world.getTime()-job.startTick-pausedTicks.getOrDefault(job.display.getUuid(),0L)>240)throw new IllegalArgumentException("请求已超时");
+            stage=BACKEND_UNAVAILABLE;
+            if(error!=null){Throwable cause=error;while(cause.getCause()!=null)cause=cause.getCause();if(cause instanceof IllegalArgumentException)stage=INITIALIZATION_REJECTED;}
             if(error!=null)throw new IllegalArgumentException("后端不可用："+error.getMessage());
+            stage=switch(result.outcome()){case "TIMEOUT"->SOLVER_TIMEOUT;case "LEFT_REGION"->LEFT_REGION;default->SOLVER_INVALID;};
             if(!result.outcome().equals("SETTLED"))throw new IllegalArgumentException(result.outcome()+": "+result.reason());
+            stage=TERRAIN_CHANGED;
             if(!job.snapshot.equals(CorpseTerrainSnapshot.capture(job.world,job.origin)))throw new IllegalArgumentException("现场碰撞形状已变化");
+            stage=STATIC_COMMIT_REJECTED;
             var record=new CorpsePoseRecord(Math.addExact(job.revision,1),"generated",job.slim?"slim":"default",result.poses(),result.definition());
             CorpsePoseService.applyGenerated(job.display,record,job.origin);
             CorpseHistoryController.completed(job.display);
@@ -281,9 +298,10 @@ public final class CorpsePhysicsCoordinator {
             diagnostics.putLong("elapsed_ms",(System.nanoTime()-job.started)/1_000_000);
             store.corpse(Forensics.binding(job.display.getItemStack()).getString("id","")).put("pose_generation_diagnostics",diagnostics);store.markDirty();
             views.computeIfPresent(job.display.getUuid(),(id,v)->new LiveView(v.display,v.dimension,v.origin,v.skin,v.slim,v.session,v.victim,record.revision()));
+            stage=APPLIED;
             applied++;last="APPLIED_STATIC "+job.request+" "+((System.nanoTime()-job.started)/1_000_000)+"ms"+(job.motion==null?"":motionDescription(job.motion));
             report(job.display,"APPLIED_STATIC","request="+job.request+" inputYaw="+job.inputYaw+" steps="+result.step());
         }catch(RuntimeException e){CorpseHistoryController.remove(job.display.getUuid());views.remove(job.display.getUuid());failed++;last="FALLBACK_FINAL: "+e.getMessage();report(job.display,"FALLBACK_FINAL","request="+job.request+" inputYaw="+job.inputYaw+" "+e.getMessage());}
-        finally{pausedTicks.remove(job.display.getUuid());jobs.remove(job.display.getUuid(),job);advanceTicks.remove(job.display.getUuid());progressTicks.remove(job.display.getUuid());progressSteps.remove(job.display.getUuid());}
+        finally{CorpsePhysicsDiagnostics.record(stage,job.input,result,job.session==null?new CorpsePhysicsBridge.Metrics(0,0,0):job.session.metrics(),System.nanoTime()-job.started);pausedTicks.remove(job.display.getUuid());jobs.remove(job.display.getUuid(),job);advanceTicks.remove(job.display.getUuid());progressTicks.remove(job.display.getUuid());progressSteps.remove(job.display.getUuid());}
     }
 }
