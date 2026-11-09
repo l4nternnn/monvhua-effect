@@ -42,6 +42,12 @@ public class PaintOverlayStore extends PersistentState {
     private final Map<FaceKey, int[]> faces = new HashMap<>();
     private final Map<ChunkPos, List<FaceKey>> facesByChunk = new HashMap<>();
 
+    // Runtime-only face revisions for dependent overlays. No duplicate paint data is persisted.
+    private final Map<FaceKey,Long> faceRevisions = new HashMap<>();
+    private long nextFaceRevision=1;
+    public long faceRevision(BlockPos pos,Direction face){var key=new FaceKey(pos,face);return faceRevisions.getOrDefault(key,faces.containsKey(key)?1L:0L);}
+    private void changed(FaceKey key){if(faces.containsKey(key))faceRevisions.put(key,++nextFaceRevision);else faceRevisions.remove(key);markDirty();}
+
     public PaintOverlayStore() {
     }
 
@@ -77,7 +83,7 @@ public class PaintOverlayStore extends PersistentState {
         }
         faces.put(key, pixels);
         index(key);
-        markDirty();
+        changed(key);
         return true;
     }
 
@@ -95,11 +101,11 @@ public class PaintOverlayStore extends PersistentState {
         if (color == 0 && !hasPixels(pixels)) {
             faces.remove(key);
             unindex(key);
-            markDirty();
+            changed(key);
             return true;
         }
         index(key);
-        markDirty();
+        changed(key);
         return true;
     }
 
@@ -108,7 +114,7 @@ public class PaintOverlayStore extends PersistentState {
         boolean changed = faces.remove(key) != null;
         if (changed) {
             unindex(key);
-            markDirty();
+            changed(key);
         }
         return changed;
     }

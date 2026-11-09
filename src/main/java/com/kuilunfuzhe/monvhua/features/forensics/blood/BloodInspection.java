@@ -17,10 +17,13 @@ public final class BloodInspection {
         BloodTraceService.validate(world, hit.getBlockPos());
         var store = BloodTraceStore.get(world);
         var covering = store.at(hit.getBlockPos()).stream().filter(e -> e.patch().face() == hit.getSide() && e.patch().covers(hit.getPos())).toList();
+        if (!covering.isEmpty() && BloodVisibility.painted(world, covering.getFirst().patch(), hit.getPos())) return List.of("此处有颜料覆盖，无法直接判断下层痕迹");
         if (covering.isEmpty()) return List.of("此处未发现可检查的血迹");
         if (covering.stream().map(BloodTraceStore.Entry::event).distinct().count() > 1)
             return List.of("多处痕迹重叠，形态与方向难以判断");
         var chosen = covering.getFirst();
+        if(BloodVisibility.density(chosen.patch(),hit.getPos())<255)return List.of("此处存在淡化的血液残留，表面可能经过清洗", "不能据此确定处理者或处理时间");
+        if(chosen.patch().kind()==4)return List.of("此处存在条带状接触血痕", "可能由沾血身体移动形成，仅能判断延伸轴向，不能确认搬运者");
         if (chosen.patch().kind() == 3) return List.of("此处存在带血鞋印", "说明有人接触过血液，不能仅凭鞋印确认身份");
         if (chosen.patch().kind() == 1) return List.of("此处存在积聚血迹，边缘呈不规则扩展", "仅凭血泊无法确定死亡地点或精确停留时间");
         if (chosen.patch().kind() == 2) return List.of("此处存在断续滴落状血迹", "痕迹可能来自受伤者或被搬运的尸体，单独不能确定搬运者");
@@ -30,6 +33,7 @@ public final class BloodInspection {
             BlockPos pos = hit.getBlockPos().add(x, y, z);
             if (!world.isChunkLoaded(pos)) continue;
             for (var e : store.at(pos)) if (e.event().equals(chosen.event()) && e.patch().face() == hit.getSide()) {
+                if(BloodVisibility.painted(world,e.patch(),e.patch().center())||BloodVisibility.density(e.patch(),e.patch().center())<255)continue;
                 Vec3d point = e.patch().center().add(Vec3d.of(hit.getSide().getVector()).multiply(.003));
                 if (eye.squaredDistanceTo(point) <= ForensicConfig.current.inspectionDistance * ForensicConfig.current.inspectionDistance
                         && world.raycast(new net.minecraft.world.RaycastContext(eye, point, net.minecraft.world.RaycastContext.ShapeType.COLLIDER,

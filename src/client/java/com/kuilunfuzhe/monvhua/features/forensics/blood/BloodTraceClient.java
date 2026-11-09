@@ -19,6 +19,7 @@ public final class BloodTraceClient {
     private static String dimension = "";
     private BloodTraceClient() {}
     public static void initialize() {
+        BodyStainClient.initialize();
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> reset());
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.world == null) { CACHE.clear(); dimension = ""; }
@@ -34,7 +35,7 @@ public final class BloodTraceClient {
             for (String id : packet.removals()) CACHE.remove(id);
             for (var patch : packet.patches()) {
                 var old = CACHE.get(patch.id());
-                if (old != null && old.patch.revision() >= patch.revision()) continue;
+                if (old != null && old.patch.equals(patch)) continue;
                 if (old == null && CACHE.size() >= 65536) continue;
                 CACHE.put(patch.id(), mesh(patch));
             }
@@ -44,12 +45,15 @@ public final class BloodTraceClient {
     private static void reset() { CACHE.clear(); generation = -1; dimension = ""; }
     private static Mesh mesh(BloodPatch p) {
         List<float[]> spans = new ArrayList<>();
-        for (int y = 0; y < 64; y++) {
-            int start = -1;
-            for (int x = 0; x <= 64; x++) {
-                boolean on = x < 64 && p.covers((x + .5) / 64.0, (y + .5) / 64.0);
-                if (on && start < 0) start = x;
-                if (!on && start >= 0) { spans.add(new float[]{start / 64f, y / 64f, x / 64f, (y + 1) / 64f}); start = -1; }
+        for (int y=0;y<64;y++) {
+            int start=-1, previousAlpha=0;
+            for(int x=0;x<=64;x++) {
+                double u=(x+.5)/64,v=(y+.5)/64;
+                int alpha=x<64&&p.covers(u,v)?p.density(u,v):0;
+                if(alpha!=previousAlpha){
+                    if(start>=0)spans.add(new float[]{start/64f,y/64f,x/64f,(y+1)/64f,previousAlpha});
+                    start=alpha>0?x:-1;previousAlpha=alpha;
+                }
             }
         }
         return new Mesh(p, List.copyOf(spans));
@@ -71,16 +75,16 @@ public final class BloodTraceClient {
             int light = WorldRenderer.getLightmapCoordinates(client.world, p.pos().offset(p.face()));
             for (float[] s : mesh.spans) {
                 if ((budget -= 4) < 0) return;
-                vertex(vertices, matrix, origin.add(right.multiply(s[0])).add(down.multiply(s[1])), normal, light, p);
-                vertex(vertices, matrix, origin.add(right.multiply(s[2])).add(down.multiply(s[1])), normal, light, p);
-                vertex(vertices, matrix, origin.add(right.multiply(s[2])).add(down.multiply(s[3])), normal, light, p);
-                vertex(vertices, matrix, origin.add(right.multiply(s[0])).add(down.multiply(s[3])), normal, light, p);
+                vertex(vertices, matrix, origin.add(right.multiply(s[0])).add(down.multiply(s[1])), normal, light, p, (int)s[4]);
+                vertex(vertices, matrix, origin.add(right.multiply(s[2])).add(down.multiply(s[1])), normal, light, p, (int)s[4]);
+                vertex(vertices, matrix, origin.add(right.multiply(s[2])).add(down.multiply(s[3])), normal, light, p, (int)s[4]);
+                vertex(vertices, matrix, origin.add(right.multiply(s[0])).add(down.multiply(s[3])), normal, light, p, (int)s[4]);
             }
         }
     }
-    private static void vertex(VertexConsumer out, Matrix4f matrix, Vec3d point, Vec3d normal, int light, BloodPatch p) {
+    private static void vertex(VertexConsumer out, Matrix4f matrix, Vec3d point, Vec3d normal, int light, BloodPatch p, int alpha) {
         int red = 95 + (int) (p.seed() & 15);
-        out.vertex(matrix, (float) point.x, (float) point.y, (float) point.z).color(red, 5, 12, 245)
+        out.vertex(matrix, (float) point.x, (float) point.y, (float) point.z).color(red, 5, 12, alpha)
                 .texture(0, 0).overlay(OverlayTexture.DEFAULT_UV).light(light).normal((float) normal.x, (float) normal.y, (float) normal.z);
     }
 }

@@ -29,6 +29,7 @@ public final class BloodTransferStore extends PersistentState {
         if (records().getKeys().size() >= ForensicConfig.current.transfer.maxTransferRecords) return false;
         NbtCompound n = new NbtCompound(); n.put("batches", new NbtList()); records().put(id, n); markDirty(); return true;
     }
+    public void discard(String id) { if(records().contains(id)){records().remove(id);markDirty();} }
     public int visible(String id) { return record(id).getInt("visible", 0); }
     public int available(String id, long now) {
         return record(id).getListOrEmpty("batches").stream().filter(e -> e instanceof NbtCompound)
@@ -72,6 +73,26 @@ public final class BloodTransferStore extends PersistentState {
         for (NbtElement e : record(id).getListOrEmpty("batches")) if (e instanceof NbtCompound b
                 && b.getLong("until", 0) > now && b.getInt("amount", 0) > 0) found.add(b.getString("source", "mixed"));
         return found.size() == 1 ? found.iterator().next() : "mixed";
+    }
+    /** Fractional carry prevents tiny repeated cleans from rounding up whole units. */
+    public record Cleaned(int visible, int transferable) {}
+    public Cleaned clean(String id, double fraction, long now, boolean apply) {
+        if(!Double.isFinite(fraction)||fraction<0||fraction>1)throw new IllegalArgumentException("Invalid fraction");
+        NbtCompound original=record(id); if(original.isEmpty()||fraction==0)return new Cleaned(0,0);
+        NbtCompound n=original.copy();
+        double v=n.getInt("visible",0)*fraction+n.getDouble("clean_visible_remainder",0);
+        int removed=Math.min(n.getInt("visible",0),(int)Math.floor(v+1e-9));
+        n.putInt("visible",n.getInt("visible",0)-removed);n.putDouble("clean_visible_remainder",n.getInt("visible",0)==0?0:v-removed);
+        int consumed=0;
+        for(NbtElement e:n.getListOrEmpty("batches"))if(e instanceof NbtCompound b){
+            int amount=Math.max(0,b.getInt("amount",0));
+            double value=amount*fraction+b.getDouble("clean_remainder",0);
+            int take=Math.min(amount,(int)Math.floor(value+1e-9));
+            b.putInt("amount",amount-take);b.putDouble("clean_remainder",amount==take?0:value-take);
+            if(b.getLong("until",0)>now)consumed+=take;
+        }
+        if(apply){records().put(id,n);markDirty();}
+        return new Cleaned(removed,consumed);
     }
     public int consume(String id, int count, long now) {
         int used = 0;

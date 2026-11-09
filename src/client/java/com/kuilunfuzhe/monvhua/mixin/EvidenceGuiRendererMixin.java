@@ -21,6 +21,7 @@ public abstract class EvidenceGuiRendererMixin {
     }
     @Inject(method="incrementFrame",at=@At("TAIL"))
     private void evidence$release(CallbackInfo ci) {
+        if(com.kuilunfuzhe.monvhua.features.forensics.EvidencePanelTexture.isRendering(this)) return;
         if(MinecraftClient.getInstance().currentScreen instanceof EvidenceSummaryScreen) return;
         if(specialElementRenderers.get(EvidenceViewportRenderState.class) instanceof EvidenceViewportRenderer renderer && renderer.hasRendered()) {
             renderer.close(); specialElementRenderers.put(EvidenceViewportRenderState.class,new EvidenceViewportRenderer(vertexConsumers));

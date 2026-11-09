@@ -79,7 +79,7 @@ public final class CorpseTransportController {
         var packet=new com.kuilunfuzhe.monvhua.network.carryentity.CarryPoseSyncS2CPacket(s.player.getId(),active?1:0,-1);
         for(var viewer:s.player.getServer().getPlayerManager().getPlayerList())net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(viewer,packet);
     }
-    public static void release(UUID player){var s=sessions.remove(player);if(s==null)return;try{if(s.entry.valid)send(s,false);}catch(RuntimeException error){CorpseResidentManager.remove(s.display.getUuid());}finally{pose(s,false);BloodTraceService.endCarry(s.display,s.player);}}
+    public static void release(UUID player){var s=sessions.remove(player);if(s==null)return;com.kuilunfuzhe.monvhua.features.forensics.blood.BloodMotionEvidenceService.release(s.display.getUuid());try{if(s.entry.valid)send(s,false);}catch(RuntimeException error){CorpseResidentManager.remove(s.display.getUuid());}finally{pose(s,false);BloodTraceService.endCarry(s.display,s.player);}}
     public static void reset(){for(var id:List.copyOf(sessions.keySet()))release(id);}
     public static void tick(MinecraftServer server){for(var s:List.copyOf(sessions.values()))try{
         var p=server.getPlayerManager().getPlayer(s.player.getUuid());
@@ -94,6 +94,6 @@ public final class CorpseTransportController {
         if(s.blocked>20){release(p.getUuid());p.sendMessage(net.minecraft.text.Text.literal("搬运受阻，已松开遗体"),true);continue;}
         if(!obstructed){var delta=next.subtract(s.target);s.target=s.target.add(delta.length()>.22?delta.normalize().multiply(.22):delta);}
         if(s.carry&&!obstructed){var goal=new Quaternionf().rotationY((float)Math.toRadians(-p.bodyYaw)).rotateZ((float)Math.PI/2);float angle=2*(float)Math.acos(Math.min(1,Math.abs(s.orientation.dot(goal))));s.orientation.slerp(goal,angle<.001f?1:Math.min(1,.06f/angle));}
-        send(s,true);if(now%100==0)com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTransferService.contact(s.display,p);var torso=point(s.entry,"torso",false);BloodTraceService.physicsMoved(s.display,s.previous,torso,p);s.previous=torso;
+        send(s,true);if(now%100==0)com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTransferService.contact(s.display,p);var torso=point(s.entry,"torso",false);if(!com.kuilunfuzhe.monvhua.features.forensics.blood.BloodMotionEvidenceService.moved(s.display,s.entry))BloodTraceService.physicsMoved(s.display,s.previous,torso,p);s.previous=torso;
     }catch(RuntimeException error){release(s.player.getUuid());s.player.sendMessage(net.minecraft.text.Text.literal("搬运停止："+error.getMessage()),true);}}
 }

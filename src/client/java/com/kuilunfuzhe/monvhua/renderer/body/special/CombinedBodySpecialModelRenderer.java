@@ -82,6 +82,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
                 NbtCompound marks=physicsMarks(data.customData(),id);
                 renderModelPaint(matrices,consumers,active,slim,data.texture(),marks,light);
                 renderWounds(matrices,consumers,active,slim,marks,light);
+                renderStains(matrices,consumers,active,slim,data.customData(),light,id);
             } finally {matrices.pop();}
         }
     }
@@ -219,6 +220,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
 
         renderModelPaint(matrices, vertexConsumers, activeModel, slim, data.texture(), data.customData(), light);
         renderWounds(matrices, vertexConsumers, activeModel, slim, data.customData(), light);
+        renderStains(matrices,vertexConsumers,activeModel,slim,data.customData(),light,"");
 
         matrices.pop();
     }
@@ -337,6 +339,24 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
     /** 体素渲染回调接口：执行体素渲染并返回是否成功 */
     private interface VoxelRenderCall {
         boolean render(MatrixStack matrices, VertexConsumer vertexConsumer);
+    }
+
+    private void renderStains(MatrixStack matrices,VertexConsumerProvider consumers,PlayerEntityModel model,
+                              boolean slim,NbtCompound data,int light,String onlyPart) {
+        if(data==null)return;
+        String id=data.getCompoundOrEmpty(com.kuilunfuzhe.monvhua.features.forensics.Forensics.BINDING).getString("id","");
+        if(id.isEmpty())return;
+        var vertices=consumers.getBuffer(PaintRenderLayers.paintOverlay());
+        for(String surface:java.util.List.of("body_upper","body_lower","left_arm_lower","right_arm_lower")) {
+            String part=physicsPart(surface);if(!onlyPart.isEmpty()&&!part.equals(onlyPart))continue;
+            int amount=com.kuilunfuzhe.monvhua.features.forensics.blood.BodyStainClient.level("c/"+id,part.equals("torso"));
+            if(amount<=0)continue;var target=surfaceTarget(model,slim,surface);if(target==null)continue;
+            matrices.push();model.getRootPart().applyTransform(matrices);for(var element:target.path())if(element!=null)element.applyTransform(matrices);
+            for(int y=1;y<7;y++)for(int x=1;x<7;x++)if(Math.floorMod(x*31+y*17,11)<=Math.min(9,amount+2))
+                appendPaintPixel(vertices,matrices.peek().getPositionMatrix(),target.cuboid(),Direction.NORTH,OUTER_LAYER_PAINT_OFFSET+.002f,x,y,8,8,
+                    (Math.min(235,80+amount*12)<<24)|0x6e0810,light);
+            matrices.pop();
+        }
     }
 
     /** Independent wound layer: painting/eraser never edits this data. */

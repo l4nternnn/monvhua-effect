@@ -98,7 +98,7 @@ public final class BloodTransferService {
                     BloodTraceService.validate(world, landing.getBlockPos());
                     if (now - PICKUPS.getOrDefault(player.getUuid(), now - 20) >= 20) {
                         for (var entry : BloodTraceStore.get(world).at(landing.getBlockPos()).stream().limit(8).toList()) {
-                            if (entry.patch().kind() == 3 || entry.patch().face() != Direction.UP || !entry.patch().covers(landing.getPos())) continue;
+                            if (entry.patch().kind() >= 3 || BloodVisibility.density(entry.patch(),landing.getPos()) < 1 || BloodVisibility.painted(world,entry.patch(),landing.getPos()) || entry.patch().face() != Direction.UP || !entry.patch().covers(landing.getPos())) continue;
                             if (store.transfer(entry.event(), holder(player, left ? "left_sole" : "right_sole"), 2, config.soleCapacity, now) > 0) {
                                 PICKUPS.put(player.getUuid(), now); break;
                             }
@@ -124,10 +124,8 @@ public final class BloodTransferService {
                     }
                 }
             }
-            // Short-lived particles are a model-independent proximity hint; the authoritative residue remains persistent.
-            if (server.getTicks() % 40 == 0 && (store.visible(holder(player, "torso")) > 0 || store.visible(holder(player, "hands")) > 0
-                    || store.visible(itemRef(player.getMainHandStack())) > 0))
-                world.spawnParticles(new net.minecraft.particle.DustParticleEffect(0x800b12, .6f), pos.x, pos.y + 1, pos.z, 2, .15, .2, .15, 0);
+            // Body contamination is synchronized as an independent front-surface layer.
+            // Existing weapon residue remains inspectable; no new cleaning-tool contamination is created.
             STEPS.put(player.getUuid(), new Step(pos, dimension, Math.min(distance, 3), left, previous.time));
         }
     }

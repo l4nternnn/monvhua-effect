@@ -16,18 +16,20 @@ import net.minecraft.util.math.*;
 import java.util.*;
 
 public final class BloodTracePackets {
-    // At most 96 compact patches (< 16 KiB) and 256 removal IDs (< 10 KiB) per packet.
+    public static final int MAX_PATCHES = 16;
+    // At most 16 compact patches (< 16 KiB) and 256 removal IDs (< 10 KiB) per packet.
     public record Sync(String dimension, long generation, boolean clear, List<BloodPatch> patches, List<String> removals) implements CustomPayload {
-        public static final Id<Sync> ID = new Id<>(Identifier.of("monvhua", "blood_sync_v2"));
+        public Sync { patches=List.copyOf(patches);removals=List.copyOf(removals);if(patches.size()>MAX_PATCHES||removals.size()>256)throw new IllegalArgumentException("Blood packet exceeds budget"); }
+        public static final Id<Sync> ID = new Id<>(Identifier.of("monvhua", "blood_sync_v3"));
         public static final PacketCodec<RegistryByteBuf, Sync> CODEC = PacketCodec.of(Sync::write, Sync::new);
         private Sync(RegistryByteBuf b) { this(b.readString(128), b.readLong(), b.readBoolean(), readPatches(b), readRemovals(b)); }
         private static int count(RegistryByteBuf b, int max) { int n = b.readVarInt(); if (n < 0 || n > max) throw new IllegalArgumentException("Invalid blood packet size"); return n; }
         private static List<BloodPatch> readPatches(RegistryByteBuf b) {
-            int n = count(b, 96); List<BloodPatch> list = new ArrayList<>(n);
+            int n = count(b, MAX_PATCHES); List<BloodPatch> list = new ArrayList<>(n);
             for (int i = 0; i < n; i++) {
-                var p = new BloodPatch(b.readString(36), b.readBlockPos(), b.readEnumConstant(Direction.class), b.readFloat(), b.readFloat(), b.readFloat(), b.readUnsignedByte(), b.readLong(), b.readVarInt());
+                var p = new BloodPatch(b.readString(36), b.readBlockPos(), b.readEnumConstant(Direction.class), b.readFloat(), b.readFloat(), b.readFloat(), b.readUnsignedByte(), b.readLong(), b.readVarInt(), b.readString(256));
                 if (!Float.isFinite(p.u()) || !Float.isFinite(p.v()) || Math.abs(p.u()) > 2 || Math.abs(p.v()) > 2
-                        || !Float.isFinite(p.radius()) || p.radius() <= 0 || p.radius() > .85f || p.kind() > 3 || p.revision() < 1) throw new IllegalArgumentException("Invalid blood geometry");
+                        || !Float.isFinite(p.radius()) || p.radius() <= 0 || p.radius() > .85f || p.kind() > 4 || p.revision() < 1) throw new IllegalArgumentException("Invalid blood geometry");
                 list.add(p);
             }
             return List.copyOf(list);
@@ -35,7 +37,7 @@ public final class BloodTracePackets {
         private static List<String> readRemovals(RegistryByteBuf b) { int n = count(b, 256); List<String> list = new ArrayList<>(n); for (int i = 0; i < n; i++) list.add(b.readString(36)); return List.copyOf(list); }
         private void write(RegistryByteBuf b) {
             b.writeString(dimension, 128); b.writeLong(generation); b.writeBoolean(clear); b.writeVarInt(patches.size());
-            for (var p : patches) { b.writeString(p.id(), 36); b.writeBlockPos(p.pos()); b.writeEnumConstant(p.face()); b.writeFloat(p.u()); b.writeFloat(p.v()); b.writeFloat(p.radius()); b.writeByte(p.kind()); b.writeLong(p.seed()); b.writeVarInt(p.revision()); }
+            for (var p : patches) { b.writeString(p.id(), 36); b.writeBlockPos(p.pos()); b.writeEnumConstant(p.face()); b.writeFloat(p.u()); b.writeFloat(p.v()); b.writeFloat(p.radius()); b.writeByte(p.kind()); b.writeLong(p.seed()); b.writeVarInt(p.revision()); b.writeString(p.treatment(),256); }
             b.writeVarInt(removals.size()); for (String id : removals) b.writeString(id, 36);
         }
         @Override public Id<? extends CustomPayload> getId() { return ID; }
@@ -50,15 +52,15 @@ public final class BloodTracePackets {
     private static long sequence;
     private static final class Window {
         final String dimension; final long generation = ++sequence;
-        boolean clear = true; final Map<String, Integer> known = new HashMap<>();
+        boolean clear = true; final Map<String, BloodPatch> known = new HashMap<>();
         Window(String dimension) { this.dimension = dimension; }
     }
     public static void register() {
         PayloadTypeRegistry.playS2C().register(Sync.ID, Sync.CODEC);
         PayloadTypeRegistry.playC2S().register(Inspect.ID, Inspect.CODEC);
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            if (ForensicConfig.current.enabled && ForensicConfig.current.transfer.enabled && !ServerPlayNetworking.canSend(handler.player, Sync.ID))
-                handler.disconnect(Text.literal("线索系统版本不一致，请更新到包含第四阶段的客户端模组"));
+            if (BloodRules.enabled() && !ServerPlayNetworking.canSend(handler.player, Sync.ID))
+                handler.disconnect(Text.literal("线索系统版本不一致，请更新到包含第五阶段的客户端模组"));
         });
         ServerPlayConnectionEvents.DISCONNECT.register((h, s) -> { WINDOWS.remove(h.player.getUuid()); REQUESTS.remove(h.player.getUuid()); });
         net.fabricmc.fabric.api.entity.event.v1.ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register((player, origin, destination) -> WINDOWS.remove(player.getUuid()));
@@ -73,12 +75,13 @@ public final class BloodTracePackets {
     public static void tick(MinecraftServer server) {
         if (server.getTicks() % 5 != 0) return;
         Map<ServerWorld, Set<BlockPos>> validated = new IdentityHashMap<>();
+        Map<ServerWorld,Map<BloodPatch,BloodPatch>> projections=new IdentityHashMap<>();
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             if (!ServerPlayNetworking.canSend(player, Sync.ID)) continue;
-            sync(player, validated.computeIfAbsent((ServerWorld) player.getWorld(), w -> new HashSet<>()));
+            sync(player, validated.computeIfAbsent((ServerWorld) player.getWorld(), w -> new HashSet<>()),projections.computeIfAbsent((ServerWorld)player.getWorld(),w->new HashMap<>()));
         }
     }
-    private static void sync(ServerPlayerEntity player, Set<BlockPos> validated) {
+    private static void sync(ServerPlayerEntity player, Set<BlockPos> validated,Map<BloodPatch,BloodPatch> projections) {
         ServerWorld world = (ServerWorld) player.getWorld(); String dimension = world.getRegistryKey().getValue().toString();
         Window window = WINDOWS.get(player.getUuid());
         if (window == null || !window.dimension.equals(dimension)) { window = new Window(dimension); WINDOWS.put(player.getUuid(), window); }
@@ -91,17 +94,17 @@ public final class BloodTracePackets {
                 for (var e : store.chunk(ChunkPos.toLong(center.x + x, center.z + z))) {
                     if (e.patch().kind() >= 2 && !ForensicConfig.current.transfer.enabled) continue;
                     if (validated.add(e.patch().pos())) BloodTraceService.validate(world, e.patch().pos());
-                    if (store.entry(e.patch().id()) != null) wanted.put(e.patch().id(), e.patch());
+                    if (store.entry(e.patch().id()) != null) {var projected=projections.computeIfAbsent(e.patch(),p->BloodVisibility.project(world,p));if(projected.treatment().chars().anyMatch(alpha->alpha>0))wanted.put(e.patch().id(),projected);}
                 }
             }
         }
         List<String> removals = new ArrayList<>();
         for (String id : window.known.keySet()) if (!wanted.containsKey(id) && removals.size() < 256) removals.add(id);
         List<BloodPatch> updates = new ArrayList<>();
-        for (var p : wanted.values()) if (window.known.getOrDefault(p.id(), 0) < p.revision() && updates.size() < 96) updates.add(p);
+        for (var p : wanted.values()) if (!p.equals(window.known.get(p.id())) && updates.size() < MAX_PATCHES) updates.add(p);
         if (window.clear || !updates.isEmpty() || !removals.isEmpty()) {
             ServerPlayNetworking.send(player, new Sync(dimension, window.generation, window.clear, List.copyOf(updates), List.copyOf(removals)));
-            window.clear = false; removals.forEach(window.known::remove); for (var p : updates) window.known.put(p.id(), p.revision());
+            window.clear = false; removals.forEach(window.known::remove); for (var p : updates) window.known.put(p.id(), p);
         }
     }
 }

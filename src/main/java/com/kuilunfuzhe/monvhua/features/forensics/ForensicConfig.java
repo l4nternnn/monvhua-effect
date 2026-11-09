@@ -12,6 +12,13 @@ public final class ForensicConfig {
     public double inspectionDistance = 3;
     public float moderateThreshold = 4;
     public float severeThreshold = 8;
+    public Cleaning cleaning = new Cleaning();
+    public static final class Cleaning {
+        public boolean enabled=true, coverage=true, dragTraces=true;
+        public double maxRadius=16;
+        public int maxPatches=256, perTickBudget=1024, actionLimit=8192;
+        public boolean valid(){return Double.isFinite(maxRadius)&&maxRadius>=.1&&maxRadius<=16&&maxPatches>=1&&maxPatches<=1024&&perTickBudget>=maxPatches&&perTickBudget<=8192&&actionLimit>=64&&actionLimit<=65536;}
+    }
     public Blood blood = new Blood();
     public Transfer transfer = new Transfer();
     public static final class Transfer {
@@ -55,7 +62,7 @@ public final class ForensicConfig {
         try {
             if (!Files.exists(path)) { Files.writeString(path, gson.toJson(current)); return; }
             ForensicConfig next = gson.fromJson(Files.readString(path), ForensicConfig.class);
-            if (next == null || next.blood == null || !next.blood.valid() || next.transfer == null || !next.transfer.valid() || next.detailedHitLimit < 16 || next.detailedHitLimit > 256
+            if (next == null || next.cleaning == null || !next.cleaning.valid() || next.blood == null || !next.blood.valid() || next.transfer == null || !next.transfer.valid() || next.detailedHitLimit < 16 || next.detailedHitLimit > 256
                     || !Double.isFinite(next.inspectionDistance) || next.inspectionDistance < 1 || next.inspectionDistance > 6
                     || !Float.isFinite(next.moderateThreshold) || !Float.isFinite(next.severeThreshold)
                     || next.moderateThreshold <= 0 || next.severeThreshold <= next.moderateThreshold)

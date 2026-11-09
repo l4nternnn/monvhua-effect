@@ -27,6 +27,7 @@
 		"BodyPoseDrawContextAccessor",
 		"BodyPoseGuiRendererMixin",
     "EvidenceGuiRendererMixin",
+        "EvidencePanelGuiSizeMixin",
 		"SoundManagerMixin",
 		"SwingCrosshairTargetMixin",
 		"gravity.GravityCameraMixin",

@@ -145,7 +145,7 @@ public class BloodRegressionTest {
         bootstrap(); RegistryByteBuf buffer = new RegistryByteBuf(Unpooled.buffer(), DynamicRegistryManager.EMPTY);
         try {
             List<BloodPatch> patches = new ArrayList<>();
-            for (int i = 0; i < 96; i++) patches.add(entry(patch(UUID.randomUUID().toString(), new BlockPos(i, 1, -1), 1)).patch());
+            for (int i = 0; i < BloodTracePackets.MAX_PATCHES; i++) patches.add(entry(patch(UUID.randomUUID().toString(), new BlockPos(i, 1, -1), 1)).patch().treated("\u00ff".repeat(256),1));
             List<String> removals = new ArrayList<>(); for (int i = 0; i < 256; i++) removals.add(UUID.randomUUID().toString());
             var packet = new BloodTracePackets.Sync("minecraft:overworld", 9, true, patches, removals);
             BloodTracePackets.Sync.CODEC.encode(buffer, packet);

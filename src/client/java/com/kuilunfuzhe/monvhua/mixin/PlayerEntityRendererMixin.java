@@ -17,6 +17,7 @@ public class PlayerEntityRendererMixin {
 
     @Inject(method = "updateRenderState", at = @At("RETURN"))
     private void monvhua$overridePaintedSkinTexture(AbstractClientPlayerEntity player, PlayerEntityRenderState state, float tickDelta, CallbackInfo ci) {
+        com.kuilunfuzhe.monvhua.features.forensics.blood.BodyStainClient.capture(state,player.getUuid());
         Identifier paintedId = PlayerSkinPaintManager.getPaintedTexture(player.getUuid());
         if (paintedId != null) {
             SkinTextures original = ((PlayerEntityRenderStateAccessor) state).getSkinTextures();

@@ -38,9 +38,11 @@ public final class BloodTraceService {
     }
     public static void initialize() {
         BloodTracePackets.register();
+        com.kuilunfuzhe.monvhua.network.forensics.BodyStainPackets.initialize();
+        com.kuilunfuzhe.monvhua.features.forensics.cleaning.CleaningCommands.initialize();
         ServerEntityEvents.ENTITY_LOAD.register((entity, world) -> { if (entity instanceof ItemDisplayEntity display) track(display); });
         ServerEntityEvents.ENTITY_UNLOAD.register((entity, world) -> { if (entity instanceof ItemDisplayEntity display) SOURCES.remove(display); });
-        ServerLifecycleEvents.SERVER_STOPPED.register(server -> { SOURCES.clear(); CARRIED.clear(); LAST_DRIP.clear(); validationCursor = 0; lastError = 0; lastCapacityWarning = 0; });
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> { BloodVisibility.reset(); BloodMotionEvidenceService.reset(); SOURCES.clear(); CARRIED.clear(); LAST_DRIP.clear(); validationCursor = 0; lastError = 0; lastCapacityWarning = 0; });
         ServerTickEvents.END_SERVER_TICK.register(server -> safe(() -> {
             if (BloodRules.generating() && server.getTicks() % 10 == 0) {
                 for (ItemDisplayEntity display : List.copyOf(SOURCES)) {
@@ -71,10 +73,12 @@ public final class BloodTraceService {
     }
 
     private static int clear(ServerWorld world, BlockPos from, BlockPos to, boolean preview, net.minecraft.server.command.ServerCommandSource source) {
+        var before=BloodTraceStore.get(world).entries();
         int count = BloodTraceStore.get(world).clear(from, to, preview);
+        if(!preview)discardOrphans(world,before);
         source.sendFeedback(() -> Text.literal((preview ? "将清除" : "已清除") + count + " 个血迹补丁"), false); return count;
     }
-    public static void track(ItemDisplayEntity display) { if (Forensics.hasBinding(display.getItemStack())) SOURCES.add(display); }
+    public static void track(ItemDisplayEntity display) { if (Forensics.hasBinding(display.getItemStack())) {SOURCES.add(display);com.kuilunfuzhe.monvhua.network.forensics.BodyStainPackets.track(display);} }
     public static void beginPhysicsMove(ItemDisplayEntity display) {
         CARRIED.add(display.getUuid());LAST_DRIP.put(display.getUuid(),display.getPos());
         LAST_DRIP_TIME.put(display.getUuid(),now(display.getWorld().getServer()));DRIP_DISTANCE.put(display.getUuid(),0.0);SOURCES.remove(display);
@@ -147,8 +151,17 @@ public final class BloodTraceService {
     public static void validate(ServerWorld world, BlockPos pos) {
         if (!world.isChunkLoaded(pos)) return;
         var store = BloodTraceStore.get(world);
-        for (var entry : List.copyOf(store.at(pos))) if (!BloodSurfaceProjection.supported(world, pos)
+        var before=List.copyOf(store.at(pos));
+        for (var entry : before) if (!BloodSurfaceProjection.supported(world, pos)
                 || !world.getBlockState(pos).toString().equals(entry.support())) store.remove(entry.patch().id());
+        discardOrphans(world,before);
+    }
+    private static void discardOrphans(ServerWorld world,Collection<BloodTraceStore.Entry> candidates){
+        var traces=BloodTraceStore.get(world);var events=new HashSet<String>();
+        for(var e:candidates)if(traces.entry(e.patch().id())==null)events.add(e.event());
+        if(events.isEmpty())return;
+        for(var e:traces.entries())events.remove(e.event());
+        for(String event:events)BloodTransferStore.get(world.getServer()).discard(event);
     }
     public static void blockChanged(ServerWorld world, BlockPos pos) { safe(() -> validate(world, pos)); }
     private static boolean submit(ServerWorld world, BloodTraceStore.Entry entry) {
