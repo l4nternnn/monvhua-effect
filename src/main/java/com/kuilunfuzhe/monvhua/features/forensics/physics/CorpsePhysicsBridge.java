@@ -6,7 +6,7 @@ import java.util.concurrent.CompletableFuture;
 
 /** Optional local provider. No Minecraft or native types cross the worker boundary. */
 public interface CorpsePhysicsBridge extends AutoCloseable {
-    int API_VERSION=4;
+    int API_VERSION=5;
     int ALGORITHM_VERSION=2;
     float INITIAL_LEAN_DEGREES=3;
     float DESTABILIZATION_SPEED=.3f;
@@ -24,7 +24,17 @@ public interface CorpsePhysicsBridge extends AutoCloseable {
     CompletableFuture<PhysicsPoseDocument> solve(Request request);
     /** Null means this provider supports only the legacy batch path. */
     default Session open(Request request) {return null;}
+    record TimedPose(long tick,PhysicsPoseDocument pose){}
+    record ResidentState(String phase,long tick,long generation,long terrainRevision,boolean paused,PhysicsPoseDocument stable,String failure){}
+    default Session openContinuous(Request request){throw new UnsupportedOperationException("Continuous core unavailable");}
     interface Session extends AutoCloseable {
+        default boolean continuous(){return false;}
+        default ResidentState residentState(){return null;}
+        default void terrain(List<Box> boxes,long revision){throw new UnsupportedOperationException();}
+        default void advanceClock(long tick){advanceTo(Math.toIntExact(tick));}
+        default List<TimedPose> published(){return frames().stream().map(f->new TimedPose(f.step(),f)).toList();}
+        default List<Long> historyTicks(){return historySteps().stream().map(Integer::longValue).toList();}
+        default PhysicsPoseDocument poseAt(long tick){return frame(Math.toIntExact(tick));}
         default Metrics metrics(){return new Metrics(0,0,0);}
         default boolean supportsHistory(){return false;}
         default int historyHz(){return 0;}

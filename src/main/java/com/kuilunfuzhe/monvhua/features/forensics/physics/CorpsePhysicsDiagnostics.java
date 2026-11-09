@@ -13,7 +13,7 @@ import static net.minecraft.server.command.CommandManager.*;
 /** Bounded value-only cache. No entities, world coordinates, player identities or sessions retained. */
 public final class CorpsePhysicsDiagnostics {
     public enum Stage { APPLIED, INPUT_REJECTED, INITIALIZATION_REJECTED, BACKEND_UNAVAILABLE, SOLVER_TIMEOUT, SOLVER_INVALID,
-        LEFT_REGION, TERRAIN_CHANGED, CARRIER_INVALID, HOST_TIMEOUT, NO_PROGRESS, STATIC_COMMIT_REJECTED, CANCELLED, CAPACITY }
+        LEFT_REGION, TERRAIN_CHANGED, CARRIER_INVALID, HOST_TIMEOUT, NO_PROGRESS, STATIC_COMMIT_REJECTED, CANCELLED, CAPACITY, CONTINUOUS_STOPPED }
     public record Entry(long sequence,Stage stage,CorpsePhysicsBridge.Request input,PhysicsPoseDocument result,CorpsePhysicsBridge.Metrics metrics,long elapsedNanos){}
     private static final ArrayDeque<Entry> recent=new ArrayDeque<>();
     private static final EnumMap<Stage,Long> counts=new EnumMap<>(Stage.class);
@@ -31,7 +31,7 @@ public final class CorpsePhysicsDiagnostics {
     public static synchronized Entry latest(){return recent.peekLast();}
     public static synchronized String report(){var e=recent.peekLast();return "最近记录="+recent.size()+"/16 分类="+counts+(e==null?"":" | last="+e.sequence+" "+e.stage+" step="+(e.result==null?"none":e.result.step())+" elapsedMs="+e.elapsedNanos/1_000_000+" metrics="+e.metrics)+" | "+terrainReport();}
     public static void register(com.mojang.brigadier.builder.LiteralArgumentBuilder<ServerCommandSource> root){
-        root.then(literal("report").executes(c->{c.getSource().sendFeedback(()->Text.literal(report()),false);return 1;}));
+        root.then(literal("report").executes(c->{c.getSource().sendFeedback(()->Text.literal(report()+" | "+CorpseResidentManager.status()),false);return 1;}));
         var export=literal("export-last");
         for(boolean reproduction:new boolean[]{false,true})export.then(literal(reproduction?"reproduction":"summary").executes(c->export(c.getSource(),reproduction)));
         root.then(export);

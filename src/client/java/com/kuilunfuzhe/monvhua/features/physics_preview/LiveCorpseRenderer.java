@@ -19,7 +19,7 @@ public final class LiveCorpseRenderer {
     private static Object models;
     private record Playback(CorpsePhysicsBridge.Session session,PhysicsPlaybackClock clock) {}
     private static final Map<UUID,Playback> playback=new HashMap<>();
-    public record DiagnosticSample(long nanos,double displayed,int latest,String mode,long waits,long resyncs){}
+    public record DiagnosticSample(long nanos,double displayed,long latest,String mode,long waits,long resyncs){}
     private static final boolean DIAGNOSTICS=Boolean.getBoolean("monvhua.physicsPlaybackDiagnostics")||Boolean.getBoolean("monvhua.physicsG4GameTest")||Boolean.getBoolean("monvhua.physicsAutomaticGameTest")||Boolean.getBoolean("monvhua.physicsHistoryGameTest");
     private static final LinkedHashMap<UUID,ArrayDeque<DiagnosticSample>> diagnostics=new LinkedHashMap<>();
     public static List<DiagnosticSample> diagnosticSamples(UUID id){var samples=diagnostics.get(id);return samples==null?List.of():List.copyOf(samples);}
@@ -74,23 +74,26 @@ public final class LiveCorpseRenderer {
         if(models!=client.getLoadedEntityModels()){models=client.getLoadedEntityModels();renderer=new CombinedBodySpecialModelRenderer(client.getLoadedEntityModels());}
         for(var v:views) {
             if(!sameWorld(v)||context.camera().getPos().squaredDistanceTo(v.origin())>64*64)continue;
-            var frames=v.session().frames();
+            var timed=v.session().published();
+            var frames=timed.stream().map(CorpsePhysicsBridge.TimedPose::pose).toList();
             if(frames.isEmpty())continue;
             var last=frames.getLast();
             // Settled bodies are stationary for 30 frames. Hold their exact terminal frame
             // until the tracked static pose arrives on the client.
             if(v.committedRevision()>0){var terminal=v.session().frames();if(!terminal.isEmpty())last=terminal.getLast();}
             var pose=last;
-            double displayed=last.step();String mode=v.committedRevision()>0?"TERMINAL":"RUN";
+            long latestTick=timed.getLast().tick();
+            double displayed=latestTick;String mode=v.committedRevision()>0?"TERMINAL":"RUN";
             boolean globalPause=client.isPaused()||client.world.getTickManager().isFrozen();
             var clock=playback.compute(v.display(),(id,old)->old!=null&&old.session()==v.session()?old:new Playback(v.session(),new PhysicsPlaybackClock())).clock();
             long now=System.nanoTime();
             if(v.committedRevision()==0&&frames.size()>1) {
-                float time=(float)clock.advance(frames.getFirst().step(),last.step(),now,globalPause);
+                double time=clock.advance(timed.getFirst().tick(),latestTick,now,globalPause);
                 displayed=time;if(globalPause)mode="GLOBAL_PAUSE";
                 PhysicsPoseDocument a=frames.getFirst(),b=last;
-                for(var f:frames){if(f.step()<=time)a=f;if(f.step()>=time){b=f;break;}}
-                float alpha=a.step()==b.step()?0:Math.clamp((time-a.step())/(b.step()-a.step()),0,1);
+                long at=timed.getFirst().tick(),bt=latestTick;
+                for(var f:timed){if(f.tick()<=time){a=f.pose();at=f.tick();}if(f.tick()>=time){b=f.pose();bt=f.tick();break;}}
+                float alpha=at==bt?0:(float)Math.clamp((time-at)/(bt-at),0,1);
                 var parts=new LinkedHashMap<String,PhysicsPoseDocument.Pose>();
                 for(String id:PhysicsPoseDocument.IDS){var x=a.poses().get(id);var y=b.poses().get(id);var q=x.rotation().slerp(y.rotation(),alpha);
                     parts.put(id,new PhysicsPoseDocument.Pose(x.x()+(y.x()-x.x())*alpha,x.y()+(y.y()-x.y())*alpha,x.z()+(y.z()-x.z())*alpha,q.x,q.y,q.z,q.w));}
@@ -98,11 +101,11 @@ public final class LiveCorpseRenderer {
             }
             var history=CorpseHistoryController.get(v.display());
             if(history!=null&&history.frozen()){
-                var frozen=history.pose();if(frozen!=null){pose=frozen;clock.holdAt(last.step(),now);displayed=frozen.step();mode="FROZEN";}
+                var frozen=history.pose();if(frozen!=null){pose=frozen;clock.holdAt(latestTick,now);displayed=history.selectedFrame<0?history.last():history.selectedFrame;mode="FROZEN";}
             }
             if(DIAGNOSTICS){
                 var samples=diagnostics.computeIfAbsent(v.display(),id->new ArrayDeque<>());
-                samples.addLast(new DiagnosticSample(now,displayed,last.step(),mode,clock.waits(),clock.resyncs()));
+                samples.addLast(new DiagnosticSample(now,displayed,latestTick,mode,clock.waits(),clock.resyncs()));
                 if(samples.size()>2048)samples.removeFirst();
                 while(diagnostics.size()>16)diagnostics.remove(diagnostics.keySet().iterator().next());
             }

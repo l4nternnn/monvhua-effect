@@ -38,7 +38,7 @@ public final class CorpseHistoryController {
         private float yaw,pitch;
         private org.joml.Matrix4f root;
         public volatile boolean manual,timeline,active,valid=true;
-        public volatile int selectedFrame=-1,seconds;
+        public volatile long selectedFrame=-1;public volatile int seconds;
         private UUID viewer;
         Entry(ItemDisplayEntity display,CorpsePhysicsCoordinator.LiveView view,int seconds){
             this.id=display.getUuid();this.display=display;this.view=view;
@@ -48,30 +48,37 @@ public final class CorpseHistoryController {
             root=new org.joml.Matrix4f(com.kuilunfuzhe.monvhua.mixin.forensics.CorpseDisplayAccessor.monvhua$transform(display.getDataTracker()).getMatrix());}
         public boolean frozen(){return manual||timeline;}
         public boolean confirmed(){return !active||session!=null&&session.paused();}
-        public int first(){return session==null?-1:session.firstFrame();}
-        public int last(){return session==null?-1:session.lastFrame();}
-        public List<Integer> steps(){return session==null?List.of():session.historySteps();}
-        public int nearest(double requested){
+        public long first(){var ticks=steps();return ticks.isEmpty()?-1:ticks.getFirst();}
+        public long last(){var ticks=steps();return ticks.isEmpty()?-1:ticks.getLast();}
+        public List<Long> steps(){return session==null?List.of():session.historyTicks();}
+        public long nearest(double requested){
             var ids=steps();if(ids.isEmpty())return -1;
-            int best=ids.getFirst();for(int id:ids)if(Math.abs(id-requested)<Math.abs(best-requested))best=id;
+            long best=ids.getFirst();for(long id:ids)if(Math.abs(id-requested)<Math.abs(best-requested))best=id;
             return best;
         }
-        public int adjacent(int step,int direction){
+        public long adjacent(long step,int direction){
             var ids=steps();if(ids.isEmpty())return -1;
             if(direction<0){for(int i=ids.size()-1;i>=0;i--)if(ids.get(i)<step)return ids.get(i);return ids.getFirst();}
-            for(int id:ids)if(id>step)return id;return ids.getLast();
+            for(long id:ids)if(id>step)return id;return ids.getLast();
         }
         Vec3d targetPoint(){return CorpsePoseGeometry.bloodOrigin(display);}
         public PhysicsPoseDocument pose(){
             if(session==null||!confirmed())return null;
-            int first=first(),last=last();if(first<0)return null;
-            int step=selectedFrame<0?last:nearest(selectedFrame);
-            return session.frame(step);
+            long first=first(),last=last();if(first<0)return null;
+            long step=selectedFrame<0?last:nearest(selectedFrame);
+            return session.poseAt(step);
+        }
+        private boolean sameItem(){
+            var current=display.getItemStack();if(ItemStack.areEqual(expected,current))return true;
+            // Inventory persistence is not a pose/skin/paint edit and must not destroy a live timeline.
+            var a=expected.copy();var b=current.copy();
+            for(var stack:List.of(a,b)){var data=CorpsePoseRecord.data(stack);data.remove("body_part_inv_items");stack.set(net.minecraft.component.DataComponentTypes.CUSTOM_DATA,net.minecraft.component.type.NbtComponent.of(data));}
+            if(!ItemStack.areEqual(a,b))return false;expected=current.copy();return true;
         }
         private boolean matches(){return !display.isRemoved()&&display.getWorld().getEntityById(display.getId())==display
                 &&position.equals(display.getPos())&&yaw==display.getYaw()&&pitch==display.getPitch()
                 &&root.equals(com.kuilunfuzhe.monvhua.mixin.forensics.CorpseDisplayAccessor.monvhua$transform(display.getDataTracker()).getMatrix(),1e-6f)
-                &&ItemStack.areEqual(expected,display.getItemStack())&&!CorpseCarryService.isCarried(display);}
+                &&sameItem()&&!CorpseCarryService.isCarried(display);}
     }
     public static void initialize(){ /* forces item registration */ }
     public static List<Entry> entries(){return List.copyOf(entries.values());}
@@ -94,7 +101,7 @@ public final class CorpseHistoryController {
         view.session().historySeconds(defaultSeconds);
         entries.put(display.getUuid(),new Entry(display,view,defaultSeconds));return true;
     }
-    public static void completed(ItemDisplayEntity display){var e=entries.get(display.getUuid());if(e!=null){e.refresh();e.active=false;}}
+    public static void completed(ItemDisplayEntity display){var e=entries.get(display.getUuid());if(e!=null){e.refresh();e.active=e.session!=null&&e.session.continuous();}}
     public static void remove(UUID id){var e=entries.remove(id);if(e!=null)e.valid=false;selected.values().removeIf(id::equals);}
     public static void reset(){entries.values().forEach(e->e.valid=false);entries.clear();selected.clear();defaultSeconds=5;sequence=0;}
     public static void tick(){
@@ -148,7 +155,7 @@ public final class CorpseHistoryController {
         root.then(literal("status").executes(c->{
             var p=c.getSource().getPlayer();var id=p==null?null:selected.get(p.getUuid());var e=id==null?null:entries.get(id);
             String detail=e==null?"": "；所选窗口="+e.seconds+"s，可用帧="+e.first()+".."+e.last()+"，手动冻结="+e.manual+"，界面冻结="+e.timeline;
-            c.getSource().sendFeedback(()->Text.literal("历史默认="+defaultSeconds+"s，对象="+entries.size()+"/16，预留="+used()+"/"+BUDGET+" bytes；尸体运行上限仍为 300 帧"+detail),false);return 1;
+            c.getSource().sendFeedback(()->Text.literal("历史默认="+defaultSeconds+"s，对象="+entries.size()+"/16，预留="+used()+"/"+BUDGET+" bytes；一次性模式最多 300 帧；持续模式按活动段限额"+detail),false);return 1;
         }));
         var duration=literal("duration");
         for(boolean all:new boolean[]{true,false})duration.then(literal(all?"default":"selected").then(argument("seconds",com.mojang.brigadier.arguments.IntegerArgumentType.integer(1,60)).executes(c->{

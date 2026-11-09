@@ -29,6 +29,12 @@ class PhysicsPlaybackClockTest {
         clock.holdAt(9,23_000_000_000L);
         assertEquals(9,clock.advance(0,12,23_016_000_000L,false));
     }
+    @Test void continuousClockCrossesLegacyIntegerLimit(){
+        var clock=new PhysicsPlaybackClock();long start=(long)Integer.MAX_VALUE+100;
+        clock.advance(start,start+9,0,false);double previous=start;
+        for(int i=1;i<120;i++){double value=clock.advance(start+i-1,start+i+9,i*16_666_667L,false);assertTrue(value>=previous&&value<=start+i+9);previous=value;}
+        assertTrue(previous>Integer.MAX_VALUE);
+    }
     @Test void reproducesOldTickResetRegression(){
         double oldBefore=30-3+3*.99,oldAfter=30-3;
         assertTrue(oldAfter<oldBefore);

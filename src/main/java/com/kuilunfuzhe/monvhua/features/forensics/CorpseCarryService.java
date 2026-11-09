@@ -110,6 +110,7 @@ public final class CorpseCarryService {
                 binding.getString("part", "all"), display.getPos(), world.getRegistryKey().getValue().toString(), CorpsePoseRecord.data(display.getItemStack()).getLong("corpse_pose_revision",0));
         BY_CARRIER.put(player.getUuid(), session); BY_DISPLAY.put(display.getUuid(), player.getUuid());
         saveRecovery(player.getServer(), session);
+        if(com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseResidentManager.contains(display.getUuid()))com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseResidentManager.remove(display.getUuid());
         BloodTraceService.beginCarry(display, player);
         move(world, player, display, session);
         return "已抱起遗体，移动时可能留下滴血";

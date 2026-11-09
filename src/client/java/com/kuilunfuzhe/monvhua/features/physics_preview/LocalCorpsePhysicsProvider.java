@@ -16,6 +16,7 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
         if(RagdollInitialMotion.class.getRecordComponents().length!=6)throw new LinkageError("Unsupported motion core");
         if(RagdollRequest.class.getRecordComponents().length!=8||!solver(CorpsePhysicsProfiles.F5).equals(RagdollSolverProfile.F5))throw new LinkageError("Unsupported profile core/baseline");
         if(RagdollDiagnosticDocument.Document.class.getRecordComponents().length!=13)throw new LinkageError("Unsupported diagnostic core");
+        if(com.klfz.simplephysics.backend.ContinuousRagdollSession.Snapshot.class.getRecordComponents().length!=7)throw new LinkageError("Unsupported continuous core");
         service.initialize();
     }
     public int apiVersion(){return API_VERSION;}
@@ -45,6 +46,33 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
         });
         return result;
     }
+    public Session openContinuous(Request request){
+        var definition=request.slim()?RagdollDefinition.slim():RagdollDefinition.standard();
+        var session=service.openContinuous(input(request,definition,terrain(request.terrain())));
+        return new Session(){
+            private final CompletableFuture<PhysicsPoseDocument> completion=session.completion().thenApply(v->null);
+            private RagdollResult stableNative;private PhysicsPoseDocument stablePose;
+            public boolean continuous(){return true;}
+            public Metrics metrics(){var r=session.snapshot().stable();return r==null?new Metrics(0,0,0):new Metrics(r.maxAnchorError(),r.maxPenetration(),r.maxLimitError());}
+            public synchronized ResidentState residentState(){var s=session.snapshot();if(stableNative!=s.stable()){stableNative=s.stable();stablePose=stableNative==null?null:document(stableNative.finalPose(),definition,"SETTLED",stableNative.torsoTiltDegrees(),stableNative.reason());}return new ResidentState(s.phase().name(),s.tick(),s.generation(),s.terrainRevision(),s.paused(),stablePose,s.failure());}
+            public void terrain(java.util.List<Box> boxes,long revision){session.terrain(LocalCorpsePhysicsProvider.terrain(boxes),revision);}
+            public void advanceClock(long tick){session.advanceTo(tick);}
+            public void advanceTo(int step){session.advanceTo(step);}
+            public boolean supportsHistory(){return true;}
+            public int historyHz(){return 12;}
+            public java.util.List<Long> historyTicks(){return session.historyTicks();}
+            public PhysicsPoseDocument poseAt(long tick){var f=session.frame(tick);return f==null?null:document(f.pose(),definition,"SIMULATING",0,"continuous history");}
+            public java.util.List<TimedPose> published(){return session.frames().stream().map(f->new TimedPose(f.tick(),document(f.pose(),definition,"SIMULATING",0,"continuous"))).toList();}
+            public java.util.List<PhysicsPoseDocument> frames(){return published().stream().map(TimedPose::pose).toList();}
+            public void setPaused(boolean value){session.setPaused(value);}
+            public boolean paused(){return session.snapshot().paused();}
+            public void historySeconds(int seconds){session.historySeconds(seconds);}
+            public void clearHistory(){session.clearHistory();}
+            public CompletableFuture<PhysicsPoseDocument> completion(){return completion;}
+            public void close(){session.close();}
+        };
+    }
+    private static TerrainSnapshotData terrain(java.util.List<Box> boxes){return new TerrainSnapshotData(boxes.stream().map(b->new BoxScene.StaticBox(b.x0(),b.y0(),b.z0(),b.x1(),b.y1(),b.z1())).toList());}
     public Session open(Request request) {
         var terrain=new TerrainSnapshotData(request.terrain().stream().map(b->new BoxScene.StaticBox(b.x0(),b.y0(),b.z0(),b.x1(),b.y1(),b.z1())).toList());
         var definition=request.slim()?RagdollDefinition.slim():RagdollDefinition.standard();

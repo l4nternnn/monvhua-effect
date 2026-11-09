@@ -38,7 +38,7 @@ public final class CorpseTimelineScreen extends Screen {
     @Override public boolean mouseReleased(double x,double y,int button){if(button==0)dragging=false;return super.mouseReleased(x,y,button);}
     @Override public boolean keyPressed(int key,int scan,int mods){
         if(available()){
-            int current=entry.selectedFrame<0?entry.last():entry.selectedFrame;
+            long current=entry.selectedFrame<0?entry.last():entry.selectedFrame;
             if(key==GLFW.GLFW_KEY_LEFT||key==GLFW.GLFW_KEY_RIGHT){entry.selectedFrame=entry.adjacent(current,key==GLFW.GLFW_KEY_LEFT?-1:1);return true;}
             if(key==GLFW.GLFW_KEY_HOME){entry.selectedFrame=entry.first();return true;}
             if(key==GLFW.GLFW_KEY_END){entry.selectedFrame=-1;return true;}
@@ -46,7 +46,7 @@ public final class CorpseTimelineScreen extends Screen {
         return super.keyPressed(key,scan,mods);
     }
     @Override public void render(DrawContext c,int mx,int my,float delta){
-        int first=entry.first(),last=entry.last(),step=entry.selectedFrame<0?last:entry.nearest(entry.selectedFrame);
+        long first=entry.first(),last=entry.last(),step=entry.selectedFrame<0?last:entry.nearest(entry.selectedFrame);
         String status=!entry.confirmed()?"等待物理帧边界冻结…":first<0?"无过程记录；仅显示原尸体姿态":String.format(java.util.Locale.ROOT,"12 帧/秒 · %.2f s · 物理帧 %d · %d–%d · %s",step/60.0,step,first,last,entry.active?"已冻结":"已稳定");
         c.drawCenteredTextWithShadow(textRenderer,Text.literal(status),width/2,barY()-25,0xFFFFFFFF);
         c.fill(left(),barY()-2,right(),barY()+3,0xFF78909C);

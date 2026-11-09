@@ -7,7 +7,7 @@ public final class PhysicsPlaybackClock {
     private long previousNanos;
     private boolean buffering=true;
     private long waits,resyncs;
-    public double advance(int first,int latest,long now,boolean paused){
+    public double advance(long first,long latest,long now,boolean paused){
         if(first<0||latest<first)throw new IllegalArgumentException("Invalid published range");
         if(Double.isNaN(position)){position=first;previousNanos=now;}
         double elapsed=Math.max(0,(now-previousNanos)/1e9);previousNanos=now;
@@ -19,7 +19,7 @@ public final class PhysicsPlaybackClock {
         if(position>=latest){buffering=true;waits++;}
         return position;
     }
-    public void holdAt(int step,long now){position=step;previousNanos=now;buffering=true;}
+    public void holdAt(long step,long now){position=step;previousNanos=now;buffering=true;}
     public double position(){return position;}
     public long waits(){return waits;}
     public long resyncs(){return resyncs;}

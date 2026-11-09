@@ -30,6 +30,10 @@ public final class CorpsePhysicsCoordinator {
     private static volatile CorpsePhysicsBridge provider;
     private static volatile long epoch;
     private static volatile boolean automatic;
+    private static boolean continuous=defaultContinuous();
+    private static boolean defaultContinuous(){return !Boolean.getBoolean("monvhua.physicsAutomaticGameTest")&&!Boolean.getBoolean("monvhua.physicsG4GameTest")&&!Boolean.getBoolean("monvhua.physicsHistoryGameTest");}
+    static void publish(LiveView v){views.put(v.display(),v);}
+    static void unpublish(UUID id){views.remove(id);}
     private static volatile String last="未连接本地物理核心";
     private static final Map<UUID,Job> jobs=new ConcurrentHashMap<>();
     private static long sampleTick=Long.MIN_VALUE;
@@ -56,28 +60,30 @@ public final class CorpsePhysicsCoordinator {
         owner=server;provider=backend;CorpseProfileManager.start(server);sampleTick=Long.MIN_VALUE;terrainTick=Long.MIN_VALUE;terrainCursor=0;sampled=0;last="已连接本地计算服务";
     }
     public static synchronized void detach() {
-        epoch++;automatic=false;CorpsePhysicsDiagnostics.clear();CorpseProfileManager.reset();CorpseHistoryController.reset();pausedTicks.clear();
+        epoch++;automatic=false;CorpseResidentManager.reset();continuous=defaultContinuous();CorpsePhysicsDiagnostics.clear();CorpseProfileManager.reset();CorpseHistoryController.reset();pausedTicks.clear();
         for(var job:jobs.values()){job.future.cancel(true);if(job.session!=null)job.session.close();}jobs.clear();views.clear();progressTicks.clear();progressSteps.clear();advanceTicks.clear();
         var old=provider;provider=null;owner=null;if(old!=null)CompletableFuture.runAsync(old::close);
         last="世界已断开；自动生成关闭";
     }
     public static void unavailable(String reason){last=reason;}
     public static CorpsePhysicsBridge diagnosticProvider(MinecraftServer server){return server==owner?provider:null;}
-    public static boolean simulating(ItemDisplayEntity display){return display!=null&&jobs.containsKey(display.getUuid());}
-    public static boolean pending(ItemDisplayEntity display){return display!=null&&(jobs.containsKey(display.getUuid())||CorpseHistoryController.locked(display.getUuid()));}
+    public static boolean simulating(ItemDisplayEntity display){return display!=null&&(jobs.containsKey(display.getUuid())||CorpseResidentManager.moving(display.getUuid()));}
+    public static boolean pending(ItemDisplayEntity display){return display!=null&&(jobs.containsKey(display.getUuid())||CorpseResidentManager.moving(display.getUuid())||CorpseHistoryController.locked(display.getUuid()));}
     public static boolean localControl(MinecraftServer server){return server==owner&&provider!=null&&server.isSingleplayer();}
     public static boolean validateResume(UUID id){
+        if(CorpseResidentManager.contains(id))return CorpseResidentManager.resume(id);
         var j=jobs.get(id);if(j==null)return false;
         try {if(valid(j)&&j.snapshot.equals(CorpseTerrainSnapshot.capture(j.world,j.origin)))return true;}
         catch(RuntimeException ignored){}
         cancel(j.display,"恢复前地形/载体校验失败",valid(j)?TERRAIN_CHANGED:CARRIER_INVALID);return false;
     }
-    public static String status(){var p=provider;return "单人试验 auto="+automatic+" pending="+jobs.size()+" applied="+applied+" fallback="+failed+" cancelled="+cancelled+" | "+(p==null?"无本地后端":p.status())+" | "+last;}
+    public static String status(){var p=provider;return "单人试验 mode="+(continuous?"CONTINUOUS":"ONE_SHOT")+" "+CorpseResidentManager.status()+" auto="+automatic+" pending="+jobs.size()+" applied="+applied+" fallback="+failed+" cancelled="+cancelled+" | "+(p==null?"无本地后端":p.status())+" | "+last;}
     public static void initialize() {
         CorpseHistoryController.initialize();
         ServerTickEvents.END_SERVER_TICK.register(server->{
             DeathMotionContext.expire(server);
             if(server!=owner)return;
+            CorpseResidentManager.tick();
             CorpseHistoryController.tick();
             for(var job:List.copyOf(jobs.values())) {
                 long tick=job.world.getTime();
@@ -115,9 +121,16 @@ public final class CorpsePhysicsCoordinator {
             var auto=literal("auto");
             for(boolean on:new boolean[]{true,false})auto.then(literal(on?"on":"off").executes(c->{
                 if(!local(c.getSource()))return 0;automatic=on;
-                if(!on)for(var j:List.copyOf(jobs.values()))cancel(j.display,"会话自动生成关闭");
+                if(!on){CorpseResidentManager.reset();for(var j:List.copyOf(jobs.values()))cancel(j.display,"会话自动生成关闭");}
                 c.getSource().sendFeedback(()->Text.literal("本次单人会话死亡姿态自动生成："+(on?"开启":"关闭")),false);return 1;
             }));
+            var mode=literal("mode");
+            for(boolean value:new boolean[]{true,false})mode.then(literal(value?"continuous":"one-shot").executes(c->{continuous=value;c.getSource().sendFeedback(()->Text.literal("新请求模式："+(value?"持续模拟":"一次性倒地")+"；已有对象保持原模式"),false);return 1;}));
+            root.then(mode);
+            root.then(literal("wake").then(argument("target",EntityArgumentType.entity()).executes(c->{
+                var entity=EntityArgumentType.getEntity(c,"target");var id=entity.getUuid();if(entity instanceof InteractionEntity)id=BodyPartManager.INTERACTION_TO_DISPLAY.get(id);
+                boolean ok=id!=null&&CorpseResidentManager.wake(id);c.getSource().sendFeedback(()->Text.literal(ok?"已请求在完整帧边界唤醒；手动冻结时等待解冻":"目标不是有效持续对象"),false);return ok?1:0;
+            })));
             root.then(auto).then(literal("test").executes(c->{
                 if(!local(c.getSource()))return 0;
                 var display=CorpsePoseCommands.createPhysicsTest(c.getSource());if(display==null)return 0;
@@ -143,7 +156,7 @@ public final class CorpsePhysicsCoordinator {
             root.then(literal("cancel").then(argument("target",EntityArgumentType.entity()).executes(c->{
                 var e=EntityArgumentType.getEntity(c,"target");
                 if(e instanceof InteractionEntity){var id=BodyPartManager.INTERACTION_TO_DISPLAY.get(e.getUuid());e=id==null?null:c.getSource().getWorld().getEntity(id);}
-                if(e instanceof ItemDisplayEntity d&&pending(d)){cancel(d,"管理员取消");return 1;}return 0;
+                if(e instanceof ItemDisplayEntity d&&(pending(d)||CorpseResidentManager.contains(d.getUuid()))){cancel(d,"管理员取消");return 1;}return 0;
             })));
             dispatcher.register(literal("mvcorpse").then(root));
         });
@@ -169,8 +182,10 @@ public final class CorpsePhysicsCoordinator {
         }
         // Explicit arm metadata wins. Missing server-side skin metadata uses the documented slim default.
         boolean slim=slimModel(player,display);
-        if(submitMotion(display,player.getPos(),motion.yaw(),slim,CorpsePhysicsBridge.DESTABILIZATION_SPEED,motion))
+        if(submitMotion(display,player.getPos(),motion.yaw(),slim,CorpsePhysicsBridge.DESTABILIZATION_SPEED,motion)){
+            CorpseResidentManager.victim(display.getUuid(),player.getUuid());
             views.computeIfPresent(display.getUuid(),(id,v)->new LiveView(v.display,v.dimension,v.origin,v.skin,v.slim,v.session,player.getUuid(),0));
+        }
     }
     public static boolean hasNearbySupport(ServerPlayerEntity player) {
         var world=player.getWorld();var feet=player.getBoundingBox();
@@ -210,8 +225,8 @@ public final class CorpsePhysicsCoordinator {
     private static synchronized boolean submitMotion(ItemDisplayEntity display,Vec3d origin,float yaw,boolean slim,float speed,CorpseInitialMotionResolver.Motion motion) {
         var backend=provider;
         if(backend==null||display.getWorld().getServer()!=owner){CorpsePhysicsDiagnostics.rejected(BACKEND_UNAVAILABLE);return false;}
-        if(jobs.containsKey(display.getUuid())){CorpsePhysicsDiagnostics.rejected(CAPACITY);return false;}
-        if(jobs.size()>=8||views.size()>=8){CorpsePhysicsDiagnostics.rejected(CAPACITY);failed++;last="队列已满，保留原尸体";report(display,"FALLBACK_FINAL",last);return false;}
+        if(jobs.containsKey(display.getUuid())||CorpseResidentManager.contains(display.getUuid())){CorpsePhysicsDiagnostics.rejected(CAPACITY);return false;}
+        if(!continuous&&(jobs.size()>=8||views.size()>=8)){CorpsePhysicsDiagnostics.rejected(CAPACITY);failed++;last="队列已满，保留原尸体";report(display,"FALLBACK_FINAL",last);return false;}
         var world=(ServerWorld)display.getWorld();long tick=world.getTime();
         if(sampleTick!=tick){sampleTick=tick;sampled=0;}
         if(++sampled>2){CorpsePhysicsDiagnostics.rejected(CAPACITY);failed++;last="本 tick 采样额度已满，保留原尸体";report(display,"FALLBACK_FINAL",last);return false;}
@@ -227,6 +242,7 @@ public final class CorpsePhysicsCoordinator {
             var request=new CorpsePhysicsBridge.Request(slim,-MathHelper.wrapDegrees(yaw),speed,snapshot,
                     motion==null?null:new CorpsePhysicsBridge.Motion(motion.vx(),motion.vz(),motion.dx(),motion.dz(),motion.tilt(),motion.profile().motion().angularSpeed()),motion==null?null:motion.profile());
             captured=request;
+            if(continuous)return CorpseResidentManager.open(display,origin,request,backend,motion);
             var session=backend.open(request);opened=session;
             var future=session==null?backend.solve(request):session.completion();
             var job=new Job(display.getItemDisplayContext().name(),yaw,speed,EvidenceSnapshots.visualOnly(data),UUID.randomUUID(),display,world,origin,display.getPos(),display.getYaw(),display.getPitch(),
@@ -243,7 +259,7 @@ public final class CorpsePhysicsCoordinator {
             return true;
         }catch(RuntimeException|LinkageError e){if(jobs.containsKey(display.getUuid()))cancel(display,"提交失败",INPUT_REJECTED);else {if(opened!=null)opened.close();CorpsePhysicsDiagnostics.record(e instanceof RejectedExecutionException?CAPACITY:INPUT_REJECTED,captured,null,new CorpsePhysicsBridge.Metrics(0,0,0),0);}failed++;last="求解未开始："+e.getMessage();report(display,"FALLBACK_FINAL",last);return false;}
     }
-    public static void cancel(ItemDisplayEntity display,String reason) {cancel(display,reason,CANCELLED);}
+    public static void cancel(ItemDisplayEntity display,String reason) {if(CorpseResidentManager.contains(display.getUuid()))CorpseResidentManager.remove(display.getUuid());else cancel(display,reason,CANCELLED);}
     private static void cancel(ItemDisplayEntity display,String reason,CorpsePhysicsDiagnostics.Stage stage) {
         CorpseHistoryController.remove(display.getUuid());pausedTicks.remove(display.getUuid());
         var job=jobs.remove(display.getUuid());if(job==null)return;

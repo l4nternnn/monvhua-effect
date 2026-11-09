@@ -27,7 +27,7 @@ final class CorpseHistoryGameChecks {
         context.runOnClient(c->require(CorpseControllerClient.attack(),"Controller failed to pick live corpse"));
         context.waitFor(c->entry(id).manual,60);
         context.waitFor(c->entry(id).confirmed(),80);
-        int[] frozen={0};context.runOnClient(c->frozen[0]=entry(id).last());
+        long[] frozen={0};context.runOnClient(c->frozen[0]=entry(id).last());
         CorpseProfileGameChecks.whileFrozen(context,world);
         context.waitTicks(250);
         context.runOnClient(c->{var e=entry(id);require(e.valid&&e.active&&e.last()==frozen[0],"Frozen session timed out or advanced");});
