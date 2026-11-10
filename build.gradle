@@ -70,6 +70,9 @@ loom {
 
 }
 
+// Shared core sources need separate outputs for the two independent Gradle builds.
+project(':physicsCore').layout.buildDirectory.set(layout.buildDirectory.dir('physicsCore'))
+
 configurations {
 	axiomCompileOnlyMod {
 		transitive = false
@@ -214,7 +217,8 @@ tasks.named('check') {
 
 // Isolated client-only preview verification; never packages or increments the mod version.
 loom.runs.client {
-    vmArg "-Dsimplephysics.native.path=${providers.gradleProperty('physicsNative').getOrElse(file('../simplephysics-template-1.21.8/build/reference/Windows64ReleaseSp_bulletjme.dll').absolutePath)}"
+    def nativeOverride = providers.gradleProperty('physicsNative').getOrElse('')
+    if (!nativeOverride.isBlank()) vmArg "-Dsimplephysics.native.path=${nativeOverride}"
 
     def previewDir = providers.gradleProperty('physicsPreviewRunDir').getOrElse('')
     if (!previewDir.isBlank()) runDir previewDir

@@ -34,6 +34,7 @@ public final class Forensics {
         ForensicConfig.load();
         ResourceManagerHelper.get(ResourceType.SERVER_DATA).registerReloadListener(new WeaponProfiles());
         ForensicPackets.register();
+        EvidenceAnchorNetwork.initialize();
         ForensicShowcaseCompat.initialize();
         PostmortemWounds.initialize();
         BloodTraceService.initialize();
@@ -351,20 +352,20 @@ public final class Forensics {
             float amount = h.getFloat("amount", 0);
             String degree = amount < ForensicConfig.current.moderateThreshold ? "轻度" : amount < ForensicConfig.current.severeThreshold ? "中度" : "重度";
             String direction = switch (h.getString("direction", "unknown")) { case "front" -> "前侧"; case "back" -> "后侧"; case "left" -> "左侧"; case "right" -> "右侧"; default -> "不明"; };
-            String line = "我看到" + label + "，" + degree + "；我判断来向为" + direction + (h.getString("precision", "unknown").equals("approximate") ? "（我只能估算部位与方向）" : "（我没有获得可靠的位置记录）");
-            if (kinds.equals("cut") || kinds.equals("puncture")) line += "；我估计深度为" + (amount < ForensicConfig.current.moderateThreshold ? "浅表" : amount < ForensicConfig.current.severeThreshold ? "较深" : "深部");
-            if (h.getBoolean("death_trigger", false)) line += "；我判断这可能是主要致命损伤";
-            lines.add((lines.isEmpty() ? "我记录的最高伤害：" : "我记录的伤害 " + (lines.size() + 1) + "：") + line);
+            String line = "看到" + label + "，" + degree + "；判断来向为" + direction + (h.getString("precision", "unknown").equals("approximate") ? "（只能估算部位与方向）" : "（没有获得可靠的位置记录）");
+            if (kinds.equals("cut") || kinds.equals("puncture")) line += "；估计深度为" + (amount < ForensicConfig.current.moderateThreshold ? "浅表" : amount < ForensicConfig.current.severeThreshold ? "较深" : "深部");
+            if (h.getBoolean("death_trigger", false)) line += "；判断这可能是主要致命损伤";
+            lines.add((lines.isEmpty() ? "记录的最高伤害：" : "记录的伤害 " + (lines.size() + 1) + "：") + line);
         }
         List<NbtCompound> collected = InspectionRecords.strongest(corpse.getListOrEmpty(corpse.contains("inspection_hits") ? "inspection_hits" : "hits"), part, 3);
         ForensicStore.get(player.getServer()).collect(player.getUuid(), b.getString("id", ""), part, collected);
         EvidenceSnapshots.observe(player, display, part);
-        if (lines.isEmpty()) lines.add("我没有在该部位记录到可定位伤情；这不代表完全没有损伤");
+        if (lines.isEmpty()) lines.add("未在该部位记录到可定位伤情；这不代表完全没有损伤");
         if (com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTransferService.enabled()) {
             String slot = switch (part) { case "torso" -> "torso"; case "left_arm", "right_arm" -> "hands";
                 case "left_leg" -> "left_sole"; case "right_leg" -> "right_sole"; default -> ""; };
             if (!slot.isEmpty() && com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTransferStore.get(player.getServer())
-                    .visible(corpse.getString("id", "") + "/" + slot) > 0) lines.add("我还看到该区域有接触形成的血液沾染；我不能仅凭沾染确认身份");
+                    .visible(corpse.getString("id", "") + "/" + slot) > 0) lines.add("看到该区域有接触形成的血液沾染；不能仅凭沾染确认身份");
         }
         return lines;
     }
@@ -387,7 +388,7 @@ public final class Forensics {
                         + (hit.getBoolean("death_trigger", false) ? " / 疑似致命" : ""));
             }
         }
-        return lines.isEmpty() ? List.of("我还没有收集到该部位的线索") : lines;
+        return lines.isEmpty() ? List.of("还没有收集到该部位的线索") : lines;
     }
     public static String kindLabel(String kind) {
         return switch (kind) { case "cut" -> "切割伤"; case "puncture" -> "刺入伤"; case "blunt" -> "钝击伤"; case "burn" -> "烧伤"; case "other" -> "其他损伤（外伤特征不明）"; default -> "类型不明的损伤"; };

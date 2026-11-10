@@ -6,7 +6,7 @@ import net.minecraft.util.math.Vec3d;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Integrated-server resident ownership. Native state never lives on this thread. */
+/** Server resident ownership. Native state never lives on this thread. */
 public final class CorpseResidentManager {
     private static final Map<UUID,Resident> objects=new ConcurrentHashMap<>();
     private static int cursor;private static long lastTick=Long.MIN_VALUE;private static String last="";

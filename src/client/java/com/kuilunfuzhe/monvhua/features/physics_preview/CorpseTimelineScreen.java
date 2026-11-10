@@ -22,14 +22,15 @@ public final class CorpseTimelineScreen extends Screen {
     private int right(){return width-left();}
     private int barY(){return height-70;}
     @Override protected void init(){
-        addDrawableChild(ButtonWidget.builder(Text.literal("返回最新"),b->entry.selectedFrame=-1).dimensions(width/2-105,height-30,100,20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("返回最新"),b->selectFrame(-1)).dimensions(width/2-105,height-30,100,20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("关闭"),b->close()).dimensions(width/2+5,height-30,100,20).build());
     }
     @Override public boolean shouldPause(){return false;}
     @Override public void renderBackground(DrawContext c,int x,int y,float delta){} // no blur/dim/world pause
     @Override public void tick(){if(!entry.valid||client==null||client.getServer()!=server||client.player==null||!client.player.isAlive())close();}
+    private void selectFrame(long frame){server.execute(()->{var p=server.getPlayerManager().getPlayer(player);if(p!=null)try{CorpseHistoryController.selectTimeline(p,entry.id,frame);}catch(IllegalArgumentException ignored){}});}
     private boolean available(){return entry.valid&&entry.confirmed()&&entry.first()>=0&&entry.last()>entry.first();}
-    private void select(double x){if(available())entry.selectedFrame=entry.nearest(entry.first()+Math.clamp((x-left())/(right()-left()),0,1)*(entry.last()-entry.first()));}
+    private void select(double x){if(available())selectFrame(entry.nearest(entry.first()+Math.clamp((x-left())/(right()-left()),0,1)*(entry.last()-entry.first())));}
     @Override public boolean mouseClicked(double x,double y,int button){
         if(button==0&&x>=left()-6&&x<=right()+6&&Math.abs(y-barY())<=10){dragging=true;select(x);return true;}
         return super.mouseClicked(x,y,button);
@@ -39,9 +40,9 @@ public final class CorpseTimelineScreen extends Screen {
     @Override public boolean keyPressed(int key,int scan,int mods){
         if(available()){
             long current=entry.selectedFrame<0?entry.last():entry.selectedFrame;
-            if(key==GLFW.GLFW_KEY_LEFT||key==GLFW.GLFW_KEY_RIGHT){entry.selectedFrame=entry.adjacent(current,key==GLFW.GLFW_KEY_LEFT?-1:1);return true;}
-            if(key==GLFW.GLFW_KEY_HOME){entry.selectedFrame=entry.first();return true;}
-            if(key==GLFW.GLFW_KEY_END){entry.selectedFrame=-1;return true;}
+            if(key==GLFW.GLFW_KEY_LEFT||key==GLFW.GLFW_KEY_RIGHT){selectFrame(entry.adjacent(current,key==GLFW.GLFW_KEY_LEFT?-1:1));return true;}
+            if(key==GLFW.GLFW_KEY_HOME){selectFrame(entry.first());return true;}
+            if(key==GLFW.GLFW_KEY_END){selectFrame(-1);return true;}
         }
         return super.keyPressed(key,scan,mods);
     }

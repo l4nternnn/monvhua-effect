@@ -15,7 +15,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import static net.minecraft.server.command.CommandManager.*;
 
-/** Integrated-server control authority. No history is written to public corpse data. */
+/** Server control authority. No history is written to public corpse data. */
 public final class CorpseHistoryController {
     private static final Identifier ID=Identifier.of("monvhua","corpse_physics_controller");
     public static final Item History_Cortol_ITEM =Registry.register(Registries.ITEM,ID,new Item(new Item.Settings()
@@ -109,7 +109,7 @@ public final class CorpseHistoryController {
         for(var e:entries.values()){
             if(!e.matches()){remove(e.id);continue;}
             var viewer=e.viewer==null?null:e.display.getWorld().getServer().getPlayerManager().getPlayer(e.viewer);
-            if(e.timeline&&(viewer==null||viewer.getWorld()!=e.display.getWorld()||!viewer.isAlive())){
+            if(e.timeline&&(viewer==null||viewer.getWorld()!=e.display.getWorld()||!viewer.isAlive()||!viewer.hasPermissionLevel(2)||!viewer.getMainHandStack().isOf(History_Cortol_ITEM)&&!viewer.getMainHandStack().isOf(CorpseGrabController.ITEM)||!CorpseHistoryPicking.reachable(viewer,e))){
                 e.timeline=false;e.viewer=null;updatePause(e);
             }
         }
@@ -123,9 +123,9 @@ public final class CorpseHistoryController {
     }
     public static boolean paused(UUID id){var e=entries.get(id);return e!=null&&e.frozen();}
 
-    /** Called only on the integrated server, after the client has selected a visible model. */
+    /** Called only on the authority server, after the client has selected a visible model. */
     public static Entry operate(ServerPlayerEntity player,UUID target,boolean open){
-        if(!player.hasPermissionLevel(2)||(!player.getMainHandStack().isOf(History_Cortol_ITEM)&&!player.getMainHandStack().isOf(CorpseGrabController.ITEM))||!player.getServer().isSingleplayer())throw new IllegalArgumentException("仅管理员持控制器可操作本地尸体");
+        if(!player.isAlive()||player.isSpectator()||!player.hasPermissionLevel(2)||(!player.getMainHandStack().isOf(History_Cortol_ITEM)&&!player.getMainHandStack().isOf(CorpseGrabController.ITEM)))throw new IllegalArgumentException("仅管理员持控制器可操作尸体");
         if(!CorpsePhysicsCoordinator.localControl(player.getServer()))throw new IllegalArgumentException("未连接本地物理核心");
         boolean previouslySelected=target==null;
         if(target==null)target=selected.get(player.getUuid());
@@ -142,18 +142,27 @@ public final class CorpseHistoryController {
             e=new Entry(display,null,1);entries.put(e.id,e);
         }
         if(!e.matches())throw new IllegalArgumentException("尸体已改变，请重新选择");
+        if(e.timeline&&!Objects.equals(e.viewer,player.getUuid()))throw new IllegalArgumentException("其他管理员正在查看该尸体时间轴");
         // Validate an unobstructed ray to an actual body volume on the authority thread.
         boolean visible=previouslySelected&&open?CorpseHistoryPicking.reachable(player,e):CorpseHistoryPicking.hit(player,e)>=0;
         if(!visible)throw new IllegalArgumentException("目标超出距离、被遮挡或未瞄准尸体");
         selected.put(player.getUuid(),e.id);
         CorpseTransportController.releaseTarget(e.id);
-        if(open){CorpseGrabController.releaseTarget(e.id);e.timeline=true;e.viewer=player.getUuid();}
+        if(open){for(var previous:entries.values())if(!previous.id.equals(e.id)&&Objects.equals(previous.viewer,player.getUuid()))closeTimeline(previous.id,player.getUuid());CorpseGrabController.releaseTarget(e.id);e.timeline=true;e.viewer=player.getUuid();}
         else e.manual=!e.manual;
         updatePause(e);return e;
     }
     public static void closeTimeline(UUID id,UUID player){var e=entries.get(id);if(e!=null&&Objects.equals(e.viewer,player)){e.timeline=false;e.viewer=null;updatePause(e);}}
+    public static Entry timeline(UUID player){return entries.values().stream().filter(e->e.timeline&&Objects.equals(e.viewer,player)).findFirst().orElse(null);}
+    public static void disconnect(UUID player){for(var e:entries.values())if(Objects.equals(e.viewer,player))closeTimeline(e.id,player);selected.remove(player);}
+    public static void selectTimeline(ServerPlayerEntity player,UUID id,long frame){
+        var e=timeline(player.getUuid());
+        if(e==null||!e.id.equals(id)||!e.current()||!player.hasPermissionLevel(2)||!player.getMainHandStack().isOf(History_Cortol_ITEM)
+                ||e.display.getWorld()!=player.getWorld()||!CorpseHistoryPicking.reachable(player,e))throw new IllegalArgumentException("时间轴已失效或目标不可达");
+        e.selectedFrame=frame<0?-1:e.nearest(frame);
+    }
     public static com.mojang.brigadier.builder.LiteralArgumentBuilder<ServerCommandSource> commands(){
-        var root=literal("history").requires(s->s.hasPermissionLevel(2)&&s.getServer().isSingleplayer());
+        var root=literal("history").requires(s->s.hasPermissionLevel(2));
         root.then(literal("status").executes(c->{
             var p=c.getSource().getPlayer();var id=p==null?null:selected.get(p.getUuid());var e=id==null?null:entries.get(id);
             String detail=e==null?"": "；所选窗口="+e.seconds+"s，可用帧="+e.first()+".."+e.last()+"，手动冻结="+e.manual+"，界面冻结="+e.timeline;

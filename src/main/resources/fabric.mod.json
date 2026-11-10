@@ -49,7 +49,9 @@
 		"minecraft": "~1.21.8",
 		"java": ">=21",
 		"fabric-api": "*",
-		"modernui": "*"
+		"modernui": "*",
+        "geckolib": ">=5.2.2",
+        "forgeconfigapiport": "*"
 	},
 	"suggests": {
 		"axiom": "*",

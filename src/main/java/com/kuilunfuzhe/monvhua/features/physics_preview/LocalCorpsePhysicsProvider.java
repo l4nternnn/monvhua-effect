@@ -7,7 +7,7 @@ import com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsProfiles;
 import java.util.LinkedHashMap;
 import java.util.concurrent.CompletableFuture;
 
-/** Loaded reflectively only when the optional mapping-independent development core is present. */
+/** Side-independent physics adapter. Loaded reflectively when the compatible physics core is present. */
 public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
     private volatile long lastNativeNanos;
     private final PhysicsService service=new PhysicsService();
@@ -21,7 +21,10 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
         catch(NoSuchMethodException e){throw new LinkageError("Unsupported grab core",e);}
         try{var field=RagdollControl.class.getField("CONTROL_VERSION");if(field.getInt(null)!=2||RagdollControl.class.getField("SUPPORT_VERSION").getInt(null)!=1)throw new LinkageError("Unsupported limb slot core");}
         catch(ReflectiveOperationException e){throw new LinkageError("Unsupported limb slot core",e);}
-        service.initialize();
+        service.initialize().thenAccept(status->{
+            var log=org.slf4j.LoggerFactory.getLogger("monvhua-corpse-physics");
+            if(status.startsWith("Ready:"))log.info("Native physics: {}",status);else log.error("Native physics: {}; static corpses remain available",status);
+        });
     }
     public int apiVersion(){return API_VERSION;}
     public String diagnostic(Request request,PhysicsPoseDocument result,Metrics metrics,String stage,boolean reproduction){

@@ -27,16 +27,16 @@ public final class LiveCorpseRenderer {
         ClientTickEvents.START_CLIENT_TICK.register(client->{
             if(client.world==null){playback.clear();diagnostics.clear();renderer=null;models=null;return;}
             if(client.isPaused())return;
-            var views=CorpsePhysicsCoordinator.liveViews();
+            var views=RemoteCorpsePhysics.views();
             var ids=new HashSet<UUID>();
             for(var view:views) {
                 ids.add(view.display());
-                if(!sameWorld(view)){if(view.committedRevision()>0)CorpsePhysicsCoordinator.acknowledge(view.display(),view.committedRevision());continue;}
+                if(!sameWorld(view)){if(view.committedRevision()>0)RemoteCorpsePhysics.acknowledge(view.display(),view.committedRevision());continue;}
                 if(view.committedRevision()>0) {
                     ItemDisplayEntity display=null;
                     for(var e:client.world.getEntities())if(e.getUuid().equals(view.display())&&e instanceof ItemDisplayEntity d){display=d;break;}
                     if(display!=null&&CorpsePoseRecord.read(CorpsePoseRecord.data(display.getItemStack())).map(p->p.revision()==view.committedRevision()).orElse(false))
-                        CorpsePhysicsCoordinator.acknowledge(view.display(),view.committedRevision());
+                        RemoteCorpsePhysics.acknowledge(view.display(),view.committedRevision());
 
                 }
             }
@@ -47,12 +47,12 @@ public final class LiveCorpseRenderer {
     }
     private static boolean sameWorld(CorpsePhysicsCoordinator.LiveView v) {
         var client=MinecraftClient.getInstance();
-        return client.world!=null&&client.getServer()!=null&&client.world.getRegistryKey().getValue().toString().equals(v.dimension());
+        return client.world!=null&&client.world.getRegistryKey().getValue().toString().equals(v.dimension());
     }
     public static boolean hides(Entity entity) {
         var history=CorpseHistoryController.get(entity.getUuid());
         if(history!=null&&history.valid&&history.frozen()&&history.view!=null&&sameWorld(history.view))return true;
-        for(var v:CorpsePhysicsCoordinator.liveViews())if(sameWorld(v)) {
+        for(var v:RemoteCorpsePhysics.views())if(sameWorld(v)) {
             if(entity.getUuid().equals(v.display()))return true;
             if(entity instanceof LivingEntity living&&!living.isAlive()&&entity.getUuid().equals(v.victim()))return true;
         }
@@ -68,7 +68,7 @@ public final class LiveCorpseRenderer {
     private static void render(WorldRenderContext context) {
         if(context.matrixStack()==null||context.consumers()==null)return;
         var client=MinecraftClient.getInstance();
-        var views=new ArrayList<>(CorpsePhysicsCoordinator.liveViews());
+        var views=new ArrayList<>(RemoteCorpsePhysics.views());
         for(var e:CorpseHistoryController.entries())if(e.valid&&e.frozen()&&e.view!=null&&views.stream().noneMatch(v->v.display().equals(e.id)))views.add(e.view);
         if(views.isEmpty())return;
         if(models!=client.getLoadedEntityModels()){models=client.getLoadedEntityModels();renderer=new CombinedBodySpecialModelRenderer(client.getLoadedEntityModels());}
@@ -87,7 +87,7 @@ public final class LiveCorpseRenderer {
             boolean globalPause=client.isPaused()||client.world.getTickManager().isFrozen();
             var clock=playback.compute(v.display(),(id,old)->old!=null&&old.session()==v.session()?old:new Playback(v.session(),new PhysicsPlaybackClock())).clock();
             long now=System.nanoTime();
-            if(v.committedRevision()==0&&frames.size()>1) {
+            if(v.committedRevision()==0&&!v.session().paused()&&frames.size()>1) {
                 double time=clock.advance(timed.getFirst().tick(),latestTick,now,globalPause);
                 displayed=time;if(globalPause)mode="GLOBAL_PAUSE";
                 PhysicsPoseDocument a=frames.getFirst(),b=last;

@@ -15,7 +15,7 @@ import org.joml.Vector3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** All writes occur on the integrated server. Client sees immutable status only. */
+/** All writes occur on the authority server. Client sees immutable status only. */
 public final class CorpseGrabController {
     private static final Identifier ID=Identifier.of("monvhua","corpse_physics_grabber");
     public static final Item ITEM=Registry.register(Registries.ITEM,ID,new Item(new Item.Settings().registryKey(RegistryKey.of(RegistryKeys.ITEM,ID)).maxCount(1)));
@@ -36,7 +36,7 @@ public final class CorpseGrabController {
     public static boolean held(UUID id){return grabs.values().stream().anyMatch(g->g.id.equals(id));}
     public static Status status(UUID player){return status.get(player);}
     public static void reset(){pendingPins.clear();staticConfirmations.clear();for(var id:List.copyOf(grabs.keySet()))release(id);status.clear();}
-    private static void require(ServerPlayerEntity p){if(CorpseTransportController.carrying(p.getUuid()))throw new IllegalArgumentException("请先放下搬运对象");if(!p.hasPermissionLevel(2)||!p.getMainHandStack().isOf(ITEM)||!CorpsePhysicsCoordinator.localControl(p.getServer()))throw new IllegalArgumentException("物理抓取工具仅供本地单人管理员使用");}
+    private static void require(ServerPlayerEntity p){if(CorpseTransportController.carrying(p.getUuid()))throw new IllegalArgumentException("请先放下搬运对象");if(!p.hasPermissionLevel(2)||!p.getMainHandStack().isOf(ITEM)||!CorpsePhysicsCoordinator.localControl(p.getServer()))throw new IllegalArgumentException("物理抓取工具需要管理员权限及可用服务器物理核心");}
     public static Hit pick(net.minecraft.entity.player.PlayerEntity player){
         var from=player.getEyePos();var to=from.add(player.getRotationVec(1).multiply(Math.min(6,player.getEntityInteractionRange())));
         var wall=player.getWorld().raycast(new RaycastContext(from,to,RaycastContext.ShapeType.COLLIDER,RaycastContext.FluidHandling.NONE,player));if(wall.getType()!=HitResult.Type.MISS)to=wall.getPos();

@@ -16,7 +16,7 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import java.util.*;
 
-/** Integrated-server carry authority; native mutation uses the existing ordered worker mailbox. */
+/** Server carry authority; native mutation uses the existing ordered worker mailbox. */
 public final class CorpseTransportController {
     public static final List<String> LIMBS=List.of("left_arm","right_arm","left_leg","right_leg");
     private static final Map<UUID,Transport> sessions=new java.util.concurrent.ConcurrentHashMap<>();
@@ -40,7 +40,7 @@ public final class CorpseTransportController {
         if(!com.kuilunfuzhe.monvhua.features.carryentity.CarryEffort.canMoveCorpse(p,mode.equals("drag")
             ?com.kuilunfuzhe.monvhua.features.carryentity.CarryEffort.Mode.DRAG
             :com.kuilunfuzhe.monvhua.features.carryentity.CarryEffort.Mode.CARRY))return "体力不足或不可用，无法搬运遗体";
-        if(!CorpsePhysicsCoordinator.localControl(p.getServer()))return "物理搬运目前仅支持已连接前置的本地单人世界";
+        if(!CorpsePhysicsCoordinator.localControl(p.getServer()))return "物理搬运需要可用的服务器物理核心";
         if(!available(p)||CorpseCarryService.isCarrying(p.getUuid())||CorpseGrabController.status(p.getUuid())!=null)return "当前状态不能搬运，请空出双手并放下已有对象";
         if(mode.equals("drag")&&p.getCommandTags().contains("monvhua:no_corpse_drag"))return "当前状态禁止拖拽";
         var entity=p.getWorld().getEntityById(target);

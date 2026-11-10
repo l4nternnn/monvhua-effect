@@ -6,7 +6,7 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.*;
 import java.util.*;
 
-/** A diameter-three sphere sampled by block centers. Whole blocks remain whole at the boundary. */
+/** A radius-three sphere sampled by block centers. Whole blocks remain whole at the boundary. */
 public final class EvidenceBlockSnapshot {
     public static final double RADIUS = 3;
     private EvidenceBlockSnapshot() {}

@@ -30,11 +30,15 @@ public final class CorpseControllerClient {
             double distance=CorpseHistoryPicking.hit(c.player,e);
             if(distance>=0&&distance<nearest){nearest=distance;target=e.id;}
         }
+        if(RemoteCorpsePhysics.remote()){
+            var hit=RemoteCorpsePhysics.pick(c.player);if(hit!=null){nearest=hit.distance();target=hit.id();}
+        }
         var from=c.player.getEyePos();var to=from.add(c.player.getRotationVec(1).multiply(c.player.getEntityInteractionRange()));
         var block=c.world.raycast(new RaycastContext(from,to,RaycastContext.ShapeType.COLLIDER,RaycastContext.FluidHandling.NONE,c.player));
         if(block.getType()!=HitResult.Type.MISS)to=block.getPos();
         for(var entity:c.world.getEntities())if(entity instanceof ItemDisplayEntity display){
             if(Forensics.binding(display.getItemStack()).getString("id","").isEmpty())continue;
+            if(RemoteCorpsePhysics.remote()&&RemoteCorpsePhysics.views().stream().anyMatch(v->v.display().equals(display.getUuid())))continue;
             var existing=CorpseHistoryController.get(display.getUuid());if(existing!=null&&(existing.active||existing.frozen()))continue;
             var hit=CorpsePoseGeometry.pick(display,from,to);
             if(hit!=null){double distance=from.distanceTo(hit.position());if(distance<nearest){nearest=distance;target=display.getUuid();}}
@@ -43,7 +47,8 @@ public final class CorpseControllerClient {
     }
     private static void request(UUID id,boolean open){
         var c=MinecraftClient.getInstance();var server=c.getServer();
-        if(server==null||c.player==null){message("冻结工具仅支持本地单人世界");return;}
+        if(c.player==null)return;
+        if(server==null){RemoteCorpsePhysics.timelineAction(open?"open":"freeze",id,-1);return;}
         if(requestPending)return;requestPending=true;
         var playerId=c.player.getUuid();var world=c.world;
         server.execute(()->{

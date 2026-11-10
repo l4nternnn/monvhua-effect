@@ -53,7 +53,7 @@ public final class CorpseProfileManager {
     }
     private static void reply(ServerCommandSource s,String message,boolean error){if(s!=null){if(error)s.sendError(Text.literal(message));else s.sendFeedback(()->Text.literal(message),false);}}
     public static com.mojang.brigadier.builder.LiteralArgumentBuilder<ServerCommandSource> commands(){
-        var root=literal("profile").requires(s->s.hasPermissionLevel(2)&&s.getServer().isSingleplayer());
+        var root=literal("profile").requires(s->s.hasPermissionLevel(2));
         root.then(literal("list").executes(c->{reply(c.getSource(),String.join(", ",new java.util.TreeSet<>(state.registry.profiles().keySet())),false);return 1;}));
         root.then(literal("show").executes(c->{reply(c.getSource(),status()+"\n"+current(),false);return 1;}));
         root.then(literal("reload").executes(c->{reload(c.getSource().getServer(),c.getSource());return 1;}));

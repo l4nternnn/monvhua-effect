@@ -23,7 +23,7 @@ import static com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsDi
 import java.util.concurrent.*;
 import static net.minecraft.server.command.CommandManager.*;
 
-/** Server-thread state machine with an optional in-process client worker; no client result packets. */
+/** Server-thread state machine with an optional native worker; clients never supply pose results. */
 public final class CorpsePhysicsCoordinator {
     private static final org.slf4j.Logger LOGGER=org.slf4j.LoggerFactory.getLogger("monvhua-corpse-physics");
     private static volatile MinecraftServer owner;
@@ -32,7 +32,8 @@ public final class CorpsePhysicsCoordinator {
     private static volatile boolean automatic;
     private static boolean continuous=defaultContinuous();
     private static boolean defaultContinuous(){return !Boolean.getBoolean("monvhua.physicsAutomaticGameTest")&&!Boolean.getBoolean("monvhua.physicsG4GameTest")&&!Boolean.getBoolean("monvhua.physicsHistoryGameTest");}
-    static void publish(LiveView v){views.put(v.display(),v);}
+    private static final Map<UUID,Long> handoffExpiry=new ConcurrentHashMap<>();
+    static void publish(LiveView v){views.put(v.display(),v);if(v.committedRevision()>0)handoffExpiry.put(v.display(),owner==null?0L:(long)owner.getTicks()+40);else handoffExpiry.remove(v.display());}
     static void unpublish(UUID id){views.remove(id);}
     private static volatile String last="未连接本地物理核心";
     private static final Map<UUID,Job> jobs=new ConcurrentHashMap<>();
@@ -61,7 +62,7 @@ public final class CorpsePhysicsCoordinator {
     }
     public static synchronized void detach() {
         epoch++;automatic=false;CorpseTransportController.reset();CorpseGrabController.reset();CorpseResidentManager.reset();continuous=defaultContinuous();CorpsePhysicsDiagnostics.clear();CorpseProfileManager.reset();CorpseHistoryController.reset();pausedTicks.clear();
-        for(var job:jobs.values()){job.future.cancel(true);if(job.session!=null)job.session.close();}jobs.clear();views.clear();progressTicks.clear();progressSteps.clear();advanceTicks.clear();
+        for(var job:jobs.values()){job.future.cancel(true);if(job.session!=null)job.session.close();}jobs.clear();views.clear();handoffExpiry.clear();progressTicks.clear();progressSteps.clear();advanceTicks.clear();
         var old=provider;provider=null;owner=null;if(old!=null)CompletableFuture.runAsync(old::close);
         last="世界已断开；自动生成关闭";
     }
@@ -69,7 +70,7 @@ public final class CorpsePhysicsCoordinator {
     public static CorpsePhysicsBridge diagnosticProvider(MinecraftServer server){return server==owner?provider:null;}
     public static boolean simulating(ItemDisplayEntity display){return display!=null&&(jobs.containsKey(display.getUuid())||CorpseResidentManager.moving(display.getUuid()));}
     public static boolean pending(ItemDisplayEntity display){return display!=null&&(jobs.containsKey(display.getUuid())||CorpseResidentManager.moving(display.getUuid())||CorpseHistoryController.locked(display.getUuid()));}
-    public static boolean localControl(MinecraftServer server){return server==owner&&provider!=null&&server.isSingleplayer();}
+    public static boolean localControl(MinecraftServer server){return server==owner&&provider!=null;}
     public static boolean validateResume(UUID id){
         if(CorpseResidentManager.contains(id))return CorpseResidentManager.resume(id);
         var j=jobs.get(id);if(j==null)return false;
@@ -77,11 +78,20 @@ public final class CorpsePhysicsCoordinator {
         catch(RuntimeException ignored){}
         cancel(j.display,"恢复前地形/载体校验失败",valid(j)?TERRAIN_CHANGED:CARRIER_INVALID);return false;
     }
-    public static String status(){var p=provider;return "单人试验 mode="+(continuous?"CONTINUOUS":"ONE_SHOT")+" "+CorpseResidentManager.status()+" auto="+automatic+" pending="+jobs.size()+" applied="+applied+" fallback="+failed+" cancelled="+cancelled+" | "+(p==null?"无本地后端":p.status())+" | "+last;}
+    public static String status(){var p=provider;return "服务器物理 mode="+(continuous?"CONTINUOUS":"ONE_SHOT")+" "+CorpseResidentManager.status()+" auto="+automatic+" pending="+jobs.size()+" applied="+applied+" fallback="+failed+" cancelled="+cancelled+" | "+(p==null?"无本地后端":p.status())+" | "+last;}
     public static void initialize() {
+        ServerLifecycleEvents.SERVER_STARTED.register(server->{
+            try {
+                var backend=(CorpsePhysicsBridge)Class.forName("com.kuilunfuzhe.monvhua.features.physics_preview.LocalCorpsePhysicsProvider").getConstructor().newInstance();
+                attach(server,backend);automatic=!Boolean.getBoolean("monvhua.physics.disableAutomatic");
+                LOGGER.info("Server physics attached; native readiness: {}",backend.status());
+            }catch(ReflectiveOperationException|LinkageError error){unavailable("物理核心不可用，保留静态遗体："+error.getClass().getSimpleName());LOGGER.error("Physics backend unavailable",error);}
+        });
+        CorpsePhysicsNetwork.initialize();
         CorpseHistoryController.initialize();CorpseGrabController.initialize();
         ServerTickEvents.END_SERVER_TICK.register(server->{
             DeathMotionContext.expire(server);
+            handoffExpiry.entrySet().removeIf(e->{if(server.getTicks()<e.getValue())return false;views.computeIfPresent(e.getKey(),(id,v)->v.committedRevision()>0?null:v);return true;});
             if(server!=owner)return;
             CorpseGrabController.tick(server);CorpseTransportController.tick(server);CorpseResidentManager.tick();
             CorpseHistoryController.tick();
@@ -122,7 +132,7 @@ public final class CorpsePhysicsCoordinator {
             for(boolean on:new boolean[]{true,false})auto.then(literal(on?"on":"off").executes(c->{
                 if(!local(c.getSource()))return 0;automatic=on;
                 if(!on){CorpseResidentManager.reset();for(var j:List.copyOf(jobs.values()))cancel(j.display,"会话自动生成关闭");}
-                c.getSource().sendFeedback(()->Text.literal("本次单人会话死亡姿态自动生成："+(on?"开启":"关闭")),false);return 1;
+                c.getSource().sendFeedback(()->Text.literal("本次服务器会话死亡姿态自动生成："+(on?"开启":"关闭")),false);return 1;
             }));
             var mode=literal("mode");
             for(boolean value:new boolean[]{true,false})mode.then(literal(value?"continuous":"one-shot").executes(c->{continuous=value;c.getSource().sendFeedback(()->Text.literal("新请求模式："+(value?"持续模拟":"一次性倒地")+"；已有对象保持原模式"),false);return 1;}));
@@ -162,8 +172,8 @@ public final class CorpsePhysicsCoordinator {
         });
     }
     private static boolean local(ServerCommandSource source) {
-        if(source.getServer()!=owner||provider==null||!source.getServer().isSingleplayer()) {
-            source.sendError(Text.literal("E 阶段仅支持有物理核心的本地单人世界；"+status()));return false;
+        if(source.getServer()!=owner||provider==null) {
+            source.sendError(Text.literal("服务器物理核心不可用；"+status()));return false;
         }
         return true;
     }
@@ -314,6 +324,7 @@ public final class CorpsePhysicsCoordinator {
             diagnostics.putLong("elapsed_ms",(System.nanoTime()-job.started)/1_000_000);
             store.corpse(Forensics.binding(job.display.getItemStack()).getString("id","")).put("pose_generation_diagnostics",diagnostics);store.markDirty();
             views.computeIfPresent(job.display.getUuid(),(id,v)->new LiveView(v.display,v.dimension,v.origin,v.skin,v.slim,v.session,v.victim,record.revision()));
+            handoffExpiry.put(job.display.getUuid(),(long)owner.getTicks()+40);
             stage=APPLIED;
             applied++;last="APPLIED_STATIC "+job.request+" "+((System.nanoTime()-job.started)/1_000_000)+"ms"+(job.motion==null?"":motionDescription(job.motion));
             report(job.display,"APPLIED_STATIC","request="+job.request+" inputYaw="+job.inputYaw+" steps="+result.step());

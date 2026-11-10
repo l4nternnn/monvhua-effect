@@ -24,16 +24,18 @@ import static net.minecraft.server.command.CommandManager.*;
 public final class CorpsePoseCommands {
     private CorpsePoseCommands() {}
     public static void initialize() {
-        CommandRegistrationCallback.EVENT.register((dispatcher,access,environment)->{
-            var root=literal("mvcorpse").requires(s->s.hasPermissionLevel(2));
-            root.then(literal("create-test").executes(c->createTest(c.getSource())));
-            root.then(literal("samples").executes(c->samples(c.getSource())));
-            for(String action:new String[]{"status","verify","clear"})root.then(literal(action).then(argument("target",EntityArgumentType.entity()).executes(c->
+        CommandRegistrationCallback.EVENT.register((dispatcher,access,environment)->dispatcher.register(commands()));
+    }
+    static com.mojang.brigadier.builder.LiteralArgumentBuilder<ServerCommandSource> commands(){
+            // This root also hosts ordinary players' private evidence commands. Gate each admin branch.
+            var root=literal("mvcorpse");
+            root.then(literal("create-test").requires(s->s.hasPermissionLevel(2)).executes(c->createTest(c.getSource())));
+            root.then(literal("samples").requires(s->s.hasPermissionLevel(2)).executes(c->samples(c.getSource())));
+            for(String action:new String[]{"status","verify","clear"})root.then(literal(action).requires(s->s.hasPermissionLevel(2)).then(argument("target",EntityArgumentType.entity()).executes(c->
                     execute(c.getSource(),EntityArgumentType.getEntity(c,"target"),action,""))));
-            root.then(literal("apply").then(argument("target",EntityArgumentType.entity()).then(argument("filename",StringArgumentType.string()).executes(c->
+            root.then(literal("apply").requires(s->s.hasPermissionLevel(2)).then(argument("target",EntityArgumentType.entity()).then(argument("filename",StringArgumentType.string()).executes(c->
                     execute(c.getSource(),EntityArgumentType.getEntity(c,"target"),"apply",StringArgumentType.getString(c,"filename"))))));
-            dispatcher.register(root);
-        });
+        return root;
     }
     private static int samples(ServerCommandSource source) {
         try {
