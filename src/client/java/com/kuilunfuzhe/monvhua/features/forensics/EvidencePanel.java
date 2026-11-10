@@ -85,11 +85,23 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
     private final boolean world;
     private final Runnable onClose;
     private int width, height;
-    public EvidencePanel(boolean world, Runnable onClose) { this.world=world; this.onClose=onClose; }
+    public EvidencePanel(boolean world, Runnable onClose) { this.world=world; this.onClose=onClose; EvidenceSessionRouter.register(this); }
+    void onSharedClue(String sharedCorpse,String sharedPart,String evidenceId){
+        if(!corpse.equals(sharedCorpse)){request(sharedCorpse);pendingSharedPart=sharedPart;pendingSharedEvidence=evidenceId;return;}
+        pendingSharedPart=sharedPart;pendingSharedEvidence=evidenceId;applySharedFocus();
+    }
+    private String pendingSharedPart="",pendingSharedEvidence="";
+    private void applySharedFocus(){
+        if(scene==null||pendingSharedPart.isEmpty())return;
+        select(pendingSharedPart);
+        for(int i=0;i<visible.size();i++)if(visible.get(i).getString("id","").equals(pendingSharedEvidence)){selected=i;scene.requestFocus(pendingSharedEvidence);focusSelected();break;}
+        message="我已收录他人分享的线索，并跳转到对应伤口";
+        pendingSharedPart="";pendingSharedEvidence="";
+    }
     public void resize(int width,int height) { this.width=width;this.height=height;buttons.clear();init(); }
     private ButtonWidget addDrawableChild(ButtonWidget button) { buttons.add(button);return button; }
     @Override public List<ButtonWidget> children() { return buttons; }
-    public void dispose() { EvidenceSessionRouter.remove(this); }
+    public void dispose() { EvidenceSessionRouter.unregister(this); }
     private void close() { onClose.run(); }
     private long clickUntil;
     private int clickX,clickY;
@@ -130,7 +142,7 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
         snapshot=data.copy();cases=data.getListOrEmpty("cases").copy();corpse=data.getString("id","");
         wounds=new ArrayList<>();for(var element:data.getListOrEmpty("wounds"))if(element instanceof NbtCompound wound)wounds.add(wound.copy());
         scene=corpse.isEmpty()?null:new EvidenceScene(data.getCompoundOrEmpty("observation"),data.getListOrEmpty("wounds"));
-        message=scene==null?"暂无观察快照，请先探查遗体部位":"";select(part);
+        message=scene==null?"暂无观察快照，请先探查遗体部位":"";select(part);applySharedFocus();
     }
     private void request(String id){
         requestId=++sequence;EvidenceSessionRouter.expect(this,requestId);scene=null;wounds=List.of();visible=List.of();snapshot=new NbtCompound();cardHits.clear();message="正在加载已收集线索……";
@@ -316,7 +328,7 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
         if(scene==null||visible.isEmpty()){
             maxDetailScroll=0;detailScroll=0;
             context.fill(left,48,left+w,148,0xFF263743);
-            String status=!message.isEmpty()?message:"该部位暂无已收集线索";
+            String status=!message.isEmpty()?message:"还没有收集到该部位的线索";
             context.enableScissor(left+6,54,left+w-6,142);
             drawWrapped(context,status,left+6,58,w-12,0xFFE2E7EE);
             context.disableScissor();return;
@@ -353,9 +365,9 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
 
     private void drawFloatingCards(DrawContext context,EvidenceScene.Anchor anchor){
         int left=cardLeft(),w=Math.max(60,previewLeft()-left-10);
-        context.drawTextWithShadow(textRenderer,Text.literal(LABELS[indexOf(part)]+" · 已收集线索"),left,58,0xFFE6C18A);
+        context.drawTextWithShadow(textRenderer,Text.literal("我已收集的"+LABELS[indexOf(part)]+"线索"),left,58,0xFFE6C18A);
         if(scene==null)return;
-        if(visible.isEmpty()){drawWrapped(context,"该部位暂无已收集伤口记录",left,80,w,0xFFBFCBD2);return;}
+        if(visible.isEmpty()){drawWrapped(context,"还未收集到该部位的伤口记录",left,80,w,0xFFBFCBD2);return;}
         for(int i=0;i<visible.size();i++){
             int x=left+i*(w/visible.size()),bw=w/visible.size()-3;
             context.fill(x,76,x+bw,96,i==selected?0xFF79553F:0xFF344553);
@@ -370,7 +382,7 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
         int desired=anchor!=null&&anchor.point()!=null?(int)anchor.point().y()-h/2:(height-h)/2;
         int y=Math.max(104,Math.min(height-h-8,desired));
         context.fill(left,y,left+w,y+h,0xF0334653);
-        context.drawTextWithShadow(textRenderer,Text.literal(selected==0?"最高伤害":"伤害记录 "+(selected+1)),left+8,y+7,0xFFFFD49B);
+        context.drawTextWithShadow(textRenderer,Text.literal(selected==0?"记录的最高伤害":"记录的伤害 "+(selected+1)),left+8,y+7,0xFFFFD49B);
         maxDetailScroll=Math.max(0,wrapped.size()*12-(h-28));detailScroll=Math.min(maxDetailScroll,detailScroll);
         context.enableScissor(left,y+21,left+w,y+h-4);
         for(int i=0;i<wrapped.size();i++)context.drawTextWithShadow(textRenderer,wrapped.get(i),left+8,y+23+i*12-detailScroll,0xFFE2E7EE);
@@ -390,7 +402,7 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
         String kinds=String.join("、",Arrays.stream(wound.getString("kinds","unknown").split("\\+")).map(Forensics::kindLabel).toList());
         String severity=switch(wound.getString("severity","moderate")){case "mild"->"轻度";case "severe"->"重度";default->"中度";};
         String direction=switch(wound.getString("direction","")){case "front"->"前侧";case "back"->"后侧";case "left"->"左侧";case "right"->"右侧";default->"不明";};
-        return kinds+" · "+severity+"\n来向："+direction+(wound.getString("precision","").equals("approximate")?"\n部位与方向为估算":"\n位置缺少可靠记录")+(wound.getBoolean("death_trigger",false)?"\n疑似主要致命损伤":"");
+        return "看到"+kinds+"，"+severity+"\n判断来向为："+direction+(wound.getString("precision","").equals("approximate")?"\n只能估算部位与方向":"\n没有获得可靠的位置记录")+(wound.getBoolean("death_trigger",false)?"\n我判断这可能是主要致命损伤":"");
     }
     private int indexOf(String value){for(int i=0;i<PARTS.length;i++)if(PARTS[i].equals(value))return i;return 5;}
     private record CardHit(int x,int y,int w,int h,int index){}

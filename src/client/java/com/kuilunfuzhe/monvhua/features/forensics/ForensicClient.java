@@ -18,6 +18,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
+import com.kuilunfuzhe.monvhua.network.forensics.ForensicSharePackets;
 import org.lwjgl.glfw.GLFW;
 import java.util.*;
 
@@ -62,6 +63,10 @@ public final class ForensicClient {
                     ClientPlayNetworking.send(new com.kuilunfuzhe.monvhua.network.forensics.BloodTracePackets.Inspect());
             }
         });
+        ClientPlayNetworking.registerGlobalReceiver(ForensicSharePackets.Notice.ID, (packet, context) -> context.client().execute(() -> {
+            if(context.client().player!=null)context.client().player.sendMessage(Text.literal("我已收录他人分享的线索"),false);
+            EvidenceSessionRouter.shared(packet.corpse(),packet.part(),packet.evidenceId());
+        }));
         ClientPlayNetworking.registerGlobalReceiver(ForensicPackets.SummaryResult.ID, (packet, context) -> context.client().execute(() -> EvidenceSessionRouter.receive(packet)));
         ClientPlayNetworking.registerGlobalReceiver(ForensicPackets.Result.ID, (packet, context) -> context.client().execute(() -> {
             var client = context.client();

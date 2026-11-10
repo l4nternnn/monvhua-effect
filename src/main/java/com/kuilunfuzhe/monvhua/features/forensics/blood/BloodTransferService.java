@@ -69,7 +69,7 @@ public final class BloodTransferService {
                 net.minecraft.world.RaycastContext.ShapeType.COLLIDER, net.minecraft.world.RaycastContext.FluidHandling.NONE, viewer)).getType() != net.minecraft.util.hit.HitResult.Type.MISS) return List.of();
         List<String> lines = new ArrayList<>(); var store = BloodTransferStore.get(viewer.getServer());
         String[] slots = {"hands", "torso", "left_sole", "right_sole"}, labels = {"手部", "衣物", "左鞋底", "右鞋底"};
-        for (int i = 0; i < slots.length; i++) if (store.visible(holder(target, slots[i])) > 0) lines.add(labels[i] + "存在血液沾染，不能仅凭此确定接触方式");
+        for (int i = 0; i < slots.length; i++) if (store.visible(holder(target, slots[i])) > 0) lines.add("我看到" + labels[i] + "存在血液沾染；我不能仅凭此确定接触方式");
         {
             if (store.visible(itemRef(target.getMainHandStack())) > 0) lines.add("主手物品存在血液残留");
             if (store.visible(itemRef(target.getOffHandStack())) > 0) lines.add("副手物品存在血液残留");

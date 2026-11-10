@@ -13,6 +13,27 @@ public final class CorpsePoseGeometry {
     private CorpsePoseGeometry() {}
     public record Surface(String name,String part,Box box,Matrix4f matrix) {}
     public record Hit(String part,String surface,Vec3d position) {}
+    public record WoundHit(Vec3d position, NbtCompound wound) {}
+    /** UVs are computed after undoing the actual posed surface transform, never in standing-player space. */
+    public static WoundHit woundHit(List<Surface> surfaces, Vec3d anchor, Vec3d from, Vec3d to) {
+        WoundHit best = null; double distance = Double.POSITIVE_INFINITY;
+        for (Surface s : surfaces) {
+            float determinant = s.matrix().determinant();
+            if (!Float.isFinite(determinant) || Math.abs(determinant) < 1e-8) continue;
+            Matrix4f inverse = new Matrix4f(s.matrix()).invert();
+            Vec3d a = transform(inverse, from.subtract(anchor)), b = transform(inverse, to.subtract(anchor));
+            if (s.box().contains(a)) continue; // An eye inside a model is not a reliable external surface strike.
+            var local = s.box().raycast(a, b);
+            if (local.isEmpty()) continue;
+            Vec3d world = transform(s.matrix(), local.get()).add(anchor);
+            double d = world.squaredDistanceTo(from);
+            if (Double.isFinite(d) && d < distance) {
+                distance = d;
+                best = new WoundHit(world, WoundGeometry.describe(new WoundGeometry.Surface(s.name(), s.part(), s.box()), local.get()));
+            }
+        }
+        return best;
+    }
     public static List<Surface> surfaces(ItemDisplayEntity display,NbtCompound data) {
         Matrix4f root=CorpseGeometrySync.placement(display,data);
         return WoundGeometry.surfaces(data).stream().map(s->new Surface(s.name(),s.part(),

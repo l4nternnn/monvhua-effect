@@ -213,27 +213,34 @@ public class BodyPartManager {
                 return ActionResult.SUCCESS;
             }
 
+			/*
+			 * 暂停潜行右键直接拾取尸体/肢体的旧入口。
+			 * 尸体的移动现在只应通过遗体轮盘或明确的搬运网络入口完成；
+			 * 保留这段实现注释，便于后续需要兼容旧存档拾取时恢复，而不会
+			 * 让普通潜行右键绕过搬运、血迹和载体校验。
+			 */
+			/*
 			if (player.isSneaking()) {
 				if (targetDisplay instanceof ItemDisplayEntity display) {
 					ItemStack stack = display.getItemStack().copy();
 					if (!Forensics.valid((ServerWorld) world, stack, display.getUuid().toString())) return ActionResult.FAIL;
-                    if(com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.present(stack)) {
-                        player.sendMessage(Text.literal("物理姿态尸体暂不支持物品拾取，请使用搬运"),true);return ActionResult.FAIL;
-                    }
-                    if (Forensics.hasBinding(stack) && ForensicConfig.current.enabled && ForensicConfig.current.transfer.enabled
-                            && ForensicConfig.current.transfer.carryEnabled && !ForensicConfig.current.transfer.allowEvidenceItemPickup && !player.hasPermissionLevel(2)) {
-                        player.sendMessage(Text.literal("请空出双手，通过遗体轮盘抱起遗体"), true);
-                        return ActionResult.FAIL;
-                    }
+					if (com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.present(stack)) {
+						player.sendMessage(Text.literal("物理姿态尸体暂不支持物品拾取，请使用搬运"), true);
+						return ActionResult.FAIL;
+					}
+					if (Forensics.hasBinding(stack) && ForensicConfig.current.enabled && ForensicConfig.current.transfer.enabled
+							&& ForensicConfig.current.transfer.carryEnabled && !ForensicConfig.current.transfer.allowEvidenceItemPickup
+							&& !player.hasPermissionLevel(2)) {
+						player.sendMessage(Text.literal("请空出双手，通过遗体轮盘抱起遗体"), true);
+						return ActionResult.FAIL;
+					}
 					if (Forensics.hasBinding(stack)) Forensics.transition((ServerWorld) world, stack, "item");
 					DefaultedList<ItemStack> inv = BODY_PART_DISPLAY_INVENTORIES.get(displayUuid);
 					if (inv != null) {
 						NbtList itemsList = new NbtList();
 						for (ItemStack s : inv) {
 							NbtCompound tag = new NbtCompound();
-							if (!s.isEmpty()) {
-								tag = (NbtCompound) ItemStack.CODEC.encodeStart(NbtOps.INSTANCE, s).result().orElse(new NbtCompound());
-							}
+							if (!s.isEmpty()) tag = (NbtCompound) ItemStack.CODEC.encodeStart(NbtOps.INSTANCE, s).result().orElse(new NbtCompound());
 							itemsList.add(tag);
 						}
 						NbtComponent existing = stack.get(DataComponentTypes.CUSTOM_DATA);
@@ -253,7 +260,10 @@ public class BodyPartManager {
 				interaction.remove(Entity.RemovalReason.DISCARDED);
 				return ActionResult.SUCCESS;
 			}
+			*/
 
+			// 物品在手时由画笔/橡皮等专用交互处理；尸体背包只接受双手空闲的普通右键。
+			if (!player.getMainHandStack().isEmpty() || !player.getOffHandStack().isEmpty()) return ActionResult.PASS;
 			DefaultedList<ItemStack> inv = BODY_PART_DISPLAY_INVENTORIES.get(displayUuid);
 			if (inv == null) {
 				player.sendMessage(Text.literal("§c这个部位无法存放物品"), true);

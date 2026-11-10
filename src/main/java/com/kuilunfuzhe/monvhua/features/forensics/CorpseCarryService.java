@@ -82,6 +82,8 @@ public final class CorpseCarryService {
             return "请使用放下遗体按钮或按键释放当前遗体";
         }
         if (!ForensicConfig.current.transfer.enabled || !ForensicConfig.current.transfer.carryEnabled) return "遗体搬运已停用";
+        if (!com.kuilunfuzhe.monvhua.features.carryentity.CarryEffort.canMoveCorpse(player,
+                com.kuilunfuzhe.monvhua.features.carryentity.CarryEffort.Mode.CARRY)) return "体力不足或不可用，无法抱起遗体";
         if (CarryManager.CARRIED_ENTITIES.containsKey(player) || CarryManager.CARRIED_BY.containsKey(player)
                 || player.hasVehicle() || !BodyHitGeometry.normalGravity(GravityMagic.getSurfaceGravityDirection(player))) return "当前状态不能搬运遗体";
         Entity target = player.getWorld().getEntityById(targetId);

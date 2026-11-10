@@ -24,7 +24,7 @@ public final class BloodInspection {
         var chosen = covering.getFirst();
         if(BloodVisibility.density(chosen.patch(),hit.getPos())<255)return List.of("此处存在淡化的血液残留，表面可能经过清洗", "不能据此确定处理者或处理时间");
         if(chosen.patch().kind()==4)return List.of("此处存在条带状接触血痕", "可能由沾血身体移动形成，仅能判断延伸轴向，不能确认搬运者");
-        if (chosen.patch().kind() == 3) return List.of("此处存在带血鞋印", "说明有人接触过血液，不能仅凭鞋印确认身份");
+        if (chosen.patch().kind() == 3) return List.of("我看到此处存在带血鞋印", "我判断有人接触过血液；我不能仅凭鞋印确认身份");
         if (chosen.patch().kind() == 1) return List.of("此处存在积聚血迹，边缘呈不规则扩展", "仅凭血泊无法确定死亡地点或精确停留时间");
         if (chosen.patch().kind() == 2) return List.of("此处存在断续滴落状血迹", "痕迹可能来自受伤者或被搬运的尸体，单独不能确定搬运者");
         // Only infer an axis from nearby, coplanar, observable dots. No hidden attack vector is exposed.

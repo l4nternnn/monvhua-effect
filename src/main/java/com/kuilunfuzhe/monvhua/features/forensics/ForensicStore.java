@@ -62,6 +62,23 @@ public final class ForensicStore extends PersistentState {
         markDirty();
     }
     public NbtCompound corpse(String id) { return section("corpses").getCompoundOrEmpty(id); }
+    /** Append-only bounded post-death history; never rewrites original wounds, death, or blood balances. */
+    public boolean appendPostmortem(String id, NbtCompound hit) {
+        NbtCompound record = corpse(id);
+        if (record.isEmpty() || hit.getString("id", "").isEmpty() || !hit.contains("wound_surface")
+                || !Float.isFinite(hit.getFloat("amount", 0)) || hit.getFloat("amount", 0) <= 0) return false;
+        NbtList added = record.getListOrEmpty("postmortem_hits");
+        if (added.size() >= PostmortemWounds.MAX_WOUNDS) return false;
+        for (NbtElement e : added) if (e instanceof NbtCompound h && h.getString("id", "").equals(hit.getString("id", ""))) return false;
+        NbtCompound copy = hit.copy();
+        copy.putBoolean("postmortem", true); copy.remove("death_trigger"); copy.remove("potentially_lethal");
+        added.add(copy); record.put("postmortem_hits", added);
+        NbtList candidates = record.getListOrEmpty(record.contains("inspection_hits") ? "inspection_hits" : "hits").copy();
+        candidates.add(copy.copy());
+        NbtList strongest = new NbtList();
+        for (String part : Forensics.PARTS) for (NbtCompound h : InspectionRecords.strongest(candidates, part, 3)) strongest.add(h.copy());
+        record.put("inspection_hits", strongest); markDirty(); return true;
+    }
     public void collect(UUID viewer, String corpseId, String part, List<NbtCompound> records) {
         NbtCompound viewers = section("collections");
         NbtCompound viewerRoot = viewers.getCompoundOrEmpty(viewer.toString());
@@ -70,6 +87,24 @@ public final class ForensicStore extends PersistentState {
         for (NbtCompound record : records) list.add(record.copy());
         corpseRoot.put(part, list); viewerRoot.put(corpseId, corpseRoot); viewers.put(viewer.toString(), viewerRoot); markDirty();
     }
+    public void disclose(UUID viewer, String corpseId, String part, String evidenceId) {
+        if(evidenceId==null||evidenceId.isEmpty())return;
+        NbtCompound corpse=corpse(corpseId);if(corpse.isEmpty())return;
+        NbtCompound found=null;
+        for(String bucket:List.of("hits","postmortem_hits")) for(NbtElement e:corpse.getListOrEmpty(bucket))
+            if(e instanceof NbtCompound h&&evidenceId.equals(h.getString("id",""))){found=h.copy();break;}
+        if(found==null)return;
+        found.putString("disclosed_source","showcase");
+        NbtCompound root=section("disclosed");NbtCompound viewerRoot=root.getCompoundOrEmpty(viewer.toString());
+        NbtCompound caseRoot=viewerRoot.getCompoundOrEmpty(corpseId);NbtList list=caseRoot.getListOrEmpty(part);
+        for(NbtElement e:list)if(e instanceof NbtCompound h&&evidenceId.equals(h.getString("id","")))return;
+        list.add(found);caseRoot.put(part,list);viewerRoot.put(corpseId,caseRoot);root.put(viewer.toString(),viewerRoot);markDirty();
+    }
+    public List<NbtCompound> disclosed(UUID viewer,String corpseId,String part){
+        NbtList list=section("disclosed").getCompoundOrEmpty(viewer.toString()).getCompoundOrEmpty(corpseId).getListOrEmpty(part);
+        List<NbtCompound> out=new ArrayList<>();for(NbtElement e:list)if(e instanceof NbtCompound h)out.add(h.copy());return out;
+    }
+
     public List<NbtCompound> collected(UUID viewer, String corpseId, String part) {
         NbtList list = section("collections").getCompoundOrEmpty(viewer.toString())
                 .getCompoundOrEmpty(corpseId).getListOrEmpty(part);

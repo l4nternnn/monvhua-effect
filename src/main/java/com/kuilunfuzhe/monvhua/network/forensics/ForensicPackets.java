@@ -60,6 +60,7 @@ public final class ForensicPackets {
         PayloadTypeRegistry.playS2C().register(Result.ID, Result.CODEC);
         PayloadTypeRegistry.playC2S().register(SummaryRequest.ID, SummaryRequest.CODEC);
         PayloadTypeRegistry.playS2C().register(SummaryResult.ID, SummaryResult.CODEC);
+        ForensicSharePackets.register();
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> LAST_REQUEST.remove(handler.player.getUuid()));
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> LAST_REQUEST.clear());
         ServerPlayNetworking.registerGlobalReceiver(Request.ID, (packet, context) -> context.server().execute(() -> {

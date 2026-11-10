@@ -23,7 +23,10 @@ public abstract class ForensicPlayerMixin {
         if (player.getWorld().isClient) { original.call(target); return; }
         if (CorpseCarryService.isCarrying(player.getUuid())) return;
         AttackContexts.push(player);
-        try { original.call(target); } finally { AttackContexts.pop(); }
+        try {
+            if (player instanceof ServerPlayerEntity serverPlayer && PostmortemWounds.attack(serverPlayer, target)) return;
+            original.call(target);
+        } finally { AttackContexts.pop(); }
     }
 
     @WrapOperation(method = "attack", at = @At(value = "INVOKE", target = "Lnet/minecraft/item/ItemStack;isIn(Lnet/minecraft/registry/tag/TagKey;)Z"))

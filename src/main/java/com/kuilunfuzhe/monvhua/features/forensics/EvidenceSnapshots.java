@@ -106,7 +106,12 @@ public final class EvidenceSnapshots {
         if(!ids.contains(selected)) return result;
         result.putString("id",selected);result.put("observation",observations.getCompoundOrEmpty(selected).copy());
         NbtList wounds=new NbtList();
-        for(String part:Forensics.PARTS) for(var hit:store.collected(viewer,selected,part).stream().limit(3).toList()) wounds.add(publicWound(hit));
+        for(String part:Forensics.PARTS) {
+            var merged=new ArrayList<NbtCompound>();
+            merged.addAll(store.collected(viewer,selected,part));
+            for(var disclosed:store.disclosed(viewer,selected,part))if(merged.stream().noneMatch(h->h.getString("id","").equals(disclosed.getString("id",""))))merged.add(disclosed);
+            for(var hit:merged.stream().limit(3).toList()) wounds.add(publicWound(hit));
+        }
         result.put("wounds",wounds);
         return result;
     }

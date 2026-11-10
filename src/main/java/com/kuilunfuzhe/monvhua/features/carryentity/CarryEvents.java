@@ -47,6 +47,7 @@ public class CarryEvents {
 	 * 断线清理、搬运/放下网络包、/carry-xp-rate 命令。
 	 */
 	public static void register() {
+        CarryEffort.initialize();
 		// 搬运者和被搬运者之间的摔落伤害共享
 		ServerLivingEntityEvents.AFTER_DAMAGE.register((entity, source, baseDamageTaken, damageTaken, blocked) -> {
 			if (source.isOf(DamageTypes.FALL) && entity instanceof ServerPlayerEntity carrier) {

@@ -37,6 +37,9 @@ public final class CorpseTransportController {
         &&ForensicConfig.current.enabled&&ForensicConfig.current.transfer.enabled&&ForensicConfig.current.transfer.carryEnabled;}
     public static String start(ServerPlayerEntity p,int target,String mode,String requested){
         if(!mode.equals("drag")&&!mode.equals("carry"))return "未知搬运方式";
+        if(!com.kuilunfuzhe.monvhua.features.carryentity.CarryEffort.canMoveCorpse(p,mode.equals("drag")
+            ?com.kuilunfuzhe.monvhua.features.carryentity.CarryEffort.Mode.DRAG
+            :com.kuilunfuzhe.monvhua.features.carryentity.CarryEffort.Mode.CARRY))return "体力不足或不可用，无法搬运遗体";
         if(!CorpsePhysicsCoordinator.localControl(p.getServer()))return "物理搬运目前仅支持已连接前置的本地单人世界";
         if(!available(p)||CorpseCarryService.isCarrying(p.getUuid())||CorpseGrabController.status(p.getUuid())!=null)return "当前状态不能搬运，请空出双手并放下已有对象";
         if(mode.equals("drag")&&p.getCommandTags().contains("monvhua:no_corpse_drag"))return "当前状态禁止拖拽";

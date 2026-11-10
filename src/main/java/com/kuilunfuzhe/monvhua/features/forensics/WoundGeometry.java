@@ -31,6 +31,11 @@ public final class WoundGeometry {
             if(p.isPresent() && p.get().squaredDistanceTo(from)<distance) { best=surface;point=p.get();distance=point.squaredDistanceTo(from); }
         }
         NbtCompound result=new NbtCompound(); if(best==null) return result;
+        return describe(best, point);
+    }
+    /** The caller has intersected this surface in its own local coordinate system. */
+    public static NbtCompound describe(Surface best, Vec3d point) {
+        NbtCompound result = new NbtCompound();
         Box b=best.box; double[] distances={Math.abs(point.y-b.minY),Math.abs(point.y-b.maxY),Math.abs(point.z-b.minZ),Math.abs(point.z-b.maxZ),Math.abs(point.x-b.minX),Math.abs(point.x-b.maxX)};
         int face=0; for(int i=1;i<6;i++) if(distances[i]<distances[face])face=i;
         String[] faces={"UP","DOWN","NORTH","SOUTH","WEST","EAST"};

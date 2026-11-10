@@ -8,6 +8,7 @@ import java.nio.file.Files;
 
 public final class ForensicConfig {
     public boolean enabled = true;
+    public boolean postmortemWounds = true;
     public int detailedHitLimit = 256;
     public double inspectionDistance = 3;
     public float moderateThreshold = 4;
