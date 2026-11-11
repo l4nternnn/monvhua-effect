@@ -112,6 +112,7 @@ public class MonvhuaModClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         com.kuilunfuzhe.monvhua.features.forensics.ForensicClient.initialize();
+        com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardClient.initialize();
         com.kuilunfuzhe.monvhua.features.daynight.DayNightClient.initialize();
         UseItemCallback.EVENT.register((player, world, hand) -> {
             if (world.isClient() && player.getStackInHand(hand).isOf(CommandPanelItems.COMMAND_PANEL)) {

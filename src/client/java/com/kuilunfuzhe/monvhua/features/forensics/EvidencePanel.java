@@ -85,6 +85,8 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
     private final boolean world;
     private final Runnable onClose;
     private int width, height;
+    private boolean clueBoardMode;
+    private com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardWorldPanel clueBoard;
     public EvidencePanel(boolean world, Runnable onClose) { this.world=world; this.onClose=onClose; EvidenceSessionRouter.register(this); }
     void onSharedClue(String sharedCorpse,String sharedPart,String evidenceId){
         if(!corpse.equals(sharedCorpse)){request(sharedCorpse);pendingSharedPart=sharedPart;pendingSharedEvidence=evidenceId;return;}
@@ -95,7 +97,7 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
         if(scene==null||pendingSharedPart.isEmpty())return;
         select(pendingSharedPart);
         for(int i=0;i<visible.size();i++)if(visible.get(i).getString("id","").equals(pendingSharedEvidence)){selected=i;scene.requestFocus(pendingSharedEvidence);focusSelected();break;}
-        message="我已收录他人分享的线索，并跳转到对应伤口";
+        message="已收录出示的记录，并跳转到对应伤口";
         pendingSharedPart="";pendingSharedEvidence="";
     }
     public void resize(int width,int height) { this.width=width;this.height=height;buttons.clear();init(); }
@@ -106,6 +108,7 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
     private long clickUntil;
     private int clickX,clickY;
     public boolean worldClick(double x,double y) {
+        if(world&&clueBoardMode)return clueBoard.click(x,y);
         if(!world||worldTarget(x,y)==null)return false;
         boolean handled=mouseClicked(x,y,0);mouseReleased(x,y,0);
         if(handled){clickX=(int)x;clickY=(int)y;clickUntil=System.nanoTime()+250_000_000L;}
@@ -121,7 +124,7 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
         if(sector>=0)return new WorldTarget(0,0,0,0,"查看"+LABELS[sector]);
         return null;
     }
-    public String worldHoverLabel(double x,double y){var target=worldTarget(x,y);return target==null?"":target.label;}
+    public String worldHoverLabel(double x,double y){if(world&&clueBoardMode)return clueBoard.hover(x,y);var target=worldTarget(x,y);return target==null?"":target.label;}
     private void drawWorldFeedback(DrawContext context,int x,int y){
         if(x<0||y<0||x>=width||y>=height)return;
         var target=worldTarget(x,y);int color=target==null?0xFFCAD6E0:0xFFFFD65A;
@@ -172,6 +175,7 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
     }
     /** Compact 320x180 world layout. Buttons deliberately have large physical hit areas. */
     private void initWorldButtons(){
+        worldButton("公告板",216,4,58,20,()->{clueBoardMode=true;if(clueBoard==null)clueBoard=new com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardWorldPanel(()->clueBoardMode=false);});
         worldButton("←",6,4,26,20,()->changeCase(-1));
         worldButton("→",36,4,26,20,()->changeCase(1));
         worldButton("关闭",278,4,36,20,this::close);
@@ -248,6 +252,7 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
         return super.mouseScrolled(x,y,horizontal,vertical);
     }
     @Override public void render(DrawContext context,int mouseX,int mouseY,float delta){
+        if(world&&clueBoardMode){clueBoard.render(context,mouseX,mouseY,delta);return;}
         advanceFocus();
         context.fill(0,0,width,height,world?0xFF111821:0xF0111821);
         String name=snapshot.getCompoundOrEmpty("observation").getString("name","");

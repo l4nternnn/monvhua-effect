@@ -1,4 +1,7 @@
 ﻿{
+  "item.monvhua.clue_blank_card": "空白线索卡（实验）",
+  "item.monvhua.clue_record_card": "线索记录卡（实验）",
+  "item.monvhua.clue_card_bag": "线索卡袋（实验）",
   "key.monvhua.evidence_world_interact": "世界线索面板交互",
   "key.monvhua.grab_static": "抓取器：双击保存为静态",
   "key.monvhua.grab_freeze": "抓取器：冻结/解冻",

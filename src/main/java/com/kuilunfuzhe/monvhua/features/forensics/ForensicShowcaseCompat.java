@@ -35,6 +35,7 @@ public final class ForensicShowcaseCompat {
                 return create(owner,getString(ctx,"corpse"),getString(ctx,"part"),getString(ctx,"evidence"),target)?1:0;
             })))))));
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTED.register(server->tryRegisterCallback());
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPED.register(server->{SHARES.clear();});
     }
     private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestParts(
             com.mojang.brigadier.context.CommandContext<net.minecraft.server.command.ServerCommandSource> ctx,
@@ -66,7 +67,7 @@ public final class ForensicShowcaseCompat {
     private static boolean create(ServerPlayerEntity owner,String corpse,String part,String evidence,ServerPlayerEntity target){
         if(owner==null||target==null||corpse.isEmpty()||part.isEmpty()||evidence.isEmpty())return false;
         var records=ForensicStore.get(owner.getServer()).collected(owner.getUuid(),corpse,part);
-        if(records.stream().noneMatch(h->evidence.equals(h.getString("id","")))){owner.sendMessage(Text.literal("我还没有收集这条线索，无法分享"),false);return false;}
+        if(records.stream().noneMatch(h->evidence.equals(h.getString("id","")))){owner.sendMessage(Text.literal("尚未收录该记录，无法出示"),false);return false;}
         if(!tryRegisterCallback()){
             owner.sendMessage(Text.literal("Showcase 适配不可用："+failureReason+"；线索未分享，详情见服务端日志"),false);return false;
         }
@@ -75,7 +76,7 @@ public final class ForensicShowcaseCompat {
             ItemStack card=new ItemStack(Items.PAPER);card.set(DataComponentTypes.CUSTOM_NAME,Text.literal("线索："+part));
             Method method=manager.getMethod("createItemShare",ServerPlayerEntity.class,ItemStack.class,Integer.class,Collection.class);
             String id=(String)method.invoke(null,owner,card,300,List.of(target));SHARES.put(id,new Payload(owner,corpse,part,evidence));
-            owner.sendMessage(Text.literal("我已分享这条线索给 "+target.getDisplayName().getString()),false);return true;
+            owner.sendMessage(Text.literal("记录已出示给 "+target.getDisplayName().getString()),false);return true;
         }catch(ReflectiveOperationException|LinkageError|RuntimeException e){
             report("创建分享",e);owner.sendMessage(Text.literal("Showcase 分享失败："+failureReason+"；详情见服务端日志"),false);return false;
         }
@@ -95,11 +96,29 @@ public final class ForensicShowcaseCompat {
                 if(m.getName().equals("onShowcaseViewed")&&args!=null&&args.length>=3){
                     var viewer=(ServerPlayerEntity)args[0];String id=(String)args[2];Payload payload=SHARES.get(id);
                     if(payload!=null){ForensicStore.get(viewer.getServer()).disclose(viewer.getUuid(),payload.corpse(),payload.part(),payload.evidence());ForensicSharePackets.send(viewer,payload.corpse(),payload.part(),payload.evidence());}
+                    com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardService.onShowcaseViewed(viewer,id);
                 }
                 return ActionResult.PASS;
             });
             api.getMethod("onShowcaseViewed",callback).invoke(instance,proxy);ready=true;LOGGER.info("Showcase forensic sharing callback registered");return true;
         }catch(ReflectiveOperationException|LinkageError|RuntimeException e){ready=false;report("注册查看回调",e);return false;}
+    }
+    /** The card ledger freezes the version before a Showcase reader can open the link. */
+    public static boolean shareClueCard(ServerPlayerEntity owner,String cardId,ServerPlayerEntity target){
+        var ledger=com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardStore.get(owner.getServer());
+        if(owner==target||!ledger.participant(target.getUuid())||!ledger.readable(owner.getUuid(),cardId)){owner.sendMessage(Text.literal("目标或记录权限无效"),false);return false;}
+        if(!tryRegisterCallback()){owner.sendMessage(Text.literal("Showcase 适配不可用："+failureReason),false);return false;}
+        try{
+            Class<?> manager=Class.forName("com.showcase.command.ShowcaseManager");
+            Method method=manager.getMethod("createItemShare",ServerPlayerEntity.class,ItemStack.class,Integer.class,Collection.class);
+            ledger.lock(owner.getUuid(),cardId);
+            ItemStack item=com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardItems.card(cardId);
+            item.set(DataComponentTypes.CUSTOM_NAME,Text.literal("线索记录"));
+            String shareId=(String)method.invoke(null,owner,item,300,List.of(target));
+            if(shareId==null||shareId.isEmpty())throw new IllegalStateException("Showcase returned an empty share ID");
+            ledger.rememberShare(shareId,target.getUuid(),cardId);
+            owner.sendMessage(Text.literal("记录已出示给 "+target.getName().getString()+"，该版本已锁定"),false);return true;
+        }catch(ReflectiveOperationException|LinkageError|RuntimeException error){report("创建线索卡分享",error);owner.sendMessage(Text.literal("分享未完成；为防止已生成链接的内容被替换，该版本保持锁定"),false);return false;}
     }
     private static void report(String step,Throwable error){
         Throwable cause=error instanceof InvocationTargetException invocation&&invocation.getCause()!=null?invocation.getCause():error;

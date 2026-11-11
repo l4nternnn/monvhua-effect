@@ -64,7 +64,7 @@ public final class ForensicClient {
             }
         });
         ClientPlayNetworking.registerGlobalReceiver(ForensicSharePackets.Notice.ID, (packet, context) -> context.client().execute(() -> {
-            if(context.client().player!=null)context.client().player.sendMessage(Text.literal("我已收录他人分享的线索"),false);
+            if(context.client().player!=null)context.client().player.sendMessage(Text.literal("已收录他人出示的记录"),false);
             EvidenceSessionRouter.shared(packet.corpse(),packet.part(),packet.evidenceId());
         }));
         ClientPlayNetworking.registerGlobalReceiver(ForensicPackets.SummaryResult.ID, (packet, context) -> context.client().execute(() -> EvidenceSessionRouter.receive(packet)));

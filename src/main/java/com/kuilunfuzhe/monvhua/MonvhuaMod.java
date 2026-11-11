@@ -692,6 +692,7 @@ public class MonvhuaMod implements ModInitializer {
         BlockHoleItems.initialize();
         PortalItems.initialize();
         PaintItems.initialize();
+        com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardService.initialize();
         PaintOverlayFeature.initialize();
         DissolveFeature.initializeServer();
         com.kuilunfuzhe.monvhua.features.glitch.GlitchPlaneServerController.initialize();

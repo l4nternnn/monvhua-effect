@@ -53,6 +53,9 @@ public class ModItemGroups {
                             entries.add(PaintItems.PAINT_SPRAY_CAN);
                             entries.add(PaintItems.ERASER);
                             entries.add(PaintItems.PAINT_PAPER);
+                            entries.add(com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardItems.BLANK);
+                            entries.add(com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardItems.CARD);
+                            entries.add(com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardItems.BAG);
                             entries.add(PaintItems.PAINT_BUCKET);
                             entries.add(Assembly_ModItems.DRAWING_BOARD_ITEM);
                             entries.add(Assembly_ModItems.TORSO_ITEM);
