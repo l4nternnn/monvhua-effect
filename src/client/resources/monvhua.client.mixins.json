@@ -72,6 +72,7 @@
 		"ThroughStalledMotionMixin",
 		"ThroughItemUsePriorityMixin",
 		"CommandPanelUseMixin",
+		"EvidencePanelUseMixin",
 		"SpriteContentsAccessor",
 		"MouseMixin",
 		"PlayerEntityRenderStateAccessor",

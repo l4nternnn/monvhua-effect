@@ -11,7 +11,8 @@ import java.util.*;
 /** Private placement metadata only. Evidence continues to use the viewer-filtered summary API. */
 public final class EvidenceAnchorStore extends PersistentState {
     public static final int LIMIT=20;
-    public record Anchor(UUID id,UUID owner,String dimension,double x,double y,double z,float yaw,float pitch,float roll,float width) {
+    public record Anchor(UUID id,UUID owner,String dimension,double x,double y,double z,float yaw,float pitch,float roll,float width,boolean board) {
+        public Anchor(UUID id,UUID owner,String dimension,double x,double y,double z,float yaw,float pitch,float roll,float width){this(id,owner,dimension,x,y,z,yaw,pitch,roll,width,false);}
         public Anchor {
             Objects.requireNonNull(id);Objects.requireNonNull(owner);
             if(Identifier.tryParse(dimension)==null||!Double.isFinite(x)||!Double.isFinite(y)||!Double.isFinite(z)
@@ -20,8 +21,8 @@ public final class EvidenceAnchorStore extends PersistentState {
                 throw new IllegalArgumentException("无效的线索面板位置、旋转或尺寸");
             yaw%=360;pitch%=360;roll%=360;
         }
-        public NbtCompound nbt(){var n=new NbtCompound();n.putString("id",id.toString());n.putString("owner",owner.toString());n.putString("dimension",dimension);n.putDouble("x",x);n.putDouble("y",y);n.putDouble("z",z);n.putFloat("yaw",yaw);n.putFloat("pitch",pitch);n.putFloat("roll",roll);n.putFloat("width",width);return n;}
-        public static Anchor read(NbtCompound n){return new Anchor(UUID.fromString(n.getString("id","")),UUID.fromString(n.getString("owner","")),n.getString("dimension",""),n.getDouble("x",Double.NaN),n.getDouble("y",Double.NaN),n.getDouble("z",Double.NaN),n.getFloat("yaw",Float.NaN),n.getFloat("pitch",Float.NaN),n.getFloat("roll",Float.NaN),n.getFloat("width",1.5f));}
+        public NbtCompound nbt(){var n=new NbtCompound();n.putString("id",id.toString());n.putString("owner",owner.toString());n.putString("dimension",dimension);n.putDouble("x",x);n.putDouble("y",y);n.putDouble("z",z);n.putFloat("yaw",yaw);n.putFloat("pitch",pitch);n.putFloat("roll",roll);n.putFloat("width",width);n.putBoolean("board",board);return n;}
+        public static Anchor read(NbtCompound n){return new Anchor(UUID.fromString(n.getString("id","")),UUID.fromString(n.getString("owner","")),n.getString("dimension",""),n.getDouble("x",Double.NaN),n.getDouble("y",Double.NaN),n.getDouble("z",Double.NaN),n.getFloat("yaw",Float.NaN),n.getFloat("pitch",Float.NaN),n.getFloat("roll",Float.NaN),n.getFloat("width",1.5f),n.getBoolean("board",false));}
     }
     public static final Codec<EvidenceAnchorStore> CODEC=NbtCompound.CODEC.xmap(EvidenceAnchorStore::new,EvidenceAnchorStore::nbt);
     public static final PersistentStateType<EvidenceAnchorStore> TYPE=new PersistentStateType<>("monvhua_evidence_anchors",EvidenceAnchorStore::new,CODEC,DataFixTypes.SAVED_DATA_COMMAND_STORAGE);

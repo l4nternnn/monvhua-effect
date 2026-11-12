@@ -88,6 +88,7 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
     private boolean clueBoardMode;
     private com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardWorldPanel clueBoard;
     public EvidencePanel(boolean world, Runnable onClose) { this.world=world; this.onClose=onClose; EvidenceSessionRouter.register(this); }
+    public void showClueBoard(){clueBoardMode=true;if(clueBoard==null)clueBoard=new com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardWorldPanel(()->{clueBoardMode=false;if(snapshot.isEmpty())request(corpse);});}
     void onSharedClue(String sharedCorpse,String sharedPart,String evidenceId){
         if(!corpse.equals(sharedCorpse)){request(sharedCorpse);pendingSharedPart=sharedPart;pendingSharedEvidence=evidenceId;return;}
         pendingSharedPart=sharedPart;pendingSharedEvidence=evidenceId;applySharedFocus();
@@ -156,7 +157,7 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
         rolling=false;dragging=false;panning=false;
         if(world){
             initWorldButtons();
-            if(snapshot.isEmpty())request(corpse);else accept(snapshot);
+            if(!clueBoardMode){if(snapshot.isEmpty())request(corpse);else accept(snapshot);}
             return;
         }
         int x=previewLeft(),w=width-x-12,button=Math.max(18,Math.min(24,w/5)),center=x+w/2,base=height-42;
@@ -175,7 +176,7 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
     }
     /** Compact 320x180 world layout. Buttons deliberately have large physical hit areas. */
     private void initWorldButtons(){
-        worldButton("公告板",216,4,58,20,()->{clueBoardMode=true;if(clueBoard==null)clueBoard=new com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardWorldPanel(()->clueBoardMode=false);});
+        worldButton("比较板",216,4,58,20,this::showClueBoard);
         worldButton("←",6,4,26,20,()->changeCase(-1));
         worldButton("→",36,4,26,20,()->changeCase(1));
         worldButton("关闭",278,4,36,20,this::close);

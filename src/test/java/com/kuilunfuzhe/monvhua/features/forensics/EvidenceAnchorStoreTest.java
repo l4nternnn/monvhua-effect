@@ -33,4 +33,11 @@ class EvidenceAnchorStoreTest {
         var root=new NbtCompound();root.putInt("schema",1);var entries=new NbtList();entries.add(data);entries.add(anchor(id,owner).nbt());root.put("anchors",entries);
         var restored=EvidenceAnchorStore.CODEC.parse(NbtOps.INSTANCE,root).getOrThrow();assertEquals(1,restored.owned(owner).size());
     }
+    @Test void comparisonBoardPlacementPersistsAndOldAnchorsStillOpenCorpseView(){
+        var owner=UUID.randomUUID();var old=anchor(UUID.randomUUID(),owner);var legacy=old.nbt();legacy.remove("board");assertFalse(EvidenceAnchorStore.Anchor.read(legacy).board());
+        var board=new EvidenceAnchorStore.Anchor(UUID.randomUUID(),owner,"minecraft:overworld",1,64,2,90,0,0,1.5f,true);
+        var store=new EvidenceAnchorStore();store.put(old);store.put(board);
+        var restored=EvidenceAnchorStore.CODEC.parse(NbtOps.INSTANCE,EvidenceAnchorStore.CODEC.encodeStart(NbtOps.INSTANCE,store).getOrThrow()).getOrThrow();
+        assertEquals(List.of(old,board),restored.owned(owner));assertTrue(restored.require(owner,board.id()).board());
+    }
 }

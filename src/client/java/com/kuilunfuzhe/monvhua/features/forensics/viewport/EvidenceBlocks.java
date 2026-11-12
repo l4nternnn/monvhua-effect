@@ -20,7 +20,7 @@ public final class EvidenceBlocks implements EvidenceEnvironmentLayer {
         revision=snapshot.getLong("revision",0);
         List<Block> entries=new ArrayList<>();List<Box> shapes=new ArrayList<>();Box extent=null;
         for(var element:snapshot.getListOrEmpty("blocks")) {
-            if(entries.size()>=64)break;
+            if(entries.size()>=128)break;
             if(!(element instanceof NbtCompound entry)||!entry.contains("state"))continue;
             var state=BlockState.CODEC.parse(NbtOps.INSTANCE,entry.get("state")).result().orElse(Blocks.AIR.getDefaultState());
             // Fluid and dynamic block-entity renderers require a dedicated snapshot adapter.

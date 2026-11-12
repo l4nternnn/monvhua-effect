@@ -20,8 +20,8 @@ class EvidenceCommandPermissionsTest {
                 assertFalse(root.getChild(name).canUse(normal),name);assertTrue(root.getChild(name).canUse(admin),name);
             }
             var evidence=root.getChild("evidence");assertTrue(evidence.canUse(normal));
-            for(String name:new String[]{"place","remove","clear_all","status"})assertTrue(evidence.getChild(name).canUse(normal),name);
-            for(String name:new String[]{"place_at","for","clear_server"}){assertFalse(evidence.getChild(name).canUse(normal),name);assertTrue(evidence.getChild(name).canUse(admin),name);}
+            for(String name:new String[]{"place","place_board","remove","clear_all","status"})assertTrue(evidence.getChild(name).canUse(normal),name);
+            for(String name:new String[]{"place_at","place_board_at","for","clear_server"}){assertFalse(evidence.getChild(name).canUse(normal),name);assertTrue(evidence.getChild(name).canUse(admin),name);}
         }
     }
 }

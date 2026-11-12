@@ -1,7 +1,5 @@
 package com.kuilunfuzhe.monvhua.mixin;
 import com.kuilunfuzhe.monvhua.features.forensics.viewport.*;
-import com.kuilunfuzhe.monvhua.features.forensics.EvidenceSummaryScreen;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.render.*;
 import net.minecraft.client.gui.render.state.special.SpecialGuiElementRenderState;
 import net.minecraft.client.render.VertexConsumerProvider;
@@ -20,11 +18,7 @@ public abstract class EvidenceGuiRendererMixin {
         specialElementRenderers.put(EvidenceViewportRenderState.class,new EvidenceViewportRenderer(vertexConsumers));
     }
     @Inject(method="incrementFrame",at=@At("TAIL"))
-    private void evidence$release(CallbackInfo ci) {
-        if(com.kuilunfuzhe.monvhua.features.forensics.EvidencePanelTexture.isRendering(this)) return;
-        if(MinecraftClient.getInstance().currentScreen instanceof EvidenceSummaryScreen) return;
-        if(specialElementRenderers.get(EvidenceViewportRenderState.class) instanceof EvidenceViewportRenderer renderer && renderer.hasRendered()) {
-            renderer.close(); specialElementRenderers.put(EvidenceViewportRenderState.class,new EvidenceViewportRenderer(vertexConsumers));
-        }
+    private void evidence$beginFrame(CallbackInfo ci) {
+        if(specialElementRenderers.get(EvidenceViewportRenderState.class) instanceof EvidenceViewportRenderer renderer)renderer.beginFrame();
     }
 }

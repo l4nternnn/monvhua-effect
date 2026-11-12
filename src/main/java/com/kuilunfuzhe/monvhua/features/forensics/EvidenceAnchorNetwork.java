@@ -48,34 +48,43 @@ public final class EvidenceAnchorNetwork {
             var root=literal("evidence");
             root.then(literal("place").executes(guard(c->{var p=c.getSource().getPlayerOrThrow();placeFront(p);return 1;})));
             root.then(placement("place_at",false));
+            root.then(literal("place_board").executes(guard(c->{placeFront(c.getSource().getPlayerOrThrow(),1.5f,true);return 1;})));
+            root.then(placement("place_board_at",false,true));
             root.then(literal("clear_all").executes(guard(c->{var p=c.getSource().getPlayerOrThrow();EvidenceAnchorStore.get(p.getServer()).clear(p.getUuid());sync(p);return 1;})));
             root.then(literal("remove").then(argument("id",StringArgumentType.word()).executes(guard(c->{var p=c.getSource().getPlayerOrThrow();EvidenceAnchorStore.get(p.getServer()).remove(p.getUuid(),UUID.fromString(StringArgumentType.getString(c,"id")));sync(p);return 1;}))));
             root.then(literal("status").executes(guard(c->{var p=c.getSource().getPlayerOrThrow();var list=EvidenceAnchorStore.get(p.getServer()).owned(p.getUuid());c.getSource().sendFeedback(()->Text.literal("私人世界面板 "+list.size()+"/20 "+list.stream().map(a->a.id().toString()).toList()),false);return list.size();})));
-            root.then(literal("for").requires(s->s.hasPermissionLevel(2)).then(argument("player",EntityArgumentType.player()).then(placement("place_at",true))
+            root.then(literal("for").requires(s->s.hasPermissionLevel(2)).then(argument("player",EntityArgumentType.player()).then(placement("place_at",true)).then(placement("place_board_at",true,true))
                 .then(literal("clear_all").executes(guard(c->{var p=EntityArgumentType.getPlayer(c,"player");EvidenceAnchorStore.get(p.getServer()).clear(p.getUuid());sync(p);return 1;})))));
             root.then(literal("clear_server").requires(s->s.hasPermissionLevel(2)).executes(guard(c->{EvidenceAnchorStore.get(c.getSource().getServer()).clearAll();for(var p:c.getSource().getServer().getPlayerManager().getPlayerList())sync(p);return 1;})));
         return literal("mvcorpse").then(root);
     }
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<ServerCommandSource> placement(String name,boolean other){
+        return placement(name,other,false);
+    }
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<ServerCommandSource> placement(String name,boolean other,boolean board){
         return literal(name).requires(s->s.hasPermissionLevel(2)).then(argument("x",DoubleArgumentType.doubleArg(-30_000_000,30_000_000)).then(argument("y",DoubleArgumentType.doubleArg(-30_000_000,30_000_000)).then(argument("z",DoubleArgumentType.doubleArg(-30_000_000,30_000_000)).then(argument("yaw",FloatArgumentType.floatArg(-360,360)).then(argument("pitch",FloatArgumentType.floatArg(-360,360)).then(argument("roll",FloatArgumentType.floatArg(-360,360)).executes(guard(c->{
             var player=other?EntityArgumentType.getPlayer(c,"player"):c.getSource().getPlayerOrThrow();
-            create(player,c.getSource().getWorld().getRegistryKey().getValue().toString(),DoubleArgumentType.getDouble(c,"x"),DoubleArgumentType.getDouble(c,"y"),DoubleArgumentType.getDouble(c,"z"),FloatArgumentType.getFloat(c,"yaw"),FloatArgumentType.getFloat(c,"pitch"),FloatArgumentType.getFloat(c,"roll"),1.5f);return 1;
+            create(player,c.getSource().getWorld().getRegistryKey().getValue().toString(),DoubleArgumentType.getDouble(c,"x"),DoubleArgumentType.getDouble(c,"y"),DoubleArgumentType.getDouble(c,"z"),FloatArgumentType.getFloat(c,"yaw"),FloatArgumentType.getFloat(c,"pitch"),FloatArgumentType.getFloat(c,"roll"),1.5f,board);return 1;
         }))))))));
     }
     private static void placeFront(ServerPlayerEntity p){placeFront(p,1.5f);}
-    private static void placeFront(ServerPlayerEntity p,float width){var pos=p.getEyePos().add(p.getRotationVec(1).multiply(3));create(p,p.getWorld().getRegistryKey().getValue().toString(),pos.x,pos.y,pos.z,180-p.getYaw(),-p.getPitch(),0,width);}
-    private static void create(ServerPlayerEntity p,String dim,double x,double y,double z,float yaw,float pitch,float roll,float width){if(!p.isAlive()||p.isSpectator())throw new IllegalArgumentException("当前状态不能生成面板");EvidenceAnchorStore.get(p.getServer()).put(new EvidenceAnchorStore.Anchor(UUID.randomUUID(),p.getUuid(),dim,x,y,z,yaw,pitch,roll,width));sync(p);}
+    private static void placeFront(ServerPlayerEntity p,float width){placeFront(p,width,false);}
+    private static void placeFront(ServerPlayerEntity p,float width,boolean board){var pos=p.getEyePos().add(p.getRotationVec(1).multiply(3));create(p,p.getWorld().getRegistryKey().getValue().toString(),pos.x,pos.y,pos.z,180-p.getYaw(),-p.getPitch(),0,width,board);}
+    private static void create(ServerPlayerEntity p,String dim,double x,double y,double z,float yaw,float pitch,float roll,float width){create(p,dim,x,y,z,yaw,pitch,roll,width,false);}
+    private static void create(ServerPlayerEntity p,String dim,double x,double y,double z,float yaw,float pitch,float roll,float width,boolean board){if(!p.isAlive()||p.isSpectator())throw new IllegalArgumentException("当前状态不能生成面板");EvidenceAnchorStore.get(p.getServer()).put(new EvidenceAnchorStore.Anchor(UUID.randomUUID(),p.getUuid(),dim,x,y,z,yaw,pitch,roll,width,board));sync(p);}
     private static void edit(ServerPlayerEntity p,Edit e){
         var store=EvidenceAnchorStore.get(p.getServer());
         if(e.action.equals("sync")){sync(p);return;}
         if(!p.isAlive()||p.isSpectator())throw new IllegalArgumentException("当前状态不能编辑线索面板");
         switch(e.action){
             case "place" -> placeFront(p,e.width);
+            case "place_board" -> placeFront(p,e.width,true);
+            case "board_at" -> {if(!p.hasPermissionLevel(2))throw new IllegalArgumentException("指定坐标生成需要管理员权限");create(p,p.getWorld().getRegistryKey().getValue().toString(),e.x,e.y,e.z,e.yaw,e.pitch,e.roll,e.width,true);}
             case "place_at" -> {if(!p.hasPermissionLevel(2))throw new IllegalArgumentException("指定坐标生成需要管理员权限");create(p,p.getWorld().getRegistryKey().getValue().toString(),e.x,e.y,e.z,e.yaw,e.pitch,e.roll,e.width);}
             case "clear" -> {store.clear(p.getUuid());sync(p);}
             case "remove" -> {store.remove(p.getUuid(),UUID.fromString(e.id));sync(p);}
-            case "rotate" -> {var a=store.require(p.getUuid(),UUID.fromString(e.id));store.put(new EvidenceAnchorStore.Anchor(a.id(),a.owner(),a.dimension(),a.x(),a.y(),a.z(),e.yaw,e.pitch,e.roll,a.width()));sync(p);}
-            case "size" -> {if(!Float.isFinite(e.width)||e.width<.5f||e.width>8)throw new IllegalArgumentException("尺寸需要在 0.5 至 8 格之间");for(var a:store.owned(p.getUuid()))store.put(new EvidenceAnchorStore.Anchor(a.id(),a.owner(),a.dimension(),a.x(),a.y(),a.z(),a.yaw(),a.pitch(),a.roll(),e.width));sync(p);}
+            case "rotate" -> {var a=store.require(p.getUuid(),UUID.fromString(e.id));store.put(new EvidenceAnchorStore.Anchor(a.id(),a.owner(),a.dimension(),a.x(),a.y(),a.z(),e.yaw,e.pitch,e.roll,a.width(),a.board()));sync(p);}
+            case "size" -> {if(!Float.isFinite(e.width)||e.width<.5f||e.width>8)throw new IllegalArgumentException("尺寸需要在 0.5 至 8 格之间");for(var a:store.owned(p.getUuid()))store.put(new EvidenceAnchorStore.Anchor(a.id(),a.owner(),a.dimension(),a.x(),a.y(),a.z(),a.yaw(),a.pitch(),a.roll(),e.width,a.board()));sync(p);}
             default -> throw new IllegalArgumentException("未知面板操作");
         }
     }

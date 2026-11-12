@@ -1,78 +1,58 @@
 package com.kuilunfuzhe.monvhua.features.forensics.cards;
 
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.*;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 import java.util.*;
 
-/** Public presentation and A/B comparison are one surface, separate from the bag/workshop. */
-public final class ClueCardScreen extends Screen {
-    private boolean manual,initialized;
-    private String a="",b="",active="",latest="";
-    private int leftPage,rightPage,rows,sideW,cardW,leftX,rightX,rightCardX;
-    private int filter; // 0 all readable, 1 owned, 2 public
-    private String notice="",group="";
-    public ClueCardScreen(){super(Text.literal("公共比较板"));}
-    @Override public boolean shouldPause(){return false;}
-    @Override protected void init(){
-        if(!initialized){initialized=true;useLatest();}
-        rebuild();
-    }
-    void receive(ClueCardPackets.State packet){notice=packet.notice();String key=packet.latestA()+packet.latestB();if(!key.equals(latest)){latest=key;if(!manual)useLatest();}rebuild();}
-    private ButtonWidget button(String text,int x,int y,int w,Runnable click){return addDrawableChild(ButtonWidget.builder(Text.literal(text),ignored->click.run()).dimensions(x,y,Math.max(18,w),20).build());}
-    private List<ClueCardStore.Summary> candidates(){if(ClueCardClient.state==null)return List.of();return ClueCardClient.state.cards().stream().filter(c->filter==0||(filter==1?c.owned():c.locked())).filter(c->group.isEmpty()||c.group().equals(group)).toList();}
+/** Public presentation and comparison share one board; all navigation stays viewer-local. */
+public final class ClueCardScreen extends ClueFolioScreen {
+    private String a="",b="",notice="",seed;
+    private boolean manual,initialized,loaded;
+    private int leftPage,rightPage,rows,side,cardW,ax,bx,historyIndex=-1;
+    private int leftFilter,rightFilter;
+    public ClueCardScreen(){this("");}
+    ClueCardScreen(String seed){super("线索比较板");this.seed=seed;}
+    @Override protected void init(){if(!initialized){initialized=true;useLatest();if(!seed.isEmpty()){a=seed;manual=true;fetch(a);}}rebuild();}
+    void receive(ClueCardPackets.State packet){if(!packet.notice().isEmpty())notice=packet.notice();if(!loaded)useLatest();rebuild();}
+    private void fetch(String id){if(!id.isEmpty())ClueCardClient.request("view",id);}
+    private List<ClueCardStore.Summary> candidates(int filter){if(ClueCardClient.state==null)return List.of();return ClueCardClient.state.cards().stream().filter(c->filter==0||(filter==1?c.owned():c.locked())).toList();}
+    private String filterLabel(int filter){return switch(filter){case 1->"自身持有";case 2->"已出示";default->"全部可用";};}
+    private void choose(String id,boolean left){if(left)a=id;else b=id;manual=true;fetch(id);rebuild();}
+    private void useLatest(){var state=ClueCardClient.state;if(state==null)return;loaded=true;a=state.latestA();b=state.latestB();if(a.isEmpty())a=state.cards().stream().filter(ClueCardStore.Summary::locked).reduce((x,y)->y).map(ClueCardStore.Summary::id).orElse("");historyIndex=state.history().size()-1;fetch(a);fetch(b);}
+    private void history(int delta){var state=ClueCardClient.state;if(state==null||state.history().isEmpty())return;historyIndex=Math.max(0,Math.min(state.history().size()-1,historyIndex+delta));var entry=state.history().get(historyIndex);a=entry.a();b=entry.b();manual=true;notice="比较第 "+entry.number()+" 次 / "+entry.presenter();fetch(a);fetch(b);rebuild();}
+    private void confirm(String message,Runnable action){client.setScreen(new ClueCardConfirmScreen(this,message,action));}
     private void rebuild(){
-        clearChildren();
-        sideW=Math.max(55,(width-32)*16/100);cardW=Math.max(60,(width-40-sideW*2)/2);leftX=12+sideW;rightCardX=leftX+cardW+8;rightX=rightCardX+cardW+8;
-        button("个人线索",8,8,110,ClueCardClient::open);
-        button("刷新",124,8,50,()->ClueCardClient.request("list",""));
-        button(switch(filter){case 1->"自身持有";case 2->"已展示";default->"全部可用";},180,8,76,()->{filter=(filter+1)%3;leftPage=rightPage=0;rebuild();});
-        button("关闭",width-52,8,44,this::close);
-        rows=Math.max(1,(height-140)/26);var entries=candidates();int maxPage=Math.max(0,(entries.size()-1)/rows);leftPage=Math.min(leftPage,maxPage);rightPage=Math.min(rightPage,maxPage);
-        for(int row=0;row<rows;row++){
-            int li=leftPage*rows+row,ri=rightPage*rows+row;
-            if(li<entries.size()){var c=entries.get(li);button(shortTitle(c),8,42+row*26,sideW-4,()->select(c.id(),true));}
-            if(ri<entries.size()){var c=entries.get(ri);button(shortTitle(c),rightX,42+row*26,sideW-4,()->select(c.id(),false));}
-        }
-        int pageY=height-88;button("<",8,pageY,25,()->{leftPage=Math.max(0,leftPage-1);rebuild();});button(">",sideW-20,pageY,25,()->{leftPage=Math.min(maxPage,leftPage+1);rebuild();});
-        button("<",rightX,pageY,25,()->{rightPage=Math.max(0,rightPage-1);rebuild();});button(">",width-32,pageY,25,()->{rightPage=Math.min(maxPage,rightPage+1);rebuild();});
-        int actionsY=height-62;int actionW=(width-34)/4;
-        button("出示 A",8,actionsY,actionW,()->confirm("出示后该版本将锁定，并向本次实验全体参与者开放。",()->ClueCardClient.request("publish",a))).active=ClueCardClient.find(a)!=null;
-        button("出示 B",14+actionW,actionsY,actionW,()->confirm("出示后该版本将锁定，并向本次实验全体参与者开放。",()->ClueCardClient.request("publish",b))).active=ClueCardClient.find(b)!=null;
-        button("展示比较",20+actionW*2,actionsY,actionW,()->confirm("将公开左右两张卡，并锁定尚未展示的版本。",()->ClueCardClient.request("compare",a,b,0,null))).active=ClueCardClient.find(a)!=null&&ClueCardClient.find(b)!=null&&!a.equals(b);
-        button("最新比较",26+actionW*3,actionsY,actionW,()->{manual=false;useLatest();rebuild();});
-        button("详情 A",leftX+4,height-88,cardW-12,()->{if(ClueCardClient.find(a)!=null)client.setScreen(new ClueCardReadScreen(this,a));});
-        button("详情 B",rightCardX+4,height-88,cardW-12,()->{if(ClueCardClient.find(b)!=null)client.setScreen(new ClueCardReadScreen(this,b));});
+        clearChildren();layout(790,410);side=Math.max(48,fw*15/100);cardW=(fw-2*side-38)/2;ax=fx+side+14;bx=ax+cardW+10;rows=Math.max(1,(fh-156)/23);
+        button("个人卷宗",fx+fw-140,fy+6,76,ClueCardClient::open);button("关闭",fx+fw-58,fy+6,48,this::close);
+        button(filterLabel(leftFilter),fx+8,fy+49,side,()->{leftFilter=(leftFilter+1)%3;leftPage=0;rebuild();});
+        button(filterLabel(rightFilter),fx+fw-side-8,fy+49,side,()->{rightFilter=(rightFilter+1)%3;rightPage=0;rebuild();});
+        list(true);list(false);
+        button("展开 A",ax,fy+fh-76,cardW,()->{if(ClueCardClient.find(a)!=null)client.setScreen(new ClueCardReadScreen(this,a));});
+        button("展开 B",bx,fy+fh-76,cardW,()->{if(ClueCardClient.find(b)!=null)client.setScreen(new ClueCardReadScreen(this,b));});
+        int bw=(fw-38)/4,y=fy+fh-48;
+        button("出示 A",fx+10,y,bw,()->confirm("出示卡 A 后版本锁定，并向本次参与者开放。",()->ClueCardClient.request("publish",a))).active=ClueCardClient.find(a)!=null;
+        button("出示 B",fx+16+bw,y,bw,()->confirm("出示卡 B 后版本锁定，并向本次参与者开放。",()->ClueCardClient.request("publish",b))).active=ClueCardClient.find(b)!=null;
+        button("展示比较",fx+22+2*bw,y,bw,()->confirm("将公开左右两份记录，并锁定尚未展示的版本。",()->ClueCardClient.request("compare",a,b,0,null))).active=!a.equals(b)&&ClueCardClient.find(a)!=null&&ClueCardClient.find(b)!=null;
+        button("最新比较",fx+28+3*bw,y,bw,()->{manual=false;useLatest();rebuild();});
+        button("‹ 历史",ax,fy+49,(cardW*2+10)/2-3,()->history(-1));button("历史 ›",ax+(cardW*2+10)/2+3,fy+49,(cardW*2+10)/2-3,()->history(1));
     }
-    private void confirm(String message,Runnable action){client.setScreen(new ConfirmScreen(ok->{client.setScreen(this);if(ok)action.run();},Text.literal("确认呈供"),Text.literal(message)));}
-    private String shortTitle(ClueCardStore.Summary c){String label=(c.locked()?"已示 ":"私有 ")+c.fields().title();return textRenderer.trimToWidth(label,sideW-10);}
-    private void select(String id,boolean left){if(left)a=id;else b=id;active=id;manual=true;ClueCardClient.request("view",id);rebuild();}
-    private void useLatest(){var state=ClueCardClient.state;if(state==null)return;a=state.latestA();b=state.latestB();if(a.isEmpty()){a=state.cards().stream().filter(ClueCardStore.Summary::locked).reduce((x,y)->y).map(ClueCardStore.Summary::id).orElse("");}active=a;if(!a.isEmpty())ClueCardClient.request("view",a);if(!b.isEmpty())ClueCardClient.request("view",b);}
-    @Override public void render(DrawContext context,int mouseX,int mouseY,float delta){
-        context.fill(0,0,width,height,0xee111820);
-        drawCard(context,a,leftX+2,39,cardW-4,height-136);drawCard(context,b,rightCardX+2,39,cardW-4,height-136);
-        super.render(context,mouseX,mouseY,delta);
-        String status=notice.isEmpty()?"左右选卡仅影响本人；出示操作才会公开并锁定。":notice;
-        context.drawTextWithShadow(textRenderer,textRenderer.trimToWidth(status,width-16),8,height-30,0xffffd488);
-        context.drawTextWithShadow(textRenderer,Text.literal("实验预览：方块色块快照，不是完整现场摄影；不支持拼图。"),8,height-16,0xff9caab8);
+    private void list(boolean left){int filter=left?leftFilter:rightFilter;var entries=candidates(filter);int max=Math.max(0,(entries.size()-1)/rows);int page=Math.min(left?leftPage:rightPage,max);if(left)leftPage=page;else rightPage=page;int x=left?fx+8:fx+fw-side-8;
+        for(int i=0;i<rows&&page*rows+i<entries.size();i++){var c=entries.get(page*rows+i);button(c.fields().title(),x,fy+74+i*23,side,()->choose(c.id(),left));}
+        button("‹",x,fy+fh-76,(side-4)/2,()->{if(left)leftPage=Math.max(0,leftPage-1);else rightPage=Math.max(0,rightPage-1);rebuild();});button("›",x+(side+4)/2,fy+fh-76,(side-4)/2,()->{if(left)leftPage=Math.min(max,leftPage+1);else rightPage=Math.min(max,rightPage+1);rebuild();});
     }
-    private void drawCard(DrawContext c,String id,int x,int y,int w,int h){
-        c.fill(x,y,x+w,y+h,active.equals(id)&&!id.isEmpty()?0xff334459:0xff25303e);var summary=ClueCardClient.find(id);
-        if(summary==null){c.drawTextWithShadow(textRenderer,"从两侧选择卡片",x+5,y+8,0xffa9b4be);return;}
-        int yy=y+6;c.drawTextWithShadow(textRenderer,textRenderer.trimToWidth(summary.fields().title(),w-10),x+5,yy,0xffffffff);yy+=13;
-        line(c,"时间："+empty(summary.fields().time()),x+5,yy,w-10);yy+=12;line(c,"地点："+empty(summary.fields().place()),x+5,yy,w-10);yy+=12;
-        if(yy>=y+h-8)return;int previewH=Math.min(Math.max(12,Math.min(72,h/3)),y+h-8-yy);drawSnapshot(c,ClueCardClient.DETAILS.get(id),x+5,yy,w-10,previewH);yy+=previewH+5;
-        if(yy>=y+h-4)return;
-        c.enableScissor(x+4,yy,x+w-4,y+h-4);
-        for(var part:textRenderer.wrapLines(Text.literal("事件："+empty(summary.fields().event())),w-10)){c.drawTextWithShadow(textRenderer,part,x+5,yy,0xffe6ecf2);yy+=11;}
-        if(!summary.fields().inference().isEmpty())for(var part:textRenderer.wrapLines(Text.literal("判断："+summary.fields().inference()),w-10)){c.drawTextWithShadow(textRenderer,part,x+5,yy,0xffffd488);yy+=11;}
-        line(c,summary.locked()?"出示者："+summary.presenter():"尚未展示",x+5,yy+2,w-10);c.disableScissor();
+    @Override public void render(DrawContext c,int mx,int my,float delta){background(c,manual?"个人比较 · 选卡不会自动公开":"最新公开比较 · 各自独立浏览");drawCard(c,a,ax,fy+74,cardW,fh-158);drawCard(c,b,bx,fy+74,cardW,fh-158);super.render(c,mx,my,delta);status(c,notice);hoverItem(c,a,ax,mx,my);hoverItem(c,b,bx,mx,my);}
+    private int previewHeight(){return Math.max(0,Math.min(64,fh-238));}
+    private void hoverItem(DrawContext c,String id,int x,int mx,int my){ClueCardItemPreview.hover(c,id,mx,my,x+6,fy+121,cardW-12,previewHeight());}
+    @Override public boolean mouseClicked(double mx,double my,int button){if(button==0)for(boolean left:new boolean[]{true,false}){String id=left?a:b;int x=(left?ax:bx)+6;if(ClueCardItemPreview.isItem(id)&&mx>=x&&mx<x+cardW-12&&my>=fy+121&&my<fy+121+previewHeight()){ClueCardItemPreview.open(this,id);return true;}}return super.mouseClicked(mx,my,button);}
+    private void drawCard(DrawContext c,String id,int x,int y,int w,int h){paper(c,x,y,w,h);var card=ClueCardClient.find(id);if(card==null){line(c,"选择记录",x+6,y+8,w-12,MUTED);return;}
+        rules(c,x+6,y+6,w-12,3,14);line(c,card.fields().title(),x+6,y+6,w-12,INK);line(c,"时："+card.fields().time(),x+6,y+20,w-12,MUTED);line(c,"地："+card.fields().place(),x+6,y+34,w-12,MUTED);
+        int ph=Math.max(0,Math.min(64,h-80));if(ph>8)drawSnapshot(c,ClueCardClient.DETAILS.get(id),x+6,y+47,w-12,ph);
+        int ty=y+52+ph;var lines=textRenderer.wrapLines(Text.literal(card.fields().event()),w-12);rules(c,x+6,ty,w-12,Math.min(lines.size(),Math.max(0,(y+h-16-ty)/11)),11);for(int i=0;i<Math.max(0,(y+h-16-ty)/11)&&i<lines.size();i++)c.drawText(textRenderer,lines.get(i),x+6,ty+i*11,INK,false);
+        line(c,card.locked()?"出示："+card.presenter():"个人记录 · 尚未出示",x+6,y+h-12,w-12,RED);
     }
-    private static String empty(String s){return s.isEmpty()?"未填写":s;}
-    private void line(DrawContext c,String text,int x,int y,int w){c.drawTextWithShadow(textRenderer,textRenderer.trimToWidth(text,w),x,y,0xffcad5df);}
     static void drawSnapshot(DrawContext c,ClueCardPackets.Detail detail,int x,int y,int w,int h){
-        c.fill(x,y,x+w,y+h,0xff111923);if(detail!=null&&!detail.body().isEmpty()){ClueCardBodyPreview.render(c,detail,x,y,w,h);return;}if(detail==null||detail.width()!=64||detail.height()!=48||detail.pixels().length!=3072)return;
+        if(w<1||h<1)return;c.fill(x,y,x+w,y+h,0xff554736);if(ClueCardItemPreview.render(c,detail,x,y,w,h))return;if(detail!=null&&ClueCardEnvironmentPreview.render(c,detail,x,y,w,h))return;if(detail!=null&&!detail.body().isEmpty()){ClueCardBodyPreview.render(c,detail,x,y,w,h);return;}if(detail==null||detail.width()!=64||detail.height()!=48||detail.pixels().length!=3072)return;
+        int fittedW=Math.min(w,h*64/48),fittedH=fittedW*48/64;x+=(w-fittedW)/2;y+=(h-fittedH)/2;w=fittedW;h=fittedH;
         int[] pixels=detail.pixels();for(int row=0;row<48;row++){int from=0;while(from<64){int color=pixels[row*64+from],to=from+1;while(to<64&&pixels[row*64+to]==color)to++;if(color!=0)c.fill(x+from*w/64,y+row*h/48,x+to*w/64,y+(row+1)*h/48,color);from=to;}}
     }
 }

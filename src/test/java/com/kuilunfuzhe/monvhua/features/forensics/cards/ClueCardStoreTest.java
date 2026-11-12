@@ -54,4 +54,31 @@ class ClueCardStoreTest {
     @Test void fieldsCannotInjectControlCodesAndCapacityIsEnforced(){var s=store();var sanitized=new ClueCardStore.Fields("A\u0000B§c","x".repeat(60),null,"event","");assertEquals("ABc",sanitized.title());assertEquals(32,sanitized.time().length());assertEquals("",sanitized.place());
         for(int i=0;i<64;i++)create(s,a);assertThrows(IllegalArgumentException.class,()->create(s,a));
     }
+    @Test void comparisonHistoryIsOrderedBoundedPersistedAndSessionScoped(){var s=store();String first=create(s,a),second=s.duplicate(a,first);
+        assertTrue(s.history(b).isEmpty());
+        for(int i=0;i<70;i++)s.compare(a,i%2==0?first:second,i%2==0?second:first);
+        var history=s.history(b);assertEquals(64,history.size());assertEquals(7,history.getFirst().number());assertEquals(70,history.getLast().number());
+        assertEquals(second,history.getLast().a());assertEquals("甲",history.getLast().presenter());assertTrue(s.history(outsider).isEmpty());
+        var restored=ClueCardStore.CODEC.parse(NbtOps.INSTANCE,ClueCardStore.CODEC.encodeStart(NbtOps.INSTANCE,s).getOrThrow()).getOrThrow();
+        assertEquals(history,restored.history(b));s.start("trial_2",Map.of(b,"乙"));assertTrue(s.history(b).isEmpty());
+    }
+    @Test void woundDirectoryUsesImmutableSnapshotPartAfterRenamingAndCopying(){var s=store();var wound=new NbtCompound();wound.putString("part","left_arm");
+        var wounds=new NbtList();wounds.add(wound);var body=new NbtCompound();body.put("wounds",wounds);var snapshot=new NbtCompound();snapshot.put("body",body);
+        String id=s.importWound(a,"corpse/hit","corpse","遗体",fields("观察"),snapshot);s.edit(a,id,0,new ClueCardStore.Fields("完全改名","","","记录",""));
+        String copy=s.duplicate(a,id);s.publish(a,copy);assertEquals("left_arm",s.summaries(b).getFirst().part());
+        assertTrue(s.summaries(a).stream().allMatch(c->c.part().equals("left_arm")));assertFalse(s.readable(b,id));
+    }
+
+    @Test void constructedSceneIsFrozenPrivateAndRestoredWithoutSpatialAuditLeak(){
+        var s=store();var block=new NbtCompound();block.putDouble("x",-.5);var state=new NbtCompound();state.putString("Name","minecraft:grass_block");block.put("state",state);
+        var blocks=new NbtList();blocks.add(block);var scene=new NbtCompound();scene.put("blocks",blocks);scene.putBoolean("locked_view",true);scene.putDouble("eye_y",1.5);scene.putDouble("tangent",1.2);
+        var snapshot=new NbtCompound();snapshot.put("scene",scene);snapshot.putString("kind","constructed_scene_v2");
+        var audit=new NbtCompound();audit.putDouble("camera_x",234);audit.putString("dimension","minecraft:overworld");
+        String id=s.create(a,fields("现场"),snapshot,audit);scene.putDouble("eye_y",999);assertThrows(IllegalArgumentException.class,()->s.snapshot(b,id));
+        assertEquals(1.5,s.snapshot(a,id).getCompoundOrEmpty("scene").getDouble("eye_y",0));
+        String copy=s.duplicate(a,id);s.publish(a,copy);assertFalse(s.readable(b,id));assertEquals(s.snapshot(a,id),s.snapshot(b,copy));assertFalse(s.snapshot(b,copy).contains("camera_x"));
+        var restored=ClueCardStore.CODEC.parse(NbtOps.INSTANCE,ClueCardStore.CODEC.encodeStart(NbtOps.INSTANCE,s).getOrThrow()).getOrThrow();
+        assertEquals(s.snapshot(b,copy),restored.snapshot(b,copy));assertFalse(restored.readable(outsider,copy));
+    }
+
 }

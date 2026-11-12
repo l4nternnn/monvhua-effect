@@ -53,12 +53,13 @@ public final class EvidenceWorldPreview {
     private static long feedbackUntil;
     private static String feedback="";
     private static KeyBinding interactionKey;
+    private static boolean useHeld;
     private static final class Anchor {
-        final UUID id; final ClientWorld world; final Vec3d center; final Quaternionf rotation; final float width;
+        final boolean board; final UUID id; final ClientWorld world; final Vec3d center; final Quaternionf rotation; final float width;
         EvidencePanel panel; EvidencePanelPlane plane; long created=System.nanoTime(), lastInteraction=0;
-        Anchor(ClientWorld world,EvidenceAnchorStore.Anchor data){this.id=data.id();this.world=world;this.center=new Vec3d(data.x(),data.y(),data.z());this.width=data.width();
+        Anchor(ClientWorld world,EvidenceAnchorStore.Anchor data){this.board=data.board();this.id=data.id();this.world=world;this.center=new Vec3d(data.x(),data.y(),data.z());this.width=data.width();
             this.rotation=new Quaternionf().rotationYXZ((float)Math.toRadians(data.yaw()),(float)Math.toRadians(data.pitch()),(float)Math.toRadians(data.roll()));updatePlane();}
-        void ensurePanel(){if(panel==null){panel=new EvidencePanel(true,()->remove(this));panel.resize(EvidencePanelTexture.LOGICAL_WIDTH,EvidencePanelTexture.LOGICAL_HEIGHT);}}
+        void ensurePanel(){if(panel==null){panel=new EvidencePanel(true,()->remove(this));if(board)panel.showClueBoard();panel.resize(EvidencePanelTexture.LOGICAL_WIDTH,EvidencePanelTexture.LOGICAL_HEIGHT);}}
         void updatePlane(){plane=new EvidencePanelPlane(new Vector3d(center.x,center.y,center.z),rotation,width,width*9/16);}
         void touch(){lastInteraction=System.nanoTime();}
     }
@@ -75,6 +76,7 @@ public final class EvidenceWorldPreview {
         interactionKey=KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.evidence_world_interact",InputUtil.Type.KEYSYM,GLFW.GLFW_KEY_UNKNOWN,"category.monvhua"));
         ClientCommandRegistrationCallback.EVENT.register((dispatcher,access)->dispatcher.register(literal("monvhua-evidence-preview")
             .then(literal("place").executes(ctx->placeInFront()))
+            .then(literal("place_board").executes(ctx->edit("place_board","",0,0,0,0,0,0,panelWidth)))
             .then(literal("place_at").then(argument("x",DoubleArgumentType.doubleArg()).then(argument("y",DoubleArgumentType.doubleArg()).then(argument("z",DoubleArgumentType.doubleArg()).then(argument("yaw",FloatArgumentType.floatArg(-360,360)).then(argument("pitch",FloatArgumentType.floatArg(-360,360)).then(argument("roll",FloatArgumentType.floatArg(-360,360)).executes(ctx->placeAt(
                 DoubleArgumentType.getDouble(ctx,"x"),DoubleArgumentType.getDouble(ctx,"y"),DoubleArgumentType.getDouble(ctx,"z"),FloatArgumentType.getFloat(ctx,"yaw"),FloatArgumentType.getFloat(ctx,"pitch"),FloatArgumentType.getFloat(ctx,"roll"))))))))))
             .then(literal("rotate").then(argument("yaw",FloatArgumentType.floatArg(-360,360))
@@ -89,29 +91,39 @@ public final class EvidenceWorldPreview {
             .then(literal("resolution").then(argument("scale",IntegerArgumentType.integer(1,4)).executes(ctx->{resolutionScale=IntegerArgumentType.getInteger(ctx,"scale");releaseGraphics();ctx.getSource().sendFeedback(Text.literal(settings()));return 1;})))
             .then(literal("status").executes(ctx->{ctx.getSource().sendFeedback(Text.literal(settings()));return 1;}))));
         ClientTickEvents.END_CLIENT_TICK.register(client->{
+            if(!client.options.useKey.isPressed())useHeld=false;
             if(client.world!=world){clearAll();world=client.world;reconcile();}
             if(client.player==null||client.currentScreen!=null)return;
             if(anchors.isEmpty()&&!saved.isEmpty())reconcile();
             active=chooseActive(client);
-            while(interactionKey.wasPressed()){
-                Anchor aimed=aimed();if(aimed==null)continue;
-                if(aimed!=active||aimed.panel==null){active=aimed;active.touch();active.ensurePanel();feedback="已激活面板";feedbackUntil=System.nanoTime()+900_000_000L;continue;}
-                var hit=hit(active);if(hit!=null){
-                active.touch(); double x=hit.u()*EvidencePanelTexture.LOGICAL_WIDTH,y=hit.v()*EvidencePanelTexture.LOGICAL_HEIGHT;
-                String label=active.panel==null?"":active.panel.worldHoverLabel(x,y);boolean handled=active.panel.worldClick(x,y);
-                feedback=handled?"已点击："+label:"此处没有可操作控件，请对准按钮、轮盘或卡片";feedbackUntil=System.nanoTime()+900_000_000L;
-            }}
+            while(interactionKey.wasPressed())interactAimed();
             if(client.world==null)EvidenceSessionRouter.clear();
         });
         HudRenderCallback.EVENT.register((draw,tick)->{
             var client=MinecraftClient.getInstance();if(client.currentScreen!=null||client.options.hudHidden)return;var aimed=aimed();if(aimed==null)return;var hit=hit(aimed);
             String label=aimed!=active||aimed.panel==null?"激活此面板":aimed.panel.worldHoverLabel(hit.u()*EvidencePanelTexture.LOGICAL_WIDTH,hit.v()*EvidencePanelTexture.LOGICAL_HEIGHT);
-            String hint=System.nanoTime()<feedbackUntil?feedback:label.isEmpty()?"已瞄准面板 · 请对准按钮、轮盘或卡片":interactionKey.isUnbound()?"已瞄准："+label+" · 请绑定交互键":"按 ["+interactionKey.getBoundKeyLocalizedText().getString()+"] "+label;
+            String hint=System.nanoTime()<feedbackUntil?feedback:label.isEmpty()?"已瞄准面板 · 请对准按钮、轮盘或卡片":"右键（"+client.options.useKey.getBoundKeyLocalizedText().getString()+"）："+label;
             int cx=draw.getScaledWindowWidth()/2,y=draw.getScaledWindowHeight()/2+18,half=client.textRenderer.getWidth(hint)/2;draw.fill(cx-half-5,y-3,cx+half+5,y+12,0xC0101820);draw.drawCenteredTextWithShadow(client.textRenderer,hint,cx,y,label.isEmpty()?0xFFCBD5DF:0xFFFFD65A);
         });
         WorldRenderEvents.AFTER_ENTITIES.register(EvidenceWorldPreview::render);
         ClientLifecycleEvents.CLIENT_STOPPING.register(client->clearAll());
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(new SimpleSynchronousResourceReloadListener(){public Identifier getFabricId(){return Identifier.of("monvhua","evidence_world_preview");}public void reload(ResourceManager manager){reload=true;}});
+    }
+    /** Consume the whole press so holding use cannot confirm a publication or use an item behind the UI. */
+    public static boolean usePanel(){
+        var client=MinecraftClient.getInstance();
+        if(client.player==null||client.currentScreen!=null)return false;
+        if(useHeld)return true;
+        if(!interactAimed())return false;
+        useHeld=true;return true;
+    }
+    private static boolean interactAimed(){
+        var aimed=aimed();if(aimed==null)return false;
+        if(aimed!=active||aimed.panel==null){active=aimed;active.touch();active.ensurePanel();feedback="已激活面板";feedbackUntil=System.nanoTime()+900_000_000L;return true;}
+        var hit=hit(active);if(hit==null)return false;
+        active.touch();double x=hit.u()*EvidencePanelTexture.LOGICAL_WIDTH,y=hit.v()*EvidencePanelTexture.LOGICAL_HEIGHT;
+        String label=active.panel.worldHoverLabel(x,y);boolean handled=active.panel.worldClick(x,y);
+        feedback=handled?"已点击："+label:"此处没有可操作控件，请对准按钮、轮盘或卡片";feedbackUntil=System.nanoTime()+900_000_000L;return true;
     }
     private static int edit(String action,String id,double x,double y,double z,float yaw,float pitch,float roll,float width){
         if(!net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.canSend(EvidenceAnchorNetwork.Edit.ID))return 0;
@@ -125,7 +137,7 @@ public final class EvidenceWorldPreview {
         for(var data:saved){if(!data.owner().equals(c.player.getUuid())||!data.dimension().equals(dim))continue;keep.add(data.id());
             var old=anchors.stream().filter(a->a.id.equals(data.id())).findFirst().orElse(null);
             var next=new Anchor(c.world,data);
-            if(old!=null&&old.center.equals(next.center)&&old.rotation.equals(next.rotation)&&old.width==next.width)continue;
+            if(old!=null&&old.center.equals(next.center)&&old.rotation.equals(next.rotation)&&old.width==next.width&&old.board==next.board)continue;
             if(old!=null){next.panel=old.panel;next.created=old.created;next.lastInteraction=old.lastInteraction;anchors.remove(old);if(active==old)active=next;}
             anchors.add(next);
         }
@@ -145,6 +157,6 @@ public final class EvidenceWorldPreview {
     private static void vertex(VertexConsumer out,net.minecraft.client.util.math.MatrixStack.Entry matrix,float x,float y,float u,float v,boolean content){out.vertex(matrix,x,y,0).color(content?255:18,content?255:24,content?255:30,255).texture(u,v).overlay(OverlayTexture.DEFAULT_UV).light(0xF000F0).normal(matrix,0,0,1);}
     private static void remove(Anchor a){edit("remove",a.id.toString(),0,0,0,0,0,0,0);}
     private static void removeActive(){var target=aimed();if(target==null)target=active;if(target!=null)remove(target);}
-    private static void clearAll(){for(var a:anchors)if(a.panel!=null)a.panel.dispose();anchors.clear();active=null;releaseGraphics();}
+    private static void clearAll(){useHeld=false;for(var a:anchors)if(a.panel!=null)a.panel.dispose();anchors.clear();active=null;releaseGraphics();}
     private static void releaseGraphics(){if(texture!=null){texture.close();texture=null;}if(allocator!=null){allocator.close();allocator=null;consumers=null;}}
 }

@@ -47,6 +47,17 @@ public final class EvidenceViewportFrame {
         projection=new Matrix4f().perspective(half*2,aspect,.005f,distance+radius*4);
         combined=new Matrix4f(projection).mul(view);
     }
+    /** Fixed snapshot camera: never reframe based on preview size or captured geometry. */
+    public static EvidenceViewportFrame fixed(int left,int top,int width,int height,Vector3f eye,float verticalFov){
+        return new EvidenceViewportFrame(left,top,width,height,eye,verticalFov);
+    }
+    private EvidenceViewportFrame(int left,int top,int width,int height,Vector3f position,float verticalFov){
+        this.left=left;this.top=top;this.width=Math.max(1,width);this.height=Math.max(1,height);
+        eye=new Vector3f(position);center=new Vector3f();orientation=new org.joml.Quaternionf();unitsPerPixel=0;
+        view=com.kuilunfuzhe.monvhua.features.forensics.cards.ClueSceneCamera.view(eye);
+        projection=com.kuilunfuzhe.monvhua.features.forensics.cards.ClueSceneCamera.projection(verticalFov);
+        combined=new Matrix4f(projection).mul(view);
+    }
     /** Translate the camera opposite the drag, so the scene follows the pointer at target depth. */
     public Vector3f pannedTarget(float dx,float dy) {
         return orientation.transform(new Vector3f(-dx*unitsPerPixel,dy*unitsPerPixel,0)).add(center);

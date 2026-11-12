@@ -360,6 +360,7 @@ public final class Forensics {
         List<NbtCompound> collected = InspectionRecords.strongest(corpse.getListOrEmpty(corpse.contains("inspection_hits") ? "inspection_hits" : "hits"), part, 3);
         ForensicStore.get(player.getServer()).collect(player.getUuid(), b.getString("id", ""), part, collected);
         EvidenceSnapshots.observe(player, display, part);
+        com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardService.onWoundsObserved(player,b.getString("id", ""));
         if (lines.isEmpty()) lines.add("未在该部位记录到可定位伤情；这不代表完全没有损伤");
         if (com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTransferService.enabled()) {
             String slot = switch (part) { case "torso" -> "torso"; case "left_arm", "right_arm" -> "hands";

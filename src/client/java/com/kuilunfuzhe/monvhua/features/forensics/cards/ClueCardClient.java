@@ -10,9 +10,10 @@ public final class ClueCardClient {
     static final Map<String,ClueCardPackets.Detail> DETAILS=new HashMap<>();
     private ClueCardClient(){}
     public static void initialize(){
-        ClientPlayConnectionEvents.DISCONNECT.register((handler,client)->{state=null;DETAILS.clear();ClueCardBodyPreview.clear();});
+        ClueCaseManagerClient.initialize();
+        ClientPlayConnectionEvents.DISCONNECT.register((handler,client)->{state=null;DETAILS.clear();ClueCardBodyPreview.clear();ClueCardEnvironmentPreview.clear();ClueCardItemPreview.clear();});
         ClientPlayNetworking.registerGlobalReceiver(ClueCardPackets.State.ID,(packet,context)->context.client().execute(()->{
-            if(state!=null&&!state.session().equals(packet.session())){DETAILS.clear();ClueCardBodyPreview.clear();}state=packet;
+            if(state!=null&&!state.session().equals(packet.session())){DETAILS.clear();ClueCardBodyPreview.clear();ClueCardEnvironmentPreview.clear();ClueCardItemPreview.clear();}state=packet;
             if(packet.detail()!=null)DETAILS.put(packet.detail().id(),packet.detail());
             var client=context.client();
             if(packet.open()){
@@ -24,6 +25,7 @@ public final class ClueCardClient {
             else if(client.currentScreen instanceof ClueCardScreen screen)screen.receive(packet);
             else if(client.currentScreen instanceof ClueCardPersonalScreen screen)screen.receive(packet);
             else if(client.currentScreen instanceof ClueCardWorkshopScreen screen)screen.receive(packet);
+            else if(client.currentScreen instanceof ClueCardItemWorkshopScreen screen)screen.receive(packet);
             else if(client.currentScreen instanceof ClueCardEditorScreen editor)editor.receive(packet);
             if(!packet.notice().isEmpty()&&client.player!=null)client.player.sendMessage(Text.literal(packet.notice()),false);
         }));
@@ -35,4 +37,5 @@ public final class ClueCardClient {
     static void request(String op,String id){request(op,id,"",0,null);}
     static void open(){request("list","");MinecraftClient.getInstance().setScreen(new ClueCardPersonalScreen(""));}
     static void openBoard(){request("list","");MinecraftClient.getInstance().setScreen(new ClueCardScreen());}
+    static void openBoard(String selected){request("list","");MinecraftClient.getInstance().setScreen(new ClueCardScreen(selected));}
 }
