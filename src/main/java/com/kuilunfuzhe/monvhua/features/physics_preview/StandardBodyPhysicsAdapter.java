@@ -24,15 +24,19 @@ public final class StandardBodyPhysicsAdapter {
         return matrix(id,p,false);
     }
     public static Matrix4f matrix(String id,PhysicsPoseDocument.Pose p,boolean slim) {
+        return matrix(id,p,slim,1);
+    }
+    public static Matrix4f matrix(String id,PhysicsPoseDocument.Pose p,boolean slim,float scale) {
+        CorpseScale.require(scale);
         var c=center(id,slim).div(16);
-        return new Matrix4f().translate(p.x(),p.y(),p.z()).rotate(p.rotation()).rotateX((float)Math.PI).translate(-c.x,-c.y,-c.z);
+        return new Matrix4f().translate(p.x(),p.y(),p.z()).rotate(p.rotation()).rotateX((float)Math.PI).scale(scale).translate(-c.x,-c.y,-c.z);
     }
     public static Map<String,Matrix4f> matrices(PhysicsPoseDocument d) {
         return matrices(d,false);
     }
     public static Map<String,Matrix4f> matrices(PhysicsPoseDocument d,boolean slim) {
         Map<String,Matrix4f> result=new LinkedHashMap<>();
-        for(String id:PhysicsPoseDocument.IDS)result.put(id,matrix(id,d.poses().get(id),slim));
+        for(String id:d.poses().keySet())result.put(id,matrix(id,d.poses().get(id),slim,d.scale()));
         return Collections.unmodifiableMap(result);
     }
     public static Vector3f size(String id,boolean slim){var size=size(id);if(slim&&id.endsWith("arm"))size.x=3f/16;return size;}

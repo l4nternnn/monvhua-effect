@@ -89,7 +89,7 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
 
     public java.util.List<EvidenceSurface> physicsPreviewSurfaces(Map<String,Matrix4f> transforms, Data data) {
         Data neutral=new Data(data.layer(),data.texture(),data.armModel(),new NbtCompound());
-        return evidenceSurfaces(neutral,new Matrix4f()).stream().map(surface ->
+        return evidenceSurfaces(neutral,new Matrix4f()).stream().filter(s->transforms.containsKey(physicsPart(s.name()))).map(surface ->
                 new EvidenceSurface(surface.name(),surface.box(),new Matrix4f(transforms.get(physicsPart(surface.name()))).mul(surface.transform()))).toList();
     }
 

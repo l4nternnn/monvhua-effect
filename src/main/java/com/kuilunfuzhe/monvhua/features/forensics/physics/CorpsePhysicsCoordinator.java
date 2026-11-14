@@ -61,15 +61,15 @@ public final class CorpsePhysicsCoordinator {
         owner=server;provider=backend;CorpseProfileManager.start(server);sampleTick=Long.MIN_VALUE;terrainTick=Long.MIN_VALUE;terrainCursor=0;sampled=0;last="已连接本地计算服务";
     }
     public static synchronized void detach() {
-        epoch++;automatic=false;CorpseTransportController.reset();CorpseGrabController.reset();CorpseResidentManager.reset();continuous=defaultContinuous();CorpsePhysicsDiagnostics.clear();CorpseProfileManager.reset();CorpseHistoryController.reset();pausedTicks.clear();
+        epoch++;automatic=false;CorpseSeparationService.reset();CorpseTransportController.reset();CorpseGrabController.reset();CorpseResidentManager.reset();continuous=defaultContinuous();CorpsePhysicsDiagnostics.clear();CorpseProfileManager.reset();CorpseHistoryController.reset();pausedTicks.clear();
         for(var job:jobs.values()){job.future.cancel(true);if(job.session!=null)job.session.close();}jobs.clear();views.clear();handoffExpiry.clear();progressTicks.clear();progressSteps.clear();advanceTicks.clear();
         var old=provider;provider=null;owner=null;if(old!=null)CompletableFuture.runAsync(old::close);
         last="世界已断开；自动生成关闭";
     }
     public static void unavailable(String reason){last=reason;}
     public static CorpsePhysicsBridge diagnosticProvider(MinecraftServer server){return server==owner?provider:null;}
-    public static boolean simulating(ItemDisplayEntity display){return display!=null&&(jobs.containsKey(display.getUuid())||CorpseResidentManager.moving(display.getUuid()));}
-    public static boolean pending(ItemDisplayEntity display){return display!=null&&(jobs.containsKey(display.getUuid())||CorpseResidentManager.moving(display.getUuid())||CorpseHistoryController.locked(display.getUuid()));}
+    public static boolean simulating(ItemDisplayEntity display){return display!=null&&(CorpseSeparationService.busy(display.getUuid())||jobs.containsKey(display.getUuid())||CorpseResidentManager.moving(display.getUuid()));}
+    public static boolean pending(ItemDisplayEntity display){return display!=null&&(CorpseSeparationService.busy(display.getUuid())||jobs.containsKey(display.getUuid())||CorpseResidentManager.moving(display.getUuid())||CorpseHistoryController.locked(display.getUuid()));}
     public static boolean localControl(MinecraftServer server){return server==owner&&provider!=null;}
     public static boolean validateResume(UUID id){
         if(CorpseResidentManager.contains(id))return CorpseResidentManager.resume(id);
@@ -87,6 +87,7 @@ public final class CorpsePhysicsCoordinator {
                 LOGGER.info("Server physics attached; native readiness: {}",backend.status());
             }catch(ReflectiveOperationException|LinkageError error){unavailable("物理核心不可用，保留静态遗体："+error.getClass().getSimpleName());LOGGER.error("Physics backend unavailable",error);}
         });
+        CorpseSeparationService.initialize();
         CorpsePhysicsNetwork.initialize();
         CorpseHistoryController.initialize();CorpseGrabController.initialize();
         ServerTickEvents.END_SERVER_TICK.register(server->{
@@ -180,10 +181,10 @@ public final class CorpsePhysicsCoordinator {
     public static void onDeath(ServerPlayerEntity player,ItemDisplayEntity display,String part) {
         var motion=DeathMotionContext.consume(player,display==null?"":Forensics.binding(display.getItemStack()).getString("id",""));
         if(!automatic||owner!=player.getServer()||!part.equals("all")||display==null)return;
-        if(player.getScale()!=1||player.hasVehicle()||player.isTouchingWater()||player.isGliding()
+        if(!com.kuilunfuzhe.monvhua.features.physics_preview.CorpseScale.supported(player.getScale())||player.hasVehicle()||player.isTouchingWater()||player.isGliding()
                 ||player.getPose()!=EntityPose.STANDING&&player.getPose()!=EntityPose.DYING
                 ||!BodyHitGeometry.normalGravity(com.kuilunfuzhe.monvhua.features.gravity.GravityMagic.getSurfaceGravityDirection(player))) {
-            CorpsePhysicsDiagnostics.rejected(INPUT_REJECTED);failed++;last="死亡姿态/尺度/重力暂不支持，沿用旧尸体";report(display,"FALLBACK_FINAL",last);return;
+            CorpsePhysicsDiagnostics.rejected(INPUT_REJECTED);failed++;last="死亡姿态/尺度/重力暂不支持，沿用静态遗体；scale="+player.getScale()+"，物理范围为 0.5–2.0";report(display,"FALLBACK_FINAL",last);return;
         }
         // Knockback/teleports may clear onGround before the death callback even while feet
         // still touch the floor. Test actual nearby collision support without moving the body.
@@ -245,12 +246,13 @@ public final class CorpsePhysicsCoordinator {
             if(CorpseCarryService.isCarried(display)||!Forensics.valid(world,display.getItemStack(),display.getUuid().toString())
                     ||!Forensics.binding(display.getItemStack()).getString("part","").equals("all"))throw new IllegalArgumentException("载体不可用");
             var data=CorpsePoseRecord.data(display.getItemStack());
-            if(data.getFloat("corpse_scale",1)!=1||data.getString("body_pose_mode","").equals("true_skeletal"))throw new IllegalArgumentException("非标准模型");
+            com.kuilunfuzhe.monvhua.features.physics_preview.CorpseScale.require(data.getFloat("corpse_scale",1));
+            if(data.getString("body_pose_mode","").equals("true_skeletal"))throw new IllegalArgumentException("非标准模型");
             for(String key:data.getKeys())if(key.startsWith("pose_")||key.startsWith("bend_"))
                 if(data.getFloat(key,Float.NaN)!=(key.endsWith("_scale")?1:0))throw new IllegalArgumentException("非中性局部姿态："+key);
             long start=System.nanoTime();var snapshot=CorpseTerrainSnapshot.capture(world,origin);
             var request=new CorpsePhysicsBridge.Request(slim,-MathHelper.wrapDegrees(yaw),speed,snapshot,
-                    motion==null?null:new CorpsePhysicsBridge.Motion(motion.vx(),motion.vz(),motion.dx(),motion.dz(),motion.tilt(),motion.profile().motion().angularSpeed()),motion==null?null:motion.profile());
+                    motion==null?null:new CorpsePhysicsBridge.Motion(motion.vx(),motion.vz(),motion.dx(),motion.dz(),motion.tilt(),motion.profile().motion().angularSpeed()),motion==null?null:motion.profile(),data.getFloat("corpse_scale",1),CorpsePoseRecord.read(data).map(p->p.parts().keySet()).orElse(Set.copyOf(PhysicsPoseDocument.IDS)));
             captured=request;
             if(continuous)return CorpseResidentManager.open(display,origin,request,backend,motion);
             var session=backend.open(request);opened=session;
@@ -304,7 +306,7 @@ public final class CorpsePhysicsCoordinator {
             stage=TERRAIN_CHANGED;
             if(!job.snapshot.equals(CorpseTerrainSnapshot.capture(job.world,job.origin)))throw new IllegalArgumentException("现场碰撞形状已变化");
             stage=STATIC_COMMIT_REJECTED;
-            var record=new CorpsePoseRecord(Math.addExact(job.revision,1),"generated",job.slim?"slim":"default",result.poses(),result.definition());
+            var record=new CorpsePoseRecord(Math.addExact(job.revision,1),"generated",job.slim?"slim":"default",result.poses(),result.definition(),result.scale());
             CorpsePoseService.applyGenerated(job.display,record,job.origin);
             CorpseHistoryController.completed(job.display);
             var store=ForensicStore.get(job.world.getServer());var diagnostics=new NbtCompound();

@@ -95,9 +95,9 @@ public final class LiveCorpseRenderer {
                 for(var f:timed){if(f.tick()<=time){a=f.pose();at=f.tick();}if(f.tick()>=time){b=f.pose();bt=f.tick();break;}}
                 float alpha=at==bt?0:(float)Math.clamp((time-at)/(bt-at),0,1);
                 var parts=new LinkedHashMap<String,PhysicsPoseDocument.Pose>();
-                for(String id:PhysicsPoseDocument.IDS){var x=a.poses().get(id);var y=b.poses().get(id);var q=x.rotation().slerp(y.rotation(),alpha);
+                for(String id:last.poses().keySet()){var x=a.poses().get(id);var y=b.poses().get(id);var q=x.rotation().slerp(y.rotation(),alpha);
                     parts.put(id,new PhysicsPoseDocument.Pose(x.x()+(y.x()-x.x())*alpha,x.y()+(y.y()-x.y())*alpha,x.z()+(y.z()-x.z())*alpha,q.x,q.y,q.z,q.w));}
-                pose=new PhysicsPoseDocument("SIMULATING",last.step(),parts,0,"interpolated",last.definition());
+                pose=new PhysicsPoseDocument("SIMULATING",last.step(),parts,0,"interpolated",last.definition(),last.scale());
             }
             var history=CorpseHistoryController.get(v.display());
             if(history!=null&&history.frozen()){

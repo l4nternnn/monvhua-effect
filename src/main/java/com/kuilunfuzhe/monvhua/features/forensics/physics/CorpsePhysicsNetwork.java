@@ -29,6 +29,21 @@ public final class CorpsePhysicsNetwork {
     }
     private static final Map<UUID,Integer> lastInput=new HashMap<>(),lastAction=new HashMap<>();
     public static boolean validInput(double wheel,double x,double y,double z){return Double.isFinite(wheel)&&Double.isFinite(x)&&Double.isFinite(y)&&Double.isFinite(z)&&Math.abs(wheel)<=8&&x*x+y*y+z*z<=4.000001;}
+    public static NbtCompound encodeGrabStatus(CorpseGrabController.Status status){
+        var n=new NbtCompound();n.putString("id",status.id().toString());n.putString("part",status.part());n.putBoolean("local",status.local());n.putBoolean("frozen",status.frozen());n.putDouble("distance",status.distance());
+        n.put("actual",point(status.actual()));n.put("target",point(status.target()));return n;
+    }
+    public static CorpseGrabController.Status decodeGrabStatus(NbtCompound n){
+        if(n.isEmpty())return null;
+        try{return new CorpseGrabController.Status(UUID.fromString(n.getString("id","")),n.getString("part","torso"),n.getBoolean("local",false),n.getBoolean("frozen",false),n.getDouble("distance",0),point(n.getCompoundOrEmpty("actual")),point(n.getCompoundOrEmpty("target")),"");}
+        catch(IllegalArgumentException error){return null;}
+    }
+    private static NbtCompound point(Vec3d p){var n=new NbtCompound();n.putDouble("x",p.x);n.putDouble("y",p.y);n.putDouble("z",p.z);return n;}
+    private static Vec3d point(NbtCompound n){
+        double x=n.getDouble("x",Double.NaN),y=n.getDouble("y",Double.NaN),z=n.getDouble("z",Double.NaN);
+        if(!Double.isFinite(x)||!Double.isFinite(y)||!Double.isFinite(z))throw new IllegalArgumentException("Invalid grab marker");
+        return new Vec3d(x,y,z);
+    }
     public static void initialize(){
         PayloadTypeRegistry.playS2C().register(Snapshot.ID,Snapshot.CODEC);PayloadTypeRegistry.playC2S().register(Input.ID,Input.CODEC);PayloadTypeRegistry.playC2S().register(Timeline.ID,Timeline.CODEC);
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPED.register(server->{lastInput.clear();lastAction.clear();});
@@ -71,14 +86,14 @@ public final class CorpsePhysicsNetwork {
                 for(var view:views){
                     if(list.size()>=24||!view.dimension().equals(player.getWorld().getRegistryKey().getValue().toString()))continue;
                     var entity=player.getWorld().getEntity(view.display());if(entity==null||!PlayerLookup.tracking(entity).contains(player))continue;
-                    var frames=view.session().published();if(frames.isEmpty())continue;var latest=frames.getLast();var pose=latest.pose();var torso=pose.poses().get("torso");if(torso==null||player.getPos().squaredDistanceTo(view.origin().add(torso.x(),torso.y(),torso.z()))>64*64)continue;
+                    var frames=view.session().published();if(frames.isEmpty())continue;var latest=frames.getLast();var pose=latest.pose();var torso=pose.poses().get(pose.rootPart());if(torso==null||player.getPos().squaredDistanceTo(view.origin().add(torso.x(),torso.y(),torso.z()))>64*64)continue;
                     var history=CorpseHistoryController.get(view.display());boolean frozen=history!=null&&history.frozen();
                     long poseTick=latest.tick();
                     if(frozen){var selected=history.pose();if(selected!=null){pose=selected;poseTick=history.selectedFrame<0?history.last():history.nearest(history.selectedFrame);}}
-                    var n=new NbtCompound();n.putString("id",view.display().toString());n.putString("victim",view.victim()==null?"":view.victim().toString());n.putDouble("x",view.origin().x);n.putDouble("y",view.origin().y);n.putDouble("z",view.origin().z);n.putBoolean("slim",view.slim());n.putLong("revision",frozen?0:view.committedRevision());n.putBoolean("frozen",frozen);n.putLong("tick",poseTick);n.putInt("step",pose.step());n.putString("definition",pose.definition());
-                    var parts=new NbtList();for(var id:com.kuilunfuzhe.monvhua.features.physics_preview.PhysicsPoseDocument.IDS){var t=pose.poses().get(id);var part=new NbtCompound();part.putString("id",id);part.putFloat("x",t.x());part.putFloat("y",t.y());part.putFloat("z",t.z());part.putFloat("qx",t.qx());part.putFloat("qy",t.qy());part.putFloat("qz",t.qz());part.putFloat("qw",t.qw());parts.add(part);}n.put("parts",parts);list.add(n);
+                    var n=new NbtCompound();n.putString("id",view.display().toString());n.putString("victim",view.victim()==null?"":view.victim().toString());n.putDouble("x",view.origin().x);n.putDouble("y",view.origin().y);n.putDouble("z",view.origin().z);n.putBoolean("slim",view.slim());n.putLong("revision",frozen?0:view.committedRevision());n.putBoolean("frozen",frozen);n.putBoolean("pinned","none".equals(view.session().dynamicPart()));n.putLong("tick",poseTick);n.putInt("step",pose.step());n.putString("definition",pose.definition());n.putFloat("scale",pose.scale());n.putLong("topology",com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.data(view.skin()).getLong("corpse_topology_revision",0));
+                    var parts=new NbtList();for(var id:pose.poses().keySet()){var t=pose.poses().get(id);var part=new NbtCompound();part.putString("id",id);part.putFloat("x",t.x());part.putFloat("y",t.y());part.putFloat("z",t.z());part.putFloat("qx",t.qx());part.putFloat("qy",t.qy());part.putFloat("qz",t.qz());part.putFloat("qw",t.qw());parts.add(part);}n.put("parts",parts);list.add(n);
                 }root.put("views",list);
-                var status=CorpseGrabController.status(player.getUuid());if(status!=null){var n=new NbtCompound();n.putString("id",status.id().toString());n.putString("part",status.part());n.putBoolean("local",status.local());n.putBoolean("frozen",status.frozen());n.putDouble("distance",status.distance());root.put("grab",n);}
+                var status=CorpseGrabController.status(player.getUuid());if(status!=null)root.put("grab",encodeGrabStatus(status));
                 var timeline=CorpseHistoryController.timeline(player.getUuid());if(timeline!=null){var n=new NbtCompound();n.putString("id",timeline.id.toString());n.putBoolean("confirmed",timeline.confirmed());n.putBoolean("manual",timeline.manual);n.putBoolean("active",timeline.active);n.putLong("selected",timeline.selectedFrame);n.putLongArray("steps",timeline.steps().stream().limit(721).mapToLong(Long::longValue).toArray());root.put("timeline",n);}
                 ServerPlayNetworking.send(player,new Snapshot(root));
             }

@@ -12,7 +12,10 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
     private volatile long lastNativeNanos;
     private final PhysicsService service=new PhysicsService();
     public LocalCorpsePhysicsProvider(){
-        // Resolve the new class before attaching: old optional cores fail closed.
+        // Resolve scale support before attaching: old optional cores fail closed.
+        try {RagdollDefinition.class.getMethod("standard",float.class); RagdollDefinition.class.getMethod("scale");RagdollDefinition.class.getMethod("subset",java.util.Set.class); PhysicsService.class.getMethod("prepareContinuous",RagdollRequest.class,RagdollMotionState.class);}
+        catch(NoSuchMethodException e){throw new LinkageError("Unsupported scale core",e);}
+        if(RagdollMotionState.TRANSFER_VERSION!=1)throw new LinkageError("Unsupported transfer core");
         if(RagdollInitialMotion.class.getRecordComponents().length!=6)throw new LinkageError("Unsupported motion core");
         if(RagdollRequest.class.getRecordComponents().length!=8||!solver(CorpsePhysicsProfiles.F5).equals(RagdollSolverProfile.F5))throw new LinkageError("Unsupported profile core/baseline");
         if(RagdollDiagnosticDocument.Document.class.getRecordComponents().length!=13)throw new LinkageError("Unsupported diagnostic core");
@@ -29,8 +32,8 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
     public int apiVersion(){return API_VERSION;}
     public String diagnostic(Request request,PhysicsPoseDocument result,Metrics metrics,String stage,boolean reproduction){
         var terrain=new TerrainSnapshotData(request.terrain().stream().map(b->new BoxScene.StaticBox(b.x0(),b.y0(),b.z0(),b.x1(),b.y1(),b.z1())).toList());
-        var definition=request.slim()?RagdollDefinition.slim():RagdollDefinition.standard();
-        RagdollResult.Frame frame=result==null?null:new RagdollResult.Frame(result.step(),PhysicsPoseDocument.IDS.stream().map(id->{var p=result.poses().get(id);return new RagdollResult.Pose(id,new BoxTrace.Frame(p.x(),p.y(),p.z(),p.qx(),p.qy(),p.qz(),p.qw()));}).toList());
+        var definition=(request.slim()?RagdollDefinition.slim(request.scale()):RagdollDefinition.standard(request.scale())).subset(request.parts());
+        RagdollResult.Frame frame=result==null?null:new RagdollResult.Frame(result.step(),result.poses().keySet().stream().map(id->{var p=result.poses().get(id);return new RagdollResult.Pose(id,new BoxTrace.Frame(p.x(),p.y(),p.z(),p.qx(),p.qy(),p.qz(),p.qw()));}).toList());
         // Keep diagnostic part order identical to the pinned solver definition for exact replay equality.
         if(frame!=null){var byId=new java.util.HashMap<String,RagdollResult.Pose>();for(var p:frame.parts())byId.put(p.id(),p);frame=new RagdollResult.Frame(frame.step(),definition.parts().stream().map(p->byId.get(p.id())).toList());}
         var value=new RagdollDiagnosticDocument.Result(result==null?"NO_RESULT":result.outcome(),frame,metrics.anchor(),metrics.penetration(),metrics.limit(),result==null?stage:result.reason());
@@ -39,7 +42,7 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
     public String status(){return service.status()+"; pending="+service.pendingCount()+"; solveElapsedMs="+(lastNativeNanos/1_000_000.0);}
     public CompletableFuture<PhysicsPoseDocument> solve(Request request) {
         var terrain=new TerrainSnapshotData(request.terrain().stream().map(b->new BoxScene.StaticBox(b.x0(),b.y0(),b.z0(),b.x1(),b.y1(),b.z1())).toList());
-        var definition=request.slim()?RagdollDefinition.slim():RagdollDefinition.standard();
+        var definition=(request.slim()?RagdollDefinition.slim(request.scale()):RagdollDefinition.standard(request.scale())).subset(request.parts());
         // Feet remain at the sampled origin. The mesh inset supplies contact clearance.
         var input=input(request,definition,terrain);
         var nativeFuture=service.solve(input);var result=new CompletableFuture<PhysicsPoseDocument>();
@@ -49,18 +52,27 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
             lastNativeNanos=r.elapsedNanos();
             var poses=new LinkedHashMap<String,PhysicsPoseDocument.Pose>();
             for(var part:r.finalPose().parts()){var p=part.transform();poses.put(part.id(),new PhysicsPoseDocument.Pose(p.x(),p.y(),p.z(),p.qx(),p.qy(),p.qz(),p.qw()));}
-            result.complete(new PhysicsPoseDocument(r.outcome().name(),r.finalPose().step(),poses,r.torsoTiltDegrees(),r.reason(),definition.id()+"_v1"));
+            result.complete(new PhysicsPoseDocument(r.outcome().name(),r.finalPose().step(),poses,r.torsoTiltDegrees(),r.reason(),definition.id()+"_v1",definition.scale()));
         });
         return result;
     }
     public Session openContinuous(Request request){return openSeeded(request,null);}
-    public Session openSeeded(Request request,PhysicsPoseDocument pose){
-        var definition=request.slim()?RagdollDefinition.slim():RagdollDefinition.standard();
+    public Session openSeeded(Request request,PhysicsPoseDocument pose){return resident(request,pose,null);}
+    public Session prepare(Request request,Transfer state){return resident(request,state.pose(),state);}
+    private Session resident(Request request,PhysicsPoseDocument pose,Transfer transfer){
+        var definition=(request.slim()?RagdollDefinition.slim(request.scale()):RagdollDefinition.standard(request.scale())).subset(request.parts());
         RagdollResult.Frame seed=pose==null?null:new RagdollResult.Frame(0,definition.parts().stream().map(part->{var p=pose.poses().get(part.id());return new RagdollResult.Pose(part.id(),new BoxTrace.Frame(p.x(),p.y(),p.z(),p.qx(),p.qy(),p.qz(),p.qw()));}).toList());
         var requestInput=input(request,definition,terrain(request.terrain()));
         if(seed!=null)requestInput=RagdollRequest.explicit(definition,terrain(request.terrain()),new RagdollDefinition.V3(0,0,0),RagdollInitialMotion.directed(0,0,0,1,new RagdollDefinition.V3(0,0,0),0));
-        var session=service.openContinuous(requestInput,seed);
+        var session=transfer==null?service.openContinuous(requestInput,seed):service.prepareContinuous(requestInput,nativeState(transfer,definition));
         return new Session(){
+            public CompletableFuture<Void> ready(){return session.ready();}
+            public void releaseTransfer(){session.releaseTransfer();}
+            public CompletableFuture<Transfer> captureForTransfer(){return session.captureForTransfer().thenApply(value->{
+                var velocities=new LinkedHashMap<String,Velocity>();value.velocities().forEach((id,v)->velocities.put(id,new Velocity(v.linear().x(),v.linear().y(),v.linear().z(),v.angular().x(),v.angular().y(),v.angular().z())));
+                return new Transfer(document(value.pose(),definition,"SIMULATING",0,"transfer"),velocities);
+            });}
+
             private final CompletableFuture<PhysicsPoseDocument> completion=session.completion().thenApply(v->null);
             private RagdollResult stableNative;private PhysicsPoseDocument stablePose;
             public boolean continuous(){return true;}
@@ -87,10 +99,15 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
             public void close(){session.close();}
         };
     }
+    private static RagdollMotionState nativeState(Transfer transfer,RagdollDefinition definition){
+        var velocities=new LinkedHashMap<String,RagdollMotionState.Velocity>();transfer.velocities().forEach((id,v)->velocities.put(id,new RagdollMotionState.Velocity(new RagdollDefinition.V3(v.vx(),v.vy(),v.vz()),new RagdollDefinition.V3(v.wx(),v.wy(),v.wz()))));
+        var parts=definition.parts().stream().map(part->{var p=transfer.pose().poses().get(part.id());return new RagdollResult.Pose(part.id(),new BoxTrace.Frame(p.x(),p.y(),p.z(),p.qx(),p.qy(),p.qz(),p.qw()));}).toList();
+        return new RagdollMotionState(new RagdollResult.Frame(0,parts),velocities);
+    }
     private static TerrainSnapshotData terrain(java.util.List<Box> boxes){return new TerrainSnapshotData(boxes.stream().map(b->new BoxScene.StaticBox(b.x0(),b.y0(),b.z0(),b.x1(),b.y1(),b.z1())).toList());}
     public Session open(Request request) {
         var terrain=new TerrainSnapshotData(request.terrain().stream().map(b->new BoxScene.StaticBox(b.x0(),b.y0(),b.z0(),b.x1(),b.y1(),b.z1())).toList());
-        var definition=request.slim()?RagdollDefinition.slim():RagdollDefinition.standard();
+        var definition=(request.slim()?RagdollDefinition.slim(request.scale()):RagdollDefinition.standard(request.scale())).subset(request.parts());
         var nativeSession=service.openRagdoll(input(request,definition,terrain));
         var future=new CompletableFuture<PhysicsPoseDocument>();
         future.whenComplete((r,e)->{if(future.isCancelled())nativeSession.close();});
@@ -129,7 +146,7 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
     private static PhysicsPoseDocument document(RagdollResult.Frame f,RagdollDefinition d,String outcome,float tilt,String reason) {
         var poses=new LinkedHashMap<String,PhysicsPoseDocument.Pose>();
         for(var part:f.parts()){var p=part.transform();poses.put(part.id(),new PhysicsPoseDocument.Pose(p.x(),p.y(),p.z(),p.qx(),p.qy(),p.qz(),p.qw()));}
-        return new PhysicsPoseDocument(outcome,f.step(),poses,tilt,reason,d.id()+"_v1");
+        return new PhysicsPoseDocument(outcome,f.step(),poses,tilt,reason,d.id()+"_v1",d.scale());
     }
     private static RagdollRequest input(Request request,RagdollDefinition definition,TerrainSnapshotData terrain) {
         var anchor=new RagdollDefinition.V3(0,0,0);var m=request.motion();

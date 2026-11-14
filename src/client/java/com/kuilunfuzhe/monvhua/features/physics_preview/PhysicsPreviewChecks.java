@@ -36,7 +36,7 @@ final class PhysicsPreviewChecks {
                 require(Math.abs(hit.u()-u)<1f/256&&Math.abs(hit.v()-w)<1f/256,"UV mismatch: "+surface.name());
             }
         }
-        for(String id:PhysicsPoseDocument.IDS) {
+        for(String id:document.poses().keySet()) {
             var pose=document.poses().get(id);
             var inverseRigid=new Matrix4f().translate(pose.x(),pose.y(),pose.z()).rotate(pose.rotation()).invert();
             Vector3f min=new Vector3f(Float.POSITIVE_INFINITY),max=new Vector3f(Float.NEGATIVE_INFINITY);
@@ -49,7 +49,7 @@ final class PhysicsPreviewChecks {
                     min.min(v);max.max(v);
                 }
             }
-            var half=StandardBodyPhysicsAdapter.size(id,slim).mul(.5f);
+            var half=StandardBodyPhysicsAdapter.size(id,slim).mul(.5f*document.scale());
             require(max.distance(half)<1e-4&&min.distance(new Vector3f(half).negate())<1e-4,"Skin/rigid bounds differ: "+id+" min="+min+" max="+max);
         }
     }

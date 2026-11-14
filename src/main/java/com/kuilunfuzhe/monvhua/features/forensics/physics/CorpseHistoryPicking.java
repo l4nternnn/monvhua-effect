@@ -14,7 +14,7 @@ public final class CorpseHistoryPicking {
         Vec3d target;
         if(entry.view!=null){
             var pose=entry.pose();if(pose==null){var frames=entry.session.frames();if(frames.isEmpty())return false;pose=frames.getLast();}
-            var torso=pose.poses().get("torso");target=entry.view.origin().add(torso.x(),torso.y(),torso.z());
+            var torso=pose.poses().get(pose.rootPart());target=entry.view.origin().add(torso.x(),torso.y(),torso.z());
         }else target=entry.targetPoint();
         var from=player.getEyePos();if(from.distanceTo(target)>player.getEntityInteractionRange())return false;
         return player.getWorld().raycast(new RaycastContext(from,target,RaycastContext.ShapeType.COLLIDER,RaycastContext.FluidHandling.NONE,player)).getType()==HitResult.Type.MISS;
@@ -33,7 +33,7 @@ public final class CorpseHistoryPicking {
                 var p=part.getValue();var inverse=p.rotation().conjugate();
                 var a=from.subtract(origin).subtract(p.x(),p.y(),p.z());var b=to.subtract(origin).subtract(p.x(),p.y(),p.z());
                 var x=inverse.transform(new Vector3f((float)a.x,(float)a.y,(float)a.z));var y=inverse.transform(new Vector3f((float)b.x,(float)b.y,(float)b.z));
-                var size=StandardBodyPhysicsAdapter.size(part.getKey(),entry.view.slim()).mul(.5f);
+                var size=StandardBodyPhysicsAdapter.size(part.getKey(),entry.view.slim()).mul(.5f*pose.scale());
                 var box=new Box(-size.x,-size.y,-size.z,size.x,size.y,size.z);
                 var localA=new Vec3d(x.x,x.y,x.z);var localB=new Vec3d(y.x,y.y,y.z);
                 var hit=box.raycast(localA,localB);

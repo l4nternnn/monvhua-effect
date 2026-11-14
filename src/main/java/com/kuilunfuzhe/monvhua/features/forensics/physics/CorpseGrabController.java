@@ -24,7 +24,7 @@ public final class CorpseGrabController {
     private static final Map<UUID,Grab> grabs=new ConcurrentHashMap<>();
     private static final Map<UUID,Status> status=new ConcurrentHashMap<>();
     private record StaticConfirmation(UUID target,CorpsePhysicsBridge.Session session,long tick,long sequence,boolean pinned,long expires){}
-    private record PendingPin(CorpseHistoryController.Entry entry,long sequence){}
+    private record PendingPin(CorpseHistoryController.Entry entry,long sequence,boolean resume){}
     private static final Map<UUID,PendingPin> pendingPins=new ConcurrentHashMap<>();
     private static boolean pinPending(CorpseHistoryController.Entry e){var pin=pendingPins.get(e.id);return pin!=null&&pin.entry()==e&&e.session.controlSequence()<pin.sequence();}
     private static final Map<UUID,StaticConfirmation> staticConfirmations=new ConcurrentHashMap<>();
@@ -47,7 +47,7 @@ public final class CorpseGrabController {
             for(var part:pose.poses().entrySet()){
                 var p=part.getValue();var inv=p.rotation().conjugate();var a=from.subtract(e.view.origin()).subtract(p.x(),p.y(),p.z());var b=to.subtract(e.view.origin()).subtract(p.x(),p.y(),p.z());
                 var aa=inv.transform(new Vector3f((float)a.x,(float)a.y,(float)a.z));var bb=inv.transform(new Vector3f((float)b.x,(float)b.y,(float)b.z));
-                var size=StandardBodyPhysicsAdapter.size(part.getKey(),e.view.slim()).mul(.5f);var box=new Box(-size.x,-size.y,-size.z,size.x,size.y,size.z);
+                var size=StandardBodyPhysicsAdapter.size(part.getKey(),e.view.slim()).mul(.5f*pose.scale());var box=new Box(-size.x,-size.y,-size.z,size.x,size.y,size.z);
                 var la=new Vec3d(aa.x,aa.y,aa.z);var hit=box.contains(la)?Optional.of(la):box.raycast(la,new Vec3d(bb.x,bb.y,bb.z));
                 if(hit.isEmpty())continue;double distance=la.distanceTo(hit.get());
                 if(best==null||distance<best.distance())best=new Hit(e.id,part.getKey(),hit.get(),from.add(to.subtract(from).normalize().multiply(distance)),distance);
@@ -56,7 +56,10 @@ public final class CorpseGrabController {
         return best;
     }
     public static void toggle(ServerPlayerEntity p,boolean partial){
-        clearStaticConfirmation(p.getUuid());require(p);if(grabs.containsKey(p.getUuid())){release(p.getUuid());return;}
+        clearStaticConfirmation(p.getUuid());require(p);var held=grabs.get(p.getUuid());if(held!=null){
+            if(held.entry.manual&&!held.entry.timeline){pinFrozen(p,held.entry);return;}
+            release(p.getUuid());return;
+        }
         var hit=pick(p);
         if(hit==null){
             // Import only canonical generated six-body poses; arbitrary edited geometry fails closed.
@@ -67,30 +70,34 @@ public final class CorpseGrabController {
             if(nearest==null)throw new IllegalArgumentException("请瞄准完整尸体的表面");
             seed(p,nearest);throw new IllegalArgumentException("已接入当前姿态，待稳定后再次右键抓取");
         }
+        if(CorpseSeparationService.busy(hit.id()))throw new IllegalArgumentException("正在分离肢体");
         var e=CorpseHistoryController.get(hit.id());
+        if(e!=null&&e.manual&&!e.timeline){pinFrozen(p,e);return;}
         if(e==null||!e.session.continuous()||e.frozen()||e.timeline)throw new IllegalArgumentException("请先结束冻结/时间轴并等待尸体稳定");
         var phase=e.session.residentState().phase();
         if(pinPending(e))throw new IllegalArgumentException("正在固定肢体，请稍候再次抓取");
         if(!phase.equals("SLEEPING")&&!phase.equals("SUPPORTED")&&!phase.equals("PINNED"))throw new IllegalArgumentException("尸体仍在运动，请先冻结当前肢体");
         String slot=e.session.dynamicPart();
+        partial=localSelection(partial,slot,hit.part(),e.session.frames().getLast().poses().size());
         if(partial&&!hit.part().equals("torso")&&slot!=null&&!slot.equals("none")&&!slot.equals(hit.part()))
             throw new IllegalArgumentException("当前活动槽位仍由其他肢体占用，请先按 F 固定该肢体");
         if(grabs.values().stream().anyMatch(g->g.id.equals(e.id)))throw new IllegalArgumentException("尸体已被抓取");
         var entity=p.getWorld().getEntity(e.id);
-        if(!(entity instanceof ItemDisplayEntity display)||!Forensics.valid(p.getWorld(),display.getItemStack(),e.id.toString())||CorpseCarryService.isCarried(display)||!Forensics.binding(display.getItemStack()).getString("part","").equals("all"))throw new IllegalArgumentException("尸体载体不可用");
-        var g=new Grab();g.player=p.getUuid();g.id=e.id;g.display=display;g.part=hit.part();g.local=hit.local();g.distance=hit.distance();g.target=hit.world();g.entry=e;g.partial=partial&&!g.part.equals("torso");g.sequence=e.session.controlSequence();g.lastInput=p.getWorld().getTime();
+        if(!(entity instanceof ItemDisplayEntity display)||!Forensics.valid(p.getWorld(),display.getItemStack(),e.id.toString())||CorpseCarryService.isCarried(display)||!CorpsePoseRecord.present(display.getItemStack()))throw new IllegalArgumentException("尸体载体不可用");
+        var g=new Grab();g.player=p.getUuid();g.id=e.id;g.display=display;g.part=hit.part();g.local=hit.local();g.distance=hit.distance();g.target=hit.world();g.entry=e;g.partial=partial&&!g.part.equals("torso")&&e.session.frames().getLast().poses().size()>1;g.sequence=e.session.controlSequence();g.lastInput=p.getWorld().getTime();
         g.previousTorso=torso(g);com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTraceService.beginPhysicsMove(display);grabs.put(g.player,g);CorpseResidentManager.manipulated(g.id);send(g,true);publish(g,hit.world(),"已抓取");
     }
     static void seed(ServerPlayerEntity p,ItemDisplayEntity d){
-        if(CorpsePhysicsCoordinator.pending(d)||CorpseResidentManager.contains(d.getUuid())||CorpseCarryService.isCarried(d)||!Forensics.valid(p.getWorld(),d.getItemStack(),d.getUuid().toString())||!Forensics.binding(d.getItemStack()).getString("part","").equals("all"))throw new IllegalArgumentException("尸体暂不可接管");
+        if(CorpsePhysicsCoordinator.pending(d)||CorpseResidentManager.contains(d.getUuid())||CorpseCarryService.isCarried(d)||!Forensics.valid(p.getWorld(),d.getItemStack(),d.getUuid().toString())||!CorpsePoseRecord.present(d.getItemStack()))throw new IllegalArgumentException("尸体暂不可接管");
         var data=CorpsePoseRecord.data(d.getItemStack());
-        if(data.getFloat("corpse_scale",1)!=1||data.getString("body_pose_mode","").equals("true_skeletal"))throw new IllegalArgumentException("非标准模型暂不支持抓取");
+        com.kuilunfuzhe.monvhua.features.physics_preview.CorpseScale.require(data.getFloat("corpse_scale",1));
+        if(data.getString("body_pose_mode","").equals("true_skeletal"))throw new IllegalArgumentException("非标准模型暂不支持抓取");
         for(String key:data.getKeys())if((key.startsWith("pose_")||key.startsWith("bend_"))&&data.getFloat(key,Float.NaN)!=(key.endsWith("_scale")?1:0))throw new IllegalArgumentException("非中性模型编辑暂不支持抓取："+key);
         var record=CorpsePoseRecord.read(CorpsePoseRecord.data(d.getItemStack())).orElseThrow(()->new IllegalArgumentException("该尸体没有六部位物理姿态，请先生成物理姿态"));
         var matrix=com.kuilunfuzhe.monvhua.mixin.forensics.CorpseDisplayAccessor.monvhua$transform(d.getDataTracker()).getMatrix();
         if(d.getYaw()!=0||d.getPitch()!=0||!matrix.equals(new org.joml.Matrix4f(),1e-6f)||d.getItemDisplayContext()!=ItemDisplayContext.NONE)throw new IllegalArgumentException("该载体有额外模型变换，暂不支持抓取");
-        var request=new CorpsePhysicsBridge.Request(record.armModel().equals("slim"),0,0,CorpseTerrainSnapshot.capture(p.getWorld(),d.getPos()));
-        var pose=new PhysicsPoseDocument("SETTLED",0,record.parts(),0,"static seed",record.definition());
+        var request=new CorpsePhysicsBridge.Request(record.armModel().equals("slim"),0,0,CorpseTerrainSnapshot.capture(p.getWorld(),d.getPos()),null,null,record.scale(),record.parts().keySet());
+        var pose=new PhysicsPoseDocument("SETTLED",0,record.parts(),0,"static seed",record.definition(),record.scale());
         if(!CorpseResidentManager.open(d,d.getPos(),request,CorpsePhysicsCoordinator.diagnosticProvider(p.getServer()),null,pose))throw new IllegalArgumentException("接入失败，保留旧姿态");
     }
     public static void input(ServerPlayerEntity p,double scroll,Vec3d angular,boolean rotating){
@@ -100,9 +107,18 @@ public final class CorpseGrabController {
         g.distance=Math.clamp(g.distance-Math.clamp(scroll,-4,4)*.25,.75,6);
         g.angular=angular.length()>2?angular.normalize().multiply(2):angular;g.rotating=rotating;
     }
-    public static void range(ServerPlayerEntity p){clearStaticConfirmation(p.getUuid());require(p);var g=grabs.get(p.getUuid());if(g!=null){g.partial=!g.partial&&!g.part.equals("torso");send(g,true);}else{
-        var hit=pick(p);if(hit!=null){var e=CorpseHistoryController.get(hit.id());if(e!=null&&!pinPending(e)&&!e.frozen()&&(e.session.residentState().phase().equals("SUPPORTED")||e.session.residentState().phase().equals("PINNED")))e.session.control(new CorpsePhysicsBridge.Grab(e.session.controlSequence()+1,null,0,0,0,0,0,0,0,0,0,false,null));}
-    }}
+    /** A pinned body's next non-torso selection is local regardless of the client's range toggle. */
+    public static boolean localSelection(boolean partial,String slot,String part,int count){
+        return count>1&&!part.equals("torso")&&(partial||slot!=null);
+    }
+    public static void range(ServerPlayerEntity p){
+        clearStaticConfirmation(p.getUuid());require(p);var g=grabs.get(p.getUuid());
+        if(g!=null){
+            // Changing range may not silently unfreeze all other bodies during local adjustment.
+            if(g.entry.session.dynamicPart()!=null){p.sendMessage(net.minecraft.text.Text.literal("正在局部调姿；按 F 固定当前部位，瞄准躯干可重新整体抓取"),true);return;}
+            g.partial=!g.partial&&!g.part.equals("torso")&&g.entry.session.frames().getLast().poses().size()>1;send(g,true);
+        }
+    }
     /** Each call represents a distinct key-down edge, not key repeat. */
     public static void staticPress(ServerPlayerEntity p){
         var previous=staticConfirmations.remove(p.getUuid());
@@ -120,7 +136,7 @@ public final class CorpseGrabController {
         if(!(entity instanceof ItemDisplayEntity display)||!Forensics.valid(p.getWorld(),display.getItemStack(),target.toString())||CorpseCarryService.isCarried(display))throw new IllegalArgumentException("尸体载体已失效");
         if(!e.view.dimension().equals(p.getWorld().getRegistryKey().getValue().toString()))throw new IllegalArgumentException("尸体不在当前维度");
         var frames=e.session.frames();if(frames.isEmpty())throw new IllegalArgumentException("没有可保存的冻结姿态");
-        var frame=frames.getLast();var torso=frame.poses().get("torso");
+        var frame=frames.getLast();var torso=frame.poses().get(frame.rootPart());
         if(e.view.origin().add(torso.x(),torso.y(),torso.z()).distanceTo(p.getEyePos())>8)throw new IllegalArgumentException("尸体距离过远");
         long now=System.nanoTime();
         if(previous==null||!previous.target().equals(target)||previous.session()!=e.session||previous.pinned()!=pinned||previous.sequence()!=e.session.controlSequence()||(!pinned&&previous.tick()!=state.tick())||now>previous.expires()){
@@ -132,7 +148,7 @@ public final class CorpseGrabController {
         var poses=new LinkedHashMap<String,PhysicsPoseDocument.Pose>();
         for(var part:frame.poses().entrySet()){var v=part.getValue();poses.put(part.getKey(),new PhysicsPoseDocument.Pose(v.x()-(float)center.x,v.y()-(float)center.y,v.z()-(float)center.z,v.qx(),v.qy(),v.qz(),v.qw()));}
         long revision=CorpsePoseRecord.data(display.getItemStack()).getLong("corpse_pose_revision",0)+1;
-        var record=new CorpsePoseRecord(revision,"frozen_static",e.view.slim()?"slim":"default",poses,frame.definition());
+        var record=new CorpsePoseRecord(revision,"frozen_static",e.view.slim()?"slim":"default",poses,frame.definition(),frame.scale());
         CorpsePoseService.applyFrozen(display,record,e.view.origin().add(center));
         // Commit first. A rejected candidate leaves the frozen live session intact.
         releaseTarget(target);CorpseResidentManager.remove(target);
@@ -144,34 +160,61 @@ public final class CorpseGrabController {
     public static void freeze(ServerPlayerEntity p){freeze(p,false);}
     public static void freeze(ServerPlayerEntity p,boolean partialMode){
         clearStaticConfirmation(p.getUuid());require(p);var g=grabs.get(p.getUuid());
-        if(g!=null&&g.partial&&!g.entry.frozen()){
+        if(g!=null){
+            if(g.entry.timeline)throw new IllegalArgumentException("请先关闭时间轴回放");
+            if(g.entry.manual){pinFrozen(p,g.entry);return;}
             pin(p,g.entry,g.sequence);return;
         }
-        if(g==null){
-            var h=pick(p);if(h==null)return;var e=CorpseHistoryController.get(h.id());
-            if(e!=null&&partialMode&&!e.frozen()&&e.session.dynamicPart()!=null){pin(p,e,e.session.controlSequence());return;}
-            CorpseHistoryController.operate(p,h.id(),false);return;
+        var hit=pick(p);if(hit==null)return;var e=CorpseHistoryController.get(hit.id());
+        if(e==null||e.timeline||!e.current()||!e.session.continuous())throw new IllegalArgumentException("当前遗体不能固定，请先关闭时间轴");
+        if(CorpseSeparationService.busy(e.id)||CorpseTransportController.held(e.id)||held(e.id))throw new IllegalArgumentException("遗体正在被其他操作占用");
+        if(pinPending(e))return;
+        if(e.manual){pinFrozen(p,e);return;}
+        if("none".equals(e.session.dynamicPart())){
+            if(!CorpsePhysicsCoordinator.validateResume(e.id))return;
+            e.session.control(new CorpsePhysicsBridge.Grab(e.session.controlSequence()+1,null,0,0,0,0,0,0,0,0,0,false,null));
+            p.sendMessage(net.minecraft.text.Text.literal("已解除固定，恢复全身物理"),true);return;
         }
-        var e=g.entry;if(!e.manual){e.manual=true;e.session.setPaused(true);}else{if(!CorpsePhysicsCoordinator.validateResume(e.id))return;e.manual=false;g.wasFrozen=true;e.session.setPaused(e.frozen());}g.angular=Vec3d.ZERO;g.rotating=false;
+        pin(p,e,e.session.controlSequence());
     }
-    private static void pin(ServerPlayerEntity p,CorpseHistoryController.Entry e,long sequence){
+    /** A confirmed global pause becomes kinematic pinning before any body is made dynamic. */
+    private static void pinFrozen(ServerPlayerEntity p,CorpseHistoryController.Entry e){
+        if(!e.manual||e.timeline||!e.confirmed()||!e.current()||!e.session.continuous())throw new IllegalArgumentException("请等待全身冻结生效；时间轴冻结不能直接调姿");
+        if(grabs.values().stream().anyMatch(g->g.id.equals(e.id)&&!g.player.equals(p.getUuid())))throw new IllegalArgumentException("尸体已被其他玩家抓取");
+        var g=grabs.get(p.getUuid());pin(p,e,g!=null&&g.entry==e?g.sequence:e.session.controlSequence(),true);
+    }
+    private static void pin(ServerPlayerEntity p,CorpseHistoryController.Entry e,long sequence){pin(p,e,sequence,false);}
+    private static void pin(ServerPlayerEntity p,CorpseHistoryController.Entry e,long sequence,boolean resume){
         if(!e.current()||e.timeline||!e.session.continuous())throw new IllegalArgumentException("当前尸体不能固定肢体");
         if(pinPending(e))return;
         long next=Math.max(sequence,e.session.controlSequence())+1;
         // Queue a zero-slot state first, then drop ownership WITHOUT sending the ordinary release state.
         e.session.control(new CorpsePhysicsBridge.Grab(next,null,0,0,0,0,0,0,0,0,0,false,"none"));
-        pendingPins.put(e.id,new PendingPin(e,next));
+        pendingPins.put(e.id,new PendingPin(e,next,resume));
         var g=grabs.remove(p.getUuid());status.remove(p.getUuid());
         if(g!=null)com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTraceService.endCarry(g.display,null);
-        p.sendMessage(net.minecraft.text.Text.literal("已固定当前肢体并释放活动槽位，可右键选择其他肢体"),true);
+        p.sendMessage(net.minecraft.text.Text.literal(resume?"正在固定全身并释放抓取":"已固定当前姿态并松开抓取，直接右键其他肢体可继续调整；空闲时 F 解除固定"),true);
     }
     public static void releaseTarget(UUID id){for(var g:List.copyOf(grabs.values()))if(g.id.equals(id))release(g.player);}
     public static void release(UUID player){clearStaticConfirmation(player);var g=grabs.remove(player);status.remove(player);if(g!=null){com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTraceService.endCarry(g.display,null);if(g.entry.valid)try{send(g,false);}catch(RuntimeException error){CorpseResidentManager.remove(g.id);}}}
     private static void send(Grab g,boolean held){var target=g.target.subtract(g.entry.view.origin());g.entry.session.control(new CorpsePhysicsBridge.Grab(++g.sequence,held?g.part:null,(float)g.local.x,(float)g.local.y,(float)g.local.z,(float)target.x,(float)target.y,(float)target.z,(float)g.angular.x,(float)g.angular.y,(float)g.angular.z,g.rotating,g.partial?g.part:null));}
-    private static Vec3d torso(Grab g){var frames=g.entry.session.frames();if(frames.isEmpty())return g.display.getPos();var p=frames.getLast().poses().get("torso");return g.entry.view.origin().add(p.x(),p.y(),p.z());}
+    private static Vec3d torso(Grab g){var frames=g.entry.session.frames();if(frames.isEmpty())return g.display.getPos();var p=frames.getLast().poses().get(frames.getLast().rootPart());return g.entry.view.origin().add(p.x(),p.y(),p.z());}
     private static Vec3d actual(Grab g){var frames=g.entry.session.frames();if(frames.isEmpty())return g.target;var p=frames.getLast().poses().get(g.part);var v=p.rotation().transform(new Vector3f((float)g.local.x,(float)g.local.y,(float)g.local.z));return g.entry.view.origin().add(p.x()+v.x,p.y()+v.y,p.z()+v.z);}
     private static void publish(Grab g,Vec3d actual,String message){status.put(g.player,new Status(g.id,g.part,g.partial,g.entry.frozen(),g.distance,actual,g.target,message));}
-    public static void tick(MinecraftServer server){pendingPins.entrySet().removeIf(e->!e.getValue().entry().valid||e.getValue().entry().session.controlSequence()>=e.getValue().sequence());staticConfirmations.entrySet().removeIf(e->System.nanoTime()>e.getValue().expires());for(var g:List.copyOf(grabs.values()))try{
+    private static void finishPins(){
+        for(var pair:List.copyOf(pendingPins.entrySet())){
+            var pending=pair.getValue();var e=pending.entry();
+            if(!e.valid||!e.current()){pendingPins.remove(pair.getKey(),pending);continue;}
+            if(e.session.controlSequence()<pending.sequence())continue;
+            pendingPins.remove(pair.getKey(),pending);
+            if(!pending.resume()||e.timeline)continue;
+            // The native control is acknowledged while paused: all six (or remaining) bodies are fixed now.
+            if(!"none".equals(e.session.dynamicPart())||!CorpsePhysicsCoordinator.validateResume(e.id))continue;
+            e.manual=false;e.session.setPaused(false);
+
+        }
+    }
+    public static void tick(MinecraftServer server){finishPins();staticConfirmations.entrySet().removeIf(e->System.nanoTime()>e.getValue().expires());for(var g:List.copyOf(grabs.values()))try{
         var p=server.getPlayerManager().getPlayer(g.player);
         if(p==null||!p.isAlive()||!p.getMainHandStack().isOf(ITEM)||!g.entry.valid||!g.entry.view.dimension().equals(p.getWorld().getRegistryKey().getValue().toString())||p.getWorld().getTime()-g.lastInput>20){release(g.player);continue;}
         long now=p.getWorld().getTime();if(now==g.processedTick)continue;g.processedTick=now;

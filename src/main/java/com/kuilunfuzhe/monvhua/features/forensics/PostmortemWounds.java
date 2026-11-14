@@ -3,6 +3,8 @@ package com.kuilunfuzhe.monvhua.features.forensics;
 import com.kuilunfuzhe.monvhua.features.block.body.BodyPartManager;
 import com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator;
 import com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseGrabController;
+import com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseDismemberment;
+import com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseResidentManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.component.DataComponentTypes;
@@ -21,7 +23,7 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.RaycastContext;
 import java.util.*;
 
-/** Melee injury on an existing corpse; no new death, blood allocation or pose replacement. */
+/** Melee injury on an existing corpse, with tagged two-strike joint separation. */
 public final class PostmortemWounds {
     public static final int MAX_WOUNDS = 64;
     private static final Map<UUID, Long> LAST_ATTACK = new HashMap<>();
@@ -43,11 +45,12 @@ public final class PostmortemWounds {
                 || display.isRemoved() || display.getWorld() != world || CorpseCarryService.isCarrying(player.getUuid())
                 || CorpseGrabController.status(player.getUuid()) != null || CorpseCarryService.isCarried(display)
                 || CorpsePhysicsCoordinator.simulating(display) || CorpsePhysicsCoordinator.pending(display)
+                || !CorpseResidentManager.acceptsWounds(display)
                 || !Forensics.valid(world, display.getItemStack(), display.getUuid().toString())) return true;
         NbtCompound binding = Forensics.binding(display.getItemStack());
         NbtCompound data = CorpsePoseRecord.data(display.getItemStack());
         // Separate limb renderers and arbitrary skeletal meshes do not use this body's surface adapter.
-        if (!binding.getString("part", "").equals("all") || data.getString("body_pose_mode", "").equals("true_skeletal")
+        if (!binding.getString("part", "").equals("all") && CorpsePoseRecord.read(data).isEmpty() || data.getString("body_pose_mode", "").equals("true_skeletal")
                 || (data.contains(CorpsePoseRecord.KEY) && CorpsePoseRecord.read(data).isEmpty())) return true;
         long now = world.getServer().getOverworld().getTime();
         Long last = LAST_ATTACK.get(player.getUuid());
@@ -68,7 +71,8 @@ public final class PostmortemWounds {
             var obstruction = e.getBoundingBox().raycast(from, hit.position());
             if (e.getBoundingBox().contains(from) || (obstruction.isPresent() && from.squaredDistanceTo(obstruction.get()) < distance - .001)) return true;
         }
-        float amount = damage(player.getAttributeValue(EntityAttributes.ATTACK_DAMAGE), player.getAttackCooldownProgress(.5f));
+        float cooldown = player.getAttackCooldownProgress(.5f);
+        float amount = damage(player.getAttributeValue(EntityAttributes.ATTACK_DAMAGE), cooldown);
         if (amount <= 0) return true;
         var context = AttackContexts.current(player.getUuid());
         ItemStack weapon = context == null ? player.getWeaponStack().copy() : context.weapon();
@@ -82,9 +86,18 @@ public final class PostmortemWounds {
         if (context != null) record.putString("attack_id", context.id());
         String corpse = binding.getString("id", "");
         var store = ForensicStore.get(player.getServer());
-        if (!store.appendPostmortem(corpse, record)) return true;
+        var pose=CorpsePoseRecord.read(data);
+        String joint=null;
+        if(pose.isPresent()&&CorpseDismemberment.eligible(player,weapon,cooldown))
+            joint=CorpseDismemberment.connection(CorpsePoseGeometry.surfaces(display,data),display.getPos(),hit,pose.get().scale(),pose.get().armModel().equals("slim"));
+        boolean appended=store.appendPostmortem(corpse,record);
+        if (!appended&&joint==null) return true;
         LAST_ATTACK.put(player.getUuid(), now); player.resetLastAttackedTicks();
-        sync(display);
+        if(appended){
+            sync(display);
+            CorpseResidentManager.woundsUpdated(display);
+        }
+        if(joint!=null)CorpseDismemberment.strike(player,display,joint,hit.position(),record.getString("id",""));
         return true;
     }
     public static float damage(double base, float cooldown) {
@@ -136,6 +149,8 @@ public final class PostmortemWounds {
         if (corpse.getListOrEmpty("postmortem_hits").isEmpty()) return;
         ItemStack stack = display.getItemStack().copy(); var data = CorpsePoseRecord.data(stack);
         NbtList wounds = visuals(corpse);
+        var pose=CorpsePoseRecord.read(data);
+        if(pose.isPresent()){var filtered=new NbtList();for(var e:wounds)if(e instanceof NbtCompound n&&pose.get().parts().containsKey(n.getString("part","")))filtered.add(n.copy());wounds=filtered;}
         if (wounds.equals(data.get("corpse_wounds"))) return;
         data.put("corpse_wounds", wounds); stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(data)); display.setItemStack(stack);
     }

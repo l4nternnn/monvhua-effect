@@ -23,6 +23,7 @@ public final class CorpsePoseService {
         if(CorpseGeometrySync.bounds(CorpseGeometrySync.placement(display,data),data)==null)throw new IllegalArgumentException("无效姿态范围");
         var stack=display.getItemStack().copy();stack.set(DataComponentTypes.CUSTOM_DATA,NbtComponent.of(data));
         display.setItemStack(stack);CorpseGeometrySync.update(display);
+        com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseSeparationService.recordObject(display);
     }
     public static void applyGenerated(ItemDisplayEntity display,CorpsePoseRecord record,Vec3d origin) {
         if(record.source().equals("frozen_static"))throw new IllegalArgumentException("冻结姿态必须使用显式静态提交");
@@ -37,7 +38,7 @@ public final class CorpsePoseService {
         if(link==null||!(world.getEntity(link) instanceof InteractionEntity))throw new IllegalArgumentException("交互载体未加载");
         if(CorpseCarryService.isCarried(display))throw new IllegalArgumentException("载体正在搬运");
         var stack=display.getItemStack().copy();var data=CorpsePoseRecord.data(stack);
-        data.put(CorpsePoseRecord.KEY,record.encode());data.putLong("corpse_pose_revision",record.revision());data.putString("arm_model",record.armModel());
+        data.putFloat("corpse_scale",record.scale());data.put(CorpsePoseRecord.KEY,record.encode());data.putLong("corpse_pose_revision",record.revision());data.putString("arm_model",record.armModel());
         var candidate=net.minecraft.entity.EntityType.ITEM_DISPLAY.create(world,net.minecraft.entity.SpawnReason.TRIGGERED);
         if(candidate==null)throw new IllegalArgumentException("无法准备姿态");
         candidate.setPosition(origin);candidate.setItemStack(stack);

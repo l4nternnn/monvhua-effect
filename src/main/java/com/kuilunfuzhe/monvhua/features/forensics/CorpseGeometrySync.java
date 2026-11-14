@@ -11,7 +11,7 @@ import org.joml.Matrix4f;
 import org.joml.Vector3f;
 public final class CorpseGeometrySync {
  public static void update(ItemDisplayEntity display){
-  if(!(display.getWorld() instanceof ServerWorld world)||!Forensics.hasBinding(display.getItemStack())||!Forensics.binding(display.getItemStack()).getString("part","").equals("all"))return;
+  if(!(display.getWorld() instanceof ServerWorld world)||!Forensics.hasBinding(display.getItemStack())||!Forensics.binding(display.getItemStack()).getString("part","").equals("all")&&!CorpsePoseRecord.present(display.getItemStack()))return;
   var id=BodyPartManager.DISPLAY_TO_INTERACTION.get(display.getUuid());
   if(id==null||!(world.getEntity(id) instanceof InteractionEntity interaction))return;
   var n=display.getItemStack().getOrDefault(DataComponentTypes.CUSTOM_DATA,NbtComponent.DEFAULT).copyNbt();
@@ -30,7 +30,7 @@ public final class CorpseGeometrySync {
    .translate(.5f,0,.5f).rotateY((float)Math.PI).scale(-1,-1,1)
    .translate(n.getFloat("pose_model_offset_x",0),n.getFloat("pose_model_offset_y",0),n.getFloat("pose_model_offset_z",0))
    .rotateX((float)Math.toRadians(n.getFloat("pose_model_pitch",0))).rotateY((float)Math.toRadians(-n.getFloat("pose_model_yaw",0)))
-   .rotateZ((float)Math.toRadians(n.getFloat("pose_model_roll",0))).scale(Math.max(.1f,n.getFloat("pose_model_scale",1))*n.getFloat("corpse_scale",1));
+   .rotateZ((float)Math.toRadians(n.getFloat("pose_model_roll",0))).scale(CorpsePoseRecord.read(n).isPresent()?1:Math.max(.1f,n.getFloat("pose_model_scale",1))*n.getFloat("corpse_scale",1));
  }
 
  /** Union of posed surfaces, in display-relative coordinates. Null rejects malformed transforms. */

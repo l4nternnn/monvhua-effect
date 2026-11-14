@@ -219,6 +219,45 @@
 
 `OP` = 需要权限等级 2；未标注者普通玩家可用（多数仍要求执行者是玩家）。
 
+#### 尸体、法证与线索
+
+| 命令 | 权限 | 作用 |
+| --- | --- | --- |
+| `/mvclue open` | 玩家 | 打开当前案件的线索记录界面 |
+| `/mvclue board` | 玩家 | 打开线索总结/世界面板界面 |
+| `/mvclue craft` | 玩家 | 打开线索卡制作界面 |
+| `/mvclue import_wounds` | 玩家 | 将当前可用的伤口记录导入线索记录 |
+| `/mvclue share <card> <target>` | 玩家 | 使用 Showcase 将已拥有的线索卡分享给指定玩家；`card` 支持建议，`target` 支持玩家选择器 |
+| `/mvclue case manage` | OP | 打开案件管理界面 |
+| `/mvclue case add <id> <players>` | OP | 创建案件并加入参与者 |
+| `/mvclue case start <id> [<players>]` | OP | 开启已有案件，或创建并开启新案件 |
+| `/mvclue case members <id> <players>` | OP | 向案件追加参与者 |
+| `/mvclue case rebind <id> <previous> <player>` | OP | 将原参与者的案件身份与线索接续给新玩家 |
+| `/mvclue case close <id>` | OP | 关闭案件；已有记录仍可阅读和出示 |
+| `/mvclue case close_recording` | OP | 关闭当前案件的记录阶段 |
+| `/mvclue case delete <id>` | OP | 删除案件及其记录 |
+| `/mvclue case list` | OP | 列出案件状态、参与人数和卡片数量 |
+| `/mvclue case defaults <bags> <cards>` | OP | 设置默认卡袋和空白卡发放数量（1–64） |
+| `/mvclue case give_bags <players> <count>` | OP | 发放案件卡袋 |
+| `/mvclue case give_cards <players> <count>` | OP | 发放案件空白卡 |
+| `/mvclue case reload` | OP | 重载案件记录预填配置 |
+| `/mvclue experiment ...` | OP | 案件管理的实验入口，与 `/mvclue case ...` 使用相同操作 |
+| `/monvhua-forensic-share <corpseId> <part> <evidenceId> <player>` | 玩家 | 将已收集的尸体伤口证据分享给玩家；前三个参数提供动态建议，目标支持原生玩家选择器 |
+| `/mvforensics clean scene <center> <radius> <strength> <wash\|wipe> preview` | OP | 预览指定方法的血迹/法证清理结果 |
+| `/mvforensics clean scene <center> <radius> <strength> <wash\|wipe> apply` | OP | 应用指定方法的血迹/法证清理（半径 0.1–16，强度 0–1） |
+| `/monvhua-blood clear <from> <to> preview` | OP | 预览矩形区域内血迹清除 |
+| `/monvhua-blood clear <from> <to> confirm` | OP | 确认清除矩形区域内血迹 |
+| `/evidence place` / `/evidence place_board` | 玩家 | 在准星前放置个人线索总结面板或较宽的展示面板 |
+| `/evidence place_at <x> <y> <z> <yaw> <pitch> <roll>` | OP | 在指定坐标和旋转放置个人面板 |
+| `/evidence place_board_at <x> <y> <z> <yaw> <pitch> <roll>` | OP | 在指定坐标和旋转放置宽版面板 |
+| `/evidence remove` / `/evidence clear_all` | 玩家 | 移除当前面板或清除自己的全部面板 |
+| `/evidence status` | 玩家 | 查看自己的面板数量和 ID |
+| `/evidence for <player> ...` | OP | 代指定玩家放置或清除面板 |
+
+`/mvcorpse` 下的物理测试与姿态管理命令仅用于管理员开发测试：`/mvcorpse physics status` 查看状态，`auto on|off` 开关自动物理，`mode continuous|one-shot` 设置模拟模式，`test`/`test-motion <front|back|left|right|unknown>` 运行测试，`wake <target>` 唤醒持续模拟，`cancel <target>` 取消任务；`create-test`、`samples`、`apply`、`verify`、`clear` 等姿态文件操作需要开发开关 `monvhua.physicsCorpseDebug`。
+
+客户端调试命令：`/monvhua-evidence-preview place|place_board|place_at|rotate|size|resolution|status|remove|clear_all` 管理世界线索面板；`/mvphysics preview list|samples|load|clear|status|inspect` 管理尸体物理预览，另可用 `mode model|wire|overlay`、`skin slim|debug|steve|self` 和 `marks on|off` 切换预览显示。
+
 #### 阶段、千里眼与观看
 
 | 命令 | 权限 | 作用 |
@@ -506,3 +545,31 @@ Mixin 共 **5 个配置**：
 ## 10. 许可
 
 本项目使用 [GNU General Public License v3.0](LICENSE)。作者：kuilunfuzhe、shushuwonie。
+
+
+## 遗体整体倍率适配（2026-11-14）
+
+主项目已接入 SimplePhysics 的标准/细手臂整体倍率接口，支持 0.5–2.0。死亡时的 corpse_scale 快照用于实时物理、静态姿态、模型和伤口显示、交互拾取、物理抓取及拖拽端点；线索预览使用同一组表面变换。新增带倍率的姿态存档 version 4，旧 version 1/2/3 仍按 1.0 读取。超范围体型保留静态遗体。
+
+服务器需使用支持 `RagdollDefinition.standard(float)` / `slim(float)` 的新版物理前置，客户端与服务器需更新主模组。内部物理桥 API 已升至 9。编译及相关 11 项 JVM 测试通过，实际游戏/服务器启动、Linux 原生运行和发行打包交由手动验证。详见 [第一阶段实施记录](md/遗体整体倍率第一阶段主项目实施记录.md)。
+
+
+## 遗体肢体独立分离（第二阶段，2026-11-14）
+
+已接入 simple 的规范身体子集与帧边界运动移交。管理员可用 `/mvcorpse physics detach <target> head|left_arm|right_arm|left_leg|right_leg` 单独分离部位；`/mvcorpse physics topology <target>` 查看结构。支持连续分离到仅剩躯干，继承整体 scale、皮肤、绘画、伤口与速度；离体件用物理抓取器移动。原背包保留在残余身体。冻结、抓取、搬运和时间轴操作期间拒绝分离。
+
+客户端/服务器主模组与服务器 simple 前置需同步更新，内部桥 API 为 10，子集姿态存档 version 5 兼容读取旧版。实际启动及发行打包交由手动验证。各独立对象目前只与地形碰撞，不互相碰撞。命令、恢复边界和验收步骤见 [第二阶段实施记录](md/遗体肢体分离第二阶段实施记录.md)。
+
+
+## 武器跳劈断肢与空中冻结调姿（2026-11-14）
+
+默认斧类通过物品标签 `monvhua:forensics/can_dismember` 获得断肢资格，数据包可扩展。普通玩家对稳定遗体的颈部、肩部或髋部进行两次下落期跳劈（攻击冷却至少 90%）：第一次提示连接处受损，第二次成功提交后提示该部位已断开；每次有效命中立即在实际命中点显示血色粒子，地面血迹遵守原有有限血量。各连接处的第一次损伤独立存档，失败可重试。
+
+物理抓取器全身冻结后，可切单肢体模式并右键其他部位继续调姿；先确认全部刚体固定再恢复局部动态，其他部位保持空中位置。桥 API 仍为 10，本轮 simple 只新增原生回归验证。38 项相关 JVM 测试和标准/细手臂原生抓取回归通过；启动及发行打包仍交由手动验证。详见 [本轮实施记录](md/遗体跳劈断肢与空中冻结控制实施记录.md)。
+
+
+## 空中固定交互修正与肢体空手拾起（2026-11-14）
+
+物理抓取器拖起遗体后按 F，直接在空中固定并松开当前抓取；随后右键其他肢体自动局部调姿，无需 V。调好再 F 固定即可换部位，V 不再清除固定；未抓取时对准已固定遗体按 F 恢复全身物理。
+
+独立头部和四肢的探查轮盘上方新增“拾起”：双手空闲拿在身前，保持原生物理和地形碰撞，轮盘“放下”后自由落地。需要离体件已稳定；重新载入的静态部位首次选择先接入物理。42 项 JVM 测试及标准/细手臂、0.5–2.0 倍率的原生固定/拾起回归通过。详见 [修正记录](md/遗体空中固定与肢体物理拾起修正.md)。启动和发行打包仍由手动验证。

@@ -41,11 +41,26 @@ public final class EvidenceSnapshots {
                 .translate(.5f,0,.5f).rotateY((float)Math.PI).scale(-1,-1,1);
         NbtList matrix = new NbtList(); for (float f : root.get(new float[16])) matrix.add(NbtFloat.of(f));
         snapshot.put("root",matrix);
-        snapshot.putBoolean("partial", !Forensics.binding(display.getItemStack()).getString("part","all").equals("all"));
+        snapshot.putBoolean("partial", !Forensics.binding(display.getItemStack()).getString("part","all").equals("all")&&CorpsePoseRecord.read(source).isEmpty());
         snapshot.put("environment",EvidenceBlockSnapshot.capture((net.minecraft.server.world.ServerWorld)display.getWorld(),display.getPos()));
-        store.observe(viewer.getUuid(),id,snapshot);
+        store.observe(viewer.getUuid(),id,withPartView(store.observations(viewer.getUuid()).getCompoundOrEmpty(id),snapshot,inspectedPart));
     }
 
+    /** Six bounded observation views; inspecting a separated limb cannot overwrite another part's historical geometry. */
+    public static NbtCompound withPartView(NbtCompound previous,NbtCompound current,String inspectedPart){
+        if(!Forensics.PARTS.contains(inspectedPart))throw new IllegalArgumentException("Unknown inspected part");
+        var result=current.copy();var views=previous.getCompoundOrEmpty("part_views").copy();
+        if(views.isEmpty()&&!previous.isEmpty())for(String part:Forensics.PARTS)views.put(part,partView(previous,part));
+        views.put(inspectedPart,partView(current,inspectedPart));result.put("part_views",views);return result;
+    }
+    private static NbtCompound partView(NbtCompound snapshot,String part){
+        var view=snapshot.copy();view.remove("part_views");var visual=view.getCompoundOrEmpty("visual");var paint=new NbtList();
+        for(var e:visual.getListOrEmpty("model_paint_faces"))if(e instanceof NbtCompound n&&paintPart(n.getString("surface","")).equals(part))paint.add(n.copy());
+        visual.put("model_paint_faces",paint);view.put("visual",visual);return view;
+    }
+    public static NbtCompound viewForPart(NbtCompound observation,String part){
+        var views=observation.getCompoundOrEmpty("part_views");return views.contains(part)?views.getCompoundOrEmpty(part).copy():observation.copy();
+    }
     private static String paintPart(String surface) {
         if(surface.startsWith("body_"))return "torso";
         for(String part:Forensics.PARTS)if(surface.startsWith(part))return part;

@@ -74,12 +74,11 @@ public final class CorpsePoseGeometry {
         }
         return false;
     }
-    /** One torso proxy for existing pool/drip rules; this is not per-wound bleeding. */
+    /** Root-part proxy for existing pool/drip rules; this is not per-wound bleeding. */
     public static Vec3d bloodOrigin(ItemDisplayEntity display) {
         var data=CorpsePoseRecord.data(display.getItemStack());
         if(CorpsePoseRecord.read(data).isEmpty())return display.getPos();
-        var surface=surfaces(display,data).stream().filter(s->s.part().equals("torso")).findFirst().orElseThrow();
-        return transform(surface.matrix(),new Vec3d(0,6f/16,0)).add(display.getPos());
+        var pose=CorpsePoseRecord.read(data).orElseThrow();var center=pose.parts().get(pose.rootPart());return display.getPos().add(center.x(),center.y(),center.z());
     }
     public static Hit pick(ItemDisplayEntity display,Vec3d from,Vec3d to) {
         Hit best=null;double distance=Double.POSITIVE_INFINITY;

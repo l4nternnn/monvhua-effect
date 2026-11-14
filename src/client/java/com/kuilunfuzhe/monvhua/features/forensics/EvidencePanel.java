@@ -203,7 +203,9 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
         overviewYaw=180;overviewPitch=25;overviewZoom=1;overviewOrientation.set(EvidenceViewportFrame.orientation(180,25));overview();request(cases.getCompound(Math.floorMod(current+delta,cases.size())).orElseThrow().getString("id",""));
     }
     private void select(String value){
-        overview();part=value;detailScroll=0;visible=wounds.stream().filter(w->w.getString("part","").equals(part)).toList();selected=0;
+        overview();part=value;
+        if(!corpse.isEmpty()&&snapshot.contains("observation"))scene=new EvidenceScene(com.kuilunfuzhe.monvhua.features.forensics.EvidenceSnapshots.viewForPart(snapshot.getCompoundOrEmpty("observation"),value),snapshot.getListOrEmpty("wounds"));
+        detailScroll=0;visible=wounds.stream().filter(w->w.getString("part","").equals(part)).toList();selected=0;
         if(scene!=null)scene.requestFocus(visible.isEmpty()?"":visible.getFirst().getString("id",""));
     }
     @Override public boolean mouseClicked(double x,double y,int button){

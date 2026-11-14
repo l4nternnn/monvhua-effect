@@ -133,7 +133,7 @@ public final class PhysicsPreviewClient implements ClientModInitializer {
             if(!mode.equals("model")) {
                 var vertices=context.consumers().getBuffer(RenderLayer.getLines());
                 for(int i=0;i<PhysicsPoseDocument.IDS.size();i++) {
-                    String id=PhysicsPoseDocument.IDS.get(i);var p=document.poses().get(id);var size=StandardBodyPhysicsAdapter.size(id,isSlim()).mul(.5f);int color=COLORS[i];
+                    String id=PhysicsPoseDocument.IDS.get(i);var p=document.poses().get(id);if(p==null)continue;var size=StandardBodyPhysicsAdapter.size(id,isSlim()).mul(.5f*document.scale());int color=COLORS[i];
                     stack.push();try{stack.translate(p.x(),p.y(),p.z());stack.multiply(p.rotation());
                         VertexRendering.drawBox(stack,vertices,-size.x,-size.y,-size.z,size.x,size.y,size.z,((color>>16)&255)/255f,((color>>8)&255)/255f,(color&255)/255f,1);
                         for(var pivot:jointPivots(id))VertexRendering.drawBox(stack,vertices,pivot.x-.02,pivot.y-.02,pivot.z-.02,pivot.x+.02,pivot.y+.02,pivot.z+.02,1,1,1,1);

@@ -50,11 +50,13 @@ public final class Forensics {
         });
         ServerEntityEvents.ENTITY_LOAD.register((entity, world) -> {
             if (entity instanceof ProjectileEvidence projectile) projectile.monvhua$getEvidence();
-            if (entity instanceof ItemDisplayEntity display) { restoreInventory(display); PostmortemWounds.sync(display); }
+            if (entity instanceof ItemDisplayEntity display) { com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseSeparationService.reconcile(display);if(!display.isRemoved()){restoreInventory(display); PostmortemWounds.sync(display);} }
             if (entity instanceof InteractionEntity) {
                 for (String tag : entity.getCommandTags()) if (tag.startsWith(LINK)) {
                     try {
                         UUID display = UUID.fromString(tag.substring(LINK.length()));
+                        var existing=BodyPartManager.DISPLAY_TO_INTERACTION.get(display);
+                        if(existing!=null&&!existing.equals(entity.getUuid())&&world.getEntity(existing) instanceof InteractionEntity&&world.getEntity(display) instanceof ItemDisplayEntity d&&CorpsePoseRecord.present(d.getItemStack())){entity.discard();return;}
                         BodyPartManager.INTERACTION_TO_DISPLAY.put(entity.getUuid(), display);
                         BodyPartManager.DISPLAY_TO_INTERACTION.put(display, entity.getUuid());
                     } catch (IllegalArgumentException ignored) { }
@@ -337,12 +339,14 @@ public final class Forensics {
                 var hit=CorpsePoseGeometry.pick(display,player.getEyePos(),player.getEyePos().add(player.getRotationVec(1).multiply(ForensicConfig.current.inspectionDistance)));
                 if(hit==null)return List.of("请瞄准实际尸体表面");aimed=hit.part();
             }
-            boolean blocked=player.getCommandTags().contains("monvhua:no_corpse_drag")
+            boolean blocked=CorpsePoseRecord.read(CorpsePoseRecord.data(stack)).map(p->p.parts().size()==1&&!p.parts().containsKey("torso")).orElse(false)||player.getCommandTags().contains("monvhua:no_corpse_drag")
                 ||player.getMainHandStack().isIn(net.minecraft.registry.tag.TagKey.of(net.minecraft.registry.RegistryKeys.ITEM,net.minecraft.util.Identifier.of("monvhua","prevents_corpse_drag")))
                 ||player.getOffHandStack().isIn(net.minecraft.registry.tag.TagKey.of(net.minecraft.registry.RegistryKeys.ITEM,net.minecraft.util.Identifier.of("monvhua","prevents_corpse_drag")));
-            return List.of("ready",aimed,blocked?"blocked":"allowed");
+            boolean detached=CorpsePoseRecord.read(CorpsePoseRecord.data(stack)).map(p->p.parts().size()==1&&!p.parts().containsKey("torso")).orElse(false);
+            return List.of("ready",aimed,detached?"pickup":blocked?"blocked":"allowed");
         }
         NbtCompound b = binding(stack);
+        if(CorpsePoseRecord.read(CorpsePoseRecord.data(stack)).map(p->!p.parts().containsKey(part)).orElse(false))return List.of("此载体不包含所选身体部位");
         if (!b.getString("part", "all").equals("all") && !b.getString("part", "").equals(part)) return List.of("此载体不包含所选身体部位");
         NbtCompound corpse = ForensicStore.get(player.getServer()).corpse(b.getString("id", ""));
         List<String> lines = new ArrayList<>();

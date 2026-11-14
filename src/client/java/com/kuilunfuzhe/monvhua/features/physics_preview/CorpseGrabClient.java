@@ -28,11 +28,11 @@ public final class CorpseGrabClient {
         HudRenderCallback.EVENT.register((draw,tick)->{
             if(!holding())return;var c=MinecraftClient.getInstance();var s=RemoteCorpsePhysics.status(c.player.getUuid());
             String text=s==null?"物理抓取器 · "+(partial?"单肢体":"整体")+" · 右键抓取": "抓取 "+partName(s.part())+" · "+(s.local()?"单肢体":"整体")+" · "+String.format(java.util.Locale.ROOT,"%.2f 格",s.distance())+(s.frozen()?" · 已冻结":"");
-            if(s==null){var hit=CorpseGrabController.pick(c.player);var e=hit==null?null:CorpseHistoryController.get(hit.id());
-                if(e!=null&&e.session.residentState()!=null&&e.session.residentState().phase().equals("PINNED"))text+=" · 肢体槽位空闲，右键继续调姿 / 双击 H 转静态";
+            if(s==null){var hit=RemoteCorpsePhysics.pick(c.player);
+                if(hit!=null&&RemoteCorpsePhysics.pinned(hit.id()))text+=" · 空中姿态已固定，直接右键肢体调姿 / 双击 H 转静态";
             }
             draw.drawTextWithShadow(c.textRenderer,text,12,12,0xff70e7ff);
-            draw.drawTextWithShadow(c.textRenderer,"滚轮调距 · 按住左键旋转 · "+freeze.getBoundKeyLocalizedText().getString()+" "+((s==null?partial:s.local())?"固定肢体并释放槽位":"全冻结")+" · "+range.getBoundKeyLocalizedText().getString()+" 切换范围 · 双击 "+toStatic.getBoundKeyLocalizedText().getString()+" 转静态",12,26,0xffffffff);
+            draw.drawTextWithShadow(c.textRenderer,"滚轮调距 · 按住左键旋转 · "+freeze.getBoundKeyLocalizedText().getString()+" 固定并松开 / 空闲时解除固定"+" · "+range.getBoundKeyLocalizedText().getString()+" 切换范围 · 双击 "+toStatic.getBoundKeyLocalizedText().getString()+" 转静态",12,26,0xffffffff);
         });
         WorldRenderEvents.AFTER_ENTITIES.register(CorpseGrabClient::render);
     }
@@ -87,19 +87,20 @@ public final class CorpseGrabClient {
     private static String partName(String id){return switch(id){case "head"->"头部";case "torso"->"躯干";case "left_arm"->"左臂";case "right_arm"->"右臂";case "left_leg"->"左腿";case "right_leg"->"右腿";default->id;};}
     private static void message(String text){var p=MinecraftClient.getInstance().player;if(p!=null)p.sendMessage(Text.literal(text),false);}
     private static void render(WorldRenderContext context){
-        if(RemoteCorpsePhysics.remote())return;
         if(!holding()||context.matrixStack()==null||context.consumers()==null)return;
         var c=MinecraftClient.getInstance();var s=RemoteCorpsePhysics.status(c.player.getUuid());
-        var hit=s==null?CorpseGrabController.pick(c.player):null;
+        var hit=s==null?RemoteCorpsePhysics.pick(c.player):null;
         var id=s==null?(hit==null?null:hit.id()):s.id();if(id==null)return;
-        String part=s==null?hit.part():s.part();var entry=CorpseHistoryController.get(id);if(entry==null||entry.view==null)return;
-        var frames=entry.session.frames();if(frames.isEmpty())return;var pose=frames.getLast().poses().get(part);
+        String part=s==null?hit.part():s.part();
+        var view=RemoteCorpsePhysics.overlayViews().stream().filter(v->v.display().equals(id)).findFirst().orElse(null);
+        var frames=view==null?java.util.List.<PhysicsPoseDocument>of():view.session().frames();
+        var pose=frames.isEmpty()?null:frames.getLast().poses().get(part);
         var matrices=context.matrixStack();var camera=context.camera().getPos();var vertices=context.consumers().getBuffer(RenderLayer.getLines());
-        matrices.push();try{
-            var origin=entry.view.origin().subtract(camera);matrices.translate(origin.x+pose.x(),origin.y+pose.y(),origin.z+pose.z());matrices.multiply(pose.rotation());
-            var size=StandardBodyPhysicsAdapter.size(part,entry.view.slim()).mul(.5f).add(.006f,.006f,.006f);
+        if(pose!=null){matrices.push();try{
+            var origin=view.origin().subtract(camera);matrices.translate(origin.x+pose.x(),origin.y+pose.y(),origin.z+pose.z());matrices.multiply(pose.rotation());
+            var size=StandardBodyPhysicsAdapter.size(part,view.slim()).mul(.5f*frames.getLast().scale()).add(.006f,.006f,.006f);
             VertexRendering.drawBox(matrices,vertices,-size.x,-size.y,-size.z,size.x,size.y,size.z,0,1,1,1);
-        }finally{matrices.pop();}
+        }finally{matrices.pop();}}
         if(s!=null){
             for(var point:java.util.List.of(s.actual(),s.target())){var p=point.subtract(camera);VertexRendering.drawBox(matrices,vertices,p.x-.025,p.y-.025,p.z-.025,p.x+.025,p.y+.025,p.z+.025,1,.7f,0,1);}
             var a=s.actual().subtract(camera);var b=s.target().subtract(camera);var n=b.subtract(a).normalize();

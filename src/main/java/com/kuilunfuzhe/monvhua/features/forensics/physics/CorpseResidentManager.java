@@ -19,6 +19,23 @@ public final class CorpseResidentManager {
         boolean valid(){return !display.isRemoved()&&world.getEntity(display.getUuid())==display&&(!CorpseCarryService.isCarried(display)||CorpseTransportController.owns(display.getUuid(),session))&&position.equals(display.getPos())&&yaw==display.getYaw()&&pitch==display.getPitch()&&context.equals(display.getItemDisplayContext().name())&&root.equals(com.kuilunfuzhe.monvhua.mixin.forensics.CorpseDisplayAccessor.monvhua$transform(display.getDataTracker()).getMatrix(),1e-6f)&&visual.equals(EvidenceSnapshots.visualOnly(CorpsePoseRecord.data(display.getItemStack())))&&token.equals(Forensics.binding(display.getItemStack()).getString("token",""))&&Forensics.valid(world,display.getItemStack(),display.getUuid().toString());}
         boolean moving(){var s=session.residentState();return dirty||s==null||!s.phase().equals("SLEEPING");}
     }
+    static boolean capacity(int extra){return objects.size()+extra<=16;}
+    static boolean residentValid(UUID id){var r=objects.get(id);return r!=null&&r.valid();}
+    static void installSeparation(ItemDisplayEntity parent,Vec3d parentOrigin,CorpsePhysicsBridge.Request parentInput,CorpsePhysicsBridge.Session parentSession,
+                                  ItemDisplayEntity child,Vec3d childOrigin,CorpsePhysicsBridge.Request childInput,CorpsePhysicsBridge.Session childSession){
+        var oldHistory=CorpseHistoryController.get(parent.getUuid());
+        var a=new Resident(parent,parentOrigin,parentInput,parentSession,null);a.manipulated=true;
+        var b=new Resident(child,childOrigin,childInput,childSession,null);b.manipulated=true;
+        var av=new CorpsePhysicsCoordinator.LiveView(parent.getUuid(),a.world.getRegistryKey().getValue().toString(),parentOrigin,parent.getItemStack().copy(),parentInput.slim(),parentSession,null,0);
+        var bv=new CorpsePhysicsCoordinator.LiveView(child.getUuid(),b.world.getRegistryKey().getValue().toString(),childOrigin,child.getItemStack().copy(),childInput.slim(),childSession,null,0);
+        if(!CorpseHistoryController.register(parent,av)||!CorpseHistoryController.register(child,bv)){
+            CorpseHistoryController.remove(parent.getUuid());CorpseHistoryController.remove(child.getUuid());
+            if(oldHistory!=null&&oldHistory.view!=null)CorpseHistoryController.register(parent,oldHistory.view);
+            throw new IllegalStateException("分离历史预算不足");
+        }
+        objects.put(parent.getUuid(),a);objects.put(child.getUuid(),b);
+        CorpsePhysicsCoordinator.publish(av);CorpsePhysicsCoordinator.publish(bv);
+    }
     public static void victim(UUID id,UUID victim){var r=objects.get(id);if(r!=null)r.victim=victim;}
     public static boolean contains(UUID id){return objects.containsKey(id);}
     public static boolean moving(UUID id){var r=objects.get(id);return r!=null&&(r.moving()||r.session.residentState().generation()>r.generation);}
@@ -38,13 +55,20 @@ public final class CorpseResidentManager {
         last="持续物理已接入";return true;
         }catch(RuntimeException|LinkageError error){session.close();objects.remove(display.getUuid());CorpsePhysicsCoordinator.unpublish(display.getUuid());CorpseHistoryController.remove(display.getUuid());throw error;}
     }
+    public static boolean acceptsWounds(ItemDisplayEntity display){var r=objects.get(display.getUuid());return r==null||r.valid();}
+    /** Only for the server's validated wound update, never a pose or ownership edit. */
+    public static void woundsUpdated(ItemDisplayEntity display){
+        var r=objects.get(display.getUuid());if(r==null)return;
+        r.refresh();CorpseHistoryController.completed(display);
+        CorpsePhysicsCoordinator.publish(new CorpsePhysicsCoordinator.LiveView(display.getUuid(),r.world.getRegistryKey().getValue().toString(),r.origin,display.getItemStack().copy(),r.slim,r.session,r.victim,CorpsePoseRecord.data(display.getItemStack()).getLong("corpse_pose_revision",0)));
+    }
     public static void manipulated(UUID id){var r=objects.get(id);if(r!=null)r.manipulated=true;}
     public static void remove(UUID id){var r=objects.remove(id);if(r!=null)r.session.close();CorpsePhysicsCoordinator.unpublish(id);CorpseHistoryController.remove(id);}
     public static void reset(){for(var id:List.copyOf(objects.keySet()))remove(id);cursor=0;lastTick=Long.MIN_VALUE;last="";}
     public static boolean resume(UUID id){var r=objects.get(id);if(r==null)return false;try{if(!r.valid())throw new IllegalArgumentException("载体已改变");sample(r);return true;}catch(RuntimeException e){fail(r,e.getMessage());return false;}}
     private static void sample(Resident r){
         Vec3d center=r.region;
-        if(r.manipulated){var frames=r.session.frames();if(!frames.isEmpty()){var p=frames.getLast().poses().get("torso");var next=new Vec3d(Math.floor(p.x()),Math.floor(p.y()),Math.floor(p.z()));if(next.distanceTo(r.region)>1)center=next;}}
+        if(r.manipulated){var frames=r.session.frames();if(!frames.isEmpty()){var p=frames.getLast().poses().get(frames.getLast().rootPart());var next=new Vec3d(Math.floor(p.x()),Math.floor(p.y()),Math.floor(p.z()));if(next.distanceTo(r.region)>1)center=next;}}
         if(center.length()>120)throw new IllegalArgumentException("已到本次物理空间 120 格移动边界，请放下后重新抓取");
         var terrain=CorpseTerrainSnapshot.capture(r.world,r.origin.add(center));r.sampledTick=r.world.getTime();
         if(!terrain.equals(r.terrain)||!center.equals(r.region)){r.terrain=terrain;r.region=center;r.dirty=true;r.session.region(terrain,++r.terrainRevision,(float)center.x,(float)center.y,(float)center.z);}
@@ -54,8 +78,9 @@ public final class CorpseResidentManager {
     public static void tick(){
         var all=List.copyOf(objects.values());
         if(all.isEmpty())return;long currentTick=all.getFirst().world.getTime();if(currentTick==lastTick)return;lastTick=currentTick;
-        for(int i=0;i<Math.min(2,all.size());i++){var r=all.get(Math.floorMod(cursor++,all.size()));try{sample(r);}catch(RuntimeException e){fail(r,e.getMessage());}}
+        for(int i=0;i<Math.min(2,all.size());i++){var r=all.get(Math.floorMod(cursor++,all.size()));if(CorpseSeparationService.busy(r.display.getUuid()))continue;try{sample(r);}catch(RuntimeException e){fail(r,e.getMessage());}}
         for(var r:List.copyOf(objects.values()))try{
+            if(CorpseSeparationService.busy(r.display.getUuid())){r.progressTime=r.world.getTime();continue;}
             if(!r.valid()){org.slf4j.LoggerFactory.getLogger("monvhua-corpse-physics").info("Resident carrier invalidated: removed={} carried={} position={} visual={} token={}",r.display.isRemoved(),CorpseCarryService.isCarried(r.display),r.position.equals(r.display.getPos()),r.visual.equals(EvidenceSnapshots.visualOnly(CorpsePoseRecord.data(r.display.getItemStack()))),r.token.equals(Forensics.binding(r.display.getItemStack()).getString("token","")));remove(r.display.getUuid());continue;}
             if(CorpseHistoryController.get(r.display.getUuid())==null){fail(r,"历史载体已改变或丢失");continue;}
             if((CorpseGrabController.held(r.display.getUuid())||CorpseTransportController.held(r.display.getUuid()))&&r.sampledTick!=r.world.getTime()&&!r.session.paused())sample(r);
@@ -73,7 +98,7 @@ public final class CorpseResidentManager {
                 var old=CorpsePoseRecord.read(CorpsePoseRecord.data(r.display.getItemStack()));
                 if(old.isEmpty()||!old.get().parts().equals(normalized)||!r.display.getPos().equals(r.origin.add(r.region))){
                     long revision=CorpsePoseRecord.data(r.display.getItemStack()).getLong("corpse_pose_revision",0)+1;
-                    CorpsePoseService.applyGenerated(r.display,new CorpsePoseRecord(revision,"generated",r.slim?"slim":"default",normalized,pose.definition()),r.origin.add(r.region));
+                    CorpsePoseService.applyGenerated(r.display,new CorpsePoseRecord(revision,"generated",r.slim?"slim":"default",normalized,pose.definition(),pose.scale()),r.origin.add(r.region));
                 }
                 if(r.generation==0&&r.terrainRevision==0)CorpsePhysicsDiagnostics.record(CorpsePhysicsDiagnostics.Stage.APPLIED,r.input,pose,r.session.metrics(),System.nanoTime()-r.started);
                 var store=ForensicStore.get(r.world.getServer());var corpse=store.corpse(Forensics.binding(r.display.getItemStack()).getString("id",""));

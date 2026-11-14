@@ -63,6 +63,7 @@ public final class BloodMotionEvidenceService {
             String part=e.getKey();var p=e.getValue();
             float hx=part.equals("torso")||part.equals("head")?.25f:part.endsWith("arm")&&pose.definition().startsWith("slim")?.09375f:.125f;
             float hy=part.equals("head")?.25f:.375f,hz=part.equals("head")?.25f:.125f;
+            hx*=pose.scale();hy*=pose.scale();hz*=pose.scale();
             var corners=new ArrayList<Vec3d>();double low=Double.POSITIVE_INFINITY;
             for(int i=0;i<8;i++){
                 var v=p.rotation().transform(new Vector3f((i&1)==0?-hx:hx,(i&2)==0?-hy:hy,(i&4)==0?-hz:hz));

@@ -81,6 +81,7 @@ public final class CorpseHistoryController {
                 &&root.equals(com.kuilunfuzhe.monvhua.mixin.forensics.CorpseDisplayAccessor.monvhua$transform(display.getDataTracker()).getMatrix(),1e-6f)
                 &&sameItem()&&(!CorpseCarryService.isCarried(display)||CorpseTransportController.owns(display.getUuid(),session));}
     }
+    static boolean separationCapacity(int extra){return entries.size()+extra<=MAX_OBJECTS&&used()+extra*reservation(defaultSeconds)<=BUDGET;}
     public static void initialize(){ /* forces item registration */ }
     public static List<Entry> entries(){return List.copyOf(entries.values());}
     public static Entry get(UUID id){return entries.get(id);}
@@ -135,6 +136,7 @@ public final class CorpseHistoryController {
             var mapped=BodyPartManager.INTERACTION_TO_DISPLAY.get(target);entity=mapped==null?null:player.getWorld().getEntity(mapped);
         }
         if(!(entity instanceof ItemDisplayEntity display)||!Forensics.valid(player.getWorld(),display.getItemStack(),display.getUuid().toString()))throw new IllegalArgumentException("尸体已失效");
+        if(CorpseSeparationService.busy(display.getUuid()))throw new IllegalArgumentException("正在分离肢体");
         var e=entries.get(display.getUuid());
         if(e==null){
             if(CorpsePhysicsCoordinator.pending(display))throw new IllegalArgumentException("当前核心不支持历史工具");

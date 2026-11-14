@@ -16,8 +16,10 @@ public final class WoundGeometry {
         s("left_leg_upper","left_leg",-.1,12,-2,3.9,18,2), s("left_leg_lower","left_leg",-.1,18,-2,3.9,24,2));
     /** Actual neutral split-mesh geometry for a new rigid slim corpse. Legacy geometry is unchanged. */
     public static List<Surface> surfaces(NbtCompound data) {
-        if(!CorpsePoseRecord.read(data).map(p->p.armModel().equals("slim")).orElse(false))return SURFACES;
-        return SURFACES.stream().map(s->{
+        var pose=CorpsePoseRecord.read(data);
+        var present=SURFACES.stream().filter(s->pose.isEmpty()||pose.get().parts().containsKey(s.part())).toList();
+        if(!pose.map(p->p.armModel().equals("slim")).orElse(false))return present;
+        return present.stream().map(s->{
             if(!s.part().endsWith("arm"))return s;
             Box b=s.box(); boolean left=s.part().startsWith("left");
             return new Surface(s.name(),s.part(),new Box(left?4:-7,b.minY+.5,-2,left?7:-4,b.maxY+.5,2));

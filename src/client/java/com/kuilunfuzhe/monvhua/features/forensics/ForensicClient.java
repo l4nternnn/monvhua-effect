@@ -76,10 +76,10 @@ public final class ForensicClient {
             }
             if (packet.part().equals("__open")) {
                 if(packet.requestId()==openRequest&&packet.target()==openTarget&&client.currentScreen==null){
-                    if(packet.lines().equals(List.of("release")))client.setScreen(new InspectionScreen(openTarget,"",true,false));
+                    if(packet.lines().equals(List.of("release")))client.setScreen(new InspectionScreen(openTarget,"",true,false,false));
                     else if(packet.lines().size()==3&&packet.lines().getFirst().equals("ready")
                             &&client.crosshairTarget instanceof EntityHitResult hit&&hit.getEntity().getId()==openTarget)
-                        client.setScreen(new InspectionScreen(openTarget,packet.lines().get(1),false,packet.lines().get(2).equals("blocked")));
+                        client.setScreen(new InspectionScreen(openTarget,packet.lines().get(1),false,packet.lines().get(2).equals("blocked"),packet.lines().get(2).equals("pickup")));
                     else if(client.player!=null&&!packet.lines().isEmpty())client.player.sendMessage(Text.literal(packet.lines().getFirst()),true);
                 }
                 return;
@@ -108,9 +108,9 @@ public final class ForensicClient {
         return true;
     }
     private static final class InspectionScreen extends Screen {
-        final int target;final String part;final boolean releaseOnly,blocked;
+        final int target;final String part;final boolean releaseOnly,blocked,detached;
         int pending;boolean waiting;List<String> lines=List.of();
-        InspectionScreen(int target,String part,boolean releaseOnly,boolean blocked){super(Text.literal("遗体检查"));this.target=target;this.part=part;this.releaseOnly=releaseOnly;this.blocked=blocked;}
+        InspectionScreen(int target,String part,boolean releaseOnly,boolean blocked,boolean detached){super(Text.literal("遗体检查"));this.target=target;this.part=part;this.releaseOnly=releaseOnly;this.blocked=blocked;this.detached=detached;}
         private int radius(){return Math.max(32,Math.min(52,height/5));}
         private int cx(){return Math.max(radius()+8,width/2-radius()-18);}
         private int cy(){return height/2;}
@@ -125,8 +125,8 @@ public final class ForensicClient {
                 if(ClientPlayNetworking.canSend(ForensicPackets.CarryRequest.ID))ClientPlayNetworking.send(new ForensicPackets.CarryRequest(-1,true));close();return true;
             }
             if(slot!=0){
-                if((slot==1&&blocked)||part.equals("head"))return true;
-                if(ClientPlayNetworking.canSend(ForensicPackets.CarryRequest.ID))ClientPlayNetworking.send(new ForensicPackets.CarryRequest(target,false,slot==2?"carry":"drag",part));
+                if(!detached&&((slot==1&&blocked)||part.equals("head")))return true;
+                if(ClientPlayNetworking.canSend(ForensicPackets.CarryRequest.ID))ClientPlayNetworking.send(new ForensicPackets.CarryRequest(target,false,detached?"pickup":slot==2?"carry":"drag",part));
                 close();return true;
             }
             if(!waiting){waiting=true;pending=++sequence;ClientPlayNetworking.send(new ForensicPackets.Request(target,part,false,pending));}
@@ -145,14 +145,14 @@ public final class ForensicClient {
                     }
                 }
             }
-            if(releaseOnly)c.drawCenteredTextWithShadow(textRenderer,Text.literal("放下遗体"),cx(),cy()+r/2,0xFFFFD49B);
+            if(releaseOnly)c.drawCenteredTextWithShadow(textRenderer,Text.literal("放下"),cx(),cy()+r/2,0xFFFFD49B);
             else {
                 c.drawCenteredTextWithShadow(textRenderer,Text.literal(waiting?"检查中…":"检查"+label(part)),cx(),cy()+r/2,0xFFF1E7D6);
                 if(part.equals("torso")){
                     c.drawCenteredTextWithShadow(textRenderer,Text.literal("拖拽"),cx()-r/3,cy()-r*2/3,0xFF939BA6);
                     c.drawCenteredTextWithShadow(textRenderer,Text.literal("抱起"),cx()+r/3,cy()-r*2/3,0xFF939BA6);
-                }else c.drawCenteredTextWithShadow(textRenderer,Text.literal("拖拽"),cx(),cy()-r*3/4,0xFF939BA6);
-                if(hover>0)c.drawCenteredTextWithShadow(textRenderer,Text.literal(hover==1&&blocked?"当前持有状态禁止拖拽":part.equals("head")?"请瞄准四肢拖拽":hover==2?"承托躯干，四肢自然摆动":"拖动所选肢体；躯干自动选择最近四肢"),cx(),cy()+r+7,0xFFBDC6CF);
+                }else c.drawCenteredTextWithShadow(textRenderer,Text.literal(detached?"拾起":"拖拽"),cx(),cy()-r*3/4,0xFF939BA6);
+                if(hover>0)c.drawCenteredTextWithShadow(textRenderer,Text.literal(detached?"空手拿在身前，保留物理效果":hover==1&&blocked?"当前持有状态禁止拖拽":part.equals("head")?"请瞄准四肢拖拽":hover==2?"承托躯干，四肢自然摆动":"拖动所选肢体；躯干自动选择最近四肢"),cx(),cy()+r+7,0xFFBDC6CF);
             }
             // No full-screen background, blur, title or footer buttons.
         }

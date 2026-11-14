@@ -83,7 +83,7 @@ public final class CorpsePoseCommands {
             if(!(entity instanceof ItemDisplayEntity display))throw new IllegalArgumentException("请选择单一尸体 display 或 interaction");
             if(action.equals("status")||action.equals("verify")) {
                 var data=CorpsePoseRecord.data(display.getItemStack());var pose=CorpsePoseRecord.read(data);
-                source.sendFeedback(()->Text.literal("corpse_pose="+pose.map(p->p.source()+" revision="+p.revision()+" "+p.armModel()).orElse(data.contains(CorpsePoseRecord.KEY)?"invalid (legacy fallback)":"legacy")
+                source.sendFeedback(()->Text.literal("corpse_pose="+pose.map(p->p.source()+" revision="+p.revision()+" "+p.armModel()+" scale="+p.scale()).orElse(data.contains(CorpsePoseRecord.KEY)?"invalid (legacy fallback)":"legacy")
                         +" | clear="+CorpsePoseGeometry.clear(source.getWorld(),display,data,display.getPos())
                         +" | support="+CorpsePoseGeometry.supported(source.getWorld(),display,data,display.getPos())),false);return 1;
             }
@@ -95,7 +95,7 @@ public final class CorpsePoseCommands {
                 validateNeutral(display,old);
                 var document=read(file);
                 var record=CorpsePoseRecord.imported(document,revision,old.getString("arm_model","slim"));
-                next.put(CorpsePoseRecord.KEY,record.encode());
+                next.putFloat("corpse_scale",record.scale());next.put(CorpsePoseRecord.KEY,record.encode());
                 CorpsePoseService.validateGeometry(display,next,display.getPos());
             } else next.remove(CorpsePoseRecord.KEY);
             next.putLong("corpse_pose_revision",revision);
@@ -125,7 +125,7 @@ public final class CorpsePoseCommands {
         if(display.getItemDisplayContext()!=net.minecraft.item.ItemDisplayContext.NONE
                 ||!CorpseDisplayAccessor.monvhua$transform(display.getDataTracker()).getMatrix().equals(new Matrix4f(),1e-5f)
                 ||display.getPitch()!=0)throw new IllegalArgumentException("仅支持中性 display transform、pitch=0、item_display=none 的测试载体；旧载体未被改写");
-        if(n.getFloat("corpse_scale",1)!=1||n.getString("body_pose_mode","").equals("true_skeletal"))throw new IllegalArgumentException("不支持缩放或 true_skeletal");
+        if(!com.kuilunfuzhe.monvhua.features.physics_preview.CorpseScale.supported(n.getFloat("corpse_scale",1))||n.getString("body_pose_mode","").equals("true_skeletal"))throw new IllegalArgumentException("仅支持 0.5–2.0 整体倍率，不支持 true_skeletal");
         for(String key:n.getKeys())if(key.startsWith("pose_")||key.startsWith("bend_")) {
             float expected=key.endsWith("_scale")?1:0;
             if(n.getFloat(key,Float.NaN)!=expected)throw new IllegalArgumentException("存在非中性旧姿态："+key);

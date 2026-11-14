@@ -124,7 +124,7 @@ public final class BloodTraceService {
         if (!(display.getWorld() instanceof ServerWorld world) || carrier == null || !BloodRules.generating()) return;
         if (!Forensics.valid(world, display.getItemStack(), display.getUuid().toString())) return;
         NbtCompound binding = Forensics.binding(display.getItemStack());
-        String id = binding.getString("id", ""), part = binding.getString("part", "all");
+        String id = binding.getString("id", ""), part = budgetPart(display, binding.getString("part", "all"));
         NbtCompound corpse = ForensicStore.get(world.getServer()).corpse(id), ledger = corpse.getCompoundOrEmpty("blood");
         if (!BloodRules.active(ledger, now(world.getServer())) || BloodRules.remaining(ledger, part) <= 0) return;
         var landing = BloodSurfaceProjection.cast(world, current.add(0, .15, 0), current.add(0, -ForensicConfig.current.transfer.maxDropDistance, 0), display);
@@ -171,6 +171,27 @@ public final class BloodTraceService {
             LoggerFactory.getLogger("monvhua-blood").warn("Blood trace capacity reached or stale update rejected in {}; existing evidence retained", world.getRegistryKey().getValue());
         }
         return accepted;
+    }
+    /** Immediate cosmetic feedback plus a bounded evidence drop at the actual struck joint. */
+    public static void jointCut(ItemDisplayEntity display,Vec3d position,String part,String attack){
+        safe(()->{
+            if(!(display.getWorld() instanceof ServerWorld world)||!BloodRules.generating()
+                    ||!Forensics.valid(world,display.getItemStack(),display.getUuid().toString()))return;
+            world.spawnParticles(new net.minecraft.particle.DustParticleEffect(0x9e1020,1.1f),position.x,position.y,position.z,16,.06,.08,.06,.02);
+            world.spawnParticles(new net.minecraft.particle.DustParticleEffect(0x530714,.8f),position.x,position.y-.08,position.z,10,.035,.10,.035,.01);
+            var store=ForensicStore.get(world.getServer());String id=Forensics.binding(display.getItemStack()).getString("id","");
+            var corpse=store.corpse(id);var ledger=corpse.getCompoundOrEmpty("blood");
+            // Feedback never replenishes the finite blood ledger, including legacy/dried corpses.
+            if(!BloodRules.active(ledger,now(world.getServer())))return;
+            int impact=ledger.getInt("impact_remaining",0);if(impact<=0&&BloodRules.remaining(ledger,part)<=0)return;
+            var landing=BloodSurfaceProjection.cast(world,position.add(0,.03,0),position.add(0,-ForensicConfig.current.transfer.maxDropDistance,0),display);
+            if(landing==null)return;
+            var patch=BloodSurfaceProjection.impact(landing,.065f,attack.hashCode());
+            if(submit(world,new BloodTraceStore.Entry(patch,id,attack,world.getBlockState(patch.pos()).toString(),false))){
+                if(impact>0)ledger.putInt("impact_remaining",impact-1);else BloodRules.consume(ledger,part,1);
+                BloodTransferService.deposit(world.getServer(),attack,id,1);store.markDirty();
+            }
+        });
     }
     public static void hit(ServerPlayerEntity victim, Entity attacker, Entity direct, boolean melee, WeaponProfiles.Selection selection, NbtCompound hit) {
         safe(() -> impact(victim, attacker, direct, melee, selection, hit));
@@ -242,18 +263,24 @@ public final class BloodTraceService {
             store.markDirty();
         });
     }
+    private static String budgetPart(ItemDisplayEntity display,String legacy){
+        var pose=com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.read(com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.data(display.getItemStack()));
+        if(pose.isEmpty()||pose.get().parts().size()==6)return legacy;
+        var world=(ServerWorld)display.getWorld();var ledger=ForensicStore.get(world.getServer()).corpse(Forensics.binding(display.getItemStack()).getString("id","")).getCompoundOrEmpty("blood");
+        return pose.get().parts().keySet().stream().filter(p->BloodRules.remaining(ledger,p)>0).sorted().findFirst().orElse(pose.get().rootPart());
+    }
     private static void pool(ItemDisplayEntity display) {
         if(com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.simulating(display))return;
         if (CARRIED.contains(display.getUuid()) || CorpseCarryService.isCarried(display)) return;
         if (!(display.getWorld() instanceof ServerWorld world) || world.getEntity(display.getUuid()) != display
                 || !world.isChunkLoaded(display.getBlockPos()) || !Forensics.valid(world, display.getItemStack(), display.getUuid().toString())) return;
         NbtCompound binding = Forensics.binding(display.getItemStack());
-        String id = binding.getString("id", ""), part = binding.getString("part", "all");
+        String id = binding.getString("id", ""), part = budgetPart(display, binding.getString("part", "all"));
         var forensic = ForensicStore.get(world.getServer()); NbtCompound corpse = forensic.corpse(id);
         NbtCompound ledger = corpse.getCompoundOrEmpty("blood");
         if (!BloodRules.active(ledger, now(world.getServer())) || BloodRules.remaining(ledger, part) <= 0) { SOURCES.remove(display); return; }
         // A complete carrier takes precedence; a staged split cannot spend the same shares.
-        if (!part.equals("all") && !corpse.getCompoundOrEmpty("carriers").getCompoundOrEmpty("all").isEmpty()) return;
+        if (!part.equals("all") && !com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.present(display.getItemStack()) && !corpse.getCompoundOrEmpty("carriers").getCompoundOrEmpty("all").isEmpty()) return;
         var origin=com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseGeometry.bloodOrigin(display);
         var landing = BloodSurfaceProjection.cast(world, origin.add(0, .05, 0), origin.add(0, -1.25, 0), display);
         if (landing == null || landing.getSide() != Direction.UP) return;
