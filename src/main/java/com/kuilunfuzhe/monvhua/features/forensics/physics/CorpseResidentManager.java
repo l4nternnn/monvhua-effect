@@ -19,7 +19,29 @@ public final class CorpseResidentManager {
         boolean valid(){return !display.isRemoved()&&world.getEntity(display.getUuid())==display&&(!CorpseCarryService.isCarried(display)||CorpseTransportController.owns(display.getUuid(),session))&&position.equals(display.getPos())&&yaw==display.getYaw()&&pitch==display.getPitch()&&context.equals(display.getItemDisplayContext().name())&&root.equals(com.kuilunfuzhe.monvhua.mixin.forensics.CorpseDisplayAccessor.monvhua$transform(display.getDataTracker()).getMatrix(),1e-6f)&&visual.equals(EvidenceSnapshots.visualOnly(CorpsePoseRecord.data(display.getItemStack())))&&token.equals(Forensics.binding(display.getItemStack()).getString("token",""))&&Forensics.valid(world,display.getItemStack(),display.getUuid().toString());}
         boolean moving(){var s=session.residentState();return dirty||s==null||!s.phase().equals("SLEEPING");}
     }
-    static boolean capacity(int extra){return objects.size()+extra<=16;}
+    static boolean capacity(int extra){return objects.size()+KomDyingCompat.count()+extra<=16;}
+    /** Transfers ownership of an existing living session; it must not be closed by its former owner. */
+    static boolean adopt(ItemDisplayEntity display,Vec3d origin,CorpsePhysicsBridge.Request input,CorpsePhysicsBridge.Session session,UUID victim,long terrainRevision){
+        if(!capacity(1)||!CorpseHistoryController.separationCapacity(1))return false;
+        if(!commitDownedFrame(display,origin,input,session))return false;
+        var r=new Resident(display,origin,input,session,null);r.victim=victim;r.terrainRevision=terrainRevision;
+        var view=new CorpsePhysicsCoordinator.LiveView(display.getUuid(),r.world.getRegistryKey().getValue().toString(),origin,display.getItemStack().copy(),input.slim(),session,victim,0);
+        if(!CorpseHistoryController.register(display,view))return false;
+        objects.put(display.getUuid(),r);CorpsePhysicsCoordinator.publish(view);return true;
+    }
+    /** A frame from our own solver may be midair; do not require static ground support during ownership transfer. */
+    static boolean commitDownedFrame(ItemDisplayEntity display,Vec3d origin,CorpsePhysicsBridge.Request input,CorpsePhysicsBridge.Session session){
+        var frames=session.frames();if(frames.isEmpty())return false;
+        var pose=frames.getLast();var data=CorpsePoseRecord.data(display.getItemStack());
+        var record=new CorpsePoseRecord(data.getLong("corpse_pose_revision",0)+1,"generated",input.slim()?"slim":"default",pose.poses(),pose.definition(),pose.scale());
+        data.put(CorpsePoseRecord.KEY,record.encode());data.putLong("corpse_pose_revision",record.revision());data.putString("arm_model",record.armModel());
+        display.setTransformation(new net.minecraft.util.math.AffineTransformation(new org.joml.Matrix4f()));display.setYaw(0);display.setPitch(0);
+        display.setItemDisplayContext(net.minecraft.item.ItemDisplayContext.NONE);display.setPosition(origin);
+        CorpsePoseService.commitStatic(display,data);
+        var store=ForensicStore.get(display.getWorld().getServer());var corpse=store.corpse(Forensics.binding(display.getItemStack()).getString("id",""));
+        if(!corpse.contains("initial_generated_pose"))corpse.put("initial_generated_pose",record.encode());
+        corpse.putString("last_pose_operation","kom_dying_handoff");store.markDirty();return true;
+    }
     static boolean residentValid(UUID id){var r=objects.get(id);return r!=null&&r.valid();}
     static void installSeparation(ItemDisplayEntity parent,Vec3d parentOrigin,CorpsePhysicsBridge.Request parentInput,CorpsePhysicsBridge.Session parentSession,
                                   ItemDisplayEntity child,Vec3d childOrigin,CorpsePhysicsBridge.Request childInput,CorpsePhysicsBridge.Session childSession){
@@ -41,11 +63,11 @@ public final class CorpseResidentManager {
     public static boolean moving(UUID id){var r=objects.get(id);return r!=null&&(r.moving()||r.session.residentState().generation()>r.generation);}
     public static String status(){return "resident="+objects.size()+"/16 moving="+objects.values().stream().filter(Resident::moving).count()+" "+last;}
     static boolean open(ItemDisplayEntity display,Vec3d origin,CorpsePhysicsBridge.Request request,CorpsePhysicsBridge provider,CorpseInitialMotionResolver.Motion motion){
-        if(objects.size()>=16){CorpsePhysicsDiagnostics.rejected(CorpsePhysicsDiagnostics.Stage.CAPACITY);last="驻留容量已满，保留旧尸体";return false;}
+        if(!capacity(1)){CorpsePhysicsDiagnostics.rejected(CorpsePhysicsDiagnostics.Stage.CAPACITY);last="驻留容量已满，保留旧尸体";return false;}
         return open(display,origin,request,provider,motion,null);
     }
     static boolean open(ItemDisplayEntity display,Vec3d origin,CorpsePhysicsBridge.Request request,CorpsePhysicsBridge provider,CorpseInitialMotionResolver.Motion motion,com.kuilunfuzhe.monvhua.features.physics_preview.PhysicsPoseDocument seed){
-        if(objects.size()>=16)throw new IllegalArgumentException("驻留容量已满");
+        if(!capacity(1))throw new IllegalArgumentException("驻留容量已满");
         var session=seed==null?provider.openContinuous(request):provider.openSeeded(request,seed);
         try{
         var r=new Resident(display,origin,request,session,motion);objects.put(display.getUuid(),r);

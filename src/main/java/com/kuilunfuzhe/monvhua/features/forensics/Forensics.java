@@ -85,6 +85,7 @@ public final class Forensics {
 
     public static void record(ServerPlayerEntity player, DamageSource source, float amount) {
         if (!enabled(player) || !(amount > 0) || !Float.isFinite(amount)) return;
+        if (com.kuilunfuzhe.monvhua.features.forensics.physics.KomDyingCompat.syntheticDeath(player,source)) return;
         com.kuilunfuzhe.monvhua.features.forensics.physics.DeathMotionContext.accepted(player,source);
         if (player.getHealth() > 0) ForensicStore.get(player.getServer()).ensureLivingLife(player.getUuid());
         NbtCompound hit = new NbtCompound();

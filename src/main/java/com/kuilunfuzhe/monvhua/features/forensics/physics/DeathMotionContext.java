@@ -44,6 +44,12 @@ public final class DeathMotionContext {
     public static synchronized void expire(MinecraftServer server) {FROZEN.values().removeIf(v->v.server==server&&v.tick<server.getTicks());}
     public static synchronized void clear(MinecraftServer server) {FROZEN.values().removeIf(v->v.server==server);}
     public static int activeDepth(){var stack=ACTIVE.get();return stack==null?0:stack.size();}
+    /** Snapshot the original lethal attack before kom_dying resets health and pose. */
+    public static CorpseInitialMotionResolver.Motion current(ServerPlayerEntity player){
+        var stack=ACTIVE.get();var s=stack==null?null:stack.peek();
+        return s!=null&&s.player==player&&s.accepted?s.motion:
+                CorpseInitialMotionResolver.resolve(player.bodyYaw,0,0,0,0,"unknown","unknown","missing_downed_context",CorpseProfileManager.current());
+    }
     private static CorpseInitialMotionResolver.Motion capture(ServerPlayerEntity p,DamageSource source,boolean beforeDamage) {
         var direct=source.getSource();var attacker=source.getAttacker();
         String cause=source.getTypeRegistryEntry().getKey().map(k->k.getValue().toString()).orElse("unknown");

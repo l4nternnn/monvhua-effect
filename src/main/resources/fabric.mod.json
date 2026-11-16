@@ -27,6 +27,7 @@
 	},
 	"mixins": [
 		"monvhua.mixins.json",
+        "monvhua.kom_dying_compat.mixins.json",
 		{
 			"config": "monvhua.client.mixins.json",
 			"environment": "client"

@@ -32,6 +32,7 @@ public final class WeaponProfiles implements SimpleSynchronousResourceReloadList
     public record Selection(String profile, String mode, Mode definition) {}
     private static Map<String, Profile> profiles = Map.of();
     private static final Set<String> REPORTED_CONFLICTS = new HashSet<>();
+    private static final List<String> TAG_KINDS = List.of("cut", "puncture", "blunt", "burn", "other");
     private static final Set<String> KINDS = Set.of("cut", "puncture", "blunt", "burn", "other", "unknown");
 
     @Override public Identifier getFabricId() { return Identifier.of("monvhua", "forensic_profiles"); }
@@ -118,27 +119,60 @@ public final class WeaponProfiles implements SimpleSynchronousResourceReloadList
         // Explicit but invalid profiles must not silently become another weapon.
         if (!metadata(stack).getString("profile", "").isEmpty()) return null;
         // An ambiguous profile match must not escape into the capability-tag fallback.
-        String item = Registries.ITEM.getId(stack.getItem()).toString();
-        if (profiles.values().stream().anyMatch(candidate -> candidate.items.contains(item)
-                || (!candidate.tag.isEmpty() && stack.isIn(TagKey.of(RegistryKeys.ITEM, Identifier.of(candidate.tag)))))) return null;
-        List<String> kinds = new ArrayList<>();
-        for (String kind : List.of("cut", "puncture", "blunt"))
-            if (stack.isIn(TagKey.of(RegistryKeys.ITEM, Identifier.of("monvhua", "forensics/can_" + kind)))) kinds.add(kind);
-        if (kinds.size() != 1 || !delivery.equals("melee")) return null;
-        return new Selection("tag:" + kinds.getFirst(), "default", new Mode(delivery, List.of(new Component(kinds.getFirst(), 1))));
+        if (matchesConfiguredProfile(stack)) return null;
+        return selectTags(capabilities(stack), metadata(stack).getString("selected_mode", ""), delivery);
+    }
+
+    private static List<String> capabilities(ItemStack stack) {
+        return TAG_KINDS.stream().filter(kind -> stack.isIn(TagKey.of(RegistryKeys.ITEM,
+                Identifier.of("monvhua", "forensics/can_" + kind)))).toList();
+    }
+
+    /** Multiple capability tags describe alternatives, not simultaneous damage components. */
+    public static Selection selectTags(Collection<String> capabilities, String selected, String delivery) {
+        if (!delivery.equals("melee")) return null;
+        List<String> kinds = TAG_KINDS.stream().filter(capabilities::contains).toList();
+        if (kinds.isEmpty()) return null;
+        String kind;
+        if (kinds.size() == 1) kind = kinds.getFirst();
+        else if (kinds.contains(selected)) kind = selected;
+        else return null; // No selected mode: preserve unknown instead of inventing a composite wound.
+        return new Selection("tag:" + kind, kinds.size() == 1 ? "default" : kind,
+                new Mode(delivery, List.of(new Component(kind, 1))));
+    }
+
+    public static String nextTagMode(Collection<String> capabilities, String selected) {
+        List<String> kinds = TAG_KINDS.stream().filter(capabilities::contains).toList();
+        return kinds.isEmpty() ? "" : kinds.get((kinds.indexOf(selected) + 1) % kinds.size());
     }
 
     public static String cycle(ItemStack stack) {
         Profile p = profile(stack);
-        if (p == null) return "此物品没有有效的攻击模式配置";
+        if (p == null) {
+            // Invalid explicit profiles and equal-priority conflicts must not escape through tags.
+            if (!metadata(stack).getString("profile", "").isEmpty() || matchesConfiguredProfile(stack))
+                return "此物品的攻击配置无效或存在冲突";
+            String next = nextTagMode(capabilities(stack), metadata(stack).getString("selected_mode", ""));
+            if (next.isEmpty()) return "此物品没有有效的攻击模式配置";
+            setSelectedMode(stack, next);
+            return "攻击模式：" + Forensics.kindLabel(next);
+        }
         List<String> modes = p.modes.entrySet().stream().filter(e -> e.getValue().delivery.equals("melee")).map(Map.Entry::getKey).toList();
         if (modes.isEmpty()) return "此物品没有近战模式";
-        NbtCompound root = stack.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT).copyNbt();
-        NbtCompound meta = metadata(stack);
-        String next = modes.get((modes.indexOf(meta.getString("selected_mode", p.defaultMode)) + 1) % modes.size());
-        meta.putString("selected_mode", next);
-        root.put(KEY, meta);
-        stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        String next = modes.get((modes.indexOf(metadata(stack).getString("selected_mode", p.defaultMode)) + 1) % modes.size());
+        setSelectedMode(stack, next);
         return "攻击模式：" + switch (next) { case "slash" -> "挥砍"; case "thrust" -> "刺击"; case "pommel" -> "柄击"; default -> next; };
     }
+    private static boolean matchesConfiguredProfile(ItemStack stack) {
+        String item = Registries.ITEM.getId(stack.getItem()).toString();
+        return profiles.values().stream().anyMatch(p -> p.items.contains(item)
+                || (!p.tag.isEmpty() && stack.isIn(TagKey.of(RegistryKeys.ITEM, Identifier.of(p.tag)))));
+    }
+    private static void setSelectedMode(ItemStack stack, String selected) {
+        NbtCompound root = stack.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT).copyNbt();
+        NbtCompound meta = metadata(stack);
+        meta.putString("selected_mode", selected); root.put(KEY, meta);
+        stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+    }
+
 }

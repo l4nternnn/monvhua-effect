@@ -23,6 +23,10 @@ import java.util.function.Predicate;
 
 @Mixin(value = PlayerManager.class, priority = 2000)
 public abstract class PlayerManagerMixin {
+    @Inject(method="remove",at=@At("HEAD"))
+    private void monvhua$terminalRemoval(ServerPlayerEntity player,CallbackInfo ci) {
+        com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseDeathFallback.departure(player,"disconnect");
+    }
     @Shadow
     public abstract List<ServerPlayerEntity> getPlayerList();
 

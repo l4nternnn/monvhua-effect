@@ -50,9 +50,13 @@ public final class LiveCorpseRenderer {
         return client.world!=null&&client.world.getRegistryKey().getValue().toString().equals(v.dimension());
     }
     public static boolean hides(Entity entity) {
+        // Proxies are rendered only through validated live frames, never as upright static items.
+        if(entity.getCommandTags().contains(com.kuilunfuzhe.monvhua.features.forensics.physics.KomDyingCompat.MARKER)
+                ||entity instanceof ItemDisplayEntity d&&com.kuilunfuzhe.monvhua.features.forensics.physics.KomDyingCompat.proxy(d.getItemStack()))return true;
         var history=CorpseHistoryController.get(entity.getUuid());
         if(history!=null&&history.valid&&history.frozen()&&history.view!=null&&sameWorld(history.view))return true;
         for(var v:RemoteCorpsePhysics.views())if(sameWorld(v)) {
+            if(entity.getUuid().equals(v.victim())&&com.kuilunfuzhe.monvhua.features.forensics.physics.KomDyingCompat.proxy(v.skin())&&!v.session().frames().isEmpty())return true;
             if(entity.getUuid().equals(v.display()))return true;
             if(entity instanceof LivingEntity living&&!living.isAlive()&&entity.getUuid().equals(v.victim()))return true;
         }

@@ -4,6 +4,8 @@
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
         "forensics.ForensicPlayerMixin",
+        "forensics.CorpseTerminalPlayerMixin",
+        "forensics.CorpseTerminalDisconnectMixin",
         "forensics.DeathMotionMixin",
         "forensics.CorpseInteractionMixin",
         "forensics.CorpseDisplayAccessor",

@@ -54,6 +54,7 @@ public final class CorpsePhysicsNetwork {
             if(!packet.action.equals("release")&&limits.getOrDefault(p.getUuid(),-100)==now)return;limits.put(p.getUuid(),now);
             if(!validInput(packet.wheel,packet.x,packet.y,packet.z))return;
             try{switch(packet.action){
+                case "rescue"->KomDyingCompat.rescue(p);
                 case "toggle"->CorpseGrabController.toggle(p,packet.partial);
                 case "freeze"->CorpseGrabController.freeze(p,packet.partial);
                 case "range"->CorpseGrabController.range(p);

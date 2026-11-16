@@ -1,0 +1,7 @@
+{
+  "required": false,
+  "package": "com.kuilunfuzhe.monvhua.mixin.compat",
+  "compatibilityLevel": "JAVA_21",
+  "plugin": "com.kuilunfuzhe.monvhua.mixin.compat.KomDyingCompatMixinPlugin",
+  "mixins": ["KomDyingManagerMixin"]
+}

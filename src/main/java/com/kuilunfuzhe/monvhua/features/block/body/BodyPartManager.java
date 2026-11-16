@@ -92,102 +92,105 @@ public class BodyPartManager {
 	public static final Map<UUID, UUID> INTERACTION_TO_DISPLAY = new ConcurrentHashMap<>();
 	public static final Map<UUID, UUID> DISPLAY_TO_INTERACTION = new ConcurrentHashMap<>();
 
-	public static void registerEvents() {
-		// 玩家死亡掉落肢体/合并身体作为可交互展示实体
-		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
-			if (entity instanceof ServerPlayerEntity player) {
-				if (!player.getCommandTags().contains("dead_body") && !player.getCommandTags().contains("dead_part")) return;
-				if (com.kuilunfuzhe.monvhua.features.forensics.ForensicConfig.current.enabled && !Forensics.beginDeath(player, source)) return;
-				ServerWorld world = (ServerWorld) player.getWorld();
-				BlockPos deathPos = player.getBlockPos();
-				ProfileComponent profile = new ProfileComponent(player.getGameProfile());
-				String playerName = player.getName().getString();
+	/** Shared by real death and terminal disconnect/spectator fallbacks; Forensics.beginDeath owns deduplication. */
+	public static void spawnDeath(ServerPlayerEntity player, net.minecraft.entity.damage.DamageSource source) {
+		if (!player.getCommandTags().contains("dead_body") && !player.getCommandTags().contains("dead_part")) return;
+		if (com.kuilunfuzhe.monvhua.features.forensics.ForensicConfig.current.enabled && !Forensics.beginDeath(player, source)) return;
+		ServerWorld world = (ServerWorld) player.getWorld();
+		BlockPos deathPos = player.getBlockPos();
+		ProfileComponent profile = new ProfileComponent(player.getGameProfile());
+		String playerName = player.getName().getString();
 
-				String detectedLocalSkin = null;
-				for (String tag : player.getCommandTags()) {
-					if (tag.equals("dead_body") || tag.equals("dead_part")) continue;
-					for (String skin : GiveBodyPartCommand.LOCAL_SKINS) {
-						if (skin.equals(tag)) {
-							detectedLocalSkin = skin;
-							break;
-						}
-					}
-					if (detectedLocalSkin != null) break;
+		String detectedLocalSkin = null;
+		for (String tag : player.getCommandTags()) {
+			if (tag.equals("dead_body") || tag.equals("dead_part")) continue;
+			for (String skin : GiveBodyPartCommand.LOCAL_SKINS) {
+				if (skin.equals(tag)) {
+					detectedLocalSkin = skin;
+					break;
 				}
+			}
+			if (detectedLocalSkin != null) break;
+		}
 
-				if (player.getCommandTags().contains("dead_part")) {
-					Item[] partItems = new Item[]{
-						Assembly_ModItems.HEAD_ITEM, Assembly_ModItems.TORSO_ITEM,
-						Assembly_ModItems.LEFT_ARM_ITEM, Assembly_ModItems.RIGHT_ARM_ITEM,
-						Assembly_ModItems.LEFT_LEG_ITEM, Assembly_ModItems.RIGHT_LEG_ITEM
-					};
-					String[] chineseNames = new String[]{"头部", "躯干", "左臂", "右臂", "左腿", "右腿"};
-					double[] offsetsX = new double[]{0.0, 0, -0.6, 0.23, -0.3, 0.3};
-					double[] offsetsY = new double[]{0.2, 0, -0.24, -0.24, -0.2, -0.2};
-					double[] offsetsZ = new double[]{0.7, 0, -0.05, -0.1, -1.1, -1.1};
+		if (player.getCommandTags().contains("dead_part")) {
+			Item[] partItems = new Item[]{
+				Assembly_ModItems.HEAD_ITEM, Assembly_ModItems.TORSO_ITEM,
+				Assembly_ModItems.LEFT_ARM_ITEM, Assembly_ModItems.RIGHT_ARM_ITEM,
+				Assembly_ModItems.LEFT_LEG_ITEM, Assembly_ModItems.RIGHT_LEG_ITEM
+			};
+			String[] chineseNames = new String[]{"头部", "躯干", "左臂", "右臂", "左腿", "右腿"};
+			double[] offsetsX = new double[]{0.0, 0, -0.6, 0.23, -0.3, 0.3};
+			double[] offsetsY = new double[]{0.2, 0, -0.24, -0.24, -0.2, -0.2};
+			double[] offsetsZ = new double[]{0.7, 0, -0.05, -0.1, -1.1, -1.1};
 
-					for (int i = 0; i < 6; i++) {
-						ItemStack stack = new ItemStack(partItems[i]);
-						if (detectedLocalSkin != null) {
-							NbtCompound nbt = new NbtCompound();
-							nbt.putString("local_skin", detectedLocalSkin);
-							nbt.putString("arm_model", "slim");
-							stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
-						} else {
-							stack.set(DataComponentTypes.PROFILE, profile);
-						}
-						Text displayName = Text.literal("§6§k13§4" + playerName + "§r§6§k13§r" + "的" + chineseNames[i]);
-						stack.set(DataComponentTypes.CUSTOM_NAME, displayName);
+			for (int i = 0; i < 6; i++) {
+				ItemStack stack = new ItemStack(partItems[i]);
+				if (detectedLocalSkin != null) {
+					NbtCompound nbt = new NbtCompound();
+					nbt.putString("local_skin", detectedLocalSkin);
+					nbt.putString("arm_model", "slim");
+					stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
+				} else {
+					stack.set(DataComponentTypes.PROFILE, profile);
+				}
+				Text displayName = Text.literal("§6§k13§4" + playerName + "§r§6§k13§r" + "的" + chineseNames[i]);
+				stack.set(DataComponentTypes.CUSTOM_NAME, displayName);
 
-						ItemDisplayEntity display = EntityType.ITEM_DISPLAY.create(world, SpawnReason.TRIGGERED);
-						if (display != null) {
-							display.setItemStack(stack);
-							if (i == 0) {
-								float headYaw = player.getYaw();
-								float headPitch = player.getPitch();
-								Quaternionf headRot = new Quaternionf().rotateY((float) Math.toRadians(-headYaw)).rotateX((float) Math.toRadians(headPitch));
-								setLeftRotation(display, headRot);
-							} else {
-								setLeftRotation(display, PART_ROTATIONS[i]);
-							}
-							display.setPosition(
-								deathPos.getX() + 0.5 + offsetsX[i],
-								deathPos.getY() + 0.3 + offsetsY[i],
-								deathPos.getZ() + 0.5 + offsetsZ[i]
-							);
-							world.spawnEntity(display);
-							Forensics.attachDeath(player, display, new String[]{"head", "torso", "left_arm", "right_arm", "left_leg", "right_leg"}[i]);
-
-							InteractionEntity interaction = new InteractionEntity(EntityType.INTERACTION, world);
-							interaction.setPosition(display.getPos());
-							interaction.setInteractionWidth(0.75f);
-							interaction.setInteractionHeight(0.75f);
-							world.spawnEntity(interaction);
-							INTERACTION_TO_DISPLAY.put(interaction.getUuid(), display.getUuid());
-							DISPLAY_TO_INTERACTION.put(display.getUuid(), interaction.getUuid());
-							Forensics.link(display, interaction);
-							if (i == 1) {
-								DefaultedList<ItemStack> hotbarInv = DefaultedList.ofSize(9, ItemStack.EMPTY);
-								for (int j = 0; j < 9; j++) {
-									hotbarInv.set(j, player.getInventory().getStack(j));
-								}
-								BODY_PART_DISPLAY_INVENTORIES.putIfAbsent(display.getUuid(), hotbarInv);
-							}
-						}
-					}
-				} else if (player.getCommandTags().contains("dead_body")) {
-					Vec3d pos = new Vec3d(deathPos.getX() + 0.5, deathPos.getY() + 0.3, deathPos.getZ() + 0.5);
-					DefaultedList<ItemStack> hotbarInv = DefaultedList.ofSize(9, ItemStack.EMPTY);
-					for (int j = 0; j < 9; j++) {
-						hotbarInv.set(j, player.getInventory().getStack(j));
-					}
-					if (detectedLocalSkin != null) {
-						Forensics.attachDeath(player, createCombinedDisplayWithResult(world, pos, detectedLocalSkin, hotbarInv, null), "all");
+				ItemDisplayEntity display = EntityType.ITEM_DISPLAY.create(world, SpawnReason.TRIGGERED);
+				if (display != null) {
+					display.setItemStack(stack);
+					if (i == 0) {
+						float headYaw = player.getYaw();
+						float headPitch = player.getPitch();
+						Quaternionf headRot = new Quaternionf().rotateY((float) Math.toRadians(-headYaw)).rotateX((float) Math.toRadians(headPitch));
+						setLeftRotation(display, headRot);
 					} else {
-						Forensics.attachDeath(player, createCombinedDisplayWithResult(world, pos, playerName, hotbarInv, profile), "all");
+						setLeftRotation(display, PART_ROTATIONS[i]);
+					}
+					display.setPosition(
+						deathPos.getX() + 0.5 + offsetsX[i],
+						deathPos.getY() + 0.3 + offsetsY[i],
+						deathPos.getZ() + 0.5 + offsetsZ[i]
+					);
+					world.spawnEntity(display);
+					Forensics.attachDeath(player, display, new String[]{"head", "torso", "left_arm", "right_arm", "left_leg", "right_leg"}[i]);
+
+					InteractionEntity interaction = new InteractionEntity(EntityType.INTERACTION, world);
+					interaction.setPosition(display.getPos());
+					interaction.setInteractionWidth(0.75f);
+					interaction.setInteractionHeight(0.75f);
+					world.spawnEntity(interaction);
+					INTERACTION_TO_DISPLAY.put(interaction.getUuid(), display.getUuid());
+					DISPLAY_TO_INTERACTION.put(display.getUuid(), interaction.getUuid());
+					Forensics.link(display, interaction);
+					if (i == 1) {
+						DefaultedList<ItemStack> hotbarInv = DefaultedList.ofSize(9, ItemStack.EMPTY);
+						for (int j = 0; j < 9; j++) {
+							hotbarInv.set(j, player.getInventory().getStack(j));
+						}
+						BODY_PART_DISPLAY_INVENTORIES.putIfAbsent(display.getUuid(), hotbarInv);
 					}
 				}
 			}
+		} else if (player.getCommandTags().contains("dead_body")) {
+			Vec3d pos = new Vec3d(deathPos.getX() + 0.5, deathPos.getY() + 0.3, deathPos.getZ() + 0.5);
+			DefaultedList<ItemStack> hotbarInv = DefaultedList.ofSize(9, ItemStack.EMPTY);
+			for (int j = 0; j < 9; j++) {
+				hotbarInv.set(j, player.getInventory().getStack(j));
+			}
+			if (detectedLocalSkin != null) {
+				Forensics.attachDeath(player, createCombinedDisplayWithResult(world, pos, detectedLocalSkin, hotbarInv, null), "all");
+			} else {
+				Forensics.attachDeath(player, createCombinedDisplayWithResult(world, pos, playerName, hotbarInv, profile), "all");
+			}
+		}
+	}
+
+	public static void registerEvents() {
+		// 玩家死亡掉落肢体/合并身体作为可交互展示实体
+		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
+			if (entity instanceof ServerPlayerEntity player) spawnDeath(player, source);
 		});
 
 		// 右键交互实体：拾取或打开背包

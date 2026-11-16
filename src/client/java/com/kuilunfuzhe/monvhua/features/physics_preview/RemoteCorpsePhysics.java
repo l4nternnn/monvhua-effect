@@ -28,6 +28,15 @@ public final class RemoteCorpsePhysics {
 
     public static void initialize(){ClientPlayNetworking.registerGlobalReceiver(CorpsePhysicsNetwork.Snapshot.ID,(packet,context)->context.client().execute(()->accept(packet.data())));}
     public static boolean remote(){return MinecraftClient.getInstance().getServer()==null;}
+    /** Empty-hand right click forwards a ray request, never a victim identity or a command. */
+    public static boolean rescueDowned(){
+        var client=MinecraftClient.getInstance();
+        if(client.player==null||client.currentScreen!=null||!client.player.getMainHandStack().isEmpty())return false;
+        var hit=pick(client.player);if(hit==null)return false;
+        var view=views().stream().filter(v->v.display().equals(hit.id())).findFirst().orElse(null);
+        if(view==null||!KomDyingCompat.proxy(view.skin()))return false;
+        action("rescue",false,0,Vec3d.ZERO,false);return true;
+    }
     public static List<CorpsePhysicsCoordinator.LiveView> views(){
         var values=remote()?(System.nanoTime()-received>2_000_000_000L?List.<CorpsePhysicsCoordinator.LiveView>of():List.copyOf(views.values())):CorpsePhysicsCoordinator.liveViews();
         var client=MinecraftClient.getInstance();if(client.world==null)return List.of();

@@ -61,7 +61,7 @@ public final class CorpsePhysicsCoordinator {
         owner=server;provider=backend;CorpseProfileManager.start(server);sampleTick=Long.MIN_VALUE;terrainTick=Long.MIN_VALUE;terrainCursor=0;sampled=0;last="已连接本地计算服务";
     }
     public static synchronized void detach() {
-        epoch++;automatic=false;CorpseSeparationService.reset();CorpseTransportController.reset();CorpseGrabController.reset();CorpseResidentManager.reset();continuous=defaultContinuous();CorpsePhysicsDiagnostics.clear();CorpseProfileManager.reset();CorpseHistoryController.reset();pausedTicks.clear();
+        epoch++;automatic=false;KomDyingCompat.reset();CorpseSeparationService.reset();CorpseTransportController.reset();CorpseGrabController.reset();CorpseResidentManager.reset();continuous=defaultContinuous();CorpsePhysicsDiagnostics.clear();CorpseProfileManager.reset();CorpseHistoryController.reset();pausedTicks.clear();
         for(var job:jobs.values()){job.future.cancel(true);if(job.session!=null)job.session.close();}jobs.clear();views.clear();handoffExpiry.clear();progressTicks.clear();progressSteps.clear();advanceTicks.clear();
         var old=provider;provider=null;owner=null;if(old!=null)CompletableFuture.runAsync(old::close);
         last="世界已断开；自动生成关闭";
@@ -70,6 +70,7 @@ public final class CorpsePhysicsCoordinator {
     public static CorpsePhysicsBridge diagnosticProvider(MinecraftServer server){return server==owner?provider:null;}
     public static boolean simulating(ItemDisplayEntity display){return display!=null&&(CorpseSeparationService.busy(display.getUuid())||jobs.containsKey(display.getUuid())||CorpseResidentManager.moving(display.getUuid()));}
     public static boolean pending(ItemDisplayEntity display){return display!=null&&(CorpseSeparationService.busy(display.getUuid())||jobs.containsKey(display.getUuid())||CorpseResidentManager.moving(display.getUuid())||CorpseHistoryController.locked(display.getUuid()));}
+    public static boolean automaticEnabled(){return automatic;}
     public static boolean localControl(MinecraftServer server){return server==owner&&provider!=null;}
     public static boolean validateResume(UUID id){
         if(CorpseResidentManager.contains(id))return CorpseResidentManager.resume(id);
@@ -78,7 +79,7 @@ public final class CorpsePhysicsCoordinator {
         catch(RuntimeException ignored){}
         cancel(j.display,"恢复前地形/载体校验失败",valid(j)?TERRAIN_CHANGED:CARRIER_INVALID);return false;
     }
-    public static String status(){var p=provider;return "服务器物理 mode="+(continuous?"CONTINUOUS":"ONE_SHOT")+" "+CorpseResidentManager.status()+" auto="+automatic+" pending="+jobs.size()+" applied="+applied+" fallback="+failed+" cancelled="+cancelled+" | "+(p==null?"无本地后端":p.status())+" | "+last;}
+    public static String status(){var p=provider;return "服务器物理 mode="+(continuous?"CONTINUOUS":"ONE_SHOT")+" "+CorpseResidentManager.status()+" downed="+KomDyingCompat.count()+" auto="+automatic+" pending="+jobs.size()+" applied="+applied+" fallback="+failed+" cancelled="+cancelled+" | "+(p==null?"无本地后端":p.status())+" | "+last;}
     public static void initialize() {
         ServerLifecycleEvents.SERVER_STARTED.register(server->{
             try {
@@ -87,6 +88,7 @@ public final class CorpsePhysicsCoordinator {
                 LOGGER.info("Server physics attached; native readiness: {}",backend.status());
             }catch(ReflectiveOperationException|LinkageError error){unavailable("物理核心不可用，保留静态遗体："+error.getClass().getSimpleName());LOGGER.error("Physics backend unavailable",error);}
         });
+        KomDyingCompat.initialize();
         CorpseSeparationService.initialize();
         CorpsePhysicsNetwork.initialize();
         CorpseHistoryController.initialize();CorpseGrabController.initialize();
@@ -132,7 +134,7 @@ public final class CorpsePhysicsCoordinator {
             var auto=literal("auto");
             for(boolean on:new boolean[]{true,false})auto.then(literal(on?"on":"off").executes(c->{
                 if(!local(c.getSource()))return 0;automatic=on;
-                if(!on){CorpseResidentManager.reset();for(var j:List.copyOf(jobs.values()))cancel(j.display,"会话自动生成关闭");}
+                if(!on){KomDyingCompat.clearProxies();CorpseResidentManager.reset();for(var j:List.copyOf(jobs.values()))cancel(j.display,"会话自动生成关闭");}
                 c.getSource().sendFeedback(()->Text.literal("本次服务器会话死亡姿态自动生成："+(on?"开启":"关闭")),false);return 1;
             }));
             var mode=literal("mode");
@@ -179,6 +181,7 @@ public final class CorpsePhysicsCoordinator {
         return true;
     }
     public static void onDeath(ServerPlayerEntity player,ItemDisplayEntity display,String part) {
+        if(KomDyingCompat.handoff(player,display,part))return;
         var motion=DeathMotionContext.consume(player,display==null?"":Forensics.binding(display.getItemStack()).getString("id",""));
         if(!automatic||owner!=player.getServer()||!part.equals("all")||display==null)return;
         if(!com.kuilunfuzhe.monvhua.features.physics_preview.CorpseScale.supported(player.getScale())||player.hasVehicle()||player.isTouchingWater()||player.isGliding()
@@ -217,8 +220,8 @@ public final class CorpsePhysicsCoordinator {
     private static void report(ItemDisplayEntity display,String state,String reason) {
         LOGGER.info("{} corpse={} pos={} yaw={} reason={}",state,display.getUuid(),display.getPos(),display.getYaw(),reason);
     }
-    private static boolean slimModel(ServerPlayerEntity player,ItemDisplayEntity display) {
-        var data=CorpsePoseRecord.data(display.getItemStack());
+    static boolean slimModel(ServerPlayerEntity player,ItemDisplayEntity display) {
+        var data=display==null?new NbtCompound():CorpsePoseRecord.data(display.getItemStack());
         if(data.contains("arm_model"))return data.getString("arm_model","slim").equals("slim");
         // Existing signed skin metadata is read locally; never initiate a skin/network fetch here.
         for(var property:player.getGameProfile().getProperties().get("textures"))try {
