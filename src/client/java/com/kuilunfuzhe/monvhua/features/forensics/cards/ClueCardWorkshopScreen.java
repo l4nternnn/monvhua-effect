@@ -21,7 +21,7 @@ final class ClueCardWorkshopScreen extends ClueFolioScreen {
         for(int i=0;i<rows&&page*rows+i<entries.size();i++){var card=entries.get(page*rows+i);button((card.id().equals(source)?"· ":"")+card.fields().title(),fx+10,fy+65+i*23,lw-18,()->{source=card.id();ClueCardClient.request("view",source);rebuild();}).active=pending.isEmpty();}
         button("‹",fx+10,fy+fh-54,26,()->{page=Math.max(0,page-1);rebuild();});button("›",fx+42,fy+fh-54,26,()->{page=Math.min(max,page+1);rebuild();});
         var selected=ClueCardClient.find(source);
-        button(pending.isEmpty()?(selected!=null&&!selected.group().isEmpty()?"制作伤情副本 · 不耗卡":"制作副本 · 消耗一张"):"正在制作",fx+lw+14,fy+fh-42,fw-lw-26,()->submit("copy")).active=pending.isEmpty()&&selected!=null&&selected.owned()&&ClueCardClient.state!=null&&ClueCardClient.state.recording();
+        button(pending.isEmpty()?(selected!=null&&!selected.group().isEmpty()?"制作伤情副本 · 不耗卡":"制作副本 · 消耗一张"):"正在制作",fx+lw+14,fy+fh-42,fw-lw-26,()->submit("copy")).active=pending.isEmpty()&&selected!=null&&selected.owned()&&!selected.locked()&&ClueCardClient.state!=null&&ClueCardClient.state.recording();
     }
     private int blanks(){if(client==null||client.player==null||ClueCardClient.state==null)return 0;int count=0;var inventory=client.player.getInventory();for(int i=0;i<inventory.size();i++){var stack=inventory.getStack(i);if(stack.isOf(ClueCardItems.BLANK)&&ClueCardClient.state.session().equals(ClueCardItems.data(stack,"clue_session")))count+=stack.getCount();}return count;}
     @Override public void close(){if(!pending.isEmpty())return;if(capture)ClueCardClient.request("cancel","");client.setScreen(parent==null?new ClueCardPersonalScreen(""):parent);}

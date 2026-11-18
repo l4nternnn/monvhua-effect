@@ -7,7 +7,7 @@ import net.minecraft.text.Text;
 import java.util.UUID;
 public final class CleaningCommands {
     private CleaningCommands(){}
-    public static void initialize(){CommandRegistrationCallback.EVENT.register((d,a,e)->{
+    public static void initialize(){WaterCleaning.initialize();CommandRegistrationCallback.EVENT.register((d,a,e)->{
         var strength=CommandManager.argument("strength",DoubleArgumentType.doubleArg(0,1));
         for(var method:ForensicCleaningApi.Method.values()){
             var node=CommandManager.literal(method.name().toLowerCase(java.util.Locale.ROOT));

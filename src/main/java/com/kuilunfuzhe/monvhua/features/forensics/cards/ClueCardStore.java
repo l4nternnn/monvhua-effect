@@ -24,7 +24,7 @@ public final class ClueCardStore extends PersistentState {
         public NbtCompound nbt(){var n=new NbtCompound();n.putString("title",title);n.putString("time",time);n.putString("place",place);n.putString("event",event);n.putString("inference",inference);return n;}
         public static Fields read(NbtCompound n){return new Fields(n.getString("title",""),n.getString("time",""),n.getString("place",""),n.getString("event",""),n.getString("inference",""));}
     }
-    public record Summary(String id,boolean owned,boolean locked,boolean inBag,int revision,Fields fields,String presenter,boolean collected,String group,String groupLabel,String part,String kind){}
+    public record Summary(String id,boolean owned,boolean locked,boolean inBag,int revision,Fields fields,String presenter,boolean collected,String group,String groupLabel,String part,String kind,boolean published,boolean copy){}
     public ClueCardStore(){this(new NbtCompound());}
     private ClueCardStore(NbtCompound n){data=n;int schema=n.getInt("schema",1);if(schema!=1)throw new IllegalStateException("Unknown clue card schema "+schema);data.putInt("schema",1);}
     public static ClueCardStore get(MinecraftServer server){return server.getOverworld().getPersistentStateManager().getOrCreate(TYPE);}
@@ -48,6 +48,14 @@ public final class ClueCardStore extends PersistentState {
     public int defaultCards(){return data.getInt("default_cards",8);}
     public void defaults(int bags,int cards){if(bags<1||bags>64||cards<1||cards>64)throw new IllegalArgumentException("默认数量应为 1 至 64");data.putInt("default_bags",bags);data.putInt("default_cards",cards);adminChanged();}
     public boolean hasCase(String id){return section("runs").contains(id);}
+    /** Cycle the visible default suffix without ever overwriting an existing case. */
+    public String nextDefaultCaseId(){
+        int highest=cases().stream().map(CaseEntry::id).filter(id->id.matches("case_[1-9]")).mapToInt(id->id.charAt(id.length()-1)-'0').max().orElse(0);
+        int start=Math.floorMod(Math.max(highest,data.getInt("default_case_number",0)),9);
+        for(int i=0;i<9;i++){int number=(start+i)%9+1;String id="case_"+number;
+            if(!hasCase(id)){data.putInt("default_case_number",number);markDirty();return id;}}
+        throw new IllegalArgumentException("默认案件 case_1 至 case_9 均已存在，请填写新编号或删除不用的案件");
+    }
     private NbtCompound requireCase(String id){if(!hasCase(id))throw new IllegalArgumentException("案件不存在");return section("runs").getCompoundOrEmpty(id);}
     private static void validatePlayers(Map<UUID,String> players){if(players.isEmpty()||players.size()>16)throw new IllegalArgumentException("请选择 1 至 16 名案件参与者");}
     public void addCase(String id,Map<UUID,String> players){
@@ -144,6 +152,7 @@ public final class ClueCardStore extends PersistentState {
     public String duplicate(UUID viewer,String id){
         if(!recording(viewer))throw new IllegalArgumentException("当前案件未开放副本制作");
         var c=requireOwned(viewer,id);requireCapacity(viewer,c.getString("group",""));
+        if(c.getBoolean("locked",false))throw new IllegalArgumentException("该卡已出示或已分享，不能再制作副卡");
         String copyId=UUID.randomUUID().toString();var copy=c.copy();copy.putString("parent",id);copy.putBoolean("public",false);copy.putBoolean("locked",false);copy.putBoolean("in_bag",true);copy.putInt("revision",0);
         copy.remove("presenter");copy.remove("order");copy.remove("readers");copy.remove("wound_source");section("cards").put(copyId,copy);markDirty();return copyId;
     }
@@ -178,7 +187,7 @@ public final class ClueCardStore extends PersistentState {
         var all=section("collected");var mine=all.getCompoundOrEmpty(viewer.toString());boolean fresh=!mine.getBoolean(id,false);mine.putBoolean(id,true);all.put(viewer.toString(),mine);markDirty();return fresh;
     }
     public List<Summary> summaries(UUID viewer){List<Summary> result=new ArrayList<>();
-        for(String id:section("cards").getKeys())if(readable(viewer,id)){var c=card(id);result.add(new Summary(id,owns(viewer,c),c.getBoolean("locked",false),c.getBoolean("in_bag",true),c.getInt("revision",0),Fields.read(c.getCompoundOrEmpty("fields")),c.getString("presenter",""),section("collected").getCompoundOrEmpty(viewer.toString()).getBoolean(id,false),c.getString("group",""),c.getString("group_label",""),snapshotPart(c),snapshotKind(c)));}
+        for(String id:section("cards").getKeys())if(readable(viewer,id)){var c=card(id);result.add(new Summary(id,owns(viewer,c),c.getBoolean("locked",false),c.getBoolean("in_bag",true),c.getInt("revision",0),Fields.read(c.getCompoundOrEmpty("fields")),c.getString("presenter",""),section("collected").getCompoundOrEmpty(viewer.toString()).getBoolean(id,false),c.getString("group",""),c.getString("group_label",""),snapshotPart(c),snapshotKind(c),c.getBoolean("public",false),c.contains("parent")));}
         result.sort(Comparator.comparingLong((Summary s)->card(s.id()).getLong("order",Long.MAX_VALUE)).thenComparing(Summary::id));return result;
     }
     private String snapshotKind(NbtCompound c){var n=section("snapshots").getCompoundOrEmpty(c.getString("snapshot",""));return n.contains("item")?"item":n.contains("body")?"body":"scene";}

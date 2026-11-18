@@ -12,7 +12,7 @@ import java.util.*;
 
 /** Reconstructs saved blocks using a locked camera. Does not read live chunks or capture pixels. */
 final class ClueCardEnvironmentPreview {
-    private record Model(String source,EvidenceBlocks blocks,Vector3f eye,float fov){}
+    private record Model(String source,ClueScenePreview blocks,Vector3f eye,float fov){}
     private static final Map<String,Model> MODELS=new LinkedHashMap<>(16,.75f,true);
     static void clear(){MODELS.clear();}
     static boolean render(DrawContext c,ClueCardPackets.Detail detail,int x,int y,int width,int height){
@@ -24,7 +24,7 @@ final class ClueCardEnvironmentPreview {
                 var eye=new Vector3f((float)n.getDouble("eye_x",0),(float)n.getDouble("eye_y",0),(float)n.getDouble("eye_z",0));
                 double tangent=n.getDouble("tangent",1);
                 if(!eye.isFinite()||eye.lengthSquared()<.001||!Double.isFinite(tangent)||tangent<=0||tangent>2)return false;
-                var blocks=EvidenceBlocks.read(n);if(blocks==null)return false;
+                var blocks=new ClueScenePreview(n);
                 model=new Model(detail.scene(),blocks,eye,(float)(2*Math.atan(tangent*.75)));MODELS.put(detail.id(),model);
                 while(MODELS.size()>24)MODELS.remove(MODELS.keySet().iterator().next());
             }

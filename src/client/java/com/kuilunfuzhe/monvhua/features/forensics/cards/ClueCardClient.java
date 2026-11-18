@@ -13,9 +13,15 @@ public final class ClueCardClient {
         ClueCaseManagerClient.initialize();
         ClientPlayConnectionEvents.DISCONNECT.register((handler,client)->{state=null;DETAILS.clear();ClueCardBodyPreview.clear();ClueCardEnvironmentPreview.clear();ClueCardItemPreview.clear();});
         ClientPlayNetworking.registerGlobalReceiver(ClueCardPackets.State.ID,(packet,context)->context.client().execute(()->{
+            var previous=state;
             if(state!=null&&!state.session().equals(packet.session())){DETAILS.clear();ClueCardBodyPreview.clear();ClueCardEnvironmentPreview.clear();ClueCardItemPreview.clear();}state=packet;
             if(packet.detail()!=null)DETAILS.put(packet.detail().id(),packet.detail());
             var client=context.client();
+            if(previous!=null&&previous.session().equals(packet.session())&&!packet.history().isEmpty()
+                    &&(previous.history().isEmpty()||packet.history().getLast().number()>previous.history().getLast().number())){
+                var comparison=packet.history().getLast();
+                com.kuilunfuzhe.monvhua.features.forensics.EvidenceWorldPreview.showComparison(comparison.a(),comparison.b());
+            }
             if(packet.open()){
                 if(packet.confirmCapture())client.setScreen(new ClueCardWorkshopScreen(new ClueCardPersonalScreen(""),"",true));
                 else if("board".equals(packet.responseOp()))client.setScreen(new ClueCardScreen());

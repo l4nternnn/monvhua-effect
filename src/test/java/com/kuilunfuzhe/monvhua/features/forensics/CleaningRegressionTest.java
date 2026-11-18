@@ -15,6 +15,15 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class CleaningRegressionTest {
+    @Test void bottleProgressPersistsAndSecondWashRemovesTheRemainingBlood(){
+        var store=new BloodTraceStore();var p=patch();store.submit(new BloodTraceStore.Entry(p,"source","event","stone",false));
+        var first=ForensicCleaningApi.cleanPatch(p,p.center(),3,.5);
+        store.submit(new BloodTraceStore.Entry(first,"source","event","stone",false));store.markBottleWashed(p.id());
+        store=BloodTraceStore.CODEC.parse(NbtOps.INSTANCE,BloodTraceStore.CODEC.encodeStart(NbtOps.INSTANCE,store).getOrThrow()).getOrThrow();
+        assertTrue(store.bottleWashed(p.id()));assertTrue(first.mass()>0);assertTrue(first.mass()<p.mass());
+        var second=ForensicCleaningApi.cleanPatch(store.entry(p.id()).patch(),p.center(),3,1);
+        assertEquals(0,second.mass());store.remove(p.id());assertFalse(store.bottleWashed(p.id()));
+    }
     private BloodPatch patch(){return new BloodPatch(UUID.randomUUID().toString(),BlockPos.ORIGIN,Direction.UP,.5f,.5f,.35f,1,17,1);}
     @Test void radiusClipsCellsAndLeavesOutsideUntouched(){
         var p=patch();var origin=com.kuilunfuzhe.monvhua.features.paint.PaintSurface.point(p.pos(),p.face(),0,0,1,0);

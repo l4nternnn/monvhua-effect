@@ -54,6 +54,10 @@ public final class EvidenceWorldPreview {
     private static String feedback="";
     private static KeyBinding interactionKey;
     private static boolean useHeld;
+    /** Public comparisons take the world's evidence panels to the same pair. */
+    public static void showComparison(String left,String right){
+        for(var anchor:List.copyOf(anchors)){anchor.ensurePanel();anchor.panel.showComparison(left,right);}
+    }
     private static final class Anchor {
         final boolean board; final UUID id; final ClientWorld world; final Vec3d center; final Quaternionf rotation; final float width;
         EvidencePanel panel; EvidencePanelPlane plane; long created=System.nanoTime(), lastInteraction=0;
@@ -102,7 +106,7 @@ public final class EvidenceWorldPreview {
         HudRenderCallback.EVENT.register((draw,tick)->{
             var client=MinecraftClient.getInstance();if(client.currentScreen!=null||client.options.hudHidden)return;var aimed=aimed();if(aimed==null)return;var hit=hit(aimed);
             String label=aimed!=active||aimed.panel==null?"激活此面板":aimed.panel.worldHoverLabel(hit.u()*EvidencePanelTexture.LOGICAL_WIDTH,hit.v()*EvidencePanelTexture.LOGICAL_HEIGHT);
-            String hint=System.nanoTime()<feedbackUntil?feedback:label.isEmpty()?"已瞄准面板 · 请对准按钮、轮盘或卡片":"右键（"+client.options.useKey.getBoundKeyLocalizedText().getString()+"）："+label;
+            String hint=System.nanoTime()<feedbackUntil?feedback:client.player.isSneaking()?"潜行 + 右键：调整面板位置和旋转":label.isEmpty()?"已瞄准面板 · 请对准按钮、轮盘或卡片":"右键（"+client.options.useKey.getBoundKeyLocalizedText().getString()+"）："+label+" · 潜行右键编辑位置";
             int cx=draw.getScaledWindowWidth()/2,y=draw.getScaledWindowHeight()/2+18,half=client.textRenderer.getWidth(hint)/2;draw.fill(cx-half-5,y-3,cx+half+5,y+12,0xC0101820);draw.drawCenteredTextWithShadow(client.textRenderer,hint,cx,y,label.isEmpty()?0xFFCBD5DF:0xFFFFD65A);
         });
         WorldRenderEvents.AFTER_ENTITIES.register(EvidenceWorldPreview::render);
@@ -119,6 +123,10 @@ public final class EvidenceWorldPreview {
     }
     private static boolean interactAimed(){
         var aimed=aimed();if(aimed==null)return false;
+        if(MinecraftClient.getInstance().player.isSneaking()){
+            var data=saved.stream().filter(a->a.id().equals(aimed.id)).findFirst().orElse(null);
+            if(data!=null)MinecraftClient.getInstance().setScreen(new AnchorEditor(data));return true;
+        }
         if(aimed!=active||aimed.panel==null){active=aimed;active.touch();active.ensurePanel();feedback="已激活面板";feedbackUntil=System.nanoTime()+900_000_000L;return true;}
         var hit=hit(active);if(hit==null)return false;
         active.touch();double x=hit.u()*EvidencePanelTexture.LOGICAL_WIDTH,y=hit.v()*EvidencePanelTexture.LOGICAL_HEIGHT;
@@ -128,6 +136,29 @@ public final class EvidenceWorldPreview {
     private static int edit(String action,String id,double x,double y,double z,float yaw,float pitch,float roll,float width){
         if(!net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.canSend(EvidenceAnchorNetwork.Edit.ID))return 0;
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(new EvidenceAnchorNetwork.Edit(action,id,x,y,z,yaw,pitch,roll,width));return 1;
+    }
+    private static final class AnchorEditor extends net.minecraft.client.gui.screen.Screen {
+        private final EvidenceAnchorStore.Anchor data;
+        private final net.minecraft.client.gui.widget.TextFieldWidget[] fields=new net.minecraft.client.gui.widget.TextFieldWidget[6];
+        private String error="";
+        AnchorEditor(EvidenceAnchorStore.Anchor data){super(Text.literal("世界面板位置与旋转"));this.data=data;}
+        @Override public boolean shouldPause(){return false;}
+        @Override protected void init(){
+            double[] values={data.x(),data.y(),data.z(),data.yaw(),data.pitch(),data.roll()};
+            for(int i=0;i<6;i++){fields[i]=new net.minecraft.client.gui.widget.TextFieldWidget(textRenderer,width/2-50,height/2-84+i*23,135,18,Text.empty());fields[i].setMaxLength(32);fields[i].setText(Double.toString(values[i]));addDrawableChild(fields[i]);}
+            addDrawableChild(net.minecraft.client.gui.widget.ButtonWidget.builder(Text.literal("应用"),b->{try{
+                double[] v=new double[6];for(int i=0;i<6;i++){v[i]=Double.parseDouble(fields[i].getText());if(!Double.isFinite(v[i]))throw new NumberFormatException();}
+                for(int i=3;i<6;i++)if(Math.abs(v[i])>360)throw new NumberFormatException();
+                edit("transform",data.id().toString(),v[0],v[1],v[2],(float)v[3],(float)v[4],(float)v[5],data.width());close();
+            }catch(NumberFormatException e){error="请填写有效坐标；角度范围 -360 至 360";}}).dimensions(width/2-90,height/2+64,85,20).build());
+            addDrawableChild(net.minecraft.client.gui.widget.ButtonWidget.builder(Text.literal("取消"),b->close()).dimensions(width/2+5,height/2+64,85,20).build());
+        }
+        @Override public void render(net.minecraft.client.gui.DrawContext c,int mx,int my,float delta){
+            c.fill(width/2-115,height/2-112,width/2+115,height/2+112,0xEE202830);
+            c.drawCenteredTextWithShadow(textRenderer,title,width/2,height/2-103,0xFFFFFFFF);
+            String[] labels={"X","Y","Z","Yaw","Pitch","Roll"};for(int i=0;i<6;i++)c.drawText(textRenderer,labels[i],width/2-100,height/2-79+i*23,0xFFFFFFFF,false);
+            c.drawCenteredTextWithShadow(textRenderer,error,width/2,height/2+92,0xFFFFB080);super.render(c,mx,my,delta);
+        }
     }
     private static int placeInFront(){return edit("place","",0,0,0,0,0,0,panelWidth);}
     private static int placeAt(double x,double y,double z,float yaw,float pitch,float roll){return edit("place_at","",x,y,z,yaw,pitch,roll,panelWidth);}

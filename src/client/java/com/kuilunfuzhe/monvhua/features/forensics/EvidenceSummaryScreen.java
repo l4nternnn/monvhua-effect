@@ -8,8 +8,9 @@ import net.minecraft.text.Text;
 public final class EvidenceSummaryScreen extends Screen {
     private final EvidencePanel panel = new EvidencePanel(false,this::close);
     public EvidenceSummaryScreen(){super(Text.literal("案件线索总结"));}
-    @Override protected void init(){panel.resize(width,height);panel.children().forEach(this::addSelectableChild);}
+    @Override protected void init(){EvidenceSessionRouter.register(panel);panel.resize(width,height);panel.children().forEach(this::addSelectableChild);}
     @Override public boolean shouldPause(){return false;}
+    @Override public boolean keyPressed(int key,int scan,int modifiers){return ClueChat.open(this,key,scan)||super.keyPressed(key,scan,modifiers);}
     @Override public void removed(){panel.dispose();}
     @Override public void render(DrawContext c,int x,int y,float delta){panel.render(c,x,y,delta);}
     @Override public boolean mouseClicked(double x,double y,int b){return panel.mouseClicked(x,y,b);}

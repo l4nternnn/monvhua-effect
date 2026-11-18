@@ -20,7 +20,7 @@ final class ClueCaseManagerScreen extends ClueFolioScreen {
     private void submit(String op){
         if(pending)return;remember();int bags=state.bags(),cards=state.cards();
         if(distribution&&!op.equals("list"))try{bags=Integer.parseInt(bagsDraft);cards=Integer.parseInt(cardsDraft);if(bags<1||bags>64||cards<1||cards>64)throw new NumberFormatException();}catch(NumberFormatException e){notice="数量须为 1 至 64 的整数";return;}
-        String id=op.equals("add")?idDraft.strip():selected;
+        String id=op.equals("add")||op.equals("open")||op.equals("close")?idDraft.strip():selected;
         pending=true;ClueCaseManagerClient.request(new ClueCaseAdmin.Request(op,id,playersDraft.strip(),bags,cards,state.revision(),previousDraft.strip()));rebuild();
     }
     private void remove(){remember();String id=selected;if(id.isEmpty())return;client.setScreen(new ClueCardConfirmScreen(this,"删除案件","确认删除","删除后无法恢复", "删除案件 "+id+" 及其全部线索卡和比较记录？此操作不可恢复。",()->{selected=id;submit("delete");}));}
@@ -42,8 +42,8 @@ final class ClueCaseManagerScreen extends ClueFolioScreen {
             idField=field(idDraft,x+48,fy+78,w-48,40);playersField=field(playersDraft,x+48,fy+106,w-48,256);
             int bw=(w-18)/4,y=fy+137;var e=entry();
             button("添加",x,y,bw,()->submit("add")).active=!pending;
-            button("开启",x+bw+6,y,bw,()->submit("open")).active=!pending&&e!=null&&!e.open();
-            button("关闭",x+2*(bw+6),y,bw,()->submit("close")).active=!pending&&e!=null&&e.open();
+            button("开启",x+bw+6,y,bw,()->submit("open")).active=!pending;
+            button("关闭",x+2*(bw+6),y,bw,()->submit("close")).active=!pending&&state.cases().stream().anyMatch(ClueCardStore.CaseEntry::open);
             button("删除",x+3*(bw+6),y,bw,this::remove).active=!pending&&e!=null;
         }else{
             playersField=field(playersDraft,x+48,fy+78,w-48,256);bagsField=field(bagsDraft,x+80,fy+106,w-80,2);cardsField=field(cardsDraft,x+80,fy+134,w-80,2);
@@ -60,7 +60,7 @@ final class ClueCaseManagerScreen extends ClueFolioScreen {
         if(membership){line(c,"原参与者",x,fy+83,58,INK);line(c,"新玩家",x,fy+111,58,INK);line(c,"添加无需填写原参与者；接续须指定一名玩家",x,fy+164,w,MUTED);var e=entry();if(e!=null)line(c,String.join("、",e.players()),x,fy+181,w,INK);}
         else if(distribution){line(c,"接收者",x,fy+83,46,INK);line(c,"卡袋 / 每人",x,fy+111,78,INK);line(c,"空白卡 / 每人",x,fy+139,78,INK);}
         else{line(c,"编号",x,fy+83,46,INK);line(c,"参与者",x,fy+111,46,INK);var e=entry();
-            line(c,e==null?"新增时填写编号与参与者；已有案件从左侧选择":e.id()+" · "+(e.open()?"开启":e.current()?"当前案件 / 记录已关闭":"关闭")+" · "+e.cards()+" 张线索卡",x,fy+164,w,INK);
+            line(c,"编号留空：开启自动命名 case_1–9；关闭当前案件",x,fy+164,w,INK);
             line(c,e==null?"参与者支持玩家名、@a、@a[tag=...]":String.join("、",e.players()),x,fy+181,w,MUTED);
         }
         super.render(c,mx,my,delta);status(c,pending?"正在处理……":!notice.isEmpty()?notice:membership?"身份改变时接续原身份；新增玩家使用添加参与者":distribution?"接收者支持玩家名或选择器；数量为每人 1–64 个":"开启已有案件不改写参与者；切换将关闭上一案件的记录");

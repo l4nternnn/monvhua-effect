@@ -310,26 +310,47 @@ public final class Forensics {
     }
 
     public static List<String> inspect(ServerPlayerEntity player, int entityId, String part) {
+        return inspect(player,entityId,part,player.getEyePos());
+    }
+    public static List<String> inspect(ServerPlayerEntity player, int entityId, String part,Vec3d eye) {
+        Vec3d rayDirection=player.getRotationVec(1);
+        if(part.equals("__open"))CorpseInspectionContext.clear(player.getUuid());
         if (!ForensicConfig.current.enabled || !player.isAlive() || player.isSpectator() || (!PARTS.contains(part) && !part.equals("__open"))) return List.of();
         if(part.equals("__open")&&(CorpseCarryService.isCarrying(player.getUuid())||com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseGrabController.status(player.getUuid())!=null))return List.of("release");
         ServerWorld world = (ServerWorld) player.getWorld();
         Entity entity = world.getEntityById(entityId);
+        // The broad interaction box can cover empty space or overlap another body. Select the
+        // nearest actual posed surface for every inspection entry point, including sneak-use.
+        if(part.equals("__open")) {
+            var from=eye;var to=from.add(player.getRotationVec(1).multiply(ForensicConfig.current.inspectionDistance));
+            double nearest=Double.POSITIVE_INFINITY;ItemDisplayEntity selected=null;
+            for(var candidate:world.getEntitiesByClass(ItemDisplayEntity.class,new net.minecraft.util.math.Box(from,to).expand(2),d->hasBinding(d.getItemStack()))) {
+                var hit=CorpsePoseGeometry.pick(candidate,from,to);
+                if(hit!=null&&hit.position().squaredDistanceTo(from)<nearest){nearest=hit.position().squaredDistanceTo(from);selected=candidate;}
+            }
+            entity=selected;
+        }
         if (entity instanceof InteractionEntity) {
             UUID id = BodyPartManager.INTERACTION_TO_DISPLAY.get(entity.getUuid());
             entity = id == null ? null : world.getEntity(id);
         }
         if (!(entity instanceof ItemDisplayEntity display)) return List.of();
-        if(com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.pending(display))return List.of("姿态正在生成，请稍候再搜查");
+        if(!part.equals("__open")){
+            var selection=CorpseInspectionContext.find(player,display,part);
+            if(selection==null)return List.of("本次部位选择已失效，请重新打开检查轮盘");
+            eye=selection.eye();rayDirection=selection.direction();
+        }
+        if(com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.preparing(display))return List.of("姿态正在生成，请稍候再搜查");
         Vec3d target = display.getPos();
         if(CorpsePoseRecord.present(display.getItemStack())) {
             if(CorpsePoseRecord.read(CorpsePoseRecord.data(display.getItemStack())).isEmpty())return List.of("姿态版本不可用，请管理员检查");
-            var hit=CorpsePoseGeometry.pick(display,player.getEyePos(),player.getEyePos().add(player.getRotationVec(1).multiply(ForensicConfig.current.inspectionDistance)));
+            var hit=CorpsePoseGeometry.pick(display,eye,eye.add(rayDirection.multiply(ForensicConfig.current.inspectionDistance)));
             if(hit==null)return List.of("请瞄准实际尸体表面");
             if(!part.equals("__open")&&!part.equals(hit.part()))return List.of("请瞄准所选身体部位再搜查");
             target=hit.position();
         }
         if (player.getEyePos().squaredDistanceTo(target) > ForensicConfig.current.inspectionDistance * ForensicConfig.current.inspectionDistance) return List.of();
-        if (world.raycast(new RaycastContext(player.getEyePos(), target, RaycastContext.ShapeType.COLLIDER,
+        if (world.raycast(new RaycastContext(eye, target, RaycastContext.ShapeType.COLLIDER,
                 RaycastContext.FluidHandling.NONE, player)).getType() != HitResult.Type.MISS) return List.of();
         ItemStack stack = display.getItemStack();
         if (!hasBinding(stack)) return List.of("无可用伤情记录");
@@ -337,14 +358,15 @@ public final class Forensics {
         if (part.equals("__open")) {
             String aimed=binding(stack).getString("part","all");
             if(aimed.equals("all")){
-                var hit=CorpsePoseGeometry.pick(display,player.getEyePos(),player.getEyePos().add(player.getRotationVec(1).multiply(ForensicConfig.current.inspectionDistance)));
+                var hit=CorpsePoseGeometry.pick(display,eye,eye.add(rayDirection.multiply(ForensicConfig.current.inspectionDistance)));
                 if(hit==null)return List.of("请瞄准实际尸体表面");aimed=hit.part();
             }
             boolean blocked=CorpsePoseRecord.read(CorpsePoseRecord.data(stack)).map(p->p.parts().size()==1&&!p.parts().containsKey("torso")).orElse(false)||player.getCommandTags().contains("monvhua:no_corpse_drag")
                 ||player.getMainHandStack().isIn(net.minecraft.registry.tag.TagKey.of(net.minecraft.registry.RegistryKeys.ITEM,net.minecraft.util.Identifier.of("monvhua","prevents_corpse_drag")))
                 ||player.getOffHandStack().isIn(net.minecraft.registry.tag.TagKey.of(net.minecraft.registry.RegistryKeys.ITEM,net.minecraft.util.Identifier.of("monvhua","prevents_corpse_drag")));
             boolean detached=CorpsePoseRecord.read(CorpsePoseRecord.data(stack)).map(p->p.parts().size()==1&&!p.parts().containsKey("torso")).orElse(false);
-            return List.of("ready",aimed,detached?"pickup":blocked?"blocked":"allowed");
+            CorpseInspectionContext.remember(player,display,aimed,eye,rayDirection);
+            return List.of("ready",aimed,detached?"pickup":blocked?"blocked":"allowed",Integer.toString(display.getId()));
         }
         NbtCompound b = binding(stack);
         if(CorpsePoseRecord.read(CorpsePoseRecord.data(stack)).map(p->!p.parts().containsKey(part)).orElse(false))return List.of("此载体不包含所选身体部位");

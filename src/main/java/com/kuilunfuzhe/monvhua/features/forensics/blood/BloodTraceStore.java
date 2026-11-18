@@ -15,6 +15,7 @@ public final class BloodTraceStore extends PersistentState {
     public static final PersistentStateType<BloodTraceStore> TYPE = new PersistentStateType<>("monvhua_blood_traces", BloodTraceStore::new, CODEC, DataFixTypes.SAVED_DATA_COMMAND_STORAGE);
     private final Map<String,double[]> remainders=new HashMap<>();
     private final Set<String> retired = new HashSet<>();
+    private final Set<String> bottleWashed = new HashSet<>();
     private final Map<String, Entry> entries = new LinkedHashMap<>();
     private final Map<Long, Set<String>> chunks = new HashMap<>();
     private final Map<BlockPos, Set<String>> blocks = new HashMap<>();
@@ -27,6 +28,7 @@ public final class BloodTraceStore extends PersistentState {
             if(bits.length==256){double[] values=new double[256];for(int i=0;i<256;i++){double v=Double.longBitsToDouble(bits[i]);values[i]=Double.isFinite(v)&&v>=0&&v<1?v:0;}remainders.put(id,values);}
         }
         for(NbtElement id:root.getListOrEmpty("retired")) retired.add(id.asString().orElse(""));
+        for(NbtElement id:root.getListOrEmpty("bottle_washed")) bottleWashed.add(id.asString().orElse(""));
         for (NbtElement element : root.getListOrEmpty("patches")) if (element instanceof NbtCompound n) {
             BloodPatch patch = BloodPatch.read(n);
             if (!patch.id().isEmpty() && Float.isFinite(patch.radius()) && patch.radius() > 0 && patch.radius() <= .85f
@@ -42,8 +44,10 @@ public final class BloodTraceStore extends PersistentState {
             n.putString("support", entry.support); n.putBoolean("directional", entry.directional); list.add(n);
         }
         var fractional=new NbtCompound();remainders.forEach((id,values)->{long[] bits=new long[256];for(int i=0;i<256;i++)bits[i]=Double.doubleToLongBits(values[i]);fractional.putLongArray(id,bits);});root.put("cleaning_fractions",fractional);
-        root.put("patches", list); NbtList dead=new NbtList();for(String id:retired)dead.add(NbtString.of(id));root.put("retired",dead);return root;
+        root.put("patches", list); NbtList washed=new NbtList();for(String id:bottleWashed)if(entries.containsKey(id))washed.add(NbtString.of(id));root.put("bottle_washed",washed);NbtList dead=new NbtList();for(String id:retired)dead.add(NbtString.of(id));root.put("retired",dead);return root;
     }
+    public boolean bottleWashed(String id){return bottleWashed.contains(id);}
+    public void markBottleWashed(String id){if(entries.containsKey(id)){bottleWashed.add(id);markDirty();}}
     public static BloodTraceStore get(ServerWorld world) { return world.getPersistentStateManager().getOrCreate(TYPE); }
     public Collection<Entry> at(BlockPos pos) { return blocks.getOrDefault(pos, Set.of()).stream().map(entries::get).filter(Objects::nonNull).toList(); }
     public Collection<Entry> chunk(long key) { return chunks.getOrDefault(key, Set.of()).stream().map(entries::get).filter(Objects::nonNull).toList(); }
@@ -80,7 +84,7 @@ public final class BloodTraceStore extends PersistentState {
     }
     public void remove(String id) {
         Entry old = entries.remove(id); if (old == null) return;
-        retired.add(id);remainders.remove(id);
+        retired.add(id);remainders.remove(id);bottleWashed.remove(id);
         long chunk = new ChunkPos(old.patch.pos()).toLong();
         Set<String> ids = chunks.get(chunk); ids.remove(id); if (ids.isEmpty()) chunks.remove(chunk);
         Set<String> local = blocks.get(old.patch.pos()); local.remove(id); if (local.isEmpty()) blocks.remove(old.patch.pos());

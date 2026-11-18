@@ -29,7 +29,7 @@ final class ClueCardPersonalScreen extends ClueFolioScreen {
             var parts=entries.stream().map(c->c.part().isEmpty()?"unknown":c.part()).distinct().toList();
             max=Math.max(0,(parts.size()-1)/rows);page=Math.min(page,max);
             for(int i=0;i<rows&&page*rows+i<parts.size();i++){String p=parts.get(page*rows+i);button("› "+partName(p)+" ["+entries.stream().filter(c->(c.part().isEmpty()?"unknown":c.part()).equals(p)).count()+"]",fx+10,fy+92+i*23,lw-20,()->{part=p;page=0;rebuild();});}
-        }else for(int i=0;i<rows&&page*rows+i<entries.size();i++){var card=entries.get(page*rows+i);button((Objects.equals(selected,card.id())?"· ":"")+card.fields().title(),fx+10,fy+92+i*23,lw-20,()->choose(card.id()));}
+        }else for(int i=0;i<rows&&page*rows+i<entries.size();i++){var card=entries.get(page*rows+i);button((Objects.equals(selected,card.id())?"· ":"")+displayTitle(card),fx+10,fy+92+i*23,lw-20,()->choose(card.id()));}
         if(!group.isEmpty())button("‹ 上级",fx+10,fy+70,58,()->{if(!part.isEmpty())part="";else group="";page=0;rebuild();});
         int maxPage=max;button("‹",fx+10,fy+fh-48,24,()->{page=Math.max(0,page-1);rebuild();});button("›",fx+39,fy+fh-48,24,()->{page=Math.min(maxPage,page+1);rebuild();});
 
@@ -39,9 +39,11 @@ final class ClueCardPersonalScreen extends ClueFolioScreen {
         if(ClueCardItemPreview.isItem(selected))button("物品详情",rx+136,fy+48,Math.max(50,rw-136),()->ClueCardItemPreview.open(this,selected));
         int bw=(rw-12)/3;
         button("编辑",rx,fy+fh-48,bw,()->client.setScreen(new ClueCardEditorScreen(this,card))).active=card!=null&&card.owned()&&!card.locked();
-        button("准备出示",rx+bw+6,fy+fh-48,bw,()->ClueCardClient.openBoard(selected)).active=card!=null;
+        String publishId=selected;
+        button("出示",rx+bw+6,fy+fh-48,bw,()->client.setScreen(new ClueCardConfirmScreen(this,"出示线索","确认出示","出示后该版本将公开并定稿","确认直接出示“"+displayTitle(card)+"”？",()->ClueCardClient.request("publish",publishId)))).active=card!=null;
         button("取出",rx+(bw+6)*2,fy+fh-48,bw,()->ClueCardClient.request("withdraw",selected)).active=card!=null&&card.owned()&&card.inBag();
     }
+    private String displayTitle(ClueCardStore.Summary card){if(card==null)return "";String title=card.fields().title();if(title.isEmpty())title="未命名线索";if(card.owned()&&!card.published())title="⌈私⌋"+title;if(card.copy())title+="⌈副⌋";return title;}
     private int blanks(){if(client.player==null||ClueCardClient.state==null)return 0;int count=0;for(int i=0;i<client.player.getInventory().size();i++){var stack=client.player.getInventory().getStack(i);if(stack.isOf(ClueCardItems.BLANK)&&ClueCardClient.state.session().equals(ClueCardItems.data(stack,"clue_session")))count+=stack.getCount();}return count;}
     @Override public boolean mouseClicked(double mx,double my,int button){int x=fx+lw+12,y=fy+122,w=fw-lw-24,h=Math.max(16,fh-180);if(button==0&&model&&ClueCardItemPreview.isItem(selected)&&mx>=x&&mx<x+w&&my>=y&&my<y+h){ClueCardItemPreview.open(this,selected);return true;}return super.mouseClicked(mx,my,button);}
     @Override public void render(DrawContext c,int mx,int my,float delta){
@@ -50,7 +52,7 @@ final class ClueCardPersonalScreen extends ClueFolioScreen {
         var card=ClueCardClient.find(selected);int x=fx+lw+12,w=fw-lw-24,y=fy+76;
         if(card==null)line(c,"从左页选择记录",x,y,w,MUTED);
         else{
-            rules(c,x,y,w,3,RULE_STEP);line(c,card.fields().title(),x,y,w,INK);line(c,"时间："+card.fields().time(),x,y+14,w,MUTED);line(c,"地点："+card.fields().place(),x,y+28,w,MUTED);
+            rules(c,x,y,w,3,RULE_STEP);line(c,displayTitle(card),x,y,w,INK);line(c,"时间："+card.fields().time(),x,y+14,w,MUTED);line(c,"地点："+card.fields().place(),x,y+28,w,MUTED);
             if(model)ClueCardScreen.drawSnapshot(c,ClueCardClient.DETAILS.get(selected),x,y+46,w,Math.max(16,fh-180));
             else {var lines=textRenderer.wrapLines(net.minecraft.text.Text.literal("事件描述："+card.fields().event()+"\n补充判断："+card.fields().inference()),w);int count=Math.max(1,(fh-185)/RULE_STEP);rules(c,x,y+46,w,Math.min(count,lines.size()),RULE_STEP);for(int i=0;i<Math.min(count,lines.size());i++)c.drawText(textRenderer,lines.get(i),x,y+46+i*RULE_STEP,INK,false);}
         }

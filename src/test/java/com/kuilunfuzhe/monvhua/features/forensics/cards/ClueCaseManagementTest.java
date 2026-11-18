@@ -10,6 +10,13 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ClueCaseManagementTest {
+    @Test void defaultNumbersPersistWrapAndNeverOverwriteExistingCases(){
+        var s=new ClueCardStore();var player=UUID.randomUUID();
+        for(int i=1;i<=9;i++){String id=s.nextDefaultCaseId();assertEquals("case_"+i,id);s.addCase(id,Map.of(player,"测试"));s=roundtrip(s);}
+        var full=s;assertThrows(IllegalArgumentException.class,full::nextDefaultCaseId);
+        s.deleteCase("case_2");assertEquals("case_2",s.nextDefaultCaseId());assertEquals(8,s.cases().size());
+        assertTrue(s.hasCase("case_1"));assertTrue(s.hasCase("case_9"));
+    }
     private final UUID a=UUID.randomUUID(),b=UUID.randomUUID();
     private Map<UUID,String> members(){return Map.of(a,"甲",b,"乙");}
     private String card(ClueCardStore store,UUID owner){return store.create(owner,new ClueCardStore.Fields("标题","","","",""),new NbtCompound(),new NbtCompound());}
@@ -79,11 +86,21 @@ class ClueCaseManagementTest {
         assertThrows(IllegalArgumentException.class,()->store.addMembers("members",tooMany));assertEquals(3,store.cases().getFirst().players().size());
     }
     @Test void adminCommandsRequirePermissionAndSeparateDistributionRequiresExplicitTargetAndCount(){
+        net.minecraft.SharedConstants.createGameVersion();net.minecraft.Bootstrap.initialize();
         var dispatcher=new CommandDispatcher<ServerCommandSource>();dispatcher.register(net.minecraft.server.command.CommandManager.literal("mvclue").then(ClueCaseAdmin.commands("case")).then(ClueCaseAdmin.commands("experiment")));
         var normal=new ServerCommandSource(CommandOutput.DUMMY,Vec3d.ZERO,Vec2f.ZERO,null,0,"test",Text.literal("test"),null,null);
         var admin=normal.withLevel(2);
         for(String root:List.of("case","experiment")){var node=dispatcher.getRoot().getChild("mvclue").getChild(root);assertFalse(node.canUse(normal));assertTrue(node.canUse(admin));
             assertNotNull(node.getChild("start").getChild("id").getCommand());
+            assertNotNull(node.getChild("start").getCommand());
+            assertNotNull(node.getChild("close").getCommand());
+            for(String selector:List.of("@a","@a[tag=prisoner]","@s")){
+                var parsed=dispatcher.parse("mvclue "+root+" start "+selector,admin);
+                assertNotNull(parsed.getContext().getCommand());assertFalse(parsed.getReader().canRead());
+                assertTrue(parsed.getContext().getArguments().containsKey("default_players"));
+            }
+            var named=dispatcher.parse("mvclue "+root+" start case_1",admin);
+            assertTrue(named.getContext().getArguments().containsKey("id"));
             for(String give:List.of("give_cards","give_bags")){var target=node.getChild(give).getChild("players");assertNull(node.getChild(give).getCommand());assertNull(target.getCommand());assertNotNull(target.getChild("count").getCommand());}
         }
     }

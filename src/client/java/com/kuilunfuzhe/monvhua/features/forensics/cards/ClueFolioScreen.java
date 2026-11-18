@@ -11,6 +11,11 @@ abstract class ClueFolioScreen extends Screen {
     static final int INK=0xff38291e,MUTED=0xff776349,PAPER=0xffb7aa89,RED=0xff833e30,BRASS=0xffad8950;
     ClueFolioScreen(String title){super(Text.literal(title));}
     @Override public boolean shouldPause(){return false;}
+    @Override public boolean keyPressed(int key,int scan,int modifiers){
+        if(!(getFocused() instanceof net.minecraft.client.gui.widget.TextFieldWidget)
+                &&com.kuilunfuzhe.monvhua.features.forensics.ClueChat.open(this,key,scan))return true;
+        return super.keyPressed(key,scan,modifiers);
+    }
     protected void layout(int preferredWidth,int preferredHeight){
         fw=Math.min(width-16,Math.min(preferredWidth,Math.max(300,(int)(width*.75))));
         fh=Math.min(height-16,Math.min(preferredHeight,Math.max(220,(int)(height*.74))));

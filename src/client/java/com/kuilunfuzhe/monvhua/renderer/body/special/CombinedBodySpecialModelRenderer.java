@@ -345,11 +345,13 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
                               boolean slim,NbtCompound data,int light,String onlyPart) {
         if(data==null)return;
         String id=data.getCompoundOrEmpty(com.kuilunfuzhe.monvhua.features.forensics.Forensics.BINDING).getString("id","");
-        if(id.isEmpty())return;
+        boolean recorded=data.contains("recorded_stains");
+        if(id.isEmpty()&&!recorded)return;
         var vertices=consumers.getBuffer(PaintRenderLayers.paintOverlay());
         for(String surface:java.util.List.of("body_upper","body_lower","left_arm_lower","right_arm_lower")) {
             String part=physicsPart(surface);if(!onlyPart.isEmpty()&&!part.equals(onlyPart))continue;
-            int amount=com.kuilunfuzhe.monvhua.features.forensics.blood.BodyStainClient.level("c/"+id,part.equals("torso"));
+            int amount=recorded?Math.clamp(data.getCompoundOrEmpty("recorded_stains").getInt(part.equals("torso")?"torso":"hands",0),0,16)
+                :com.kuilunfuzhe.monvhua.features.forensics.blood.BodyStainClient.level("c/"+id,part.equals("torso"));
             if(amount<=0)continue;var target=surfaceTarget(model,slim,surface);if(target==null)continue;
             matrices.push();model.getRootPart().applyTransform(matrices);for(var element:target.path())if(element!=null)element.applyTransform(matrices);
             for(int y=1;y<7;y++)for(int x=1;x<7;x++)if(Math.floorMod(x*31+y*17,11)<=Math.min(9,amount+2))

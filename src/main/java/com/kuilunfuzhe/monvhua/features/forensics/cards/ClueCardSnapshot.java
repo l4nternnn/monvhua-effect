@@ -36,7 +36,6 @@ public final class ClueCardSnapshot {
             int r=(int)((color>>16&255)*light),g=(int)((color>>8&255)*light),b=(int)((color&255)*light);
             colors[y*WIDTH+x]=0xff000000|(r<<16)|(g<<8)|b;visible++;
         }
-        if(visible==0)throw new IllegalArgumentException("未记录到可见方块表面，请调整位置");
         var n=new NbtCompound();n.putInt("width",WIDTH);n.putInt("height",HEIGHT);n.putIntArray("pixels",colors);
         n.putString("kind","constructed_scene_v2");
         var scene=new NbtCompound();var blocks=new net.minecraft.nbt.NbtList();int unsupported=0;
@@ -51,6 +50,8 @@ public final class ClueCardSnapshot {
         scene.putDouble("eye_x",eye.x-center.x);scene.putDouble("eye_y",eye.y-center.y);scene.putDouble("eye_z",eye.z-center.z);
         scene.putDouble("tangent",tangent);scene.putInt("schema",2);scene.putBoolean("locked_view",true);scene.putBoolean("has_entities",false);scene.putBoolean("complete_volume",false);
         scene.putInt("unsupported_blocks",unsupported);
-        if(!blocks.isEmpty())n.put("scene",scene);else n.putString("kind","block_surface_raster_v1");return n;
+        ClueSceneEvidence.capture(player,center,eye,scene);
+        if(visible==0&&scene.getListOrEmpty("bodies").isEmpty())throw new IllegalArgumentException("未记录到可见方块或身体，请调整位置");
+        n.put("scene",scene);return n;
     }
 }

@@ -117,6 +117,7 @@ public final class ForensicShowcaseCompat {
             String shareId=(String)method.invoke(null,owner,item,300,List.of(target));
             if(shareId==null||shareId.isEmpty())throw new IllegalStateException("Showcase returned an empty share ID");
             ledger.rememberShare(shareId,target.getUuid(),cardId);
+            com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardService.announceShare(owner,target,cardId,shareId);
             owner.sendMessage(Text.literal("记录已出示给 "+target.getName().getString()+"，该版本已锁定"),false);return true;
         }catch(ReflectiveOperationException|LinkageError|RuntimeException error){report("创建线索卡分享",error);owner.sendMessage(Text.literal("分享未完成；为防止已生成链接的内容被替换，该版本保持锁定"),false);return false;}
     }

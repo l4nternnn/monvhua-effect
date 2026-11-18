@@ -221,6 +221,8 @@
 
 #### 尸体、法证与线索
 
+尸体轮盘中的抱起、拖拽和离体部位拾起在选择后直接开始，无需等待持续物理休眠或再次点击。静态姿态首次接入物理时会同时提交搬运控制；手动冻结、时间轴、肢体分离、初始姿态生成及其他玩家占用期间仍保留操作限制。
+
 | 命令 | 权限 | 作用 |
 | --- | --- | --- |
 | `/mvclue open` | 玩家 | 打开当前案件的线索记录界面 |
@@ -228,12 +230,16 @@
 | `/mvclue craft` | 玩家 | 打开线索卡制作界面 |
 | `/mvclue import_wounds` | 玩家 | 将当前可用的伤口记录导入线索记录 |
 | `/mvclue share <card> <target>` | 玩家 | 使用 Showcase 将已拥有的线索卡分享给指定玩家；`card` 支持建议，`target` 支持玩家选择器 |
+| `/mvclue read <card>` | 玩家 + 线索袋 | 从聊天链接直接打开有权阅读的线索卡 |
+| `/mvclue receive <share>` | 玩家 + 线索袋 | 接收指定给自己的 Showcase 线索分享并直接打开记录 |
 | `/mvclue case manage` | OP | 打开案件管理界面 |
 | `/mvclue case add <id> <players>` | OP | 创建案件并加入参与者 |
 | `/mvclue case start <id> [<players>]` | OP | 开启已有案件，或创建并开启新案件 |
+| `/mvclue case start [<玩家选择器>]` | OP | 省略案件名，自动命名并创建开启；例如 `start @a`、`start @a[tag=prisoner]`，不填选择器则使用 `@a`。`experiment` 入口同样支持 |
 | `/mvclue case members <id> <players>` | OP | 向案件追加参与者 |
 | `/mvclue case rebind <id> <previous> <player>` | OP | 将原参与者的案件身份与线索接续给新玩家 |
 | `/mvclue case close <id>` | OP | 关闭案件；已有记录仍可阅读和出示 |
+| `/mvclue case close` | OP | 省略案件名，关闭当前案件；`experiment close` 同样支持 |
 | `/mvclue case close_recording` | OP | 关闭当前案件的记录阶段 |
 | `/mvclue case delete <id>` | OP | 删除案件及其记录 |
 | `/mvclue case list` | OP | 列出案件状态、参与人数和卡片数量 |
@@ -247,12 +253,15 @@
 | `/mvforensics clean scene <center> <radius> <strength> <wash\|wipe> apply` | OP | 应用指定方法的血迹/法证清理（半径 0.1–16，强度 0–1） |
 | `/monvhua-blood clear <from> <to> preview` | OP | 预览矩形区域内血迹清除 |
 | `/monvhua-blood clear <from> <to> confirm` | OP | 确认清除矩形区域内血迹 |
-| `/evidence place` / `/evidence place_board` | 玩家 | 在准星前放置个人线索总结面板或较宽的展示面板 |
-| `/evidence place_at <x> <y> <z> <yaw> <pitch> <roll>` | OP | 在指定坐标和旋转放置个人面板 |
-| `/evidence place_board_at <x> <y> <z> <yaw> <pitch> <roll>` | OP | 在指定坐标和旋转放置宽版面板 |
-| `/evidence remove` / `/evidence clear_all` | 玩家 | 移除当前面板或清除自己的全部面板 |
-| `/evidence status` | 玩家 | 查看自己的面板数量和 ID |
-| `/evidence for <player> ...` | OP | 代指定玩家放置或清除面板 |
+| `/mvcorpse evidence place` / `/mvcorpse evidence place_board` | 玩家 | 在准星前放置个人线索总结面板或比较面板 |
+| `/mvcorpse evidence place_at <x> <y> <z> <yaw> <pitch> <roll>` | OP | 在指定坐标和旋转放置个人面板 |
+| `/mvcorpse evidence place_board_at <x> <y> <z> <yaw> <pitch> <roll>` | OP | 在指定坐标和旋转放置比较面板 |
+| `/mvcorpse evidence remove <id>` / `/mvcorpse evidence clear_all` | 玩家 | 按 ID 移除面板或清除自己的全部面板 |
+| `/mvcorpse evidence status` | 玩家 | 查看自己的面板数量和 ID |
+| `/mvcorpse evidence for <player> ...` | OP | 代指定玩家放置或清除面板 |
+| `/mvcorpse evidence clear_server` | OP | 清除全服世界面板 |
+
+世界面板（含比较面板）可对准后**潜行 + 右键**修改位置和三个旋转角。案件管理中，编号留空后开启会按 `case_1` 至 `case_9` 循环生成默认编号，跳过已有案件；关闭时留空表示关闭当前案件。线索界面支持聊天键和命令键，发送或关闭聊天后返回原界面。水桶可冲洗命中方块及周围一圈（3×3×3 方块）内的血迹，水瓶需两次；成功冲洗后消耗水，创造模式沿用原版物品保留规则。
 
 `/mvcorpse` 下的物理测试与姿态管理命令仅用于管理员开发测试：`/mvcorpse physics status` 查看状态，`auto on|off` 开关自动物理，`mode continuous|one-shot` 设置模拟模式，`test`/`test-motion <front|back|left|right|unknown>` 运行测试，`wake <target>` 唤醒持续模拟，`cancel <target>` 取消任务；`create-test`、`samples`、`apply`、`verify`、`clear` 等姿态文件操作需要开发开关 `monvhua.physicsCorpseDebug`。
 

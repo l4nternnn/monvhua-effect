@@ -10,6 +10,15 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class ForensicRegressionTest {
+    @Test public void inspectionRequestPreservesRenderedEyeThroughNetworkCodec(){
+        bootstrap();
+        var buf=new net.minecraft.network.RegistryByteBuf(io.netty.buffer.Unpooled.buffer(),net.minecraft.registry.DynamicRegistryManager.EMPTY);
+        try{
+            var packet=new com.kuilunfuzhe.monvhua.network.forensics.ForensicPackets.Request(123,"__open",false,17,1.25,62.73,-4.5);
+            com.kuilunfuzhe.monvhua.network.forensics.ForensicPackets.Request.CODEC.encode(buf,packet);
+            assertEquals(packet,com.kuilunfuzhe.monvhua.network.forensics.ForensicPackets.Request.CODEC.decode(buf));
+        }finally{buf.release();}
+    }
     private static void bootstrap() { SharedConstants.createGameVersion(); Bootstrap.initialize(); }
 
     @Test public void runtimeMixinsActuallyApply() {

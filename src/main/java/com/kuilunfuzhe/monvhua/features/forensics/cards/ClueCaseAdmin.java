@@ -45,11 +45,11 @@ public final class ClueCaseAdmin {
                 if(!r.op().equals("list")&&r.revision()!=store.adminRevision())throw new IllegalArgumentException("案件列表已更新，请核对后重新操作");
                 switch(r.op()){
                     case "list" -> {}
-                    case "add" -> {store.addCase(r.id(),members(resolve(p.getCommandSource(),r.players())));notice="案件已添加";}
+                    case "add" -> {store.addCase(r.id().isBlank()?store.nextDefaultCaseId():r.id(),members(resolve(p.getCommandSource(),r.players())));notice="案件已添加";}
                     case "members" -> {store.addMembers(r.id(),members(resolve(p.getCommandSource(),r.players())));changed(p.getServer());notice="参与者已添加";}
                     case "rebind" -> {var target=resolve(p.getCommandSource(),r.players());if(target.size()!=1)throw new IllegalArgumentException("接续身份须指定一名玩家");var player=target.iterator().next();store.rebindMember(r.id(),r.previous()==null?"":r.previous(),player.getUuid(),player.getName().getString());changed(p.getServer());notice="参与者身份及线索已接续";}
-                    case "open" -> {store.openCase(r.id());changed(p.getServer());notice="案件已开启："+r.id();}
-                    case "close" -> {store.closeCase(r.id());changed(p.getServer());notice="案件已关闭记录，可继续阅读与出示已有卡片";}
+                    case "open" -> {String id=r.id();if(id.isBlank()){id=store.nextDefaultCaseId();store.addCase(id,members(resolve(p.getCommandSource(),r.players().isBlank()?"@a":r.players())));}store.openCase(id);changed(p.getServer());notice="案件已开启："+id;}
+                    case "close" -> {String id=r.id().isBlank()?store.session():r.id();store.closeCase(id);changed(p.getServer());notice="案件已关闭记录，可继续阅读与出示已有卡片";}
                     case "delete" -> {store.deleteCase(r.id());changed(p.getServer());notice="案件及其记录已删除";}
                     case "defaults" -> {store.defaults(r.bags(),r.cards());notice="默认发放数量已保存";}
                     case "give_bags" -> {give(p.getCommandSource(),resolve(p.getCommandSource(),r.players()),r.bags(),false);notice="卡袋已发放";}
@@ -72,9 +72,13 @@ public final class ClueCaseAdmin {
         var node=literal(root).requires(s->s.hasPermissionLevel(2));
         node.then(literal("manage").executes(guard(c->{open(c.getSource().getPlayerOrThrow());return 1;})));
         node.then(literal("add").then(argument("id",StringArgumentType.word()).then(argument("players",EntityArgumentType.players()).executes(guard(c->{ClueCardStore.get(c.getSource().getServer()).addCase(StringArgumentType.getString(c,"id"),members(EntityArgumentType.getPlayers(c,"players")));c.getSource().sendFeedback(()->Text.literal("案件已添加"),true);return 1;})))));
-        node.then(literal("start").then(caseArg().executes(guard(c->{var s=ClueCardStore.get(c.getSource().getServer());s.openCase(StringArgumentType.getString(c,"id"));changed(c.getSource().getServer());c.getSource().sendFeedback(()->Text.literal("案件已开启，物资需另行发放"),true);return 1;}))
+        node.then(literal("start").executes(guard(c->startDefault(c.getSource(),resolve(c.getSource(),"@a"))))
+            .then(caseArg().executes(guard(c->{var s=ClueCardStore.get(c.getSource().getServer());s.openCase(StringArgumentType.getString(c,"id"));changed(c.getSource().getServer());c.getSource().sendFeedback(()->Text.literal("案件已开启，物资需另行发放"),true);return 1;}))
             .then(argument("players",EntityArgumentType.players()).executes(guard(c->{var s=ClueCardStore.get(c.getSource().getServer());String id=StringArgumentType.getString(c,"id");if(s.hasCase(id))throw new IllegalArgumentException("已有案件请使用 start <id> 开启，参与者保持原记录");s.start(id,members(EntityArgumentType.getPlayers(c,"players")));changed(c.getSource().getServer());c.getSource().sendFeedback(()->Text.literal("案件已建立并开启，物资需另行发放"),true);return 1;})))));
+        // Keep the named-case branch first: a case ID is also valid player-name syntax.
+        node.then(literal("start").then(argument("default_players",EntityArgumentType.players()).executes(guard(c->startDefault(c.getSource(),EntityArgumentType.getPlayers(c,"default_players"))))));
         for(String op:List.of("close","delete"))node.then(literal(op).then(caseArg().executes(guard(c->{var s=ClueCardStore.get(c.getSource().getServer());String id=StringArgumentType.getString(c,"id");if(op.equals("delete"))s.deleteCase(id);else s.closeCase(id);changed(c.getSource().getServer());c.getSource().sendFeedback(()->Text.literal(op.equals("delete")?"案件已删除":"案件已关闭记录"),true);return 1;}))));
+        node.then(literal("close").executes(guard(c->{var s=ClueCardStore.get(c.getSource().getServer());if(s.session().isEmpty())throw new IllegalArgumentException("当前没有案件");s.closeCase(s.session());changed(c.getSource().getServer());c.getSource().sendFeedback(()->Text.literal("已关闭当前案件："+s.session()),true);return 1;})));
         node.then(literal("members").then(caseArg().then(argument("players",EntityArgumentType.players()).executes(guard(c->{ClueCardStore.get(c.getSource().getServer()).addMembers(StringArgumentType.getString(c,"id"),members(EntityArgumentType.getPlayers(c,"players")));changed(c.getSource().getServer());c.getSource().sendFeedback(()->Text.literal("参与者已添加"),true);return 1;})))));
         node.then(literal("rebind").then(caseArg().then(argument("previous",StringArgumentType.word()).suggests((c,b)->CommandSource.suggestMatching(ClueCardStore.get(c.getSource().getServer()).cases().stream().filter(e->e.id().equals(StringArgumentType.getString(c,"id"))).flatMap(e->e.players().stream()),b)).then(argument("player",EntityArgumentType.player()).executes(guard(c->{var player=EntityArgumentType.getPlayer(c,"player");ClueCardStore.get(c.getSource().getServer()).rebindMember(StringArgumentType.getString(c,"id"),StringArgumentType.getString(c,"previous"),player.getUuid(),player.getName().getString());changed(c.getSource().getServer());c.getSource().sendFeedback(()->Text.literal("参与者身份及线索已接续"),true);return 1;}))))));
         node.then(literal("close_recording").executes(guard(c->{ClueCardStore.get(c.getSource().getServer()).closeRecording();changed(c.getSource().getServer());return 1;})));
@@ -84,6 +88,11 @@ public final class ClueCaseAdmin {
         node.then(literal("reload").executes(c->{ClueCardConfig.load();c.getSource().sendFeedback(()->Text.literal("案件记录预填设置已重新加载"),false);return 1;}));return node;
     }
     private static com.mojang.brigadier.builder.RequiredArgumentBuilder<ServerCommandSource,String> caseArg(){return argument("id",StringArgumentType.word()).suggests((c,b)->CommandSource.suggestMatching(ClueCardStore.get(c.getSource().getServer()).cases().stream().map(ClueCardStore.CaseEntry::id),b));}
+    private static int startDefault(ServerCommandSource source,Collection<ServerPlayerEntity> players){
+        var people=members(players);if(people.isEmpty()||people.size()>16)throw new IllegalArgumentException("请选择 1 至 16 名案件参与者");
+        var store=ClueCardStore.get(source.getServer());String id=store.nextDefaultCaseId();store.start(id,people);changed(source.getServer());
+        source.sendFeedback(()->Text.literal("案件已建立并开启："+id+"（"+people.size()+" 人）；物资需另行发放"),true);return 1;
+    }
     private static int give(ServerCommandSource source,Collection<ServerPlayerEntity> players,int count,boolean cards){
         if(count<1||count>64||players.isEmpty())throw new IllegalArgumentException("请选择接收者，单人数量为 1 至 64");var s=ClueCardStore.get(source.getServer());s.requireDistribution(players.stream().map(ServerPlayerEntity::getUuid).toList());
         // Validate every inventory before issuing any item; no overflow drops or partial batch grants.

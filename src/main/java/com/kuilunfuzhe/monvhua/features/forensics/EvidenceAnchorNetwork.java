@@ -84,6 +84,10 @@ public final class EvidenceAnchorNetwork {
             case "clear" -> {store.clear(p.getUuid());sync(p);}
             case "remove" -> {store.remove(p.getUuid(),UUID.fromString(e.id));sync(p);}
             case "rotate" -> {var a=store.require(p.getUuid(),UUID.fromString(e.id));store.put(new EvidenceAnchorStore.Anchor(a.id(),a.owner(),a.dimension(),a.x(),a.y(),a.z(),e.yaw,e.pitch,e.roll,a.width(),a.board()));sync(p);}
+            case "transform" -> {var a=store.require(p.getUuid(),UUID.fromString(e.id));
+                if(!a.dimension().equals(p.getWorld().getRegistryKey().getValue().toString())||p.getEyePos().squaredDistanceTo(new net.minecraft.util.math.Vec3d(a.x(),a.y(),a.z()))>64)throw new IllegalArgumentException("请靠近要编辑的面板");
+                if(!Double.isFinite(e.x)||!Double.isFinite(e.y)||!Double.isFinite(e.z)||p.getEyePos().squaredDistanceTo(new net.minecraft.util.math.Vec3d(e.x,e.y,e.z))>64)throw new IllegalArgumentException("新位置须在身边 8 格内");
+                store.put(new EvidenceAnchorStore.Anchor(a.id(),a.owner(),a.dimension(),e.x,e.y,e.z,e.yaw,e.pitch,e.roll,a.width(),a.board()));sync(p);}
             case "size" -> {if(!Float.isFinite(e.width)||e.width<.5f||e.width>8)throw new IllegalArgumentException("尺寸需要在 0.5 至 8 格之间");for(var a:store.owned(p.getUuid()))store.put(new EvidenceAnchorStore.Anchor(a.id(),a.owner(),a.dimension(),a.x(),a.y(),a.z(),a.yaw(),a.pitch(),a.roll(),e.width,a.board()));sync(p);}
             default -> throw new IllegalArgumentException("未知面板操作");
         }

@@ -26,7 +26,9 @@ public final class ForensicClient {
     private static int sequence;
     private static int openRequest = -1;
     private static int openTarget = -1;
+    private static net.minecraft.util.math.Vec3d inspectionEye;
     public static void initialize() {
+        ClueChat.initialize();
         EvidenceWorldPreview.initialize();
         com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTraceClient.initialize();
         KeyBinding inspect = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.monvhua.forensic_inspect", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, "category.monvhua"));
@@ -57,7 +59,7 @@ public final class ForensicClient {
                 }
                 if (client.crosshairTarget instanceof EntityHitResult hit && requestOpen(hit.getEntity())) continue;
                 if(client.player!=null&&client.currentScreen==null&&ClientPlayNetworking.canSend(ForensicPackets.Request.ID)){
-                    openTarget=-1;openRequest=++sequence;ClientPlayNetworking.send(new ForensicPackets.Request(-1,"__open",false,openRequest));
+                    openTarget=-1;openRequest=++sequence;ClientPlayNetworking.send(aimedRequest(-1,"__open",openRequest));
                 }
                 if (client.player != null && client.currentScreen == null && ClientPlayNetworking.canSend(com.kuilunfuzhe.monvhua.network.forensics.BloodTracePackets.Inspect.ID))
                     ClientPlayNetworking.send(new com.kuilunfuzhe.monvhua.network.forensics.BloodTracePackets.Inspect());
@@ -77,9 +79,8 @@ public final class ForensicClient {
             if (packet.part().equals("__open")) {
                 if(packet.requestId()==openRequest&&packet.target()==openTarget&&client.currentScreen==null){
                     if(packet.lines().equals(List.of("release")))client.setScreen(new InspectionScreen(openTarget,"",true,false,false));
-                    else if(packet.lines().size()==3&&packet.lines().getFirst().equals("ready")
-                            &&client.crosshairTarget instanceof EntityHitResult hit&&hit.getEntity().getId()==openTarget)
-                        client.setScreen(new InspectionScreen(openTarget,packet.lines().get(1),false,packet.lines().get(2).equals("blocked"),packet.lines().get(2).equals("pickup")));
+                    else if(packet.lines().size()==4&&packet.lines().getFirst().equals("ready"))
+                        client.setScreen(new InspectionScreen(Integer.parseInt(packet.lines().get(3)),packet.lines().get(1),false,packet.lines().get(2).equals("blocked"),packet.lines().get(2).equals("pickup")));
                     else if(client.player!=null&&!packet.lines().isEmpty())client.player.sendMessage(Text.literal(packet.lines().getFirst()),true);
                 }
                 return;
@@ -104,15 +105,21 @@ public final class ForensicClient {
         }
         if (!body) return false;
         openTarget = target.getId(); openRequest = ++sequence;
-        ClientPlayNetworking.send(new ForensicPackets.Request(openTarget, "__open", false, openRequest));
+        ClientPlayNetworking.send(aimedRequest(openTarget,"__open",openRequest));
         return true;
+    }
+    private static ForensicPackets.Request aimedRequest(int target,String part,int request){
+        var eye=MinecraftClient.getInstance().gameRenderer.getCamera().getPos();
+        if(part.equals("__open"))inspectionEye=eye;
+        else if(inspectionEye!=null)eye=inspectionEye;
+        return new ForensicPackets.Request(target,part,false,request,eye.x,eye.y,eye.z);
     }
     private static final class InspectionScreen extends Screen {
         final int target;final String part;final boolean releaseOnly,blocked,detached;
         int pending;boolean waiting;List<String> lines=List.of();
         InspectionScreen(int target,String part,boolean releaseOnly,boolean blocked,boolean detached){super(Text.literal("遗体检查"));this.target=target;this.part=part;this.releaseOnly=releaseOnly;this.blocked=blocked;this.detached=detached;}
         private int radius(){return Math.max(32,Math.min(52,height/5));}
-        private int cx(){return Math.max(radius()+8,width/2-radius()-18);}
+        private int cx(){return width/2;}
         private int cy(){return height/2;}
         @Override public boolean shouldPause(){return false;}
         @Override public void renderBackground(DrawContext c,int x,int y,float delta){}
@@ -129,7 +136,7 @@ public final class ForensicClient {
                 if(ClientPlayNetworking.canSend(ForensicPackets.CarryRequest.ID))ClientPlayNetworking.send(new ForensicPackets.CarryRequest(target,false,detached?"pickup":slot==2?"carry":"drag",part));
                 close();return true;
             }
-            if(!waiting){waiting=true;pending=++sequence;ClientPlayNetworking.send(new ForensicPackets.Request(target,part,false,pending));}
+            if(!waiting){waiting=true;pending=++sequence;ClientPlayNetworking.send(aimedRequest(target,part,pending));}
             return true;
         }
         @Override public void render(DrawContext c,int mx,int my,float delta){

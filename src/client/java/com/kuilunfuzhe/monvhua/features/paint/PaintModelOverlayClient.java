@@ -133,15 +133,21 @@ public final class PaintModelOverlayClient {
             return null;
         }
         CombinedBodySpecialModelRenderer.resetModel(model);
-        CombinedBodySpecialModelRenderer.applyPoseData(model, data);
-        Matrix4d rootMatrix = rootModelToWorld(display, data);
+        var rigid = com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.read(data);
+        CombinedBodySpecialModelRenderer.applyPoseData(model, rigid.isPresent() ? new NbtCompound() : data);
+        // Rigid corpses render neutral model parts under independent physics matrices.
+        // The old pose placement must not be applied a second time.
+        Matrix4d rootMatrix = rigid.isPresent() ? bodyModelBaseToWorld(display) : rootModelToWorld(display, data);
+        var partTransforms = rigid.map(com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord::modelMatrices).orElse(null);
         ModelHit best = null;
         double bestDistance = Double.POSITIVE_INFINITY;
         SkinTexturePixels skinPixels = skinPixels(client, display.getItemStack(), data);
 
         if (skinPixels != null) {
             for (OuterSurfaceDef surface : OUTER_EDGE_SURFACES) {
-                Matrix4d surfaceMatrix = outerSurfaceMatrix(rootMatrix, model, surface);
+                Matrix4d partRoot = paintPartRoot(rootMatrix, partTransforms, surface.name());
+                if (partRoot == null) continue;
+                Matrix4d surfaceMatrix = outerSurfaceMatrix(partRoot, model, surface);
                 if (surfaceMatrix == null) {
                     continue;
                 }
@@ -164,7 +170,9 @@ public final class PaintModelOverlayClient {
         }
 
         for (SurfaceDef surface : COMBINED_BODY_SURFACES) {
-            Matrix4d surfaceMatrix = surfaceMatrix(rootMatrix, model, surface);
+            Matrix4d partRoot = paintPartRoot(rootMatrix, partTransforms, surface.name());
+            if (partRoot == null) continue;
+            Matrix4d surfaceMatrix = surfaceMatrix(partRoot, model, surface);
             if (surfaceMatrix == null) {
                 continue;
             }
@@ -190,6 +198,16 @@ public final class PaintModelOverlayClient {
             }
         }
         return best;
+    }
+
+    private static Matrix4d paintPartRoot(Matrix4d root, java.util.Map<String,org.joml.Matrix4f> transforms, String surface) {
+        if (transforms == null) return root;
+        for (var definition : com.kuilunfuzhe.monvhua.features.forensics.WoundGeometry.SURFACES) {
+            if (!definition.name().equals(surface)) continue;
+            var transform = transforms.get(definition.part());
+            return transform == null ? null : new Matrix4d(root).mul(new Matrix4d(transform));
+        }
+        return null;
     }
 
     private static SkinTexturePixels skinPixels(MinecraftClient client, ItemStack stack, NbtCompound data) {
@@ -302,7 +320,8 @@ public final class PaintModelOverlayClient {
                 .rotateX(Math.toRadians(data.getFloat("pose_model_pitch", 0.0F)))
                 .rotateY(Math.toRadians(-data.getFloat("pose_model_yaw", 0.0F)))
                 .rotateZ(Math.toRadians(data.getFloat("pose_model_roll", 0.0F)));
-        float scale = Math.max(0.1F, data.getFloat("pose_model_scale", 1.0F));
+        float scale = Math.max(0.1F, data.getFloat("pose_model_scale", 1.0F))
+                * Math.max(0.1F, data.getFloat("corpse_scale", 1.0F));
         matrix.scale(scale);
         return matrix;
     }
@@ -317,7 +336,8 @@ public final class PaintModelOverlayClient {
                 .rotateX(Math.toRadians(-data.getFloat("pose_model_pitch", 0.0F)))
                 .rotateY(Math.toRadians(data.getFloat("pose_model_yaw", 0.0F)))
                 .rotateZ(Math.toRadians(-data.getFloat("pose_model_roll", 0.0F)));
-        float scale = Math.max(0.1F, data.getFloat("pose_model_scale", 1.0F));
+        float scale = Math.max(0.1F, data.getFloat("pose_model_scale", 1.0F))
+                * Math.max(0.1F, data.getFloat("corpse_scale", 1.0F));
         matrix.scale(scale);
         return matrix;
     }
@@ -325,6 +345,10 @@ public final class PaintModelOverlayClient {
     private static Matrix4d bodyModelBaseToWorld(ItemDisplayEntity display) {
         Matrix4d matrix = new Matrix4d().identity()
                 .translate(display.getX(), display.getY(), display.getZ());
+        // ItemDisplay yaw/pitch are applied outside the tracked display transformation
+        // by the renderer. Include them here so the picking ray follows the rendered body.
+        matrix.rotateY(Math.toRadians(-display.getYaw()))
+                .rotateX(Math.toRadians(display.getPitch()));
         DisplayEntity.RenderState renderState = display.getRenderState();
         if (renderState != null) {
             AffineTransformation transformation = renderState.transformation().interpolate(1.0F);

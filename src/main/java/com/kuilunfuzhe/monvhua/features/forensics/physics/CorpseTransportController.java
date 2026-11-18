@@ -48,23 +48,28 @@ public final class CorpseTransportController {
         if(!(entity instanceof ItemDisplayEntity d)||!Forensics.valid(p.getWorld(),d.getItemStack(),d.getUuid().toString()))return "请选择规范遗体或离体肢体";
         var record=CorpsePoseRecord.read(CorpsePoseRecord.data(d.getItemStack())).orElse(null);
         if(record==null||!permits(mode,requested,record.parts().keySet()))return "拾起仅适用于独立头部或四肢；完整遗体请使用抱起或拖拽";
-        if(CorpseCarryService.isCarried(d)||CorpseGrabController.held(d.getUuid())||CorpsePhysicsCoordinator.pending(d))return "尸体仍在运动或正在被操作";
-        var hit=CorpsePoseGeometry.pick(d,p.getEyePos(),p.getEyePos().add(p.getRotationVec(1).multiply(ForensicConfig.current.inspectionDistance)));
+        if(CorpseCarryService.isCarried(d)||CorpseGrabController.held(d.getUuid())||CorpsePhysicsCoordinator.preparing(d))return "尸体正在生成姿态、分离或被其他玩家操作";
+        var selection=CorpseInspectionContext.find(p,d,requested);
+        if(selection==null)return "本次部位选择已失效，请重新打开检查轮盘";
+        var eye=selection.eye();
+        var hit=CorpsePoseGeometry.pick(d,eye,eye.add(selection.direction().multiply(ForensicConfig.current.inspectionDistance)));
         if(hit==null||!hit.part().equals(requested))return "请重新瞄准所选部位";
-        if(p.getWorld().raycast(new RaycastContext(p.getEyePos(),hit.position(),RaycastContext.ShapeType.COLLIDER,RaycastContext.FluidHandling.NONE,p)).getType()!=HitResult.Type.MISS)return "尸体被遮挡";
+        if(p.getWorld().raycast(new RaycastContext(eye,hit.position(),RaycastContext.ShapeType.COLLIDER,RaycastContext.FluidHandling.NONE,p)).getType()!=HitResult.Type.MISS)return "尸体被遮挡";
         if(mode.equals("carry")&&!requested.equals("torso"))return "请瞄准躯干选择抱起";
         if(mode.equals("drag")&&!LIMBS.contains(requested)&&!requested.equals("torso"))return "请选择左臂、右臂、左腿或右腿";
         try{
+            if(CorpseHistoryController.get(d.getUuid())==null||!CorpseResidentManager.contains(d.getUuid()))CorpseGrabController.seed(p,d);
             var e=CorpseHistoryController.get(d.getUuid());
-            if(e==null||!CorpseResidentManager.contains(d.getUuid())){CorpseGrabController.seed(p,d);return "已接入当前姿态，待稳定后再次选择搬运";}
-            if(!e.current()||e.frozen()||!e.session.continuous()||!e.session.residentState().phase().equals("SLEEPING"))return "请等待尸体稳定并结束冻结";
+            if(e==null||!e.current()||e.frozen()||!e.session.continuous())return "请结束冻结或时间轴操作后搬运";
+            var state=e.session.residentState();
+            if(state!=null&&(state.phase().equals("FAILED")||state.phase().equals("CLOSED")))return "尸体物理会话已失效";
             var s=new Transport();s.player=p;s.display=d;s.entry=e;s.pickup=mode.equals("pickup");s.carry=mode.equals("carry");s.part=s.carry?"torso":requested;
             if(s.part.equals("torso")&&!s.carry){
-                s.part=LIMBS.stream().filter(id->e.session.frames().getLast().poses().containsKey(id)).filter(id->reachable(p,point(e,id,true))).min(Comparator.comparingDouble(id->p.getEyePos().squaredDistanceTo(point(e,id,true)))).orElseThrow(()->new IllegalArgumentException("没有可触及的四肢远端"));
+                s.part=LIMBS.stream().filter(id->frame(e).poses().containsKey(id)).filter(id->reachable(p,point(e,id,true))).min(Comparator.comparingDouble(id->p.getEyePos().squaredDistanceTo(point(e,id,true)))).orElseThrow(()->new IllegalArgumentException("没有可触及的四肢远端"));
             }
             s.target=point(e,s.part,!s.carry&&!s.pickup);
             if(!s.carry&&!reachable(p,s.target))return "该肢体远端过远或被遮挡，请靠近后重试";
-            s.orientation=e.session.frames().getLast().poses().get(e.session.frames().getLast().rootPart()).rotation();s.previous=point(e,e.session.frames().getLast().rootPart(),false);s.sequence=e.session.controlSequence();
+            var initial=frame(e);s.orientation=initial.poses().get(initial.rootPart()).rotation();s.previous=point(e,initial.rootPart(),false);s.sequence=e.session.controlSequence();
             if((s.carry||s.pickup)&&!reachable(p,desired(s)))return "胸前承托空间受阻";
             sessions.put(p.getUuid(),s);send(s,true);CorpseResidentManager.manipulated(d.getUuid());BloodTraceService.beginCarry(d,p);pose(s,true);
             return s.pickup?"已拾起"+label(s.part)+"，在身前保持物理状态；通过轮盘放下":s.carry?"已开始抱起遗体":"已抓住"+label(s.part)+"，可拖动遗体";
@@ -78,12 +83,19 @@ public final class CorpseTransportController {
     }
     private static String label(String p){return switch(p){case "head"->"头部";case "left_arm"->"左臂";case "right_arm"->"右臂";case "left_leg"->"左腿";default->"右腿";};}
     private static boolean reachable(ServerPlayerEntity p,Vec3d v){return p.getEyePos().distanceTo(v)<=ForensicConfig.current.inspectionDistance&&p.getWorld().raycast(new RaycastContext(p.getEyePos(),v,RaycastContext.ShapeType.COLLIDER,RaycastContext.FluidHandling.NONE,p)).getType()==HitResult.Type.MISS;}
-    private static Vec3d point(CorpseHistoryController.Entry e,String part,boolean distal){var pose=e.session.frames().getLast().poses().get(part);var v=pose.rotation().transform(new Vector3f(0,distal?-.375f*e.session.frames().getLast().scale():0,0));return e.view.origin().add(pose.x()+v.x,pose.y()+v.y,pose.z()+v.z);}
+    /** Seeded workers accept ordered control immediately, before publishing their first frame. */
+    static com.kuilunfuzhe.monvhua.features.physics_preview.PhysicsPoseDocument transportFrame(CorpsePhysicsBridge.Session session,net.minecraft.item.ItemStack seed){
+        var frames=session.frames();if(!frames.isEmpty())return frames.getLast();
+        var record=CorpsePoseRecord.read(CorpsePoseRecord.data(seed)).orElseThrow(()->new IllegalArgumentException("缺少可搬运姿态"));
+        return new com.kuilunfuzhe.monvhua.features.physics_preview.PhysicsPoseDocument("SETTLED",0,record.parts(),0,"transport seed",record.definition(),record.scale());
+    }
+    private static com.kuilunfuzhe.monvhua.features.physics_preview.PhysicsPoseDocument frame(CorpseHistoryController.Entry e){return transportFrame(e.session,e.view.skin());}
+    private static Vec3d point(CorpseHistoryController.Entry e,String part,boolean distal){var frame=frame(e);var pose=frame.poses().get(part);var v=pose.rotation().transform(new Vector3f(0,distal?-.375f*frame.scale():0,0));return e.view.origin().add(pose.x()+v.x,pose.y()+v.y,pose.z()+v.z);}
     private static Vec3d desired(Transport s){double yaw=Math.toRadians(s.player.bodyYaw);var forward=new Vec3d(-Math.sin(yaw),0,Math.cos(yaw));var side=new Vec3d(Math.cos(yaw),0,Math.sin(yaw));return s.player.getPos().add(forward.multiply((s.carry||s.pickup)?.85:.65)).add(side.multiply(s.carry?0:s.pickup?.18:.32)).add(0,(s.carry||s.pickup)?1.2:.85,0);}
     private static void send(Transport s,boolean active){
         var t=s.target.subtract(s.entry.view.origin());var q=s.orientation;
         var support=active&&s.carry?new CorpsePhysicsBridge.Support(q.x,q.y,q.z,q.w):null;
-        s.entry.session.control(new CorpsePhysicsBridge.Grab(++s.sequence,active?s.part:null,0,(s.carry||s.pickup)?0:-.375f*s.entry.session.frames().getLast().scale(),0,(float)t.x,(float)t.y,(float)t.z,0,0,0,false,null,support));
+        s.entry.session.control(new CorpsePhysicsBridge.Grab(++s.sequence,active?s.part:null,0,(s.carry||s.pickup)?0:-.375f*frame(s.entry).scale(),0,(float)t.x,(float)t.y,(float)t.z,0,0,0,false,null,support));
     }
     private static void pose(Transport s,boolean active){
         if(!s.carry&&!s.pickup)return;
@@ -105,6 +117,6 @@ public final class CorpseTransportController {
         if(s.blocked>20){release(p.getUuid());p.sendMessage(net.minecraft.text.Text.literal("搬运受阻，已松开遗体"),true);continue;}
         if(!obstructed){var delta=next.subtract(s.target);s.target=s.target.add(delta.length()>.22?delta.normalize().multiply(.22):delta);}
         if(s.carry&&!obstructed){var goal=new Quaternionf().rotationY((float)Math.toRadians(-p.bodyYaw)).rotateZ((float)Math.PI/2);float angle=2*(float)Math.acos(Math.min(1,Math.abs(s.orientation.dot(goal))));s.orientation.slerp(goal,angle<.001f?1:Math.min(1,.06f/angle));}
-        send(s,true);if(now%100==0)com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTransferService.contact(s.display,p);var torso=point(s.entry,s.entry.session.frames().getLast().rootPart(),false);if(!com.kuilunfuzhe.monvhua.features.forensics.blood.BloodMotionEvidenceService.moved(s.display,s.entry))BloodTraceService.physicsMoved(s.display,s.previous,torso,p);s.previous=torso;
+        send(s,true);if(now%100==0)com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTransferService.contact(s.display,p);var torso=point(s.entry,frame(s.entry).rootPart(),false);if(!com.kuilunfuzhe.monvhua.features.forensics.blood.BloodMotionEvidenceService.moved(s.display,s.entry))BloodTraceService.physicsMoved(s.display,s.previous,torso,p);s.previous=torso;
     }catch(RuntimeException error){release(s.player.getUuid());s.player.sendMessage(net.minecraft.text.Text.literal("搬运停止："+error.getMessage()),true);}}
 }

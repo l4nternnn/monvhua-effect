@@ -38,6 +38,18 @@ public final class ClueCardService {
         ServerPlayConnectionEvents.DISCONNECT.register((handler,server)->{UUID id=handler.getPlayer().getUuid();ITEM_PREVIEWS.remove(id);PENDING.remove(id);PREVIEWS.remove(id);LAST_PROPOSE.remove(id);LAST_REQUEST.remove(id);LAST_CAPTURE.remove(id);REQUEST_COUNTS.remove(id);});
         ServerLifecycleEvents.SERVER_STOPPED.register(server->{ITEM_PREVIEWS.clear();PENDING.clear();PREVIEWS.clear();LAST_PROPOSE.clear();LAST_REQUEST.clear();LAST_CAPTURE.clear();REQUEST_COUNTS.clear();});
         CommandRegistrationCallback.EVENT.register((dispatcher,access,environment)->dispatcher.register(literal("mvclue")
+            .then(literal("read").then(argument("card",StringArgumentType.word()).executes(ctx->{
+                var p=ctx.getSource().getPlayerOrThrow();try{openSharedCard(p,StringArgumentType.getString(ctx,"card"));return 1;}
+                catch(IllegalArgumentException error){ctx.getSource().sendError(Text.literal(error.getMessage()));return 0;}
+            })))
+            .then(literal("receive").then(argument("share",StringArgumentType.word()).executes(ctx->{
+                var p=ctx.getSource().getPlayerOrThrow();try{
+                    if(!hasBag(p))throw new IllegalArgumentException("请先携带线索袋");
+                    String id=store(p).openShare(p.getUuid(),StringArgumentType.getString(ctx,"share"));
+                    if(id.isEmpty())throw new IllegalArgumentException("这条分享不可用或并非分享给你");
+                    openSharedCard(p,id);return 1;
+                }catch(IllegalArgumentException error){ctx.getSource().sendError(Text.literal(error.getMessage()));return 0;}
+            })))
             .then(literal("open").executes(ctx->{send(ctx.getSource().getPlayerOrThrow(),"","",true,false);return 1;}))
             .then(literal("board").executes(ctx->{send(ctx.getSource().getPlayerOrThrow(),"","",true,false,"board",true);return 1;}))
             .then(literal("craft").executes(ctx->{send(ctx.getSource().getPlayerOrThrow(),"","",true,false,"craft",true);return 1;}))
@@ -52,7 +64,13 @@ public final class ClueCardService {
 
     private static ClueCardStore store(ServerPlayerEntity p){return ClueCardStore.get(p.getServer());}
     private static Vec3d target(ServerPlayerEntity p){var eye=p.getEyePos();var hit=((net.minecraft.server.world.ServerWorld)p.getWorld()).raycast(new RaycastContext(eye,eye.add(p.getRotationVec(1).multiply(4)),RaycastContext.ShapeType.OUTLINE,RaycastContext.FluidHandling.NONE,p));
-        if(hit.getType()!=HitResult.Type.BLOCK||!((net.minecraft.server.world.ServerWorld)p.getWorld()).isChunkLoaded(hit.getBlockPos()))throw new IllegalArgumentException("请对准四格以内的可见方块表面");return hit.getPos();}
+        Vec3d end=hit.getType()==HitResult.Type.BLOCK?hit.getPos():eye.add(p.getRotationVec(1).multiply(4));
+        Vec3d nearest=null;double distance=eye.squaredDistanceTo(end);
+        for(var display:p.getWorld().getEntitiesByClass(net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity.class,new Box(eye,end).expand(2),d->com.kuilunfuzhe.monvhua.features.forensics.Forensics.hasBinding(d.getItemStack()))){
+            var body=com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseGeometry.pick(display,eye,end);
+            if(body!=null&&body.position().squaredDistanceTo(eye)<distance){nearest=body.position();distance=eye.squaredDistanceTo(nearest);}}
+        if(nearest!=null)return nearest;
+        if(hit.getType()!=HitResult.Type.BLOCK||!p.getWorld().isChunkLoaded(hit.getBlockPos()))throw new IllegalArgumentException("请对准四格以内的可见方块或身体表面");return hit.getPos();}
     private static int blankSlot(ServerPlayerEntity p){String session=store(p).accessToken();for(int i=0;i<p.getInventory().size();i++){var s=p.getInventory().getStack(i);if(s.isOf(ClueCardItems.BLANK)&&session.equals(ClueCardItems.data(s,"clue_session")))return i;}throw new IllegalArgumentException("缺少本次案件的空白卡");}
     private static void requireRecording(ServerPlayerEntity p){
         var ledger=store(p);if(ledger.session().isEmpty())throw new IllegalArgumentException("尚未选择案件，请管理员开启案件");
@@ -117,8 +135,8 @@ public final class ClueCardService {
                 case "view" -> {boolean fresh=store(p).collect(p.getUuid(),selected);if(fresh)notice="已收录出示的记录";}
                 case "save" -> {if(request.fields()==null)throw new IllegalArgumentException("缺少卡片内容");store(p).edit(p.getUuid(),selected,request.revision(),request.fields());notice="记录已保存";}
                 case "copy" -> {int cost=store(p).copyCost(p.getUuid(),selected),slot=cost>0?blankSlot(p):-1;selected=store(p).duplicate(p.getUuid(),selected);if(cost>0){p.getInventory().getStack(slot).decrement(cost);p.getInventory().markDirty();}notice=cost==0?"伤情副本已生成，不另行消耗空白卡":"副本已生成，原卡保留";}
-                case "publish" -> {store(p).publish(p.getUuid(),selected);notice="记录已出示，内容已定稿";broadcast(p);}
-                case "compare" -> {store(p).compare(p.getUuid(),selected,request.other());notice="比较已公开，相关记录已定稿";broadcast(p);}
+                case "publish" -> {store(p).publish(p.getUuid(),selected);notice="记录已出示，内容已定稿";broadcast(p);announce(p,selected);}
+                case "compare" -> {store(p).compare(p.getUuid(),selected,request.other());notice="比较已公开，相关记录已定稿";broadcast(p);announce(p,selected);announce(p,request.other());}
                 case "withdraw" -> {withdraw(p,selected);notice="记录卡已取出；手持记录卡潜行右键可放回卡袋";}
                 default -> throw new IllegalArgumentException("无法执行此项线索卡操作");
             }
@@ -126,10 +144,25 @@ public final class ClueCardService {
         }catch(IllegalArgumentException e){send(p,"","操作失败："+e.getMessage(),false,false,request.op(),false);}
     }
     private static void broadcast(ServerPlayerEntity source){for(var p:source.getServer().getPlayerManager().getPlayerList())if(p!=source&&store(p).participant(p.getUuid()))send(p,"","已有新的公开记录或线索比较",false,false);}
+    public static boolean hasBag(ServerPlayerEntity p){for(int i=0;i<p.getInventory().size();i++)if(p.getInventory().getStack(i).isOf(ClueCardItems.BAG))return true;return false;}
+    public static void openSharedCard(ServerPlayerEntity p,String id){if(!hasBag(p))throw new IllegalArgumentException("请先携带线索袋");openCard(p,id);}
+    public static void announceShare(ServerPlayerEntity source,ServerPlayerEntity target,String card,String token){
+        if(!hasBag(target))return;
+        var summary=store(source).summaries(source.getUuid()).stream().filter(c->c.id().equals(card)).findFirst().orElse(null);if(summary==null)return;
+        target.sendMessage(Text.literal(source.getName().getString()+"分享了线索 ").append(Text.literal("⌈"+summary.fields().title()+"⌋").styled(s->s.withColor(net.minecraft.util.Formatting.GOLD).withUnderline(true)
+            .withClickEvent(new net.minecraft.text.ClickEvent.RunCommand("/mvclue receive "+token)))),false);
+    }
+    public static void announce(ServerPlayerEntity source,String id){
+        var summary=store(source).summaries(source.getUuid()).stream().filter(c->c.id().equals(id)).findFirst().orElse(null);if(summary==null)return;
+        for(var p:source.getServer().getPlayerManager().getPlayerList())if(hasBag(p)&&store(p).readable(p.getUuid(),id))
+            p.sendMessage(Text.literal(source.getName().getString()+"分享了线索 ").append(Text.literal("⌈"+summary.fields().title()+"⌋").styled(s->s.withColor(net.minecraft.util.Formatting.GOLD).withUnderline(true)
+                .withClickEvent(new net.minecraft.text.ClickEvent.RunCommand("/mvclue read "+id)))),false);
+    }
     public static void onShowcaseViewed(ServerPlayerEntity viewer,String shareId){
         viewer.getServer().execute(()->{String id=store(viewer).openShare(viewer.getUuid(),shareId);if(id.isEmpty())return;boolean fresh=store(viewer).collect(viewer.getUuid(),id);
             var summary=store(viewer).summaries(viewer.getUuid()).stream().filter(c->c.id().equals(id)).findFirst().orElseThrow();
             send(viewer,id,fresh?"已收录"+summary.presenter()+"出示的记录":"该记录已收录",false,false);
+            if(hasBag(viewer))viewer.sendMessage(Text.literal("查看线索 ⌈"+summary.fields().title()+"⌋").styled(s->s.withColor(net.minecraft.util.Formatting.GOLD).withUnderline(true).withClickEvent(new net.minecraft.text.ClickEvent.RunCommand("/mvclue read "+id))),false);
         });
     }
     public static void send(ServerPlayerEntity p,String selected,String notice,boolean open,boolean confirm){

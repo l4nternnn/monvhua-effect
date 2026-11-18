@@ -70,6 +70,8 @@ public final class CorpsePhysicsCoordinator {
     public static CorpsePhysicsBridge diagnosticProvider(MinecraftServer server){return server==owner?provider:null;}
     public static boolean simulating(ItemDisplayEntity display){return display!=null&&(CorpseSeparationService.busy(display.getUuid())||jobs.containsKey(display.getUuid())||CorpseResidentManager.moving(display.getUuid()));}
     public static boolean pending(ItemDisplayEntity display){return display!=null&&(CorpseSeparationService.busy(display.getUuid())||jobs.containsKey(display.getUuid())||CorpseResidentManager.moving(display.getUuid())||CorpseHistoryController.locked(display.getUuid()));}
+    /** A live resident can be manipulated while moving; topology and first-pose jobs cannot. */
+    public static boolean preparing(ItemDisplayEntity display){return display!=null&&(CorpseSeparationService.busy(display.getUuid())||jobs.containsKey(display.getUuid()));}
     public static boolean automaticEnabled(){return automatic;}
     public static boolean localControl(MinecraftServer server){return server==owner&&provider!=null;}
     public static boolean validateResume(UUID id){

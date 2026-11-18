@@ -17,12 +17,18 @@ public final class ClueCardWorldPanel {
     private boolean manual,model,loaded;
     public ClueCardWorldPanel(Runnable back){this.back=back;ClueCardClient.request("list","");}
     private ButtonWidget button(String label,int x,int y,int w,Runnable action){var button=new ClueFolioScreen.SealButton(label,x,y,w,action);buttons.add(button);return button;}
-    private List<ClueCardStore.Summary> cards(int filter){return ClueCardClient.state==null?List.of():ClueCardClient.state.cards().stream().filter(c->filter==0||(filter==1?c.owned():c.locked())).toList();}
+    private List<ClueCardStore.Summary> cards(int filter){return ClueCardClient.state==null?List.of():ClueCardClient.state.cards().stream().filter(c->filter==0||(filter==1?c.owned():c.published())).toList();}
     private String filterLabel(int filter){return filter==1?"自有":filter==2?"已出示":"全部";}
     private void publish(String id){String key="publish:"+id;if(!key.equals(armed)){armed=key;rebuild();return;}ClueCardClient.request("publish",id);armed="";rebuild();}
     private void fetch(String id){if(!id.isEmpty())ClueCardClient.request("view",id);}
     private void select(String id,boolean left){if(left)a=id;else b=id;manual=true;armed="";fetch(id);rebuild();}
     private void latest(){var state=ClueCardClient.state;if(state==null)return;loaded=true;a=state.latestA();b=state.latestB();historyIndex=state.history().size()-1;manual=false;armed="";notice="";fetch(a);fetch(b);}
+    /** Called by the network bridge when a new public comparison arrives. */
+    public void showComparison(String left,String right){
+        if(left==null||right==null||left.isEmpty()||right.isEmpty())return;
+        a=left;b=right;loaded=true;manual=false;armed="";expanded="";itemInfo=false;textPage=0;notice="已跳转到最新公开比较";
+        var state=ClueCardClient.state;seen=state;historyIndex=state==null?-1:state.history().size()-1;fetch(a);fetch(b);rebuild();
+    }
     private void history(int delta){var state=ClueCardClient.state;if(state==null||state.history().isEmpty())return;
         historyIndex=Math.max(0,Math.min(state.history().size()-1,historyIndex+delta));var entry=state.history().get(historyIndex);
         a=entry.a();b=entry.b();manual=true;armed="";notice="比较第 "+entry.number()+" 次 · "+entry.presenter();fetch(a);fetch(b);rebuild();
@@ -58,7 +64,7 @@ public final class ClueCardWorldPanel {
         button("查阅 B",164,140,44,()->detail(b)).active=ClueCardClient.find(b)!=null;
         button("出示 B",212,140,46,()->publish(b)).active=ClueCardClient.find(b)!=null;
     }
-    private String shortTitle(ClueCardStore.Summary c){return (c.locked()?"公 ":"私 ")+c.fields().title();}
+    private String shortTitle(ClueCardStore.Summary c){return (c.published()?"公 ":"私 ")+c.fields().title();}
     private void detail(String id){if(ClueCardClient.find(id)!=null){expanded=id;armed="";textPage=0;model=false;itemInfo=false;fetch(id);rebuild();}}
     private List<net.minecraft.text.OrderedText> textLines(){var card=ClueCardClient.find(expanded);if(card==null)return List.of();
         if(itemInfo)return ClueCardItemPreview.lines(expanded,206);
@@ -69,8 +75,9 @@ public final class ClueCardWorldPanel {
     public String hover(double x,double y){if(!itemAt(x,y).isEmpty())return "查看记录时的物品信息";for(var button:buttons)if(button.active&&button.isMouseOver(x,y))return button.getMessage().getString();return "";}
     public boolean click(double x,double y){String item=itemAt(x,y);if(!item.isEmpty()){detail(item);itemInfo=true;rebuild();return true;}for(var button:List.copyOf(buttons))if(button.active&&button.isMouseOver(x,y)){button.onPress();return true;}return false;}
     public void render(DrawContext c,int mx,int my,float delta){
-        var current=ClueCardClient.state;if(current!=seen){if(current!=null&&seen!=null&&!current.session().equals(seen.session())){loaded=false;manual=false;expanded=armed="";leftPage=rightPage=textPage=0;}boolean changed=seen==null||current!=null&&(!current.latestA().equals(seen.latestA())||!current.latestB().equals(seen.latestB()));seen=current;
-            if(current!=null&&!current.notice().isEmpty())notice=current.notice();if(current!=null&&!loaded)latest();else if(changed)notice="有新的公开比较 · 点击最新查看";rebuild();}
+        var current=ClueCardClient.state;if(current!=seen){if(current!=null&&seen!=null&&!current.session().equals(seen.session())){loaded=false;manual=false;expanded=armed="";leftPage=rightPage=textPage=0;}
+            boolean changed=current!=null&&seen!=null&&!current.history().isEmpty()&&(seen.history().isEmpty()||current.history().getLast().number()>seen.history().getLast().number());seen=current;
+            if(current!=null&&!current.notice().isEmpty())notice=current.notice();if(current!=null&&!loaded)latest();else if(changed)showComparison(current.latestA(),current.latestB());rebuild();}
         ClueFolioScreen.paper(c,2,2,316,176);
         if(expanded.isEmpty()){drawCard(c,a,58);drawCard(c,b,164);}else drawExpanded(c);
         for(var button:buttons){button.render(c,mx,my,delta);if(button.active&&button.isMouseOver(mx,my)){c.fill(button.getX(),button.getY(),button.getX()+button.getWidth(),button.getY()+button.getHeight(),0x206d3326);c.drawBorder(button.getX(),button.getY(),button.getWidth(),button.getHeight(),ClueFolioScreen.RED);}}

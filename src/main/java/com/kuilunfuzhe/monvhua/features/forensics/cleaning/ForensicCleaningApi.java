@@ -96,6 +96,12 @@ public final class ForensicCleaningApi {
     public static Result cleanScene(ServerWorld world,SceneRequest request){return scene(world,request,false);}
     public static Result previewScene(ServerWorld world,SceneRequest request){return scene(world,request,true);}
     private static Result scene(ServerWorld w,SceneRequest r,boolean preview){
+        return scene(w,r,preview,null,false);
+    }
+    public static Result washBlockRing(ServerWorld w,BlockPos center,boolean bottle){
+        return scene(w,new SceneRequest(UUID.randomUUID(),center.toCenterPos(),3,1,Method.WASH),false,center,bottle);
+    }
+    private static Result scene(ServerWorld w,SceneRequest r,boolean preview,BlockPos ring,boolean bottle){
         var s=w.getServer();var failure=validate(s,r.actionId,r.strength);if(failure!=null)return failure;
         if(r.center==null||!Double.isFinite(r.center.x)||!Double.isFinite(r.center.y)||!Double.isFinite(r.center.z)||!Double.isFinite(r.radius)||r.radius<.1||r.radius>ForensicConfig.current.cleaning.maxRadius||r.method==null||Math.abs(r.center.x)>30000000||Math.abs(r.center.z)>30000000)return Result.reject("无效中心、半径或方法");
         String key="scene/"+w.getRegistryKey().getValue()+"/"+r.center+"/"+r.radius+"/"+r.strength+"/"+r.method;
@@ -110,7 +116,9 @@ public final class ForensicCleaningApi {
             for(var e:traces.chunk(ChunkPos.toLong(x,z))){
                 var p=e.patch();if(!w.getBlockState(p.pos()).toString().equals(e.support()))continue;
                 if(p.pos().getSquaredDistance(r.center)>Math.pow(r.radius+2,2))continue;
-                var treatment=planPatch(p,r.center,r.radius,r.strength,traces.cleaningRemainders(p.id()));
+                if(ring!=null&&(Math.abs(p.pos().getX()-ring.getX())>1||Math.abs(p.pos().getY()-ring.getY())>1||Math.abs(p.pos().getZ()-ring.getZ())>1))continue;
+                double strength=bottle&&!traces.bottleWashed(p.id())?.5:r.strength;
+                var treatment=planPatch(p,r.center,r.radius,strength,traces.cleaningRemainders(p.id()));
                 if(!treatment.changed())continue;
                 var next=treatment.patch();fractions.put(p.id(),treatment.remainders());
                 updates.add(new BloodTraceStore.Entry(next,e.source(),e.event(),e.support(),e.directional()));
@@ -127,7 +135,7 @@ public final class ForensicCleaningApi {
             double ratio=Math.min(1,event.getValue()/Math.max(1e-9,totals.getOrDefault(event.getKey(),0.0)));
             var c=transfers.clean(event.getKey(),ratio,BloodTraceService.now(s),!preview);wet+=c.transferable();visible+=c.visible();
         }
-        if(!preview)for(var e:updates){traces.submit(e);traces.cleaningRemainders(e.patch().id(),fractions.get(e.patch().id()));}
+        if(!preview)for(var e:updates){traces.submit(e);traces.cleaningRemainders(e.patch().id(),fractions.get(e.patch().id()));if(bottle)traces.markBottleWashed(e.patch().id());}
         return finish(s,r.actionId,key,preview,updates.size(),visible,wet,skipped);
     }
     /** Face-cell clipping. Does not change geometry or infer a scrub direction. */

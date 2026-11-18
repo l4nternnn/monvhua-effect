@@ -15,6 +15,18 @@ class ClueCardStoreTest {
         assertThrows(IllegalArgumentException.class,()->s.snapshot(b,id));assertThrows(IllegalArgumentException.class,()->s.edit(b,id,0,fields("窜改")));
         assertEquals("原始说法",s.summaries(a).getFirst().fields().event());
     }
+    @Test void displayMetadataDistinguishesPrivateLockedPublicAndCopiedCards(){
+        var s=store();String original=create(s,a);
+        assertFalse(s.summaries(a).getFirst().published());assertFalse(s.summaries(a).getFirst().copy());
+        String copy=s.duplicate(a,original);
+        s.lock(a,original);s.rememberShare("targeted",b,original);s.openShare(b,"targeted");
+        assertTrue(s.summaries(b).getFirst().locked());assertFalse(s.summaries(b).getFirst().published());
+        var duplicate=s.summaries(a).stream().filter(c->c.id().equals(copy)).findFirst().orElseThrow();
+        assertTrue(duplicate.copy());assertFalse(duplicate.published());
+        s.publish(a,copy);assertTrue(s.summaries(b).stream().filter(c->c.id().equals(copy)).findFirst().orElseThrow().published());
+        var restored=ClueCardStore.CODEC.parse(NbtOps.INSTANCE,ClueCardStore.CODEC.encodeStart(NbtOps.INSTANCE,s).getOrThrow()).getOrThrow();
+        assertEquals(s.summaries(a),restored.summaries(a));
+    }
     @Test void copyRetainsOriginalAndPublicVersionCannotBeRewritten(){var s=store();String original=create(s,a),copy=s.duplicate(a,original);
         s.edit(a,copy,0,fields("另一个说法"));assertEquals("原始说法",s.summaries(a).stream().filter(c->c.id().equals(original)).findFirst().orElseThrow().fields().event());
         s.publish(a,copy);assertTrue(s.readable(b,copy));assertFalse(s.readable(b,original));
@@ -41,7 +53,8 @@ class ClueCardStoreTest {
     @Test void targetedShowcaseUnlocksOnlyRecipientAndDoesNotExposePrivateSourceOrCopies(){var s=store();String id=create(s,a);s.lock(a,id);s.rememberShare("share1",b,id);
         assertFalse(s.readable(b,id));assertEquals("",s.openShare(outsider,"share1"));assertEquals(id,s.openShare(b,"share1"));assertTrue(s.readable(b,id));assertTrue(s.latest(b)[0].isEmpty());
         assertThrows(IllegalArgumentException.class,()->s.edit(a,id,0,fields("锁后修改")));
-        String copy=s.duplicate(a,id);assertFalse(s.readable(b,copy));s.publish(b,id);assertTrue(s.summaries(a).stream().filter(c->c.id().equals(id)).findFirst().orElseThrow().locked());
+        assertThrows(IllegalArgumentException.class,()->s.duplicate(a,id));
+        s.publish(b,id);assertTrue(s.summaries(a).stream().filter(c->c.id().equals(id)).findFirst().orElseThrow().locked());
     }
     @Test void importingKnownWoundIsIdempotentAndPublishingOneChildDoesNotExposeSiblings(){var s=store();var snapshot=new NbtCompound();
         String child=s.importWound(a,"corpse/wound1","corpse","遗体甲",fields("伤口一"),snapshot);
@@ -49,7 +62,8 @@ class ClueCardStoreTest {
         String sibling=s.importWound(a,"corpse/wound2","corpse","遗体甲",fields("伤口二"),snapshot);
         s.publish(a,child);assertEquals(1,s.summaries(b).size());assertEquals("遗体甲",s.summaries(b).getFirst().groupLabel());assertFalse(s.readable(b,sibling));
         assertEquals("伤口一",s.summaries(b).getFirst().fields().event());
-        String copy=s.duplicate(a,child);assertNotEquals(child,copy);assertFalse(s.readable(b,copy));
+        assertThrows(IllegalArgumentException.class,()->s.duplicate(a,child));
+        String copy=s.duplicate(a,sibling);assertNotEquals(sibling,copy);assertFalse(s.readable(b,copy));
     }
     @Test void fieldsCannotInjectControlCodesAndCapacityIsEnforced(){var s=store();var sanitized=new ClueCardStore.Fields("A\u0000B§c","x".repeat(60),null,"event","");assertEquals("ABc",sanitized.title());assertEquals(32,sanitized.time().length());assertEquals("",sanitized.place());
         for(int i=0;i<64;i++)create(s,a);assertThrows(IllegalArgumentException.class,()->create(s,a));

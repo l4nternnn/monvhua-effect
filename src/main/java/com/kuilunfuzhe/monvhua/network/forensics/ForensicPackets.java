@@ -21,11 +21,12 @@ public final class ForensicPackets {
         private void write(RegistryByteBuf buf) { buf.writeVarInt(target); buf.writeBoolean(release);buf.writeString(mode,16);buf.writeString(part,32); }
         @Override public Id<? extends CustomPayload> getId() { return ID; }
     }
-    public record Request(int target, String part, boolean cycle, int requestId) implements CustomPayload {
+    public record Request(int target, String part, boolean cycle, int requestId,double eyeX,double eyeY,double eyeZ) implements CustomPayload {
+        public Request(int target,String part,boolean cycle,int requestId){this(target,part,cycle,requestId,Double.NaN,Double.NaN,Double.NaN);}
         public static final Id<Request> ID = new Id<>(Identifier.of("monvhua", "forensic_request"));
         public static final PacketCodec<RegistryByteBuf, Request> CODEC = PacketCodec.of(Request::write, Request::new);
-        private Request(RegistryByteBuf buf) { this(buf.readVarInt(), buf.readString(32), buf.readBoolean(), buf.readVarInt()); }
-        private void write(RegistryByteBuf buf) { buf.writeVarInt(target); buf.writeString(part, 32); buf.writeBoolean(cycle); buf.writeVarInt(requestId); }
+        private Request(RegistryByteBuf buf) { this(buf.readVarInt(), buf.readString(32), buf.readBoolean(), buf.readVarInt(),buf.readDouble(),buf.readDouble(),buf.readDouble()); }
+        private void write(RegistryByteBuf buf) { buf.writeVarInt(target); buf.writeString(part, 32); buf.writeBoolean(cycle); buf.writeVarInt(requestId);buf.writeDouble(eyeX);buf.writeDouble(eyeY);buf.writeDouble(eyeZ); }
         @Override public Id<? extends CustomPayload> getId() { return ID; }
     }
     public record Result(int target, String part, int requestId, List<String> lines) implements CustomPayload {
@@ -61,8 +62,8 @@ public final class ForensicPackets {
         PayloadTypeRegistry.playC2S().register(SummaryRequest.ID, SummaryRequest.CODEC);
         PayloadTypeRegistry.playS2C().register(SummaryResult.ID, SummaryResult.CODEC);
         ForensicSharePackets.register();
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> LAST_REQUEST.remove(handler.player.getUuid()));
-        ServerLifecycleEvents.SERVER_STOPPED.register(server -> LAST_REQUEST.clear());
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {LAST_REQUEST.remove(handler.player.getUuid());CorpseInspectionContext.clear(handler.player.getUuid());});
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> {LAST_REQUEST.clear();CorpseInspectionContext.clear();});
         ServerPlayNetworking.registerGlobalReceiver(Request.ID, (packet, context) -> context.server().execute(() -> {
             var player = context.player(); int now = context.server().getTicks();
             Integer last = LAST_REQUEST.get(player.getUuid());
@@ -79,7 +80,14 @@ public final class ForensicPackets {
                     Entity target = packet.target == -1 ? player : player.getWorld().getEntityById(packet.target);
                     lines = target instanceof net.minecraft.server.network.ServerPlayerEntity other
                             ? com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTransferService.inspect(player, other) : List.of();
-                } else lines = Forensics.inspect(player, packet.target, packet.part);
+                } else {
+                    var camera=new net.minecraft.util.math.Vec3d(packet.eyeX,packet.eyeY,packet.eyeZ);
+                    // Crouching interpolates the rendered eye. Accept only the small camera-height
+                    // difference, keeping range, direction, obstruction and evidence authority server-side.
+                    var eye=player.getEyePos();
+                    if(!Double.isFinite(camera.lengthSquared())||Math.abs(camera.x-eye.x)>.35||Math.abs(camera.z-eye.z)>.35||Math.abs(camera.y-eye.y)>.65)camera=eye;
+                    lines = Forensics.inspect(player, packet.target, packet.part,camera);
+                }
                 ServerPlayNetworking.send(player, new Result(packet.target, packet.part, packet.requestId, lines));
             }
         }));
