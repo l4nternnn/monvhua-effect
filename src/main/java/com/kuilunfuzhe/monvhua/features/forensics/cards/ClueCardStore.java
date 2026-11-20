@@ -24,7 +24,9 @@ public final class ClueCardStore extends PersistentState {
         public NbtCompound nbt(){var n=new NbtCompound();n.putString("title",title);n.putString("time",time);n.putString("place",place);n.putString("event",event);n.putString("inference",inference);return n;}
         public static Fields read(NbtCompound n){return new Fields(n.getString("title",""),n.getString("time",""),n.getString("place",""),n.getString("event",""),n.getString("inference",""));}
     }
-    public record Summary(String id,boolean owned,boolean locked,boolean inBag,int revision,Fields fields,String presenter,boolean collected,String group,String groupLabel,String part,String kind,boolean published,boolean copy){}
+    public record Summary(String id,boolean owned,boolean locked,boolean inBag,int revision,Fields fields,String presenter,boolean collected,String group,String groupLabel,String part,String kind,boolean published,boolean copy,String preciseTime){
+        public Summary withPreciseTime(String value){return new Summary(id,owned,locked,inBag,revision,fields,presenter,collected,group,groupLabel,part,kind,published,copy,value);}
+    }
     public ClueCardStore(){this(new NbtCompound());}
     private ClueCardStore(NbtCompound n){data=n;int schema=n.getInt("schema",1);if(schema!=1)throw new IllegalStateException("Unknown clue card schema "+schema);data.putInt("schema",1);}
     public static ClueCardStore get(MinecraftServer server){return server.getOverworld().getPersistentStateManager().getOrCreate(TYPE);}
@@ -187,8 +189,19 @@ public final class ClueCardStore extends PersistentState {
         var all=section("collected");var mine=all.getCompoundOrEmpty(viewer.toString());boolean fresh=!mine.getBoolean(id,false);mine.putBoolean(id,true);all.put(viewer.toString(),mine);markDirty();return fresh;
     }
     public List<Summary> summaries(UUID viewer){List<Summary> result=new ArrayList<>();
-        for(String id:section("cards").getKeys())if(readable(viewer,id)){var c=card(id);result.add(new Summary(id,owns(viewer,c),c.getBoolean("locked",false),c.getBoolean("in_bag",true),c.getInt("revision",0),Fields.read(c.getCompoundOrEmpty("fields")),c.getString("presenter",""),section("collected").getCompoundOrEmpty(viewer.toString()).getBoolean(id,false),c.getString("group",""),c.getString("group_label",""),snapshotPart(c),snapshotKind(c),c.getBoolean("public",false),c.contains("parent")));}
+        for(String id:section("cards").getKeys())if(readable(viewer,id)){var c=card(id);result.add(new Summary(id,owns(viewer,c),c.getBoolean("locked",false),c.getBoolean("in_bag",true),c.getInt("revision",0),Fields.read(c.getCompoundOrEmpty("fields")),c.getString("presenter",""),section("collected").getCompoundOrEmpty(viewer.toString()).getBoolean(id,false),c.getString("group",""),c.getString("group_label",""),snapshotPart(c),snapshotKind(c),c.getBoolean("public",false),c.contains("parent"),""));}
         result.sort(Comparator.comparingLong((Summary s)->card(s.id()).getLong("order",Long.MAX_VALUE)).thenComparing(Summary::id));return result;
+    }
+    /** Immutable clock metadata stays in the server ledger; only the service projects it for master viewers. */
+    public void recordedTimes(UUID viewer,String id,String event,String death){
+        var c=requireOwned(viewer,id);var audit=c.getCompoundOrEmpty("audit");
+        if(!event.isEmpty()&&!audit.contains("event_time"))audit.putString("event_time",event);
+        if(!death.isEmpty()&&!audit.contains("death_time"))audit.putString("death_time",death);
+        c.put("audit",audit);markDirty();
+    }
+    public String preciseTime(UUID viewer,String id){
+        if(!readable(viewer,id))return "";var audit=card(id).getCompoundOrEmpty("audit");
+        return com.kuilunfuzhe.monvhua.features.forensics.EvidenceClock.describe(audit.getString("event_time",""),audit.getString("death_time",""));
     }
     private String snapshotKind(NbtCompound c){var n=section("snapshots").getCompoundOrEmpty(c.getString("snapshot",""));return n.contains("item")?"item":n.contains("body")?"body":"scene";}
     private String snapshotPart(NbtCompound c){

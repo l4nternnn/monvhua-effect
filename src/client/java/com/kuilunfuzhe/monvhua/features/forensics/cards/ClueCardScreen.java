@@ -47,7 +47,7 @@ public final class ClueCardScreen extends ClueFolioScreen {
     private void drawCard(DrawContext c,String id,int x,int y,int w,int h){paper(c,x,y,w,h);var card=ClueCardClient.find(id);if(card==null){line(c,"选择记录",x+6,y+8,w-12,MUTED);return;}
         rules(c,x+6,y+6,w-12,3,14);line(c,card.fields().title(),x+6,y+6,w-12,INK);line(c,"时："+card.fields().time(),x+6,y+20,w-12,MUTED);line(c,"地："+card.fields().place(),x+6,y+34,w-12,MUTED);
         int ph=Math.max(0,Math.min(64,h-80));if(ph>8)drawSnapshot(c,ClueCardClient.DETAILS.get(id),x+6,y+47,w-12,ph);
-        int ty=y+52+ph;var lines=textRenderer.wrapLines(Text.literal(card.fields().event()),w-12);rules(c,x+6,ty,w-12,Math.min(lines.size(),Math.max(0,(y+h-16-ty)/11)),11);for(int i=0;i<Math.max(0,(y+h-16-ty)/11)&&i<lines.size();i++)c.drawText(textRenderer,lines.get(i),x+6,ty+i*11,INK,false);
+        int ty=y+52+ph;var lines=textRenderer.wrapLines(Text.literal(ClueCardClient.eventText(card)),w-12);rules(c,x+6,ty,w-12,Math.min(lines.size(),Math.max(0,(y+h-16-ty)/11)),11);for(int i=0;i<Math.max(0,(y+h-16-ty)/11)&&i<lines.size();i++)c.drawText(textRenderer,lines.get(i),x+6,ty+i*11,INK,false);
         line(c,card.locked()?"出示："+card.presenter():"个人记录 · 尚未出示",x+6,y+h-12,w-12,RED);
     }
     static void drawSnapshot(DrawContext c,ClueCardPackets.Detail detail,int x,int y,int w,int h){

@@ -68,7 +68,7 @@ public final class ClueCardWorldPanel {
     private void detail(String id){if(ClueCardClient.find(id)!=null){expanded=id;armed="";textPage=0;model=false;itemInfo=false;fetch(id);rebuild();}}
     private List<net.minecraft.text.OrderedText> textLines(){var card=ClueCardClient.find(expanded);if(card==null)return List.of();
         if(itemInfo)return ClueCardItemPreview.lines(expanded,206);
-        return MinecraftClient.getInstance().textRenderer.wrapLines(Text.literal("事件描述："+card.fields().event()+"\n\n补充判断："+card.fields().inference()),294);
+        return MinecraftClient.getInstance().textRenderer.wrapLines(Text.literal("事件描述："+ClueCardClient.eventText(card)+"\n\n补充判断："+card.fields().inference()),294);
     }
     private int textPages(){return Math.max(1,(textLines().size()+6)/7);}
     private String itemAt(double x,double y){if(!expanded.isEmpty())return model&&ClueCardItemPreview.isItem(expanded)&&x>=10&&x<310&&y>=60&&y<157?expanded:"";if(y<69||y>=105)return "";if(x>=62&&x<148&&ClueCardItemPreview.isItem(a))return a;if(x>=168&&x<254&&ClueCardItemPreview.isItem(b))return b;return "";}
@@ -97,6 +97,6 @@ public final class ClueCardWorldPanel {
         String[] lines={card.fields().title(),"时间 "+card.fields().time(),"地点 "+card.fields().place()};int y=31;
         ClueFolioScreen.rules(c,x+4,31,86,3,12);for(String line:lines){line(c,line,x+4,y,86,ClueFolioScreen.INK);y+=12;}
         ClueCardScreen.drawSnapshot(c,ClueCardClient.DETAILS.get(id),x+4,69,86,36);
-        var wrapped=text.wrapLines(Text.literal(card.fields().event()),86);for(int i=0;i<Math.min(2,wrapped.size());i++)c.drawText(text,wrapped.get(i),x+4,109+i*11,ClueFolioScreen.INK,false);
+        var wrapped=text.wrapLines(Text.literal(ClueCardClient.eventText(card)),86);for(int i=0;i<Math.min(2,wrapped.size());i++)c.drawText(text,wrapped.get(i),x+4,109+i*11,ClueFolioScreen.INK,false);
     }
 }

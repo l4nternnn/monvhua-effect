@@ -91,6 +91,7 @@ public final class ClueCardService {
         int slot=blankSlot(p);
         var snapshot=PREVIEWS.get(p.getUuid());if(snapshot==null)throw new IllegalArgumentException("预览已失效，请重新选点");var audit=new NbtCompound();audit.putDouble("x",pending.point().x);audit.putDouble("y",pending.point().y);audit.putDouble("z",pending.point().z);audit.putString("dimension",pending.dimension());audit.putLong("tick",now);audit.putInt("spatial_schema",2);audit.putDouble("camera_x",pending.eye().x);audit.putDouble("camera_y",pending.eye().y);audit.putDouble("camera_z",pending.eye().z);audit.putLong("observed_tick",snapshot.getCompoundOrEmpty("scene").getLong("revision",now));audit.putBoolean("complete_volume",false);
         var fields=new ClueCardStore.Fields("现场记录",ClueCardConfig.time(p),ClueCardConfig.place(p,pending.point()),"","");
+        com.kuilunfuzhe.monvhua.features.forensics.EvidenceClock.stamp(audit,p);
         String id=store(p).create(p.getUuid(),fields,snapshot,audit);p.getInventory().getStack(slot).decrement(1);p.getInventory().markDirty();LAST_CAPTURE.put(p.getUuid(),now);PENDING.remove(p.getUuid());PREVIEWS.remove(p.getUuid());return id;
     }
     private static ItemStack investigationItem(ServerPlayerEntity p,int slot){
@@ -115,6 +116,7 @@ public final class ClueCardService {
         int blank=blankSlot(p);var stack=investigationItem(p,preview.slot());
         var audit=new NbtCompound();audit.put("original_item",preview.original().copy());audit.putLong("tick",now);audit.putString("dimension",p.getWorld().getRegistryKey().getValue().toString());
         var fields=new ClueCardStore.Fields(stack.getName().getString(),ClueCardConfig.time(p),ClueCardConfig.place(p,p.getPos()),"","");
+        com.kuilunfuzhe.monvhua.features.forensics.EvidenceClock.stamp(audit,p);
         String id=store(p).create(p.getUuid(),fields,ClueItemSnapshot.snapshot(preview.original()),audit);
         p.getInventory().getStack(blank).decrement(1);p.getInventory().markDirty();ITEM_PREVIEWS.remove(p.getUuid());LAST_CAPTURE.put(p.getUuid(),now);return id;
     }
@@ -174,7 +176,7 @@ public final class ClueCardService {
         if(selected.equals("__item")&&ITEM_PREVIEWS.containsKey(p.getUuid()))detail=projectDetail("__item",ClueItemSnapshot.snapshot(ITEM_PREVIEWS.get(p.getUuid()).original()));
         if(confirm&&PREVIEWS.containsKey(p.getUuid()))detail=projectDetail("__capture",PREVIEWS.get(p.getUuid()));
         if(!selected.isEmpty()&&s.readable(p.getUuid(),selected))detail=projectDetail(selected,s.snapshot(p.getUuid(),selected));
-        ServerPlayNetworking.send(p,new ClueCardPackets.State(s.participant(p.getUuid())?s.accessToken():"",s.recording(p.getUuid()),s.summaries(p.getUuid()),latest[0],latest[1],selected,detail,notice,open,confirm,responseOp,success,s.history(p.getUuid())));
+        ServerPlayNetworking.send(p,new ClueCardPackets.State(s.participant(p.getUuid())?s.accessToken():"",s.recording(p.getUuid()),s.summaries(p.getUuid()).stream().map(c->c.withPreciseTime(com.kuilunfuzhe.monvhua.features.forensics.EvidenceClock.master(p)?s.preciseTime(p.getUuid(),c.id()):"" )).toList(),latest[0],latest[1],selected,detail,notice,open,confirm,responseOp,success,s.history(p.getUuid())));
     }
     private static ClueCardPackets.Detail projectDetail(String id,NbtCompound n){
         return new ClueCardPackets.Detail(id,n.getInt("width",0),n.getInt("height",0),n.getIntArray("pixels").orElse(new int[0]),json(n,"body"),sceneJson(n),json(n,"item"));
@@ -201,7 +203,7 @@ public final class ClueCardService {
             String name=observation.getString("name","遗体");String partName=switch(part){case "head"->"头部";case "torso"->"躯干";case "left_arm"->"左臂";case "right_arm"->"右臂";case "left_leg"->"左腿";case "right_leg"->"右腿";default->"未知部位";};
             var fields=new ClueCardStore.Fields(name+" · "+partName,"","","已探查的伤口："+wound.getString("kinds","")+"；程度："+wound.getString("severity",""),"");
             int slot=-1;if(!ledger.corpseRecorded(p.getUuid(),corpse))try{slot=blankSlot(p);}catch(IllegalArgumentException e){blocked="空白卡不足，部分遗体伤情尚未收录";continue corpses;}
-            try{var result=ledger.importWound(p.getUuid(),corpse+"/"+evidence,corpse,name,fields,snapshot,slot>=0?1:0);if(result.blankCost()>0){p.getInventory().getStack(slot).decrement(result.blankCost());p.getInventory().markDirty();spent+=result.blankCost();}}catch(IllegalArgumentException e){blocked=e.getMessage();continue corpses;}
+            try{var result=ledger.importWound(p.getUuid(),corpse+"/"+evidence,corpse,name,fields,snapshot,slot>=0?1:0);ledger.recordedTimes(p.getUuid(),result.id(),hit.getString("event_time",""),forensic.corpse(corpse).getString("death_time",""));if(result.blankCost()>0){p.getInventory().getStack(slot).decrement(result.blankCost());p.getInventory().markDirty();spent+=result.blankCost();}}catch(IllegalArgumentException e){blocked=e.getMessage();continue corpses;}
         }
         int added=ledger.ownedCount(p.getUuid())-before;return (added>0?"已收录 "+added+" 条伤情记录，消耗 "+spent+" 张空白卡":"")+(blocked.isEmpty()?"":(added>0?"；":"")+blocked);
     }

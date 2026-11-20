@@ -54,7 +54,7 @@ final class ClueCardPersonalScreen extends ClueFolioScreen {
         else{
             rules(c,x,y,w,3,RULE_STEP);line(c,displayTitle(card),x,y,w,INK);line(c,"时间："+card.fields().time(),x,y+14,w,MUTED);line(c,"地点："+card.fields().place(),x,y+28,w,MUTED);
             if(model)ClueCardScreen.drawSnapshot(c,ClueCardClient.DETAILS.get(selected),x,y+46,w,Math.max(16,fh-180));
-            else {var lines=textRenderer.wrapLines(net.minecraft.text.Text.literal("事件描述："+card.fields().event()+"\n补充判断："+card.fields().inference()),w);int count=Math.max(1,(fh-185)/RULE_STEP);rules(c,x,y+46,w,Math.min(count,lines.size()),RULE_STEP);for(int i=0;i<Math.min(count,lines.size());i++)c.drawText(textRenderer,lines.get(i),x,y+46+i*RULE_STEP,INK,false);}
+            else {var lines=textRenderer.wrapLines(net.minecraft.text.Text.literal("事件描述："+ClueCardClient.eventText(card)+"\n补充判断："+card.fields().inference()),w);int count=Math.max(1,(fh-185)/RULE_STEP);rules(c,x,y+46,w,Math.min(count,lines.size()),RULE_STEP);for(int i=0;i<Math.min(count,lines.size());i++)c.drawText(textRenderer,lines.get(i),x,y+46+i*RULE_STEP,INK,false);}
         }
         line(c,"伤情 "+accessible().stream().filter(cardEntry->!cardEntry.group().isEmpty()).count()+" 条",fx+75,fy+fh-43,lw-85,MUTED);super.render(c,mx,my,delta);status(c,notice.isEmpty()?"遗体伤情自动收录 · 每具遗体仅消耗一张空白卡":notice);if(model)ClueCardItemPreview.hover(c,selected,mx,my,x,y+46,w,Math.max(16,fh-180));
     }

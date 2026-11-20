@@ -6,6 +6,7 @@ import com.kuilunfuzhe.monvhua.network.forensics.BloodTracePackets;
 import net.fabricmc.fabric.api.event.lifecycle.v1.*;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.command.argument.BlockPosArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import net.minecraft.entity.*;
 import net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity;
 import net.minecraft.entity.projectile.ProjectileEntity;
@@ -67,8 +68,14 @@ public final class BloodTraceService {
                         c.getSource().getWorld(), BlockPosArgumentType.getBlockPos(c, "from"),
                         BlockPosArgumentType.getBlockPos(c, "to"), preview, c.getSource())));
             }
+            var nearby=CommandManager.argument("radius",IntegerArgumentType.integer(0,2048));
+            for(boolean preview:new boolean[]{true,false})nearby.then(CommandManager.literal(preview?"preview":"confirm").executes(c->{
+                var center=BlockPos.ofFloored(c.getSource().getPosition());int radius=IntegerArgumentType.getInteger(c,"radius");
+                return clear(c.getSource().getWorld(),center.add(-radius,-radius,-radius),center.add(radius,radius,radius),preview,c.getSource());
+            }));
             dispatcher.register(CommandManager.literal("monvhua-blood").requires(s -> s.hasPermissionLevel(2))
-                    .then(CommandManager.literal("clear").then(CommandManager.argument("from", BlockPosArgumentType.blockPos()).then(target))));
+                    .then(CommandManager.literal("clear").then(CommandManager.argument("from", BlockPosArgumentType.blockPos()).then(target))
+                            .then(CommandManager.literal("near").then(nearby))));
         });
     }
 

@@ -102,9 +102,12 @@ public final class EvidenceSnapshots {
     }
 
     public static NbtCompound summary(ServerPlayerEntity viewer, String requested) {
-        return summary(ForensicStore.get(viewer.getServer()),viewer.getUuid(),requested);
+        return summary(ForensicStore.get(viewer.getServer()),viewer.getUuid(),requested,EvidenceClock.master(viewer));
     }
     public static NbtCompound summary(ForensicStore store, UUID viewer, String requested) {
+        return summary(store,viewer,requested,false);
+    }
+    public static NbtCompound summary(ForensicStore store, UUID viewer, String requested,boolean master) {
         NbtCompound observations=store.observations(viewer), result=new NbtCompound();
         for(String id:store.collectedCaseIds(viewer))if(!observations.contains(id)){
             NbtCompound legacy=new NbtCompound();legacy.putString("name",store.corpse(id).getString("name","未知身份"));legacy.putBoolean("missing",true);observations.put(id,legacy);
@@ -125,7 +128,10 @@ public final class EvidenceSnapshots {
             var merged=new ArrayList<NbtCompound>();
             merged.addAll(store.collected(viewer,selected,part));
             for(var disclosed:store.disclosed(viewer,selected,part))if(merged.stream().noneMatch(h->h.getString("id","").equals(disclosed.getString("id",""))))merged.add(disclosed);
-            for(var hit:merged.stream().limit(3).toList()) wounds.add(publicWound(hit));
+            for(var hit:merged.stream().limit(3).toList()) {var wound=publicWound(hit);
+                if(master){String time=EvidenceClock.describe(hit.getString("event_time",""),store.corpse(selected).getString("death_time",""));if(!time.isEmpty())wound.putString("precise_time",time);}
+                wounds.add(wound);
+            }
         }
         result.put("wounds",wounds);
         return result;

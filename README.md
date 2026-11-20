@@ -251,6 +251,7 @@
 | `/monvhua-forensic-share <corpseId> <part> <evidenceId> <player>` | 玩家 | 将已收集的尸体伤口证据分享给玩家；前三个参数提供动态建议，目标支持原生玩家选择器 |
 | `/mvforensics clean scene <center> <radius> <strength> <wash\|wipe> preview` | OP | 预览指定方法的血迹/法证清理结果 |
 | `/mvforensics clean scene <center> <radius> <strength> <wash\|wipe> apply` | OP | 应用指定方法的血迹/法证清理（半径 0.1–16，强度 0–1） |
+| `/monvhua-blood clear near <radius> preview` / `confirm` | OP | 以执行位置所在方块为中心清除血迹；整数半径 0–2048，范围为边长 2r+1 的立方体，preview 预览、confirm 执行 |
 | `/monvhua-blood clear <from> <to> preview` | OP | 预览矩形区域内血迹清除 |
 | `/monvhua-blood clear <from> <to> confirm` | OP | 确认清除矩形区域内血迹 |
 | `/mvcorpse evidence place` / `/mvcorpse evidence place_board` | 玩家 | 在准星前放置个人线索总结面板或比较面板 |
@@ -596,3 +597,71 @@ Mixin 共 **5 个配置**：
 带 `dead_body`（不同时带 `dead_part`）的玩家进入 kom_dying 初始濒死阶段时，复用服务端六部位物理会话显示独立代理；收到可用帧后客户端隐藏真实玩家。空主手对准代理右键转交原模组救援，保留其权限、距离、进度和移动取消规则。代理不提供尸检/断肢/背包，不提前转移物品或生成正式遗体。救援成功恢复玩家；取消击杀进入移动倒计时立即撤掉代理；初始阶段真正死亡则将现有会话交给唯一正式遗体，避免二次倒地。
 
 仅门控支持 kom_dying **1.2.2**，无硬依赖；沿用标准/细手臂与均匀 scale 0.5–2.0、正常重力和现有物理后端范围。故障、超容量、换维度或尺度改变时回退原显示；濒死/倒计时中直接退出或切观察者时，先结算唯一正式遗体再清理代理，普通退出与救援成功不触发此结算。代理与持续遗体共享驻留容量，`/mvcorpse physics status` 显示 `downed` 数量。未修改/分发第三方 jar；目标模组自身要求 Loader >=0.18.3。详细实现和双端手动验证见 `md/kom_dying隐藏玩家物理代理实施说明.md`（md 为本地方案目录）。
+
+
+## 线索系统 tag 与清场用法
+
+这里的实体 tag 使用 `/tag` 和 `@e[tag=...]`；物品标签则由数据包定义，两者不能混用。
+
+| 实体 tag | 对象与用法 |
+| --- | --- |
+| `dead_body` | 加在玩家上，死亡生成完整遗体并启用法证记录：`/tag @a add dead_body` |
+| `dead_part` | 加在玩家上，死亡生成肢体；与 dead_body 同时存在时优先肢体模式 |
+| `monvhua:no_corpse_drag` | 加在玩家上，禁止拖拽遗体；移除后恢复 |
+| `monvhua_corpse` | 自动加在遗体、肢体的模型和交互实体上，供统一选择和清除 |
+| `monvhua_corpse_body` | 自动标记完整遗体或仍包含躯干的物理遗体，以及对应交互实体 |
+| `monvhua_corpse_limb` | 自动标记独立肢体，以及对应交互实体 |
+| `monvhua_corpse_visual` | 自动标记上述模型实体（item_display） |
+| `monvhua_corpse_interaction` | 自动标记上述交互实体（interaction） |
+| `monvhua_corpse_display:<UUID>` | 内部关联标签，位于交互实体；用于重载后恢复模型配对，不需手动添加 |
+| `monvhua_physics_test` | 管理员物理测试载体标记，由测试指令生成 |
+| `monvhua_split_candidate` | 内部断肢事务临时载体标记，提交成功后移除，不需手动管理 |
+| `monvhua_downed_proxy` | Kom 倒地兼容代理的内部标记，不等于玩家已经死亡 |
+
+遗体清除标签会在生成时添加，已加载的旧遗体配对会自动补齐。掉落的背包物品不包含在这些实体标签中。清场只删除场景载体，不删除案件卷宗、卡片和伤情历史。
+
+```mcfunction
+# 清除当前维度所有已加载遗体及肢体，包含透明交互实体
+/kill @e[tag=monvhua_corpse]
+# 只清除独立肢体及其交互实体
+/kill @e[tag=monvhua_corpse_limb]
+# 以执行位置为中心清除附近载体（distance 为实体原点距离）
+/kill @e[tag=monvhua_corpse,distance=..16]
+# 玩家自身或命令方块所在位置，半径 16 格的血迹区域
+/monvhua-blood clear near 16 preview
+/monvhua-blood clear near 16 confirm
+# 命令方块按每名玩家的位置清除
+/execute as @a at @s run monvhua-blood clear near 16 confirm
+# 指定坐标为中心（保持原有两角点清除语法可用）
+/execute positioned 100 64 100 run monvhua-blood clear near 16 confirm
+```
+
+血迹为存档补丁，不是实体，不能用 `/kill` 清除。near 的半径按中心方块的 X/Y/Z 三轴扩展；0 表示仅当前方块。仅作用于指令执行维度。原有 `clear <from> <to> preview|confirm` 也支持 `~` 相对坐标。
+
+| 物品注册表标签 | 用途 |
+| --- | --- |
+| `monvhua:forensics/can_cut` | 切割能力 |
+| `monvhua:forensics/can_puncture` | 穿刺能力 |
+| `monvhua:forensics/can_blunt` | 钝击能力 |
+| `monvhua:forensics/can_burn` | 烧灼能力 |
+| `monvhua:forensics/can_other` | 其他伤害能力 |
+| `monvhua:forensics/can_dismember` | 允许武器触发断肢，默认包含斧类；不单独指定伤害类型 |
+| `monvhua:prevents_corpse_drag` | 主手或副手持有该标签物品时限制探查轮盘的拖拽入口 |
+
+物品标签示例：在数据包 `data/monvhua/tags/item/forensics/can_puncture.json` 写入 `{"replace":false,"values":["minecraft:stick"]}`，执行 `/reload`。该配置按物品种类生效。多个伤害能力表示可选攻击模式，需绑定并使用切换攻击模式按键；独立武器 profile 优先。自定义 profile 的 `match.tag` 还可引用任意自定义物品标签，详见 [武器标签实施说明](md/武器物品标签伤害类型与多模式实施说明.md)。
+
+身体生成还支持以本地皮肤名称作为玩家 tag 选择皮肤（属于外观选项）：`anan`、`coco`、`ema`、`hanna`、`hiro`、`mago`、`miria`、`mll`、`nnk`、`noa`、`reiya`、`sherry`、`suinaixiang`、`yalisa`、`yuki`、`kanshou`。例如 `/tag @s add ema`；只保留一个皮肤名称 tag，避免多选不确定。当前未实现“添加某个玩家 tag 即可查看更多深层线索”的权限入口，不应把这一后续设想作为现有功能使用。`monvhua:corpse`、`corpse_pose`、`corpse_wounds`、`monvhua:forensics.selected_mode` 等是物品数据字段，不是 `/tag` 实体标签。
+
+
+### `master` 时间信息差
+
+实体 tag `master` 是线索查看权限标签。带有该 tag 的玩家在直接探查遗体、打开个人线索界面、比较板和世界线索面板中，可看到记录保存时的精确案件时间；没有该 tag 的玩家继续只看到原有“大致时间”。
+
+```mcfunction
+/tag <玩家> add master
+/tag <玩家> remove master
+```
+
+时间读取自数据包记分板：`GlobalTime TimeRun` 与 `GlobalTime Days`。当前数据包约定 `TimeRun` 每 30 点为一分钟，`0` 点对应 06:00，显示格式为 `第N天 HH:MM`。死亡时保存 `death_time`，每次伤害记录保存 `event_time`；因此 master 可以同时看到“伤口发生时间”和“玩家死亡时间”。
+
+该时间是事件发生时的快照，读取线索时不会用当前时间倒推旧记录。若创建记录时数据包未提供 `TimeRun` 或 `Days`，该记录不会显示精确时间。旧存档缺少这两个字段时也保持原有大致时间，避免伪造精确结论。`master` 只影响展示权限，不改变伤害、死亡或线索收录逻辑。

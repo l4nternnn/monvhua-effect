@@ -81,6 +81,7 @@ public final class PostmortemWounds {
                 new WeaponProfiles.Mode("melee", List.of(new WeaponProfiles.Component("blunt", 1))));
         NbtCompound record = record(hit.wound(), selection, amount);
         record.putLong("tick", world.getTime()); record.putString("dimension", world.getRegistryKey().getValue().toString());
+        EvidenceClock.stamp(record,player);
         record.putDouble("x", hit.position().x); record.putDouble("y", hit.position().y); record.putDouble("z", hit.position().z);
         record.putString("attacker", player.getUuid().toString()); record.putString("weapon", Registries.ITEM.getId(weapon.getItem()).toString());
         if (context != null) record.putString("attack_id", context.id());

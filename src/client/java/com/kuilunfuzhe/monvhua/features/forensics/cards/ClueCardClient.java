@@ -36,6 +36,7 @@ public final class ClueCardClient {
             if(!packet.notice().isEmpty()&&client.player!=null)client.player.sendMessage(Text.literal(packet.notice()),false);
         }));
     }
+    static String eventText(ClueCardStore.Summary card){return (card.preciseTime()==null||card.preciseTime().isEmpty()?"":card.preciseTime()+"\n")+card.fields().event();}
     static ClueCardStore.Summary find(String id){return state==null?null:state.cards().stream().filter(c->c.id().equals(id)).findFirst().orElse(null);}
     static void request(String op,String id,String other,int revision,ClueCardStore.Fields fields){
         if(ClientPlayNetworking.canSend(ClueCardPackets.Request.ID))ClientPlayNetworking.send(new ClueCardPackets.Request(op,id,other,revision,fields));

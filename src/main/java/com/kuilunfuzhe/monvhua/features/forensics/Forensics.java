@@ -68,7 +68,7 @@ public final class Forensics {
         });
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(server -> {
             for (ServerWorld w : server.getWorlds()) for (UUID id : List.copyOf(BodyPartManager.DISPLAY_TO_INTERACTION.keySet()))
-                if (w.getEntity(id) instanceof ItemDisplayEntity body) CorpseGeometrySync.update(body);
+                if (w.getEntity(id) instanceof ItemDisplayEntity body) {CorpseGeometrySync.update(body);if(server.getTicks()%20==0&&w.getEntity(BodyPartManager.DISPLAY_TO_INTERACTION.get(id)) instanceof InteractionEntity interaction)markCleanupTags(body,interaction);}
             if (server.getTicks() % 20 != 0) return;
             for (ServerWorld world : server.getWorlds()) for (UUID id : List.copyOf(BodyPartManager.BODY_PART_DISPLAY_INVENTORIES.keySet()))
                 if (world.getEntity(id) instanceof ItemDisplayEntity display && hasBinding(display.getItemStack())) persistInventory(display);
@@ -91,6 +91,7 @@ public final class Forensics {
         NbtCompound hit = new NbtCompound();
         hit.putString("id", UUID.randomUUID().toString());
         hit.putLong("tick", player.getWorld().getTime());
+        EvidenceClock.stamp(hit,player);
         hit.putString("dimension", player.getWorld().getRegistryKey().getValue().toString());
         hit.putDouble("x", player.getX()); hit.putDouble("y", player.getY()); hit.putDouble("z", player.getZ());
         hit.putFloat("amount", amount);
@@ -196,6 +197,7 @@ public final class Forensics {
         String corpseId = store.freeze(player.getUuid(), player.getName().getString(), player.getWorld().getRegistryKey().getValue().toString(),
                 player.getWorld().getTime(), player.getX(), player.getY(), player.getZ(), source.getName());
         com.kuilunfuzhe.monvhua.features.forensics.physics.DeathMotionContext.freeze(player,source,corpseId);
+        String deathTime=EvidenceClock.capture(player);if(!deathTime.isEmpty())store.corpse(corpseId).putString("death_time",deathTime);
         BloodTraceService.death(player, corpseId);
         life.putBoolean("spawn_started", true); store.markDirty();
         return true;
@@ -252,7 +254,21 @@ public final class Forensics {
     }
     /** Called after every display/interaction creation, also makes legacy links reloadable. */
     public static void link(ItemDisplayEntity display, InteractionEntity interaction) {
+        markCleanupTags(display, interaction);
         interaction.addCommandTag(LINK + display.getUuid());
+    }
+    /** Shared cleanup selectors for visual and interaction entities, never players. */
+    public static void markCleanupTags(ItemDisplayEntity display, InteractionEntity interaction) {
+        var pose=CorpsePoseRecord.read(CorpsePoseRecord.data(display.getItemStack()));
+        boolean body=pose.map(p->p.parts().containsKey("torso")).orElseGet(()->
+                "all".equals(binding(display.getItemStack()).getString("part",""))
+                ||net.minecraft.util.Identifier.of("monvhua","combined_body").equals(display.getItemStack().get(DataComponentTypes.ITEM_MODEL)));
+        for(Entity entity:interaction==null?List.<Entity>of(display):List.<Entity>of(display,interaction)){
+            entity.addCommandTag("monvhua_corpse");
+            entity.removeCommandTag(body?"monvhua_corpse_limb":"monvhua_corpse_body");
+            entity.addCommandTag(body?"monvhua_corpse_body":"monvhua_corpse_limb");
+            entity.addCommandTag(entity==display?"monvhua_corpse_visual":"monvhua_corpse_interaction");
+        }
     }
     public static void persistInventory(ItemDisplayEntity display) {
         var inventory = BodyPartManager.BODY_PART_DISPLAY_INVENTORIES.get(display.getUuid());
@@ -291,6 +307,7 @@ public final class Forensics {
         return ForensicStore.get(world.getServer()).isCarrier(b.getString("id", ""), b.getString("part", "all"), b.getString("token", ""), location);
     }
     public static void claim(ItemDisplayEntity display) {
+        markCleanupTags(display,null);
         if (!(display.getWorld() instanceof ServerWorld world) || !hasBinding(display.getItemStack())) return;
         transition(world, display.getItemStack(), display.getUuid().toString());
         display.setItemStack(display.getItemStack().copy());
@@ -382,6 +399,7 @@ public final class Forensics {
             String line = "看到" + label + "，" + degree + "；判断来向为" + direction + (h.getString("precision", "unknown").equals("approximate") ? "（只能估算部位与方向）" : "（没有获得可靠的位置记录）");
             if (kinds.equals("cut") || kinds.equals("puncture")) line += "；估计深度为" + (amount < ForensicConfig.current.moderateThreshold ? "浅表" : amount < ForensicConfig.current.severeThreshold ? "较深" : "深部");
             if (h.getBoolean("death_trigger", false)) line += "；判断这可能是主要致命损伤";
+            if(EvidenceClock.master(player)){String time=EvidenceClock.describe(h.getString("event_time",""),corpse.getString("death_time",""));if(!time.isEmpty())line+="；"+time;}
             lines.add((lines.isEmpty() ? "记录的最高伤害：" : "记录的伤害 " + (lines.size() + 1) + "：") + line);
         }
         List<NbtCompound> collected = InspectionRecords.strongest(corpse.getListOrEmpty(corpse.contains("inspection_hits") ? "inspection_hits" : "hits"), part, 3);

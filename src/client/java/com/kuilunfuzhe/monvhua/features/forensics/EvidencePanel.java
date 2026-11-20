@@ -411,7 +411,7 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
         String kinds=String.join("、",Arrays.stream(wound.getString("kinds","unknown").split("\\+")).map(Forensics::kindLabel).toList());
         String severity=switch(wound.getString("severity","moderate")){case "mild"->"轻度";case "severe"->"重度";default->"中度";};
         String direction=switch(wound.getString("direction","")){case "front"->"前侧";case "back"->"后侧";case "left"->"左侧";case "right"->"右侧";default->"不明";};
-        return "看到"+kinds+"，"+severity+"\n判断来向为："+direction+(wound.getString("precision","").equals("approximate")?"\n只能估算部位与方向":"\n没有获得可靠的位置记录")+(wound.getBoolean("death_trigger",false)?"\n我判断这可能是主要致命损伤":"");
+        return (wound.getString("precise_time","").isEmpty()?"":wound.getString("precise_time","")+"\n")+"看到"+kinds+"，"+severity+"\n判断来向为："+direction+(wound.getString("precision","").equals("approximate")?"\n只能估算部位与方向":"\n没有获得可靠的位置记录")+(wound.getBoolean("death_trigger",false)?"\n我判断这可能是主要致命损伤":"");
     }
     private int indexOf(String value){for(int i=0;i<PARTS.length;i++)if(PARTS[i].equals(value))return i;return 5;}
     private record CardHit(int x,int y,int w,int h,int index){}
