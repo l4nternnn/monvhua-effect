@@ -105,13 +105,16 @@ public final class CorpseResidentManager {
             if(CorpseSeparationService.busy(r.display.getUuid())){r.progressTime=r.world.getTime();continue;}
             if(!r.valid()){org.slf4j.LoggerFactory.getLogger("monvhua-corpse-physics").info("Resident carrier invalidated: removed={} carried={} position={} visual={} token={}",r.display.isRemoved(),CorpseCarryService.isCarried(r.display),r.position.equals(r.display.getPos()),r.visual.equals(EvidenceSnapshots.visualOnly(CorpsePoseRecord.data(r.display.getItemStack()))),r.token.equals(Forensics.binding(r.display.getItemStack()).getString("token","")));remove(r.display.getUuid());continue;}
             if(CorpseHistoryController.get(r.display.getUuid())==null){fail(r,"历史载体已改变或丢失");continue;}
-            if((CorpseGrabController.held(r.display.getUuid())||CorpseTransportController.held(r.display.getUuid()))&&r.sampledTick!=r.world.getTime()&&!r.session.paused())sample(r);
+            boolean held=CorpseGrabController.held(r.display.getUuid())||CorpseTransportController.held(r.display.getUuid());
+            if(held&&r.sampledTick!=r.world.getTime()&&!r.session.paused())sample(r);
             var state=r.session.residentState();
             if(state.phase().equals("FAILED")||state.phase().equals("CLOSED")){fail(r,state.failure());continue;}
-            long now=r.world.getTime();if(state.tick()!=r.clock||state.paused()){r.clock=state.tick();r.progressTime=now;}
+            long now=r.world.getTime();if(state.tick()!=r.clock||state.paused()||CorpseIdlePolicy.resting(state)){r.clock=state.tick();r.progressTime=now;}
             if(now-r.progressTime>60){fail(r,"无模拟进展");continue;}
             if(state.terrainRevision()==r.terrainRevision)r.dirty=false;
-            if(!state.paused())r.session.advanceClock(state.tick()+3);
+            if(CorpseIdlePolicy.advance(state,held,r.dirty)){
+                r.session.advanceClock(state.tick()+3);CorpsePerformance.count(CorpsePerformance.Counter.PHYSICS_ADVANCED);
+            }else if(CorpseIdlePolicy.resting(state))CorpsePerformance.count(CorpsePerformance.Counter.PHYSICS_IDLE_SKIPPED);
             if(!r.moving()&&state.generation()>r.generation){
                 // Commit only on this object's scheduled capture tick, within the two-captures budget.
                 if(r.sampledTick!=now||r.dirty)continue;

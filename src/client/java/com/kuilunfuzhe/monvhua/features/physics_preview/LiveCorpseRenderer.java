@@ -91,7 +91,8 @@ public final class LiveCorpseRenderer {
             boolean globalPause=client.isPaused()||client.world.getTickManager().isFrozen();
             var clock=playback.compute(v.display(),(id,old)->old!=null&&old.session()==v.session()?old:new Playback(v.session(),new PhysicsPlaybackClock())).clock();
             long now=System.nanoTime();
-            if(v.committedRevision()==0&&!v.session().paused()&&frames.size()>1) {
+            if(v.session().resting()) { clock.holdAt(latestTick,now);mode="RESTING"; }
+            if(v.committedRevision()==0&&!v.session().paused()&&!v.session().resting()&&frames.size()>1) {
                 double time=clock.advance(timed.getFirst().tick(),latestTick,now,globalPause);
                 displayed=time;if(globalPause)mode="GLOBAL_PAUSE";
                 PhysicsPoseDocument a=frames.getFirst(),b=last;

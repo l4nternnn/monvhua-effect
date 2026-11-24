@@ -243,7 +243,7 @@ public class BodyPartManager {
 						NbtList itemsList = new NbtList();
 						for (ItemStack s : inv) {
 							NbtCompound tag = new NbtCompound();
-							if (!s.isEmpty()) tag = (NbtCompound) ItemStack.CODEC.encodeStart(NbtOps.INSTANCE, s).result().orElse(new NbtCompound());
+							if (!s.isEmpty()) tag = (NbtCompound) ItemStack.CODEC.encodeStart(world.getRegistryManager().getOps(NbtOps.INSTANCE), s).result().orElse(new NbtCompound());
 							itemsList.add(tag);
 						}
 						NbtComponent existing = stack.get(DataComponentTypes.CUSTOM_DATA);
@@ -323,7 +323,7 @@ public class BodyPartManager {
 						for (int i = 0; i < Math.min(itemsList.size(), 9); i++) {
 							NbtCompound tag = itemsList.getCompound(i).orElse(new NbtCompound());
 							if (!tag.isEmpty()) {
-								savedInv.set(i, ItemStack.CODEC.parse(NbtOps.INSTANCE, tag).result().orElse(ItemStack.EMPTY));
+								savedInv.set(i, ItemStack.CODEC.parse(world.getRegistryManager().getOps(NbtOps.INSTANCE), tag).result().orElse(ItemStack.EMPTY));
 							}
 						}
 						BODY_PART_DISPLAY_INVENTORIES.put(display.getUuid(), savedInv);
@@ -379,7 +379,7 @@ public class BodyPartManager {
 						for (int i = 0; i < Math.min(itemsList.size(), 9); i++) {
 							NbtCompound tag = itemsList.getCompound(i).orElse(new NbtCompound());
 							if (!tag.isEmpty()) {
-								savedInv.set(i, ItemStack.CODEC.parse(NbtOps.INSTANCE, tag).result().orElse(ItemStack.EMPTY));
+								savedInv.set(i, ItemStack.CODEC.parse(world.getRegistryManager().getOps(NbtOps.INSTANCE), tag).result().orElse(ItemStack.EMPTY));
 							}
 						}
 						BODY_PART_DISPLAY_INVENTORIES.put(display.getUuid(), savedInv);
@@ -479,7 +479,7 @@ public class BodyPartManager {
 				for (int i = 0; i < Math.min(itemsList.size(), 9); i++) {
 					NbtCompound tag = itemsList.getCompound(i).orElse(new NbtCompound());
 					if (!tag.isEmpty()) {
-						savedInv.set(i, ItemStack.CODEC.parse(NbtOps.INSTANCE, tag).result().orElse(ItemStack.EMPTY));
+						savedInv.set(i, ItemStack.CODEC.parse(world.getRegistryManager().getOps(NbtOps.INSTANCE), tag).result().orElse(ItemStack.EMPTY));
 					}
 				}
 			}
@@ -610,7 +610,7 @@ public class BodyPartManager {
 					for (int i = 0; i < Math.min(itemsList.size(), 9); i++) {
 						NbtCompound tag = itemsList.getCompound(i).orElse(new NbtCompound());
 						if (!tag.isEmpty()) {
-							savedInv.set(i, ItemStack.CODEC.parse(NbtOps.INSTANCE, tag).result().orElse(ItemStack.EMPTY));
+							savedInv.set(i, ItemStack.CODEC.parse(world.getRegistryManager().getOps(NbtOps.INSTANCE), tag).result().orElse(ItemStack.EMPTY));
 						}
 					}
 				}

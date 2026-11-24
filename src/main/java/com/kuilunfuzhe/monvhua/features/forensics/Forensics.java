@@ -1,5 +1,6 @@
 package com.kuilunfuzhe.monvhua.features.forensics;
 
+import com.kuilunfuzhe.monvhua.MonvhuaMod;
 import com.kuilunfuzhe.monvhua.features.block.body.BodyPartManager;
 import com.kuilunfuzhe.monvhua.network.forensics.ForensicPackets;
 import com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTraceService;
@@ -24,10 +25,12 @@ import net.minecraft.util.collection.DefaultedList;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.world.RaycastContext;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class Forensics {
     public static final String BINDING = "monvhua:corpse";
     private static final String LINK = "monvhua_corpse_display:";
+    private static final Set<String> INVENTORY_WARNED = ConcurrentHashMap.newKeySet();
     public static final List<String> PARTS = List.of("head", "torso", "left_arm", "right_arm", "left_leg", "right_leg", "unknown");
 
     public static void initialize() {
@@ -40,6 +43,7 @@ public final class Forensics {
         BloodTraceService.initialize();
         CorpseCarryService.initialize();
         CorpsePoseCommands.initialize();
+        CorpseCleanupCommands.initialize();
         com.kuilunfuzhe.monvhua.features.forensics.physics.CorpsePhysicsCoordinator.initialize();
         com.kuilunfuzhe.monvhua.features.forensics.blood.BloodTransferService.initialize();
         ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, player, alive) -> {
@@ -50,7 +54,7 @@ public final class Forensics {
         });
         ServerEntityEvents.ENTITY_LOAD.register((entity, world) -> {
             if (entity instanceof ProjectileEvidence projectile) projectile.monvhua$getEvidence();
-            if (entity instanceof ItemDisplayEntity display) { com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseSeparationService.reconcile(display);if(!display.isRemoved()){restoreInventory(display); PostmortemWounds.sync(display);} }
+            if (entity instanceof ItemDisplayEntity display) { com.kuilunfuzhe.monvhua.features.forensics.physics.CorpseSeparationService.reconcile(display);if(!display.isRemoved()){restoreInventory(display); PostmortemWounds.sync(display); CorpseLoadedIndex.track(display);} }
             if (entity instanceof InteractionEntity) {
                 for (String tag : entity.getCommandTags()) if (tag.startsWith(LINK)) {
                     try {
@@ -64,19 +68,26 @@ public final class Forensics {
             }
         });
         ServerEntityEvents.ENTITY_UNLOAD.register((entity, world) -> {
-            if (entity instanceof ItemDisplayEntity display) persistInventory(display);
+            if (entity instanceof ItemDisplayEntity display) { persistInventory(display); CorpseLoadedIndex.unload(display); }
         });
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(server -> {
-            for (ServerWorld w : server.getWorlds()) for (UUID id : List.copyOf(BodyPartManager.DISPLAY_TO_INTERACTION.keySet()))
-                if (w.getEntity(id) instanceof ItemDisplayEntity body) {CorpseGeometrySync.update(body);if(server.getTicks()%20==0&&w.getEntity(BodyPartManager.DISPLAY_TO_INTERACTION.get(id)) instanceof InteractionEntity interaction)markCleanupTags(body,interaction);}
-            if (server.getTicks() % 20 != 0) return;
-            for (ServerWorld world : server.getWorlds()) for (UUID id : List.copyOf(BodyPartManager.BODY_PART_DISPLAY_INVENTORIES.keySet()))
-                if (world.getEntity(id) instanceof ItemDisplayEntity display && hasBinding(display.getItemStack())) persistInventory(display);
+            long started = CorpsePerformance.begin();
+            try {
+                for (var body : CorpseLoadedIndex.snapshot()) {
+                    if (body.getWorld().getServer() != server) continue;
+                    if (body.isRemoved()) { CorpseLoadedIndex.unload(body); continue; }
+                    CorpseGeometrySync.update(body);
+                    if (server.getTicks() % 20 != 0) continue;
+                    var id = BodyPartManager.DISPLAY_TO_INTERACTION.get(body.getUuid());
+                    if (id != null && ((ServerWorld)body.getWorld()).getEntity(id) instanceof InteractionEntity interaction) markCleanupTags(body, interaction);
+                    persistInventory(body);
+                }
+            } finally { CorpsePerformance.end(CorpsePerformance.Metric.MAINTENANCE, started); }
         });
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
-            for (ServerWorld world : server.getWorlds()) for (UUID id : List.copyOf(BodyPartManager.BODY_PART_DISPLAY_INVENTORIES.keySet()))
-                if (world.getEntity(id) instanceof ItemDisplayEntity display) persistInventory(display);
+            for (var display : CorpseLoadedIndex.snapshot()) if (display.getWorld().getServer() == server) persistInventory(display);
         });
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPED.register(server -> { CorpseLoadedIndex.clear(); INVENTORY_WARNED.clear(); });
     }
 
     public static boolean enabled(ServerPlayerEntity player) {
@@ -254,6 +265,7 @@ public final class Forensics {
     }
     /** Called after every display/interaction creation, also makes legacy links reloadable. */
     public static void link(ItemDisplayEntity display, InteractionEntity interaction) {
+        CorpseLoadedIndex.track(display);
         markCleanupTags(display, interaction);
         interaction.addCommandTag(LINK + display.getUuid());
     }
@@ -271,13 +283,32 @@ public final class Forensics {
         }
     }
     public static void persistInventory(ItemDisplayEntity display) {
+        long started = CorpsePerformance.begin();
+        try { persistInventoryContents(display); }
+        finally { CorpsePerformance.end(CorpsePerformance.Metric.INVENTORY, started); }
+    }
+    private static void persistInventoryContents(ItemDisplayEntity display) {
         var inventory = BodyPartManager.BODY_PART_DISPLAY_INVENTORIES.get(display.getUuid());
         if (inventory == null || !hasBinding(display.getItemStack())) return;
         NbtList list = new NbtList();
-        for (ItemStack item : inventory) list.add(item.isEmpty() ? new NbtCompound()
-                : ItemStack.CODEC.encodeStart(NbtOps.INSTANCE, item).getOrThrow());
+        var ops=display.getWorld().getRegistryManager().getOps(NbtOps.INSTANCE);
+        NbtList previous=display.getItemStack().getOrDefault(DataComponentTypes.CUSTOM_DATA,NbtComponent.DEFAULT).copyNbt().getListOrEmpty("body_part_inv_items");
+        if (CorpseInventoryCache.unchanged(display.getUuid(), inventory, previous)) { CorpsePerformance.count(CorpsePerformance.Counter.INVENTORY_CACHED); return; }
+        CorpsePerformance.count(CorpsePerformance.Counter.INVENTORY_ENCODED);
+        boolean complete = true;
+        for(int i=0;i<inventory.size();i++) {
+            ItemStack item=inventory.get(i);if(item.isEmpty()){list.add(new NbtCompound());continue;}
+            var encoded=ItemStack.CODEC.encodeStart(ops,item).result();
+            if(encoded.isPresent()&&encoded.get() instanceof NbtCompound n){list.add(n);continue;}
+            complete = false;
+            String key=display.getUuid()+"/"+i+"/"+item.getItem();
+            if(INVENTORY_WARNED.add(key))MonvhuaMod.LOGGER.warn("Skipping invalid corpse inventory item during save: display={}, slot={}, item={}",display.getUuid(),i,item.getItem());
+            list.add(i<previous.size()?previous.get(i).copy():new NbtCompound());
+        }
         ItemStack visual = display.getItemStack().copy();
         NbtCompound root = visual.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT).copyNbt();
+        if (complete) CorpseInventoryCache.remember(display.getUuid(), inventory, list);
+        else CorpseInventoryCache.forget(display.getUuid()); // Retry failed codecs, never cache a partial fallback as success.
         if (list.equals(root.get("body_part_inv_items"))) return;
         root.put("body_part_inv_items", list); visual.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root)); display.setItemStack(visual);
     }
@@ -289,7 +320,7 @@ public final class Forensics {
         NbtList list = root.getListOrEmpty("body_part_inv_items");
         for (int i = 0; i < Math.min(9, list.size()); i++) {
             NbtCompound value = list.getCompound(i).orElseGet(NbtCompound::new);
-            if (!value.isEmpty()) inventory.set(i, ItemStack.CODEC.parse(NbtOps.INSTANCE, value).result().orElse(ItemStack.EMPTY));
+            if (!value.isEmpty()) inventory.set(i, ItemStack.CODEC.parse(display.getWorld().getRegistryManager().getOps(NbtOps.INSTANCE), value).result().orElse(ItemStack.EMPTY));
         }
         BodyPartManager.BODY_PART_DISPLAY_INVENTORIES.put(display.getUuid(), inventory);
     }
@@ -307,6 +338,7 @@ public final class Forensics {
         return ForensicStore.get(world.getServer()).isCarrier(b.getString("id", ""), b.getString("part", "all"), b.getString("token", ""), location);
     }
     public static void claim(ItemDisplayEntity display) {
+        CorpseLoadedIndex.track(display);
         markCleanupTags(display,null);
         if (!(display.getWorld() instanceof ServerWorld world) || !hasBinding(display.getItemStack())) return;
         transition(world, display.getItemStack(), display.getUuid().toString());

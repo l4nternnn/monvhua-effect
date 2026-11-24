@@ -97,7 +97,7 @@ public final class RemoteCorpsePhysics {
             var parts=new LinkedHashMap<String,PhysicsPoseDocument.Pose>();for(var item:n.getListOrEmpty("parts"))if(item instanceof NbtCompound p)parts.put(p.getString("id",""),new PhysicsPoseDocument.Pose(p.getFloat("x",0),p.getFloat("y",0),p.getFloat("z",0),p.getFloat("qx",0),p.getFloat("qy",0),p.getFloat("qz",0),p.getFloat("qw",1)));
             PhysicsPoseDocument.validateParts(parts.keySet());
             var old=views.get(id);long topology=n.getLong("topology",0);if(topology<0||old!=null&&((Session)old.session()).topology>topology){keep.add(id);continue;}var session=old==null||((Session)old.session()).topology!=topology||old.session().frames().isEmpty()||!old.session().frames().getLast().poses().keySet().equals(parts.keySet())?new Session():(Session)old.session();
-            session.topology=topology;var pose=new PhysicsPoseDocument("SIMULATING",n.getInt("step",0),parts,0,"server",n.getString("definition","standard_six_v1"),n.getFloat("scale",1));session.frozen=n.getBoolean("frozen",false);session.pinned=n.getBoolean("pinned",false);session.add(n.getLong("tick",0),pose);
+            session.topology=topology;var pose=new PhysicsPoseDocument("SIMULATING",n.getInt("step",0),parts,0,"server",n.getString("definition","standard_six_v1"),n.getFloat("scale",1));session.frozen=n.getBoolean("frozen",false);session.pinned=n.getBoolean("pinned",false);session.resting=n.getBoolean("resting",false);session.add(n.getLong("tick",0),pose);
             String victim=n.getString("victim","");views.put(id,new CorpsePhysicsCoordinator.LiveView(id,data.getString("dimension",""),new Vec3d(n.getDouble("x",0),n.getDouble("y",0),n.getDouble("z",0)),display.getItemStack().copy(),n.getBoolean("slim",false),session,victim.isEmpty()?null:UUID.fromString(victim),n.getLong("revision",0)));keep.add(id);
         }catch(IllegalArgumentException ignored){} }views.keySet().retainAll(keep);acknowledged.keySet().retainAll(keep);
         var timelineData=data.getCompoundOrEmpty("timeline");timeline=timelineData.isEmpty()?null:new Timeline(UUID.fromString(timelineData.getString("id","")),timelineData.getBoolean("confirmed",false),timelineData.getBoolean("manual",false),timelineData.getBoolean("active",false),timelineData.getLong("selected",-1),timelineData.getLongArray("steps").orElse(new long[0]));
@@ -105,8 +105,9 @@ public final class RemoteCorpsePhysics {
         status=CorpsePhysicsNetwork.decodeGrabStatus(data.getCompoundOrEmpty("grab"));
     }
     private static final class Session implements CorpsePhysicsBridge.Session {
-        private boolean frozen,pinned;private long topology;
+        private boolean frozen,pinned,resting;private long topology;
         public boolean paused(){return frozen;}
+        public boolean resting(){return resting;}
         private final List<CorpsePhysicsBridge.TimedPose> frames=new ArrayList<>();
         void add(long tick,PhysicsPoseDocument p){if(!frames.isEmpty()&&frames.getLast().tick()>tick)frames.clear();if(!frames.isEmpty()&&frames.getLast().tick()==tick)frames.removeLast();frames.add(new CorpsePhysicsBridge.TimedPose(tick,p));while(frames.size()>8)frames.removeFirst();}
         public List<PhysicsPoseDocument> frames(){return frames.stream().map(CorpsePhysicsBridge.TimedPose::pose).toList();}

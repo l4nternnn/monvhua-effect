@@ -75,6 +75,10 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
 
             private final CompletableFuture<PhysicsPoseDocument> completion=session.completion().thenApply(v->null);
             private RagdollResult stableNative;private PhysicsPoseDocument stablePose;
+            // The core publishes immutable frame lists. Convert only when its publication identity changes.
+            private java.util.List<com.klfz.simplephysics.backend.ContinuousRagdollSession.Frame> convertedSource;
+            private java.util.List<TimedPose> convertedFrames=java.util.List.of();
+            private java.util.List<PhysicsPoseDocument> convertedPoses=java.util.List.of();
             public boolean continuous(){return true;}
             public void control(Grab g){session.control(new RagdollControl(g.sequence(),g.part(),new RagdollDefinition.V3(g.lx(),g.ly(),g.lz()),new RagdollDefinition.V3(g.x(),g.y(),g.z()),new RagdollDefinition.V3(g.ax(),g.ay(),g.az()),g.rotating(),g.dynamicPart(),g.support()==null?null:new RagdollControl.Support(g.support().x(),g.support().y(),g.support().z(),g.support().w())));}
             public long controlSequence(){return session.controlSequence();}
@@ -89,8 +93,15 @@ public final class LocalCorpsePhysicsProvider implements CorpsePhysicsBridge {
             public int historyHz(){return 12;}
             public java.util.List<Long> historyTicks(){return session.historyTicks();}
             public PhysicsPoseDocument poseAt(long tick){var f=session.frame(tick);return f==null?null:document(f.pose(),definition,"SIMULATING",0,"continuous history");}
-            public java.util.List<TimedPose> published(){return session.frames().stream().map(f->new TimedPose(f.tick(),document(f.pose(),definition,"SIMULATING",0,"continuous"))).toList();}
-            public java.util.List<PhysicsPoseDocument> frames(){return published().stream().map(TimedPose::pose).toList();}
+            public synchronized java.util.List<TimedPose> published(){
+                var source=session.frames();
+                if(source!=convertedSource){
+                    convertedFrames=source.stream().map(f->new TimedPose(f.tick(),document(f.pose(),definition,"SIMULATING",0,"continuous"))).toList();
+                    convertedPoses=convertedFrames.stream().map(TimedPose::pose).toList();convertedSource=source;
+                }
+                return convertedFrames;
+            }
+            public synchronized java.util.List<PhysicsPoseDocument> frames(){published();return convertedPoses;}
             public void setPaused(boolean value){session.setPaused(value);}
             public boolean paused(){return session.snapshot().paused();}
             public void historySeconds(int seconds){session.historySeconds(seconds);}

@@ -52,6 +52,7 @@ public interface CorpsePhysicsBridge extends AutoCloseable {
         default void region(List<Box> boxes,long revision,float x,float y,float z){throw new UnsupportedOperationException("Moving region unavailable");}
         default boolean continuous(){return false;}
         default ResidentState residentState(){return null;}
+        default boolean resting(){return CorpseIdlePolicy.resting(residentState());}
         default void terrain(List<Box> boxes,long revision){throw new UnsupportedOperationException();}
         default void advanceClock(long tick){advanceTo(Math.toIntExact(tick));}
         default List<TimedPose> published(){return frames().stream().map(f->new TimedPose(f.step(),f)).toList();}

@@ -4,6 +4,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.*;
 import net.minecraft.registry.RegistryWrapper;
 import java.util.Set;
+import net.minecraft.registry.Registries;
 
 /** Public appearance is an explicit projection; the original stack stays in server audit data. */
 public final class ClueItemSnapshot {
@@ -15,7 +16,11 @@ public final class ClueItemSnapshot {
         "minecraft:repair_cost","minecraft:max_stack_size");
     private ClueItemSnapshot(){}
     public static NbtCompound encode(ItemStack stack,RegistryWrapper.WrapperLookup registries){
-        return (NbtCompound)ItemStack.CODEC.encodeStart(registries.getOps(NbtOps.INSTANCE),stack.copy()).getOrThrow();
+        return ItemStack.CODEC.encodeStart(registries.getOps(NbtOps.INSTANCE),stack.copy()).result()
+                .filter(n->n instanceof NbtCompound).map(n->(NbtCompound)n).orElseGet(()->{
+                    var fallback=new NbtCompound();fallback.putString("id",Registries.ITEM.getId(stack.getItem()).toString());fallback.putInt("count",stack.getCount());
+                    return fallback;
+                });
     }
     public static NbtCompound project(NbtCompound encoded){
         var out=new NbtCompound();out.putString("id",encoded.getString("id","minecraft:air"));out.putInt("count",encoded.getInt("count",1));

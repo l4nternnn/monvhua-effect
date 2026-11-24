@@ -119,6 +119,17 @@ public final class CorpseCarryService {
         return "已抱起遗体，移动时可能留下滴血";
     }
 
+    /** Administrative deletion must not enqueue the removed body for carry recovery. */
+    public static void forgetForCleanup(ItemDisplayEntity display) {
+        var id=display.getUuid();var carrier=BY_DISPLAY.remove(id);
+        var session=carrier==null?null:BY_CARRIER.remove(carrier);
+        PENDING.remove(id);
+        BloodTraceService.endCarry(display,session==null?null:display.getWorld().getServer().getPlayerManager().getPlayer(session.carrier));
+        if(Forensics.hasBinding(display.getItemStack())){
+            var store=ForensicStore.get(display.getWorld().getServer());var binding=Forensics.binding(display.getItemStack());
+            store.corpse(binding.getString("id","")).remove("carry_recovery_"+binding.getString("part","all"));store.markDirty();
+        }
+    }
     private static void tick(MinecraftServer server) {
         if (server.getTicks() % 20 == 0) for (ItemDisplayEntity display : List.copyOf(PENDING.values())) {
             if (display.isRemoved()) { PENDING.remove(display.getUuid()); continue; }

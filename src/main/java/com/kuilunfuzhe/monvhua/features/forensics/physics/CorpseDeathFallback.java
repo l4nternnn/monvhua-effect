@@ -9,10 +9,12 @@ public final class CorpseDeathFallback {
     private static final org.slf4j.Logger LOG=org.slf4j.LoggerFactory.getLogger("monvhua-death-fallback");
     private CorpseDeathFallback() {}
     public static void departure(ServerPlayerEntity player,String reason){
+        // Disconnect, kick, spectator and shutdown are never death notifications.
+        if(!reason.equals("death"))return;
         var server=player.getServer();
-        if(server==null||server.isStopping()||!Forensics.enabled(player))return;
+        if(server==null||!server.isOnThread()||server.isStopping()||!Forensics.enabled(player))return;
         var store=ForensicStore.get(server);var life=store.life(player.getUuid());
-        boolean terminal=reason.equals("disconnect")||reason.equals("spectator");
+        boolean terminal=false;
         if(!TerminalDeathRules.shouldFinalize(life,player.isAlive(),terminal,false))return;
         // Store the exceptional transition explicitly; do not fake damage, health or a rescue.
         life.putString("terminal_transition",reason);life.putBoolean("terminal_without_death_event",true);store.markDirty();

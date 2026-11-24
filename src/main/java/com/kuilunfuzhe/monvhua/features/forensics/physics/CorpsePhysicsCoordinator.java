@@ -98,6 +98,8 @@ public final class CorpsePhysicsCoordinator {
             DeathMotionContext.expire(server);
             handoffExpiry.entrySet().removeIf(e->{if(server.getTicks()<e.getValue())return false;views.computeIfPresent(e.getKey(),(id,v)->v.committedRevision()>0?null:v);return true;});
             if(server!=owner)return;
+            long performanceStarted=CorpsePerformance.begin();
+            try {
             CorpseGrabController.tick(server);CorpseTransportController.tick(server);CorpseResidentManager.tick();
             CorpseHistoryController.tick();
             for(var job:List.copyOf(jobs.values())) {
@@ -127,6 +129,7 @@ public final class CorpsePhysicsCoordinator {
                     catch(RuntimeException e){cancel(job.display,"模拟区域卸载/失效",TERRAIN_CHANGED);}
                 }
             }
+            } finally { CorpsePerformance.end(CorpsePerformance.Metric.PHYSICS,performanceStarted); }
         });
         ServerEntityEvents.ENTITY_UNLOAD.register((entity,world)->{if(entity instanceof ItemDisplayEntity d){cancel(d,"载体卸载");views.remove(d.getUuid());CorpseHistoryController.remove(d.getUuid());}});
         ServerLifecycleEvents.SERVER_STOPPING.register(server->{DeathMotionContext.clear(server);if(server==owner)detach();});
@@ -168,6 +171,7 @@ public final class CorpsePhysicsCoordinator {
             root.then(CorpseHistoryController.commands());
             root.then(CorpseProfileManager.commands());
             CorpsePhysicsDiagnostics.register(root);
+            CorpsePerformance.register(root);
             root.then(literal("cancel").then(argument("target",EntityArgumentType.entity()).executes(c->{
                 var e=EntityArgumentType.getEntity(c,"target");
                 if(e instanceof InteractionEntity){var id=BodyPartManager.INTERACTION_TO_DISPLAY.get(e.getUuid());e=id==null?null:c.getSource().getWorld().getEntity(id);}

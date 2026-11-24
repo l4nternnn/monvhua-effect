@@ -65,7 +65,7 @@ public final class KomDyingCompat {
     public static void initialize() {
         ServerTickEvents.END_SERVER_TICK.register(KomDyingCompat::tick);
         ServerPlayConnectionEvents.DISCONNECT.register((handler,server)->{
-            CorpseDeathFallback.departure(handler.player,"disconnect");remove(handler.player.getUuid());
+            server.execute(()->{episodes.remove(handler.player.getUuid(),handler.player);remove(handler.player.getUuid());});
         });
         ServerPlayConnectionEvents.JOIN.register((handler,sender,server)->{
             var p=handler.player;
@@ -129,9 +129,8 @@ public final class KomDyingCompat {
     private static void tick(MinecraftServer server) {
         for(var player:List.copyOf(episodes.values())) {
             if(player.getServer()!=server)continue;
-            if(player.isSpectator())CorpseDeathFallback.departure(player,"spectator");
-            else if(!player.isAlive())CorpseDeathFallback.departure(player,"death");
-            else if(server.getPlayerManager().getPlayer(player.getUuid())!=player)CorpseDeathFallback.departure(player,"disconnect");
+            if(server.getPlayerManager().getPlayer(player.getUuid())!=player){episodes.remove(player.getUuid(),player);remove(player.getUuid());continue;}
+            if(!player.isAlive())CorpseDeathFallback.departure(player,"death");
         }
         var all=List.copyOf(sessions.values());
         var sample=new HashSet<Downed>();
@@ -144,13 +143,15 @@ public final class KomDyingCompat {
                 if(!d.session.ready().isDone()){if(d.world.getTime()-d.started>60)remove(d.player.getUuid());continue;}
                 d.session.ready().join();var s=d.session.residentState();
                 if(s==null||s.phase().equals("FAILED")||s.phase().equals("CLOSED"))throw new IllegalStateException(s==null?"Missing resident state":s.failure());
-                long now=d.world.getTime();if(s.tick()!=d.clock||s.paused()||s.phase().equals("SLEEPING")){d.clock=s.tick();d.progress=now;}
+                long now=d.world.getTime();if(s.tick()!=d.clock||s.paused()||CorpseIdlePolicy.resting(s)){d.clock=s.tick();d.progress=now;}
                 if(now-d.progress>60)throw new IllegalStateException("Downed solver stopped progressing");
                 if(sample.contains(d)){
                     var terrain=CorpseTerrainSnapshot.capture(d.world,d.origin);
                     if(!terrain.equals(d.terrain)){d.session.terrain(terrain,++d.terrainRevision);d.terrain=terrain;}
                 }
-                if(!s.paused())d.session.advanceClock(s.tick()+3);
+                if(CorpseIdlePolicy.advance(s,false,s.terrainRevision()!=d.terrainRevision)){
+                    d.session.advanceClock(s.tick()+3);com.kuilunfuzhe.monvhua.features.forensics.CorpsePerformance.count(com.kuilunfuzhe.monvhua.features.forensics.CorpsePerformance.Counter.PHYSICS_ADVANCED);
+                }else if(CorpseIdlePolicy.resting(s))com.kuilunfuzhe.monvhua.features.forensics.CorpsePerformance.count(com.kuilunfuzhe.monvhua.features.forensics.CorpsePerformance.Counter.PHYSICS_IDLE_SKIPPED);
                 var frames=d.session.frames();if(frames.isEmpty())continue;
                 var root=frames.getLast().poses().get("torso");
                 if(root==null||new Vec3d(root.x(),root.y(),root.z()).lengthSquared()>9)throw new IllegalStateException("Downed body left rescue anchor");

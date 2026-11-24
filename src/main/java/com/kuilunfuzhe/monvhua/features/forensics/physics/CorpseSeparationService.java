@@ -178,7 +178,9 @@ public final class CorpseSeparationService {
         var data=CorpsePoseRecord.data(display.getItemStack());if(!data.contains("separation_event")||!(display.getWorld() instanceof ServerWorld world))return;
         var store=ForensicStore.get(world.getServer());var corpse=store.corpse(Forensics.binding(display.getItemStack()).getString("id",""));var objects=corpse.getCompoundOrEmpty("separated_objects");var n=new NbtCompound();
         var visual=display.getItemStack().copy();var publicData=CorpsePoseRecord.data(visual);publicData.remove("body_part_inv_items");visual.set(DataComponentTypes.CUSTOM_DATA,NbtComponent.of(publicData));
-        n.put("visual_stack",ItemStack.CODEC.encodeStart(NbtOps.INSTANCE,visual).getOrThrow());
+        var encoded=ItemStack.CODEC.encodeStart(world.getRegistryManager().getOps(NbtOps.INSTANCE),visual).result();
+        if(encoded.isEmpty()||!(encoded.get() instanceof NbtCompound encodedStack)){org.slf4j.LoggerFactory.getLogger("monvhua-corpse-physics").warn("Skipping invalid separated corpse visual stack {}",display.getUuid());return;}
+        n.put("visual_stack",encodedStack);
         n.putLong("topology_revision",data.getLong("corpse_topology_revision",0));n.putString("dimension",world.getRegistryKey().getValue().toString());n.putDouble("x",display.getX());n.putDouble("y",display.getY());n.putDouble("z",display.getZ());n.put("pose",data.getCompoundOrEmpty(CorpsePoseRecord.KEY).copy());n.putString("part",Forensics.binding(display.getItemStack()).getString("part","all"));n.putString("event",data.getString("separation_event",""));objects.put(display.getUuid().toString(),n);corpse.put("separated_objects",objects);store.markDirty();
     }
     private static void markRemoved(ItemDisplayEntity display){
@@ -212,7 +214,7 @@ public final class CorpseSeparationService {
                 UUID id=UUID.fromString(object);var key=net.minecraft.registry.RegistryKey.of(net.minecraft.registry.RegistryKeys.WORLD,net.minecraft.util.Identifier.of(n.getString("dimension","")));var world=server.getWorld(key);
                 if(world==null)continue;var pos=new Vec3d(n.getDouble("x",0),n.getDouble("y",0),n.getDouble("z",0));if(!world.isChunkLoaded(BlockPos.ofFloored(pos)))continue;
                 if(world.getEntity(id) instanceof ItemDisplayEntity existing){ensureInteraction(existing);continue;}
-                var stack=ItemStack.CODEC.parse(NbtOps.INSTANCE,n.getCompoundOrEmpty("visual_stack")).result().orElse(ItemStack.EMPTY);if(stack.isEmpty()||!Forensics.valid(world,stack,object))continue;
+                var stack=ItemStack.CODEC.parse(world.getRegistryManager().getOps(NbtOps.INSTANCE),n.getCompoundOrEmpty("visual_stack")).result().orElse(ItemStack.EMPTY);if(stack.isEmpty()||!Forensics.valid(world,stack,object))continue;
                 // Whole-body inventories remain with the original parent: never reconstruct a missing inventory carrier from a visual-only checkpoint.
                 if(n.getString("part","all").equals("all"))continue;
                 var display=EntityType.ITEM_DISPLAY.create(world,SpawnReason.TRIGGERED);if(display==null)continue;display.setUuid(id);display.setPosition(pos);display.setItemDisplayContext(ItemDisplayContext.NONE);display.setItemStack(stack);
