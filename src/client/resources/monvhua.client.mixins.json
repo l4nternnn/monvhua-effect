@@ -4,6 +4,8 @@
 	"compatibilityLevel": "JAVA_21",
 	"refmap": "monvhua.client.refmap.json",
 	"client": [
+        "ButterflyParticleAccessor",
+        "BloodButterflyMotionMixin",
         "ClueChatScreenMixin",
     "DayNightClientWorldMixin",
 		"ExampleClientMixin",

@@ -5,6 +5,7 @@
 	"mixins": [
         "forensics.ForensicPlayerMixin",
         "forensics.DeathMotionMixin",
+        "forensics.CarpetFakePlayerDeathMixin",
         "forensics.CorpseInteractionMixin",
         "forensics.CorpseDisplayAccessor",
         "forensics.ForensicProjectileMixin",

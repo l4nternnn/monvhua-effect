@@ -216,6 +216,11 @@ tasks.named('check') {
 
 
 // Isolated client-only preview verification; never packages or increments the mod version.
+loom.runs.configureEach {
+    // Keep input archives alive while Loader's asynchronous remapper copies resources.
+    // This replaces only the development launcher, not the Minecraft/mod entrypoints.
+    devLaunchMainClass().set('com.kuilunfuzhe.monvhua.dev.StableDevLauncher')
+}
 loom.runs.client {
     def nativeOverride = providers.gradleProperty('physicsNative').getOrElse('')
     if (!nativeOverride.isBlank()) vmArg "-Dsimplephysics.native.path=${nativeOverride}"
@@ -244,6 +249,17 @@ loom.runs.client {
         vmArg '-Dmonvhua.physicsPlaybackDiagnostics=true'
     if (providers.gradleProperty('physicsPreviewGameTest').getOrElse('false') == 'true')
         vmArg '-Dfabric.client.gametest=true'
+    if (providers.gradleProperty('butterflyGameTest').getOrElse('false') == 'true') {
+        vmArg '-Dfabric.client.gametest=true'
+        vmArg '-Dmonvhua.butterflyGameTest=true'
+        vmArg '-Dfabric.client.gametest.disableNetworkSynchronizer=true'
+    }
+    if (providers.gradleProperty('carpetDeathGameTest').getOrElse('false') == 'true') {
+        vmArg '-Dfabric.client.gametest=true'
+        vmArg '-Dmonvhua.carpetDeathGameTest=true'
+        // Carpet's fake connections intentionally bypass the client test packet synchronizer.
+        vmArg '-Dfabric.client.gametest.disableNetworkSynchronizer=true'
+    }
 }
 tasks.named('runClient', JavaExec) {
     javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }

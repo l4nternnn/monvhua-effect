@@ -78,6 +78,8 @@ public final class KomDyingCompat {
         });
     }
     public static int count(){return sessions.size();}
+    /** Server-thread query shared by optional visual features; does not create a proxy. */
+    public static boolean isDying(ServerPlayerEntity player){return sessions.containsKey(player.getUuid())||(api()&&state(dying,player.getUuid()));}
     public static boolean proxy(ItemStack stack){return CorpsePoseRecord.data(stack).getBoolean(MARKER,false);}
     public static void enter(ServerPlayerEntity player) {
         if(!api()||!state(active,player.getUuid())||!Forensics.enabled(player)||!player.getCommandTags().contains("dead_body")||player.getCommandTags().contains("dead_part"))return;

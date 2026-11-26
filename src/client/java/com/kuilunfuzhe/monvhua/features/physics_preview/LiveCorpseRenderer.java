@@ -19,13 +19,15 @@ public final class LiveCorpseRenderer {
     private static Object models;
     private record Playback(CorpsePhysicsBridge.Session session,PhysicsPlaybackClock clock) {}
     private static final Map<UUID,Playback> playback=new HashMap<>();
+    private record Bounds(List<CorpsePhysicsBridge.TimedPose> frames,boolean slim,net.minecraft.util.math.Box box) {}
+    private static final Map<UUID,Bounds> bounds=new HashMap<>();
     public record DiagnosticSample(long nanos,double displayed,long latest,String mode,long waits,long resyncs){}
     private static final boolean DIAGNOSTICS=Boolean.getBoolean("monvhua.physicsPlaybackDiagnostics")||Boolean.getBoolean("monvhua.physicsG4GameTest")||Boolean.getBoolean("monvhua.physicsAutomaticGameTest")||Boolean.getBoolean("monvhua.physicsHistoryGameTest");
     private static final LinkedHashMap<UUID,ArrayDeque<DiagnosticSample>> diagnostics=new LinkedHashMap<>();
     public static List<DiagnosticSample> diagnosticSamples(UUID id){var samples=diagnostics.get(id);return samples==null?List.of():List.copyOf(samples);}
     public static void initialize() {
         ClientTickEvents.START_CLIENT_TICK.register(client->{
-            if(client.world==null){playback.clear();diagnostics.clear();renderer=null;models=null;return;}
+            if(client.world==null){playback.clear();bounds.clear();diagnostics.clear();renderer=null;models=null;return;}
             if(client.isPaused())return;
             var views=RemoteCorpsePhysics.views();
             var ids=new HashSet<UUID>();
@@ -42,6 +44,7 @@ public final class LiveCorpseRenderer {
             }
             for(var e:CorpseHistoryController.entries())if(e.frozen())ids.add(e.id);
             playback.keySet().retainAll(ids);
+            bounds.keySet().retainAll(ids);
         });
         WorldRenderEvents.AFTER_ENTITIES.register(LiveCorpseRenderer::render);
     }
@@ -50,6 +53,7 @@ public final class LiveCorpseRenderer {
         return client.world!=null&&client.world.getRegistryKey().getValue().toString().equals(v.dimension());
     }
     public static boolean hides(Entity entity) {
+        if(!(entity instanceof ItemDisplayEntity)&&!(entity instanceof LivingEntity))return false;
         // Proxies are rendered only through validated live frames, never as upright static items.
         if(entity.getCommandTags().contains(com.kuilunfuzhe.monvhua.features.forensics.physics.KomDyingCompat.MARKER)
                 ||entity instanceof ItemDisplayEntity d&&com.kuilunfuzhe.monvhua.features.forensics.physics.KomDyingCompat.proxy(d.getItemStack()))return true;
@@ -81,6 +85,15 @@ public final class LiveCorpseRenderer {
             var timed=v.session().published();
             var frames=timed.stream().map(CorpsePhysicsBridge.TimedPose::pose).toList();
             if(frames.isEmpty())continue;
+            var history=CorpseHistoryController.get(v.display());
+            // Frozen history may select a frame outside the recent window. Leave that path uncullled.
+            if(history==null||!history.frozen()){
+                var cached=bounds.get(v.display());
+                if(cached==null||cached.slim()!=v.slim()||!cached.frames().equals(timed)){
+                    cached=new Bounds(List.copyOf(timed),v.slim(),CorpseRenderBounds.of(timed,v.slim()));bounds.put(v.display(),cached);
+                }
+                if(cached.box()!=null&&context.frustum()!=null&&!context.frustum().isVisible(cached.box().offset(v.origin())))continue;
+            }
             var last=frames.getLast();
             // Settled bodies are stationary for 30 frames. Hold their exact terminal frame
             // until the tracked static pose arrives on the client.
@@ -104,7 +117,6 @@ public final class LiveCorpseRenderer {
                     parts.put(id,new PhysicsPoseDocument.Pose(x.x()+(y.x()-x.x())*alpha,x.y()+(y.y()-x.y())*alpha,x.z()+(y.z()-x.z())*alpha,q.x,q.y,q.z,q.w));}
                 pose=new PhysicsPoseDocument("SIMULATING",last.step(),parts,0,"interpolated",last.definition(),last.scale());
             }
-            var history=CorpseHistoryController.get(v.display());
             if(history!=null&&history.frozen()){
                 var frozen=history.pose();if(frozen!=null){pose=frozen;clock.holdAt(latestTick,now);displayed=history.selectedFrame<0?history.last():history.selectedFrame;mode="FROZEN";}
             }

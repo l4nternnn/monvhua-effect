@@ -72,13 +72,19 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         resetModel(active); applyPoseData(active,new NbtCompound());
         Map<String,ModelPart> parts=Map.of("head",active.head,"torso",active.body,"left_arm",active.leftArm,
                 "right_arm",active.rightArm,"left_leg",active.leftLeg,"right_leg",active.rightLeg);
+        OuterVisibility visibility=outerVisibility(active);
         for(String id:transforms.keySet()) {
+            ModelPart part=parts.get(id);
+            Matrix4f transform=transforms.get(id);
+            if(part==null||transform==null)continue;
             matrices.push();
             try {
-                Matrix4f transform=transforms.get(id);
                 matrices.multiplyPositionMatrix(transform);
                 matrices.peek().getNormalMatrix().mul(new org.joml.Matrix3f(transform).invert().transpose());
-                parts.get(id).render(matrices,consumers.getBuffer(data.layer()),light,overlay);
+                visibility.hide();
+                try { part.render(matrices,consumers.getBuffer(data.layer()),light,overlay); }
+                finally { visibility.restore(); }
+                renderOuterLayers(matrices,consumers,data.layer(),light,overlay,active,slim,data,id);
                 NbtCompound marks=physicsMarks(data.customData(),id);
                 renderModelPaint(matrices,consumers,active,slim,data.texture(),marks,light);
                 renderWounds(matrices,consumers,active,slim,marks,light);
@@ -156,9 +162,23 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         applyPoseData(activeModel, data.customData());
 
         matrices.push();
+        try {
         applyPlacementTransform(matrices, data.customData());
 
-        // 保存6个outer层的当前可见性，用于后续恢复
+        OuterVisibility visibility = outerVisibility(activeModel);
+        visibility.hide();
+        try { activeModel.render(matrices, vertexConsumer, light, overlay); }
+        finally { visibility.restore(); }
+        renderOuterLayers(matrices, vertexConsumers, renderLayer, light, overlay, activeModel, slim, data, "");
+
+        renderModelPaint(matrices, vertexConsumers, activeModel, slim, data.texture(), data.customData(), light);
+        renderWounds(matrices, vertexConsumers, activeModel, slim, data.customData(), light);
+        renderStains(matrices,vertexConsumers,activeModel,slim,data.customData(),light,"");
+
+        } finally { matrices.pop(); }
+    }
+
+    private OuterVisibility outerVisibility(PlayerEntityModel activeModel) {
         ModelPart waist = getChild(activeModel.body, CombinedBodyModelData.WAIST);
         ModelPart waistJacket = getChild(waist, CombinedBodyModelData.WAIST_JACKET);
         ModelPart leftForearm = getChild(activeModel.leftArm, CombinedBodyModelData.LEFT_FOREARM);
@@ -170,59 +190,74 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
         ModelPart rightLowerLeg = getChild(activeModel.rightLeg, CombinedBodyModelData.RIGHT_LOWER_LEG);
         ModelPart rightLowerPants = getChild(rightLowerLeg, CombinedBodyModelData.RIGHT_LOWER_PANTS);
 
-        OuterVisibility outerVisibility = new OuterVisibility(activeModel.hat, activeModel.jacket,
+        return new OuterVisibility(activeModel.hat, activeModel.jacket,
                 activeModel.leftSleeve, activeModel.rightSleeve, activeModel.leftPants, activeModel.rightPants,
                 waistJacket, leftForearmSleeve, rightForearmSleeve, leftLowerPants, rightLowerPants);
+    }
 
-        // 隐藏所有外层，绘制不含外层的身体本体
-        outerVisibility.hide();
-        activeModel.render(matrices, vertexConsumer, light, overlay);
-
-        // 恢复所有外层可见性
-        outerVisibility.restore();
+    /** Shared voxel path; rigid callers select only the part already transformed by their matrix. */
+    private void renderOuterLayers(MatrixStack matrices, VertexConsumerProvider vertexConsumers,
+                                   RenderLayer renderLayer, int light, int overlay, PlayerEntityModel activeModel,
+                                   boolean slim, Data data, String only) {
+        ModelPart waist = getChild(activeModel.body, CombinedBodyModelData.WAIST);
+        ModelPart waistJacket = getChild(waist, CombinedBodyModelData.WAIST_JACKET);
+        ModelPart leftForearm = getChild(activeModel.leftArm, CombinedBodyModelData.LEFT_FOREARM);
+        ModelPart leftForearmSleeve = getChild(leftForearm, CombinedBodyModelData.LEFT_FOREARM_SLEEVE);
+        ModelPart rightForearm = getChild(activeModel.rightArm, CombinedBodyModelData.RIGHT_FOREARM);
+        ModelPart rightForearmSleeve = getChild(rightForearm, CombinedBodyModelData.RIGHT_FOREARM_SLEEVE);
+        ModelPart leftLowerLeg = getChild(activeModel.leftLeg, CombinedBodyModelData.LEFT_LOWER_LEG);
+        ModelPart leftLowerPants = getChild(leftLowerLeg, CombinedBodyModelData.LEFT_LOWER_PANTS);
+        ModelPart rightLowerLeg = getChild(activeModel.rightLeg, CombinedBodyModelData.RIGHT_LOWER_LEG);
+        ModelPart rightLowerPants = getChild(rightLowerLeg, CombinedBodyModelData.RIGHT_LOWER_PANTS);
 
         matrices.push();
+        try {
         activeModel.getRootPart().applyTransform(matrices);
-        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.hat,
+        if (only.isEmpty() || only.equals("head"))
+            renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.hat,
                 (m, v) -> SkinOuterLayerVoxelRenderer.renderHeadHat(m, v, data.texture(), light, overlay),
                 activeModel.head);
-        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.jacket,
+        if (only.isEmpty() || only.equals("torso"))
+            renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.jacket,
                 (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerUpperJacket(m, v, data.texture(), light, overlay),
                 activeModel.body);
-        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, waistJacket,
+        if (only.isEmpty() || only.equals("torso"))
+            renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, waistJacket,
                 (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerLowerJacket(m, v, data.texture(), light, overlay),
                 activeModel.body, waist);
-        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.leftSleeve,
+        if (only.isEmpty() || only.equals("left_arm"))
+            renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.leftSleeve,
                 (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerUpperLeftSleeve(m, v, data.texture(), light, overlay, slim),
                 activeModel.leftArm);
-        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, leftForearmSleeve,
+        if (only.isEmpty() || only.equals("left_arm"))
+            renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, leftForearmSleeve,
                 (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerLowerLeftSleeve(m, v, data.texture(), light, overlay, slim),
                 activeModel.leftArm, leftForearm);
-        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.rightSleeve,
+        if (only.isEmpty() || only.equals("right_arm"))
+            renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.rightSleeve,
                 (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerUpperRightSleeve(m, v, data.texture(), light, overlay, slim),
                 activeModel.rightArm);
-        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, rightForearmSleeve,
+        if (only.isEmpty() || only.equals("right_arm"))
+            renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, rightForearmSleeve,
                 (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerLowerRightSleeve(m, v, data.texture(), light, overlay, slim),
                 activeModel.rightArm, rightForearm);
-        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.leftPants,
+        if (only.isEmpty() || only.equals("left_leg"))
+            renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.leftPants,
                 (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerUpperLeftPants(m, v, data.texture(), light, overlay),
                 activeModel.leftLeg);
-        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, leftLowerPants,
+        if (only.isEmpty() || only.equals("left_leg"))
+            renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, leftLowerPants,
                 (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerLowerLeftPants(m, v, data.texture(), light, overlay),
                 activeModel.leftLeg, leftLowerLeg);
-        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.rightPants,
+        if (only.isEmpty() || only.equals("right_leg"))
+            renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, activeModel.rightPants,
                 (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerUpperRightPants(m, v, data.texture(), light, overlay),
                 activeModel.rightLeg);
-        renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, rightLowerPants,
+        if (only.isEmpty() || only.equals("right_leg"))
+            renderVoxelLayer(matrices, vertexConsumers, renderLayer, light, overlay, rightLowerPants,
                 (m, v) -> SkinOuterLayerVoxelRenderer.renderPlayerLowerRightPants(m, v, data.texture(), light, overlay),
                 activeModel.rightLeg, rightLowerLeg);
-        matrices.pop();
-
-        renderModelPaint(matrices, vertexConsumers, activeModel, slim, data.texture(), data.customData(), light);
-        renderWounds(matrices, vertexConsumers, activeModel, slim, data.customData(), light);
-        renderStains(matrices,vertexConsumers,activeModel,slim,data.customData(),light,"");
-
-        matrices.pop();
+        } finally { matrices.pop(); }
     }
 
     private boolean renderTrueSkeletalModel(MatrixStack matrices, VertexConsumerProvider vertexConsumers,
@@ -288,23 +323,18 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
             return;
         }
 
+        for (ModelPart ancestor : ancestors) if (ancestor == null) return;
         matrices.push();
-        for (ModelPart ancestor : ancestors) {
-            if (ancestor == null) {
-                matrices.pop();
-                return;
-            }
-            ancestor.applyTransform(matrices);
-        }
-        matrices.push();
-        outer.applyTransform(matrices);
-        boolean renderedVoxelLayer = voxelRenderCall.render(matrices, vertexConsumers.getBuffer(renderLayer));
-        matrices.pop();
-        if (!renderedVoxelLayer) {
-            // 体素渲染失败时回退到标准外层渲染
-            outer.render(matrices, vertexConsumers.getBuffer(renderLayer), light, overlay);
-        }
-        matrices.pop();
+        try {
+            for (ModelPart ancestor : ancestors) ancestor.applyTransform(matrices);
+            boolean renderedVoxelLayer;
+            matrices.push();
+            try {
+                outer.applyTransform(matrices);
+                renderedVoxelLayer = voxelRenderCall.render(matrices, vertexConsumers.getBuffer(renderLayer));
+            } finally { matrices.pop(); }
+            if (!renderedVoxelLayer) outer.render(matrices, vertexConsumers.getBuffer(renderLayer), light, overlay);
+        } finally { matrices.pop(); }
     }
 
     private static ModelPart getChild(ModelPart part, String childName) {
@@ -381,22 +411,10 @@ public class CombinedBodySpecialModelRenderer extends BodyPartSpecialModelRender
             for (ModelPart part : target.path()) if (part != null) part.applyTransform(matrices);
             for (String kind : wound.getString("kinds", "").split("\\+")) {
                 int seed = java.util.Objects.hash(wound.getString("surface", ""), face.name(), u, v, kind);
-                var stamp = com.kuilunfuzhe.monvhua.features.forensics.WoundAppearance.create(kind, seed, wound.getString("severity", "moderate"));
-                if (stamp == null) continue;
-                // Uniform pixel density keeps circular shapes and gradient detail consistent across body faces.
-                int gridWidth = (int)Math.ceil(faceWidth * 8), gridHeight = (int)Math.ceil(faceHeight * 8);
-                int minX = Math.max(0, (int)Math.floor((u - stamp.radius() / faceWidth) * gridWidth));
-                int maxX = Math.min(gridWidth - 1, (int)Math.ceil((u + stamp.radius() / faceWidth) * gridWidth));
-                int minY = Math.max(0, (int)Math.floor((v - stamp.radius() / faceHeight) * gridHeight));
-                int maxY = Math.min(gridHeight - 1, (int)Math.ceil((v + stamp.radius() / faceHeight) * gridHeight));
-                for (int y = minY; y <= maxY; y++)
-                    for (int x = minX; x <= maxX; x++) {
-                        double dx = ((x + .5) / gridWidth - u) * faceWidth;
-                        double dy = ((y + .5) / gridHeight - v) * faceHeight;
-                        int color = stamp.color(dx, dy);
-                        if ((color >>> 24) != 0) appendPaintPixel(vertices, matrices.peek().getPositionMatrix(), target.cuboid(), face,
-                                OUTER_LAYER_PAINT_OFFSET + .001f, x, y, gridWidth, gridHeight, color, light);
-                    }
+                var sample = com.kuilunfuzhe.monvhua.features.forensics.WoundSampleCache.SHARED.sample(
+                        kind,seed,wound.getString("severity","moderate"),faceWidth,faceHeight,u,v);
+                for(var pixel:sample.pixels())appendPaintPixel(vertices,matrices.peek().getPositionMatrix(),target.cuboid(),face,
+                        OUTER_LAYER_PAINT_OFFSET+.001f,pixel.x(),pixel.y(),sample.gridWidth(),sample.gridHeight(),pixel.color(),light);
             }
             matrices.pop();
         }

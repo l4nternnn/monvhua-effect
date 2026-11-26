@@ -720,3 +720,63 @@ Mixin 共 **5 个配置**：
 | `NETWORK_PACKET_SKIPPED` | 内容未变且未到保活时间而省略发送的次数 |
 
 上述计数不代表网络字节、原生求解步数或 TPS 提升。严格网络字节预算、逐载体增量同步及客户端多面板渲染预算仍待后续实施。
+
+### 客户端优化与武器血迹补充规划（2026-11-25）
+
+客户端首批代码减少了遗体查询/快照接收时对场景实体的重复遍历，并为动态遗体主世界绘制加入覆盖部位、倍率和插值运动的保守视锥检查；独立线索预览不使用主摄像机的剔除结果。代码及测试用例已加入，编译和实机验证待执行，详见[多实体性能优化与兼容阶段计划](md/多实体性能优化与兼容阶段计划.md)。
+
+[武器血迹补充阶段计划](md/武器血迹补充阶段计划.md)已整理现有近战武器沾血基础，按可靠沉积与尸后接触、检查收录分享、清洗与二次转移、模型外观四批推进；说明 master 时间信息差、混淆线索和旧数据兼容。本轮只编写武器方案，未实装这些补充功能。
+# 2026-11-25 实施补记：武器残留数据基础
+
+武器血迹 W1a 已接入服务端残留存储：新增干燥后仍保留的有界来源摘要、状态版本及 v1→v2 迁移。旧残留历史不足时标记未知；部分清洗减量后来源降为未知，洗净后清空。原湿血转移规则保留。本批不增加武器检查 UI、清洗动作或染血外观。
+
+主端/客户端编译和 forensics 回归通过，177 项测试零失败；游戏内兼容与性能验收仍待执行。Sonnet 规划使用用户授权的 `claude-sonnet-5` 完成；Terra 验收因 `gpt-5.6-terra` 提供方返回 404 未执行。
+
+升级前备份残留存档；v2 写回后不能只换回旧 jar，回退需同时恢复相应备份。详情见 [阶段实施清单](md/阶段复审与细化实施清单.md)。
+
+## 武器接触与清洗接口补充
+
+新增尸后有效伤口的有限预算武器染血；生前和尸后统一沉积入口。伤口渲染增加有界纯像素采样缓存，保持原图案与姿态。
+
+以下管理指令需要权限等级 2，强度为 0–1，均支持目标选择器；`preview` 为预览，`apply` 为提交：
+
+```mcfunction
+/mvforensics clean weapon <targets> <mainhand|offhand> <strength> <preview|apply>
+/mvforensics clean body <targets> <all|hands|torso|left_sole|right_sole> <strength> <preview|apply>
+```
+
+武器目标为在线存活玩家；身体目标也可为已加载的有效遗体 item_display。例：`/mvforensics clean weapon @s mainhand 1 apply`。
+
+其他模组可调用 `ForensicCleaningApi.cleanWeapon/previewWeapon`；身体复用已有的 `cleanBody/previewBody`。API v2 支持服务器线程校验、动作去重和处理预算，不自动扣水；调用方负责权限、距离和资源检查。完整 Java 示例、参数、返回结果和限制见 [清洗接口接入说明](md/清洗接口与武器血迹接入说明.md)。
+
+本批 main/client 编译和 forensics 187 项回归通过；尚未完成游戏内完整交互与性能采样。`claude-sonnet-5-5` 已参与规划；指定 `gpt-6-luna` 验收调用因提供方 404 未执行。
+
+## 物理遗体外层与血蝴蝶方案
+
+物理遗体和持久刚体姿态已接入普通遗体同用的 3D 皮肤体素外层，涵盖帽、上下躯干、袖和裤层；仍需游戏内确认 default/slim、运动/静止接管、断肢和预览显示。外部模型不因此自动适配。
+
+[血蝴蝶方案](md/血蝴蝶寻路与遗体外层修复方案.md)保留算法比较，当前实际行为与配置见[血蝴蝶实现与配置说明](md/血蝴蝶实现与配置说明.md)。
+
+只有遗体/肢体形成的较大血泊会每 200 服务端 tick（通常 10 秒）生成一批。每个地点为 100 格内存活、非旁观、非倒地玩家各生成一只（Carpet 假人计入），并锁定各自目标。单只寿命独立随机 100–416 tick，即 5–20.8 秒；抵达后持续环绕玩家，同一目标已有到达者时，追踪中的蝴蝶提高 10% 速度，不叠乘。
+
+运动层与 A* 搜索分开，路径节点同 tick 消费，使用安全曲线转向和局部试探，保留原生粒子限幅随机漂移。客户端轨迹逐 tick 播放，不再重复包尾位置。每步都检查方块碰撞和已加载区域，不强制加载区块。
+
+自然到期后，在 4 格内检查最近的最多 32 个可绘制完整方块面，留下小型匿名血迹；残留不再生成蝴蝶。默认单维度/全服上限 48/128、每 tick 最多尝试出生 4 只、每周期最多 128 个来源地点仍有效，上限可能减少生成量。旧配置 `lifetimeTicks`、`sourceCooldownTicks`、`targetRadius` 保留兼容，但不驱动当前寿命范围、周期和目标半径；客户端与服务端需同时更新至 `blood_butterflies_v2`。
+
+## Carpet 假人击杀与断线（2026-11-26）
+
+Carpet 假人的 `/kill <目标>` 会直接移除假人，绕过正常死亡事件；现已为这个入口补齐遗体生成。仍需 `dead_body` 或 `dead_part` 标签，同一条生命只生成一次；普通伤害死亡沿用原死亡事件。`/player <名字> kill` 属于管理移除，不作为死亡生成遗体。真人断线、踢出和服务器停止不补生成遗体。
+
+main/client 编译及 195 项 forensics 回归通过。隔离世界使用实际 Carpet 1.4.177 验证了 `/kill`、伤害死亡、重复击杀、管理移除、未标记假人、真人零血断线、关闭线索系统时的去重以及延迟断线处理。复测入口：`runClient -PcarpetDeathGameTest=true -PphysicsPreviewRunDir=build/carpet-death-smoke`，需该目录的 `mods` 中有 Carpet；结果为 `build/carpet-death-smoke/carpet-death-pass.txt`。此修复未改动断线补生成规则。
+
+未安装 Carpet 的隔离客户端也已启动并完成血蝴蝶检查。Sonnet 完成规划，Luna 合并三次材料后审查通过；本轮实机覆盖开发映射环境，尚未执行发行包环境或其他 Carpet 版本的集成验收。
+
+## IDEA 开发启动重映射保护（2026-11-26）
+
+开发启动改由 `com.kuilunfuzhe.monvhua.dev.StableDevLauncher` 转交原 Dev Launch Injector。它在调用原入口前用共享 URI 打开工作目录 `mods` 根目录的 JAR，并在原入口返回后释放自己创建的文件系统，避免 Fabric Loader 0.19.2 / TinyRemapper 异步归还输入文件时，另一线程仍复制资源而出现 `ClosedFileSystemException`。仅开发启动启用，发行版的模组入口不变；保持原模组文件、版本和存档。
+
+Gradle 的 `runClient`、`runServer` 及 Loom 生成的 IDEA 启动入口统一配置。已有 IDEA 的 Minecraft Client / Server 配置也已同步；若 IDE 尚显示旧入口，请重新加载 Gradle 项目，确认主类为上述 `StableDevLauncher`，其余 `fabric.dli.*` 参数沿用原值。
+
+本轮使用当前 `run/mods` 完整环境实际启动，输出 `Holding 30 mod archives open`，Loader 加载 139 个模组并完成客户端纹理、面板、ETF 等资源初始化，未再出现重映射失败。197 项 forensics 回归通过，含两个实际调用 Loader 内置 `FileSystemReference` 的文件生命周期测试。未把这次启动验收等同于所有第三方模组游戏功能验收。
+
+运行期间请退出游戏后再更换 `mods` 中的文件，开发入口会保持这些输入文件打开。保护针对根目录 JAR；不同 Loader 版本、额外扫描目录和其他启动器的开发环境仍需单独验证。Axiom 原文件已还原 `run/mods/Axiom-5.4.2-for-MC1.21.8.jar`，未使用临时预映射依赖方案。

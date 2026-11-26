@@ -3,14 +3,16 @@ package com.kuilunfuzhe.monvhua.features.forensics.cleaning;
 import com.kuilunfuzhe.monvhua.features.forensics.*;
 import com.kuilunfuzhe.monvhua.features.forensics.blood.*;
 import net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.util.Hand;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.*;
 import java.util.*;
 
-/** Trusted server API v1. Call on server thread. No gameplay triggers or resource charges. */
+/** Trusted server API. Call on server thread. Callers own access checks and resource charges. */
 public final class ForensicCleaningApi {
-    public static final int API_VERSION=1;
+    public static final int API_VERSION=2;
     public enum Part { HANDS("hands"), TORSO("torso"), LEFT_SOLE("left_sole"), RIGHT_SOLE("right_sole");
         public final String slot; Part(String slot){this.slot=slot;}
     }
@@ -24,6 +26,9 @@ public final class ForensicCleaningApi {
         public BodyRequest { parts=Set.copyOf(parts); }
     }
     public record SceneRequest(UUID actionId,Vec3d center,double radius,double strength,Method method) {}
+    /** Capture on the server at action start. Empty references denote a genuinely unstained item. */
+    public record WeaponTarget(String residueId,long revision) {}
+    public record WeaponRequest(UUID actionId,UUID player,Hand hand,String expectedResidueId,long expectedRevision,double strength) {}
     private record Budget(int tick,int used){}
     private static final Map<MinecraftServer,Budget> BUDGETS=new WeakHashMap<>();
     private ForensicCleaningApi(){}
@@ -93,6 +98,39 @@ public final class ForensicCleaningApi {
         return finish(s,r.actionId,key,preview,changed,visible,wet,0);
     }
     private static boolean matches(String part,Part slot){return switch(slot){case TORSO->part.equals("torso");case LEFT_SOLE->part.equals("left_leg");case RIGHT_SOLE->part.equals("right_leg");case HANDS->part.endsWith("arm");};}
+    /** No residue records or item components are created by capture, preview or cleaning. */
+    public static Optional<WeaponTarget> currentWeaponTarget(MinecraftServer s,UUID player,Hand hand){
+        if(!s.isOnThread())throw new IllegalStateException("Server thread required");
+        if(player==null||hand==null)return Optional.empty();
+        var p=s.getPlayerManager().getPlayer(player);
+        if(p==null||!p.isAlive())return Optional.empty();
+        return weaponTarget(BloodTransferStore.get(s),p.getStackInHand(hand));
+    }
+    static Optional<WeaponTarget> weaponTarget(BloodTransferStore store,ItemStack stack){
+        if(stack.isEmpty()||stack.getMaxCount()!=1||stack.getCount()!=1)return Optional.empty();
+        String ref=BloodTransferService.itemRef(stack);
+        if(!ref.isEmpty()&&store.record(ref).isEmpty())return Optional.empty();
+        return Optional.of(new WeaponTarget(ref,store.revision(ref)));
+    }
+    public static Result cleanWeapon(MinecraftServer server,WeaponRequest request){return weapon(server,request,false);}
+    public static Result previewWeapon(MinecraftServer server,WeaponRequest request){return weapon(server,request,true);}
+    private static Result weapon(MinecraftServer s,WeaponRequest r,boolean preview){
+        if(r==null)return Result.reject("无效武器请求");
+        var failure=validate(s,r.actionId,r.strength);if(failure!=null)return failure;
+        if(!BloodTransferService.enabled()||r.player==null||r.hand==null||r.expectedResidueId==null||r.expectedRevision<0)
+            return Result.reject("无效武器目标");
+        String key="weapon/"+r.player+"/"+r.hand+"/"+r.expectedResidueId+"/"+r.expectedRevision+"/"+r.strength;
+        // A successful commit changed revision: replay must find its receipt before checking it.
+        failure=receipt(s,r.actionId,key,preview);if(failure!=null)return failure;
+        var target=currentWeaponTarget(s,r.player,r.hand);
+        if(target.isEmpty()||!target.get().residueId.equals(r.expectedResidueId)||target.get().revision!=r.expectedRevision)
+            return Result.reject("手持武器或残留版本已变化");
+        if(!budget(s,1,preview))return Result.reject("本 tick 清洗预算不足");
+        var store=BloodTransferStore.get(s);long now=BloodTraceService.now(s);
+        boolean has=r.strength>0&&(store.visible(r.expectedResidueId)>0||store.available(r.expectedResidueId,now)>0);
+        var result=store.clean(r.expectedResidueId,r.strength,now,!preview);
+        return finish(s,r.actionId,key,preview,has?1:0,result.visible(),result.transferable(),0);
+    }
     public static Result cleanScene(ServerWorld world,SceneRequest request){return scene(world,request,false);}
     public static Result previewScene(ServerWorld world,SceneRequest request){return scene(world,request,true);}
     private static Result scene(ServerWorld w,SceneRequest r,boolean preview){

@@ -39,13 +39,20 @@ public final class RemoteCorpsePhysics {
     }
     public static List<CorpsePhysicsCoordinator.LiveView> views(){
         var values=remote()?(System.nanoTime()-received>2_000_000_000L?List.<CorpsePhysicsCoordinator.LiveView>of():List.copyOf(views.values())):CorpsePhysicsCoordinator.liveViews();
+        if(values.isEmpty())return List.of();
         var client=MinecraftClient.getInstance();if(client.world==null)return List.of();
+        var displays=loadedDisplays(client);
         return values.stream().filter(v->{
-            for(var entity:client.world.getEntities())if(entity instanceof ItemDisplayEntity d&&d.getUuid().equals(v.display())){
+            var d=displays.get(v.display());if(d!=null){
                 var pose=com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.read(com.kuilunfuzhe.monvhua.features.forensics.CorpsePoseRecord.data(d.getItemStack()));
                 var frames=v.session().frames();return pose.isEmpty()||frames.isEmpty()||pose.get().parts().keySet().equals(frames.getLast().poses().keySet());
             }return false;
         }).toList();
+    }
+    private static Map<UUID,ItemDisplayEntity> loadedDisplays(MinecraftClient client){
+        var result=new HashMap<UUID,ItemDisplayEntity>();
+        if(client.world!=null)for(var entity:client.world.getEntities())if(entity instanceof ItemDisplayEntity d)result.put(d.getUuid(),d);
+        return result;
     }
     public static boolean pinned(UUID id){
         if(!remote()){var e=CorpseHistoryController.get(id);return e!=null&&"none".equals(e.session.dynamicPart());}
@@ -92,8 +99,9 @@ public final class RemoteCorpsePhysics {
     private static void accept(NbtCompound data){
         if(!remote())return;var c=MinecraftClient.getInstance();if(c.world==null||!c.world.getRegistryKey().getValue().toString().equals(data.getString("dimension","")))return;received=System.nanoTime();
         var keep=new HashSet<UUID>();
+        var displays=loadedDisplays(c);
         for(var element:data.getListOrEmpty("views")){if(!(element instanceof NbtCompound n)||keep.size()>=24)continue;
-            try{UUID id=UUID.fromString(n.getString("id",""));if(n.getLong("revision",0)>0&&acknowledged.getOrDefault(id,-1L)==n.getLong("revision",0)){keep.add(id);continue;}ItemDisplayEntity display=null;for(var entity:c.world.getEntities())if(entity.getUuid().equals(id)&&entity instanceof ItemDisplayEntity d){display=d;break;}if(display==null)continue;
+            try{UUID id=UUID.fromString(n.getString("id",""));if(n.getLong("revision",0)>0&&acknowledged.getOrDefault(id,-1L)==n.getLong("revision",0)){keep.add(id);continue;}ItemDisplayEntity display=displays.get(id);if(display==null)continue;
             var parts=new LinkedHashMap<String,PhysicsPoseDocument.Pose>();for(var item:n.getListOrEmpty("parts"))if(item instanceof NbtCompound p)parts.put(p.getString("id",""),new PhysicsPoseDocument.Pose(p.getFloat("x",0),p.getFloat("y",0),p.getFloat("z",0),p.getFloat("qx",0),p.getFloat("qy",0),p.getFloat("qz",0),p.getFloat("qw",1)));
             PhysicsPoseDocument.validateParts(parts.keySet());
             var old=views.get(id);long topology=n.getLong("topology",0);if(topology<0||old!=null&&((Session)old.session()).topology>topology){keep.add(id);continue;}var session=old==null||((Session)old.session()).topology!=topology||old.session().frames().isEmpty()||!old.session().frames().getLast().poses().keySet().equals(parts.keySet())?new Session():(Session)old.session();

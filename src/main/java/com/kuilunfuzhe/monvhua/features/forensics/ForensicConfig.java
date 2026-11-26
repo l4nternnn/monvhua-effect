@@ -14,6 +14,20 @@ public final class ForensicConfig {
     public float moderateThreshold = 4;
     public float severeThreshold = 8;
     public Cleaning cleaning = new Cleaning();
+    public Butterflies butterflies = new Butterflies();
+    public static final class Butterflies {
+        public boolean enabled=true;
+        // lifetimeTicks, sourceCooldownTicks and targetRadius are retained for old JSON compatibility.
+        // Flights now live a random 100..416 ticks; births use 200 ticks and 100-block targets.
+        public int lifetimeTicks=320,sourceCooldownTicks=200,maxPerDimension=48,maxTotal=128;
+        public int searchQueriesPerTick=1200;
+        public double searchMillis=2,targetRadius=16,randomRadius=.12;
+        public boolean valid(){return lifetimeTicks>=40&&lifetimeTicks<=640&&sourceCooldownTicks>=40&&sourceCooldownTicks<=72000
+            &&maxPerDimension>=1&&maxPerDimension<=48&&maxTotal>=maxPerDimension&&maxTotal<=128
+            &&searchQueriesPerTick>=64&&searchQueriesPerTick<=4000&&Double.isFinite(searchMillis)&&searchMillis>=.1&&searchMillis<=5
+            &&Double.isFinite(targetRadius)&&targetRadius>=2&&targetRadius<=24
+            &&Double.isFinite(randomRadius)&&randomRadius>=0&&randomRadius<=.25;}
+    }
     public static final class Cleaning {
         public boolean enabled=true, coverage=true, dragTraces=true;
         public double maxRadius=16;
@@ -63,7 +77,7 @@ public final class ForensicConfig {
         try {
             if (!Files.exists(path)) { Files.writeString(path, gson.toJson(current)); return; }
             ForensicConfig next = gson.fromJson(Files.readString(path), ForensicConfig.class);
-            if (next == null || next.cleaning == null || !next.cleaning.valid() || next.blood == null || !next.blood.valid() || next.transfer == null || !next.transfer.valid() || next.detailedHitLimit < 16 || next.detailedHitLimit > 256
+            if (next == null || next.butterflies==null || !next.butterflies.valid() || next.cleaning == null || !next.cleaning.valid() || next.blood == null || !next.blood.valid() || next.transfer == null || !next.transfer.valid() || next.detailedHitLimit < 16 || next.detailedHitLimit > 256
                     || !Double.isFinite(next.inspectionDistance) || next.inspectionDistance < 1 || next.inspectionDistance > 6
                     || !Float.isFinite(next.moderateThreshold) || !Float.isFinite(next.severeThreshold)
                     || next.moderateThreshold <= 0 || next.severeThreshold <= next.moderateThreshold)

@@ -95,6 +95,11 @@ public final class PostmortemWounds {
         if (!appended&&joint==null) return true;
         LAST_ATTACK.put(player.getUuid(), now); player.resetLastAttackedTicks();
         if(appended){
+            if(com.kuilunfuzhe.monvhua.features.forensics.blood.BloodRules.factor(selection,record.getString("kinds","unknown"))>0){
+                ItemStack original=context==null?player.getWeaponStack():context.original();
+                if(com.kuilunfuzhe.monvhua.features.forensics.blood.WeaponBloodDeposits.contact(player,original,store.corpse(corpse),record,true)>0)
+                    store.markDirty();
+            }
             sync(display);
             CorpseResidentManager.woundsUpdated(display);
         }

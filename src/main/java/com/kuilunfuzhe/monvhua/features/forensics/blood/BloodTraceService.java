@@ -38,6 +38,7 @@ public final class BloodTraceService {
         }
     }
     public static void initialize() {
+        com.kuilunfuzhe.monvhua.features.forensics.butterfly.BloodButterflyService.initialize();
         BloodTracePackets.register();
         com.kuilunfuzhe.monvhua.network.forensics.BodyStainPackets.initialize();
         com.kuilunfuzhe.monvhua.features.forensics.cleaning.CleaningCommands.initialize();
@@ -171,7 +172,7 @@ public final class BloodTraceService {
         for(String event:events)BloodTransferStore.get(world.getServer()).discard(event);
     }
     public static void blockChanged(ServerWorld world, BlockPos pos) { safe(() -> validate(world, pos)); }
-    private static boolean submit(ServerWorld world, BloodTraceStore.Entry entry) {
+    public static boolean submit(ServerWorld world, BloodTraceStore.Entry entry) {
         boolean accepted = BloodTraceStore.get(world).submit(entry);
         if (!accepted && System.nanoTime() - lastCapacityWarning > 30_000_000_000L) {
             lastCapacityWarning = System.nanoTime();
@@ -237,12 +238,7 @@ public final class BloodTraceService {
         if (melee && attacker instanceof ServerPlayerEntity actor && BloodTransferService.generating() && ForensicConfig.current.transfer.weaponStains) {
             AttackContexts.Attack context = AttackContexts.current(actor.getUuid());
             net.minecraft.item.ItemStack weapon = context != null ? context.original() : actor.getWeaponStack();
-            String holder = weapon.isEmpty() ? BloodTransferService.holder(actor, "hands") : BloodTransferService.prepareWeapon(actor, weapon);
-            var transfer = BloodTransferStore.get(victim.getServer());
-            if (!holder.isEmpty() && transfer.visible(holder) < 16 && transfer.add(holder, life.getString("id", "mixed"), 1,
-                    time + ForensicConfig.current.transfer.wetTicks, time)) {
-                ledger.putInt("impact_remaining", ledger.getInt("impact_remaining", 0) - 1); cost--;
-            }
+            cost -= WeaponBloodDeposits.contact(actor, weapon, life, hit, false);
         }
         ServerWorld world = (ServerWorld) victim.getWorld(); long seed = new Random().nextLong(); Random random = new Random(seed);
         hit.putLong("blood_seed", seed); hit.putInt("blood_rule_version", 1);

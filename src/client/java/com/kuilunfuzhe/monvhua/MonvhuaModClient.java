@@ -169,6 +169,7 @@ public class MonvhuaModClient implements ClientModInitializer {
         TextAreaHudClient.initialize();
         HotBackpackSaveClient.initialize();
         InjuredBleedingClient.initialize();
+        com.kuilunfuzhe.monvhua.features.forensics.butterfly.BloodButterflyClient.initialize();
         PlayerBindingClient.initialize();
         UiActivityClient.initialize();
         PossessionClient.initialize();

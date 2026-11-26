@@ -32,8 +32,10 @@ public final class BloodTransferService {
     public static String itemRef(ItemStack stack) { return stack.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT).copyNbt().getString(ITEM_REF, ""); }
     public static boolean stained(ItemStack stack) { return !itemRef(stack).isEmpty(); }
     public static String prepareWeapon(ServerPlayerEntity p, ItemStack stack) {
-        if (stack.isEmpty() || stack.getMaxCount() != 1) return "";
-        String id = itemRef(stack); if (id.isEmpty()) id = UUID.randomUUID().toString();
+        if (stack.isEmpty() || stack.getMaxCount() != 1 || stack.getCount() != 1) return "";
+        String id = itemRef(stack);
+        if (!id.isEmpty() && BloodTransferStore.get(p.getServer()).record(id).isEmpty()) return "";
+        if (id.isEmpty()) id = UUID.randomUUID().toString();
         if (!BloodTransferStore.get(p.getServer()).reserve(id)) return "";
         NbtCompound data = stack.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT).copyNbt();
         data.putString(ITEM_REF, id); stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(data)); return id;
