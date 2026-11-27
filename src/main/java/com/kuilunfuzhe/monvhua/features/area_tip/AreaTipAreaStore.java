@@ -50,6 +50,13 @@ public class AreaTipAreaStore extends PersistentState {
 
     private final Map<UUID, StoredArea> areas = new LinkedHashMap<>();
     private final transient Map<UUID, Set<BlockPos>> blockLookupCache = new HashMap<>();
+    private transient AreaTipSpatialIndex spatialIndex;
+
+    @Override
+    public void markDirty() {
+        super.markDirty();
+        spatialIndex = null;
+    }
 
     public AreaTipAreaStore() {
     }
@@ -453,13 +460,11 @@ public class AreaTipAreaStore extends PersistentState {
     }
 
     public Optional<StoredArea> firstContaining(Box box) {
-        Vec3d center = box.getCenter();
-        for (StoredArea area : areas.values()) {
-            if (contains(area, center) || containsAnyCorner(area, box)) {
-                return Optional.of(area);
-            }
+        if (spatialIndex == null) {
+            spatialIndex = new AreaTipSpatialIndex(toAreas());
         }
-        return Optional.empty();
+        Vec3d center = box.getCenter();
+        return spatialIndex.first(box, area -> contains(area, center) || containsAnyCorner(area, box));
     }
 
     private boolean containsAnyCorner(StoredArea area, Box box) {

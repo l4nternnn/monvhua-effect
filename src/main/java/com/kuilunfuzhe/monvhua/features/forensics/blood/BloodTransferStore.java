@@ -48,7 +48,40 @@ public final class BloodTransferStore extends PersistentState {
         n.put("residue_sources", new NbtList()); n.putLong("revision", 0);
         records().put(id, n); markDirty(); return true;
     }
-    public void discard(String id) { if(records().contains(id)){records().remove(id);markDirty();} }
+    /**
+     * Removes a source event and all transferable residue copied from that event.
+     * The latter is essential when a player has already stepped away from the
+     * blood patch: clearing the patch must not leave stale sole residue behind.
+     */
+    public void discard(String id) {
+        if(id.isEmpty())return;
+        NbtCompound sourceRecord=records().getCompoundOrEmpty(id);
+        Set<String> legacySources=new HashSet<>();
+        for(NbtElement e:sourceRecord.getListOrEmpty("batches"))
+            if(e instanceof NbtCompound b&&!b.contains("origin_event"))legacySources.add(b.getString("source",""));
+        boolean dirty=records().contains(id);
+        records().remove(id);
+        for(String holder:List.copyOf(records().getKeys())){
+            NbtCompound record=records().getCompoundOrEmpty(holder);
+            NbtList batches=record.getListOrEmpty("batches");
+            int before=batches.size();int removed=0;
+            for(NbtElement e:batches)if(e instanceof NbtCompound b
+                    &&(id.equals(b.getString("origin_event",""))
+                    ||(!b.contains("origin_event")&&!b.getString("source","").isEmpty()&&legacySources.contains(b.getString("source","")))))
+                removed+=Math.max(0,b.getInt("amount",0));
+            batches.removeIf(e->e instanceof NbtCompound b
+                    &&(id.equals(b.getString("origin_event",""))
+                    ||(!b.contains("origin_event")&&!b.getString("source","").isEmpty()&&legacySources.contains(b.getString("source","")))));
+            if(batches.size()!=before){
+                record.put("batches",batches);
+                int visible=Math.max(0,record.getInt("visible",0)-removed);
+                record.putInt("visible",visible);
+                record.put("residue_sources",visible==0?new NbtList():summary("unknown"));
+                changed(record);dirty=true;
+            }
+        }
+        if(dirty)markDirty();
+    }
     public int visible(String id) { return record(id).getInt("visible", 0); }
     /** State revision, not a clock or an evidence-event identifier. */
     public long revision(String id) { return record(id).getLong("revision", 0); }
@@ -105,10 +138,17 @@ public final class BloodTransferStore extends PersistentState {
                 .mapToInt(n -> Math.max(0, n.getInt("amount", 0))).sum();
     }
     public boolean add(String id, String source, int amount, long until, long now) {
+        return add(id,source,amount,until,now,"");
+    }
+    public boolean add(String id, String source, int amount, long until, long now, String originEvent) {
         if (amount <= 0 || until <= now || !reserve(id)) return false;
         String residueSource = source;
         NbtCompound n = record(id); NbtList batches = n.getListOrEmpty("batches");
         batches.removeIf(e -> !(e instanceof NbtCompound b) || b.getLong("until", 0) <= now || b.getInt("amount", 0) <= 0);
+        // Never collapse different event identities to satisfy the bounded batch count.
+        // Reject a new identity at capacity; callers retain the untransferred amount.
+        if(batches.size()>=ForensicConfig.current.transfer.maxBatchesPerHolder
+                &&batches.stream().noneMatch(e->e instanceof NbtCompound b&&originEvent.equals(b.getString("origin_event",""))))return false;
         Set<String> sources = new HashSet<>();
         for (NbtElement e : batches) if (e instanceof NbtCompound b) sources.add(b.getString("source", "mixed"));
         if (!sources.contains(source) && sources.size() >= ForensicConfig.current.transfer.maxSourcesPerHolder) {
@@ -116,12 +156,17 @@ public final class BloodTransferStore extends PersistentState {
             for (NbtElement e : batches) if (e instanceof NbtCompound b) b.putString("source", "mixed");
         }
         NbtCompound batch = new NbtCompound(); batch.putString("source", source); batch.putInt("amount", amount); batch.putLong("until", until);
+        if(!originEvent.isEmpty())batch.putString("origin_event",originEvent);
         batches.add(batch);
         while (batches.size() > ForensicConfig.current.transfer.maxBatchesPerHolder) {
-            NbtCompound a = batches.getCompound(0).orElseThrow(), b = batches.getCompound(1).orElseThrow();
+            int first=-1,second=-1;
+            for(int i=0;i<batches.size()&&first<0;i++)for(int j=i+1;j<batches.size();j++)
+                if(batches.getCompound(i).orElseThrow().getString("origin_event","").equals(batches.getCompound(j).orElseThrow().getString("origin_event",""))){first=i;second=j;break;}
+            if(first<0)throw new IllegalStateException("Transfer batch identity limit exceeded");
+            NbtCompound a = batches.getCompound(first).orElseThrow(), b = batches.getCompound(second).orElseThrow();
             a.putString("source", a.getString("source", "").equals(b.getString("source", "")) ? a.getString("source", "mixed") : "mixed");
             a.putInt("amount", a.getInt("amount", 0) + b.getInt("amount", 0));
-            a.putLong("until", Math.min(a.getLong("until", 0), b.getLong("until", 0))); batches.remove(1);
+            a.putLong("until", Math.min(a.getLong("until", 0), b.getLong("until", 0))); batches.remove(second);
         }
         addResidueSource(n, residueSource);
         n.put("batches", batches); n.putInt("visible", (int)Math.min(16L, (long)n.getInt("visible", 0) + amount)); changed(n); return true;
@@ -131,7 +176,7 @@ public final class BloodTransferStore extends PersistentState {
         int wanted = Math.min(max, Math.max(0, capacity - available(to, now))), moved = 0;
         for (NbtElement e : record(from).getListOrEmpty("batches")) if (e instanceof NbtCompound b && b.getLong("until", 0) > now) {
             int take = Math.min(wanted - moved, Math.max(0, b.getInt("amount", 0)));
-            if (take > 0 && add(to, b.getString("source", "mixed"), take, b.getLong("until", 0), now)) {
+            if (take > 0 && add(to, b.getString("source", "mixed"), take, b.getLong("until", 0), now, b.getString("origin_event", ""))) {
                 b.putInt("amount", b.getInt("amount", 0) - take); moved += take;
             }
         }

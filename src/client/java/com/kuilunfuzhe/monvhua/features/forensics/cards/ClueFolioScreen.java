@@ -49,10 +49,11 @@ abstract class ClueFolioScreen extends Screen {
         c.fill(0,0,width,height,0x54100d08);
         paper(c,fx,fy,fw,fh);
         c.fill(fx+6,fy+27,fx+fw-6,fy+28,BRASS);
-        c.drawText(textRenderer,textRenderer.trimToWidth(title.getString(),Math.max(40,fw-160)),fx+12,fy+10,INK,false);
+        c.drawText(textRenderer,textRenderer.trimToWidth(title.getString(),Math.max(0,titleWidth())),fx+12,fy+10,INK,false);
         if(!subtitle.isEmpty())c.drawText(textRenderer,textRenderer.trimToWidth(subtitle,fw-24),fx+12,fy+34,MUTED,false);
 
     }
+    protected int titleWidth(){return Math.max(40,fw-160);}
     protected void line(DrawContext c,String text,int x,int y,int w,int color){c.drawText(textRenderer,textRenderer.trimToWidth(text,Math.max(1,w)),x,y,color,false);}
     protected void status(DrawContext c,String text){line(c,text,fx+10,fy+fh-14,fw-20,RED);}
 }

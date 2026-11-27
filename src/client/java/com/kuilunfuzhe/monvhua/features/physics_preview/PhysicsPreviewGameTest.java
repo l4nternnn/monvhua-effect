@@ -13,6 +13,9 @@ import java.util.List;
 /** Dedicated temporary world; enabled only by -PphysicsPreviewGameTest=true. */
 public final class PhysicsPreviewGameTest implements FabricClientGameTest {
     @Override public void runTest(ClientGameTestContext context) {
+        if(Boolean.getBoolean("monvhua.clueCardUiGameTest")){
+            com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardUiGameChecks.run(context);return;
+        }
         if(Boolean.getBoolean("monvhua.carpetDeathGameTest")){CarpetDeathGameChecks.run(context);return;}
         if(Boolean.getBoolean("monvhua.butterflyGameTest")){
             com.kuilunfuzhe.monvhua.features.forensics.butterfly.ButterflyGameChecks.run(context);return;

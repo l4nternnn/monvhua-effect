@@ -87,7 +87,11 @@ public final class EvidencePanel extends net.minecraft.client.gui.AbstractParent
     private int width, height;
     private boolean clueBoardMode;
     private com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardWorldPanel clueBoard;
-    public EvidencePanel(boolean world, Runnable onClose) { this.world=world; this.onClose=onClose; EvidenceSessionRouter.register(this); }
+    public EvidencePanel(boolean world, Runnable onClose) { this(world,onClose,""); }
+    public EvidencePanel(boolean world, Runnable onClose,String initialCorpse) {
+        this.world=world;this.onClose=onClose;this.corpse=initialCorpse==null?"":initialCorpse;
+        EvidenceSessionRouter.register(this);
+    }
     public void showClueBoard(){clueBoardMode=true;if(clueBoard==null)clueBoard=new com.kuilunfuzhe.monvhua.features.forensics.cards.ClueCardWorldPanel(()->{clueBoardMode=false;if(snapshot.isEmpty())request(corpse);});}
     public void showComparison(String left,String right){showClueBoard();clueBoard.showComparison(left,right);}
     void onSharedClue(String sharedCorpse,String sharedPart,String evidenceId){

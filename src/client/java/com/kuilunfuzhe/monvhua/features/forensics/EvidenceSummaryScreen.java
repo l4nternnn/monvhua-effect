@@ -6,8 +6,9 @@ import net.minecraft.text.Text;
 
 /** Fullscreen host; world panels share the same presentation and evidence state. */
 public final class EvidenceSummaryScreen extends Screen {
-    private final EvidencePanel panel = new EvidencePanel(false,this::close);
-    public EvidenceSummaryScreen(){super(Text.literal("案件线索总结"));}
+    private final EvidencePanel panel;
+    public EvidenceSummaryScreen(){this("");}
+    public EvidenceSummaryScreen(String corpse){super(Text.literal("案件线索总结"));panel=new EvidencePanel(false,this::close,corpse);}
     @Override protected void init(){EvidenceSessionRouter.register(panel);panel.resize(width,height);panel.children().forEach(this::addSelectableChild);}
     @Override public boolean shouldPause(){return false;}
     @Override public boolean keyPressed(int key,int scan,int modifiers){return ClueChat.open(this,key,scan)||super.keyPressed(key,scan,modifiers);}

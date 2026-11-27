@@ -14,6 +14,50 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class BloodTransferRegressionTest {
+    @Test public void legacyEventsStillClearSolesAndKeepOtherVictims() {
+        var store=new BloodTransferStore();
+        store.add("legacy-event","victim-a",4,100,0);
+        store.transfer("legacy-event","shoe",2,8,1);
+        store.add("shoe","victim-b",2,100,1);
+        store.discard("legacy-event");
+        assertEquals(2,store.available("shoe",2));
+    }
+    @Test public void washingThenDiscardingEventKeepsUnrelatedEventOnSole() {
+        var store=new BloodTransferStore();
+        store.add("a","victim",4,100,0,"a");
+        store.add("b","victim",4,100,0,"b");
+        store.transfer("a","shoe",2,8,1);
+        store.transfer("b","shoe",2,8,1);
+        store.clean("a",1,2,true);store.discard("a");
+        assertEquals(2,store.available("shoe",2));
+        assertEquals(2,store.available("b",2)); // Two units were already transferred to the sole.
+        assertEquals(0,store.transfer("a","clean-shoe",2,8,2));
+    }
+    @Test public void batchLimitNeverMergesDifferentOrigins() {
+        int previous=ForensicConfig.current.transfer.maxBatchesPerHolder;
+        try {
+            ForensicConfig.current.transfer.maxBatchesPerHolder=2;
+            var store=new BloodTransferStore();
+            assertTrue(store.add("shoe","a",2,100,0,"event-a"));
+            assertTrue(store.add("shoe","b",2,100,0,"event-b"));
+            assertTrue(store.add("shoe","a",1,100,0,"event-a"));
+            assertFalse(store.add("shoe","c",1,100,0,"event-c"));
+            store.discard("event-a");
+            assertEquals(2,store.available("shoe",1));
+            store.discard("event-b");
+            assertEquals(0,store.available("shoe",1));
+        } finally {ForensicConfig.current.transfer.maxBatchesPerHolder=previous;}
+    }
+    @Test public void discardingSourceEventAlsoRemovesCopiedSoleResidue() {
+        var store = new BloodTransferStore();
+        assertTrue(store.add("event-1", "corpse-1", 3, 100, 0, "event-1"));
+        assertEquals(2, store.transfer("event-1", "shoe", 2, 4, 1));
+        assertEquals(2, store.available("shoe", 1));
+        store.discard("event-1");
+        assertEquals(0, store.available("event-1", 1));
+        assertEquals(0, store.available("shoe", 1));
+        assertEquals(0, store.visible("shoe"));
+    }
     @Test public void competingRecipientsCannotDuplicateBlood() {
         var store = new BloodTransferStore();
         assertTrue(store.add("pool", "victim", 4, 200, 0));

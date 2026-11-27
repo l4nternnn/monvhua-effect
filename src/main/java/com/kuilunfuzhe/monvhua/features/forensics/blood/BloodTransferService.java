@@ -43,7 +43,7 @@ public final class BloodTransferService {
     public static void deposit(MinecraftServer server, String event, String source, int amount) {
         if (!generating() || amount <= 0) return;
         long now = BloodTraceService.now(server);
-        BloodTransferStore.get(server).add(event, source, amount, now + ForensicConfig.current.transfer.wetTicks, now);
+        BloodTransferStore.get(server).add(event, source, amount, now + ForensicConfig.current.transfer.wetTicks, now, event);
     }
     public static void contact(ItemDisplayEntity display, ServerPlayerEntity player) {
         if (!generating() || player == null || !(display.getWorld() instanceof ServerWorld world)) return;

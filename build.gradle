@@ -254,6 +254,10 @@ loom.runs.client {
         vmArg '-Dmonvhua.butterflyGameTest=true'
         vmArg '-Dfabric.client.gametest.disableNetworkSynchronizer=true'
     }
+    if (providers.gradleProperty('clueCardUiGameTest').getOrElse('false') == 'true') {
+        vmArg '-Dfabric.client.gametest=true'
+        vmArg '-Dmonvhua.clueCardUiGameTest=true'
+    }
     if (providers.gradleProperty('carpetDeathGameTest').getOrElse('false') == 'true') {
         vmArg '-Dfabric.client.gametest=true'
         vmArg '-Dmonvhua.carpetDeathGameTest=true'

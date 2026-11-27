@@ -172,6 +172,9 @@ public final class ForensicCleaningApi {
         for(var event:removed.entrySet()){
             double ratio=Math.min(1,event.getValue()/Math.max(1e-9,totals.getOrDefault(event.getKey(),0.0)));
             var c=transfers.clean(event.getKey(),ratio,BloodTraceService.now(s),!preview);wet+=c.transferable();visible+=c.visible();
+            // A fully washed ground event must also retire residue already copied to soles.
+            // Partial washing retains the remaining source and its existing transfers.
+            if(!preview&&ratio>=1-1e-9)transfers.discard(event.getKey());
         }
         if(!preview)for(var e:updates){traces.submit(e);traces.cleaningRemainders(e.patch().id(),fractions.get(e.patch().id()));if(bottle)traces.markBottleWashed(e.patch().id());}
         return finish(s,r.actionId,key,preview,updates.size(),visible,wet,skipped);
